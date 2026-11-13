@@ -136,6 +136,7 @@ tui-aot-build: tui-aot-stage
 # Keep interaction latency, first-copy startup, and source-free release
 # qualification in one reproducible command. Build time is not a sample.
 tui-performance-bench: tui-aot-build
+  cargo test --locked -p marlin-agent-tui --test launch linked_release_pre_ui_launch_pair -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty first_mx_arrow_is_not_lost_before_the_menu_frame
   cargo test --locked -p marlin-agent-tui --test pty mx_navigation_pty_latency -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty debug_linked_fresh_copy_startup_pair -- --ignored --nocapture

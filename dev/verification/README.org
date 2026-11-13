@@ -79,6 +79,10 @@ checks workspace Git cancellation and orderly TUI shutdown against the OS PID.
 An additional, separately invoked crash experiment remains available; its
 fixture cleanup is not evidence of product cleanup.
 
+The 2026-11-13 linked Release launch diagnostic, including its failed paired
+PTY observation and fresh-file control, is retained in
+=tui-release-launch-20261113.org=. It is not an accepted startup percentile.
+
 =stalled_collector_does_not_delay_runtime_drain_or_block_tui_exit= holds the
 accepted OTLP/HTTP request open without sending a response. Before the TUI
 exits, the test checks the final Runtime task and process counts, the terminal

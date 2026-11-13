@@ -1,0 +1,71 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin linked Release launch observation, 2026-11-13
+#+language: en
+
+* Scope
+
+This is a diagnostic observation, not an accepted startup benchmark. Other
+sessions changed the shared worktree during =just tui-aot-build=, so the output
+cannot be assigned an exact source tree. The completed arm64 Mach-O binary is
+identified by SHA-256 =707fd328722349910919fc59eafa6c4bcd90e185b79d1db198518ab5a28df98e=
+and measures 104,120,192 bytes. The build finished in 7m 58s. Its embedded
+ad hoc linker signature covers 25,223 page hashes. The staged AOT manifest
+contains 896 modules; this count does not say which modules execute at startup.
+
+* Observations
+
+| Operation | First | Second | Scope |
+|-----------+-------+--------+-------|
+| Same Release binary, no terminal, early exit | 7.41 s | 0.00 s | Process launch through terminal check |
+| Fresh copied Release binary, no terminal, early exit | 4.44 s | 0.01 s | New file identity, same machine |
+| Fresh copied =/usr/bin/true= | 2.04 s | 0.00 s | Small executable control |
+| Rust =launch= diagnostic on the same Release hash | 2.566959542 s | 65.83175 ms | Copied Marlin binary, pre-UI early exit |
+| Rust =launch= control | 895.592459 ms | 6.933625 ms | Copied =/usr/bin/true= |
+
+Both Marlin early-exit runs reported approximately zero user and system CPU
+time from =/usr/bin/time -p=. They exited before configuration and Scheme VM
+initialization. The small executable control also had a first-copy delay;
+therefore the observations do not attribute the full Marlin delay to its size,
+code signature, dyld, storage, or any single OS mechanism. =strip -x= reduced a
+copy by only 16 bytes and is not a viable size optimization for this binary.
+An attempted =DYLD_PRINT_STATISTICS= launch produced no dyld counters on this
+host while the fresh-copy early exit still took 3.57 s; it is not an
+attribution trace.
+
+The existing source-free linked Release PTY test passed once with the
+workbench visible after 208.250833 ms in a warm run. The first run inside the
+paired PTY benchmark reported an internal first frame at 199.18075 ms after
+application entry. Both attempts to complete that benchmark failed when its
+second =openpty= returned =ENXIO=, including one unsandboxed attempt. No cold
+and warm PTY pair, percentile, or release startup acceptance is claimed.
+The ignored Rust =launch= diagnostic is now part of =tui-performance-bench=;
+its one observed run passed and identifies the same Release binary hash.
+
+* ABI and first-copy follow-up
+
+The linked UI already exports Scheme procedures with =c-define= and calls
+them through the SDK's rooted object ABI. Replacing the spelling with
+=c-lambda= does not remove the observed wait before the application's
+terminal check. It could change interaction cost only if a measured
+dispatch, projection, rooting, or decoding path is reduced. The current
+Rust hot-path benchmark starts after the Scheme snapshot is projected and
+therefore cannot establish the cost of this native boundary.
+
+The Release binary has a =com.apple.provenance= extended attribute. Four
+fresh-copy early-exit launches took 2.11, 2.03, 1.91, and 1.90 seconds,
+respectively. An attempted attribute removal reported success but left the
+attribute present; =/bin/cp -X= also left it present. This is not a valid
+attribute A/B comparison and gives no causal attribution to provenance.
+The binary dynamically links Nix OpenSSL, SQLite, and libiconv libraries in
+addition to macOS libraries; no isolated dynamic-link comparison has been
+performed.
+
+* Next qualification
+
+Run the maintained paired PTY benchmark against a frozen source tree and one
+binary hash, retaining first-output, workbench and internal phase times for
+both processes. Keep the no-terminal early-exit control separate from the
+visible TUI gate. Investigate the OS pre-entry wait with a controlled launch
+trace before selecting a binary-layout or signing change.

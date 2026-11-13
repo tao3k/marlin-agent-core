@@ -22,6 +22,10 @@ path = "tests/unit/policy.rs"
 name = "pty"
 path = "tests/integration/pty.rs"
 
+[[test]]
+name = "launch"
+path = "tests/integration/launch.rs"
+
 [features]
 default = ["linked-ui"]
 linked-ui = ["dep:gerbil-scheme-sys", "dep:gerbil-scheme-aot-build", "gerbil-scheme/external-program", "marlin-agent-ui/linked-ui"]
