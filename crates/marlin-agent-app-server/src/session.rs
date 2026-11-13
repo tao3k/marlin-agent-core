@@ -5,7 +5,7 @@
 //! Transport adapter for the host's existing Session and Runtime.
 
 use std::{
-    num::NonZeroU64,
+    num::{NonZeroU32, NonZeroU64},
     pin::Pin,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -21,9 +21,10 @@ use marlin_agent_runtime::{
 use marlin_agent_sessions::{
     ConversationCancellationEvidence, ConversationCheckpointChannel, ConversationEvent,
     ConversationEventReader, ConversationJournal, ConversationJournalError,
-    ConversationRetirementStatus, ConversationSubmissionId, ConversationTailState,
-    ConversationTerminalObservation, ConversationTurnId, ConversationTurnOutcome,
-    ConversationTurnStart, ConversationUncertaintyReason, RuntimeTaskTrackerPolicy,
+    ConversationRetirementStatus, ConversationSubmissionId, ConversationTail,
+    ConversationTailState, ConversationTerminalObservation, ConversationTurnId,
+    ConversationTurnOutcome, ConversationTurnStart, ConversationUncertaintyReason,
+    RuntimeTaskTrackerPolicy,
 };
 use marlin_agent_storage::{
     AgentId, EventId, ProjectId, SessionEventStore, SessionId, StorageError, StoragePageLimit,
@@ -37,11 +38,14 @@ use tokio_stream::{Stream, StreamExt};
 use tonic::Status;
 
 use crate::{
-    grpc::{MAX_REQUEST_BYTES, MAX_TURN_TIME, account_output},
+    grpc::{
+        MAX_REQUEST_BYTES, MAX_TURN_TIME, account_output, check_session_deadline, session_until,
+    },
     v1::{
         CancelSessionTurnRequest, CancelSessionTurnResponse, CancellationEvidenceUnavailable,
         GetSessionSummaryRequest, GetSessionSummaryResponse, GetSessionTurnCancellationRequest,
-        GetSessionTurnCancellationResponse, RuntimeRetirementStatus, RuntimeShutdownReceipt,
+        GetSessionTurnCancellationResponse, GetSessionTurnStatusRequest,
+        GetSessionTurnStatusResponse, RuntimeRetirementStatus, RuntimeShutdownReceipt,
         SessionRecoveryState, SessionTurnEvent, SessionTurnOutcome, SessionTurnRef,
         StartSessionTurnRequest, TextCheckpoint, TurnStarted, WatchSessionTurnRequest,
         get_session_turn_cancellation_response::Evidence, session_turn_event::Event,
@@ -49,6 +53,7 @@ use crate::{
 };
 
 pub(crate) type WatchStream = Pin<Box<dyn Stream<Item = Result<SessionTurnEvent, Status>> + Send>>;
+const ADMISSION_PAGE_BODY_BUDGET: NonZeroU32 = NonZeroU32::new(8 * 1024 * 1024).unwrap();
 
 /// One authorized project/Session binding. All service clones share its owner.
 #[derive(Clone)]
@@ -67,11 +72,32 @@ struct Binding<S> {
     changed: watch::Sender<()>,
 }
 
-#[derive(Clone)]
 struct ActiveTurn {
     id: ConversationTurnId,
     runtime: RuntimeTaskScope,
     finished: watch::Receiver<Option<Result<SessionTurnOutcome, Status>>>,
+    cancellation: Option<watch::Receiver<Option<CancelResult>>>,
+}
+
+type CancelResult = Result<CancelSessionTurnResponse, Status>;
+
+impl ActiveTurn {
+    fn running_id(&self) -> Option<ConversationTurnId> {
+        self.finished.borrow().is_none().then_some(self.id)
+    }
+
+    fn shared_cancellation(&self) -> Option<watch::Receiver<Option<CancelResult>>> {
+        let existing = self.cancellation.as_ref()?;
+        let reusable = match &*existing.borrow() {
+            Some(Ok(response)) => response
+                .runtime
+                .as_ref()
+                .is_some_and(|receipt| receipt.completed),
+            Some(Err(_)) => false,
+            None => existing.has_changed().is_ok(),
+        };
+        reusable.then(|| existing.clone())
+    }
 }
 
 impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
@@ -131,16 +157,8 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
     ) -> Result<GetSessionSummaryResponse, Status> {
         self.check_scope(&request.session_id)?;
         let owner = &self.inner;
-        // Pair one indexed read with this binding's local owner. A concurrent
-        // admission can retry the summary once it has published its task scope.
-        let current = owner
-            .current
-            .try_lock()
-            .map_err(|_| Status::aborted("Session admission is busy"))?;
-        let running = current
-            .as_ref()
-            .filter(|active| active.finished.borrow().is_none())
-            .map(|active| active.id);
+        let current = owner.current_turn()?;
+        let running = current.as_ref().and_then(ActiveTurn::running_id);
         let Some(tail) = owner.reader.latest_turn().await.map_err(journal_status)? else {
             return Ok(GetSessionSummaryResponse {
                 latest_turn: None,
@@ -148,24 +166,45 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
                 recovery_state: SessionRecoveryState::Empty.into(),
             });
         };
-        let recovery_state = match tail.state {
-            ConversationTailState::Finished => SessionRecoveryState::Finished,
-            ConversationTailState::Uncertain => SessionRecoveryState::Unresolved,
-            ConversationTailState::ToolContinuationPending => {
-                SessionRecoveryState::ToolContinuationPending
-            }
-            ConversationTailState::Unfinished => {
-                if running == Some(tail.turn) {
-                    SessionRecoveryState::Active
-                } else {
-                    SessionRecoveryState::Unresolved
-                }
-            }
-        };
         Ok(GetSessionSummaryResponse {
             latest_turn: Some(owner.wire_turn(tail.turn)),
             latest_event_id: Some(tail.event_id.as_str().to_owned()),
-            recovery_state: recovery_state.into(),
+            recovery_state: recovery_state(&tail, running).into(),
+        })
+    }
+
+    pub(crate) async fn turn_status(
+        &self,
+        request: GetSessionTurnStatusRequest,
+    ) -> Result<GetSessionTurnStatusResponse, Status> {
+        let (turn, id) = self.turn_ref(request.turn)?;
+        let owner = &self.inner;
+        let current = owner.current_turn()?;
+        let running = current.as_ref().and_then(ActiveTurn::running_id);
+        let tail = owner
+            .reader
+            .turn_tail(id)
+            .await
+            .map_err(journal_status)?
+            .ok_or_else(|| Status::not_found("turn has no committed events"))?;
+        let outcome = match tail.state {
+            ConversationTailState::Unfinished => None,
+            ConversationTailState::Finished
+            | ConversationTailState::Uncertain
+            | ConversationTailState::ToolContinuationPending => Some(
+                owner
+                    .reader
+                    .committed_outcome(id)
+                    .await
+                    .map_err(journal_status)?
+                    .ok_or_else(|| Status::data_loss("turn outcome is missing"))?,
+            ),
+        };
+        Ok(GetSessionTurnStatusResponse {
+            turn: Some(turn),
+            recovery_state: recovery_state(&tail, running).into(),
+            latest_event_id: tail.event_id.as_str().to_owned(),
+            outcome: outcome.as_ref().map(|value| outcome_status(value).into()),
         })
     }
 
@@ -174,6 +213,7 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
         request: StartSessionTurnRequest,
         endpoint: ModelEndpoint,
         gateway: Arc<dyn ModelStreamingGateway>,
+        deadline: Instant,
     ) -> Result<SessionTurnRef, Status> {
         self.check_scope(&request.session_id)?;
         let submission = ConversationSubmissionId::new(request.submission_id.clone())
@@ -193,8 +233,9 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
                 .await?
                 .ok_or_else(|| Status::aborted("Session admission is busy"));
         };
+        check_session_deadline(deadline)?;
         let (reply, result) = owner.runtime.oneshot_channel();
-        // Admission outlives its RPC after the journal write has begun.
+        // Runtime admission outlives its RPC.
         let admission = self.inner.runtime.spawn(async move {
             admit(
                 owner, current, submission, request, endpoint, gateway, reply,
@@ -247,23 +288,23 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
         let stream = async_stream::try_stream! {
             let mut known = cursor.is_some();
             loop {
-                if Instant::now() >= deadline {
-                    Err(Status::deadline_exceeded("turn watch deadline elapsed"))?;
-                }
                 changed.borrow_and_update();
                 // Snapshot liveness before reading the page to avoid missing a
                 // final commit racing the empty page.
-                let running = owner.current.lock().await.as_ref().is_some_and(|active|
-                    active.id == id && active.finished.borrow().is_none());
-                let page = owner.reader.page(id, cursor.clone(), limit).await.map_err(journal_status)?;
+                let (running, page) = session_until(deadline, async {
+                    let running = owner.current.lock().await.as_ref().is_some_and(|active|
+                        active.id == id && active.finished.borrow().is_none());
+                    let page = owner.reader.page(id, cursor.clone(), limit).await.map_err(journal_status)?;
+                    Ok((running, page))
+                }).await?;
                 if page.is_empty() {
                     if !known { Err(Status::not_found("turn has no committed start"))?; }
                     if !running {
                         Err(Status::failed_precondition("turn has no live owner or committed outcome"))?;
                     }
-                    tokio::time::timeout_at(deadline, changed.changed()).await
-                        .map_err(|_| Status::deadline_exceeded("turn watch deadline elapsed"))?
-                        .map_err(|_| Status::unavailable("Session owner closed"))?;
+                    session_until(deadline, async {
+                        changed.changed().await.map_err(|_| Status::unavailable("Session owner closed"))
+                    }).await?;
                     continue;
                 }
                 known = true;
@@ -278,6 +319,7 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
                         ConversationEvent::Outcome(outcome) => (Event::Outcome(outcome_status(&outcome).into()), true),
                         ConversationEvent::ToolReview(_) | ConversationEvent::ToolExecutionClaim(_) | ConversationEvent::ToolResults(_) => continue,
                     };
+                    check_session_deadline(deadline)?;
                     yield SessionTurnEvent { event_id, event: Some(event) };
                     if terminal { return; }
                 }
@@ -289,44 +331,50 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
     pub(crate) async fn cancel(
         &self,
         request: CancelSessionTurnRequest,
+        deadline: Instant,
     ) -> Result<CancelSessionTurnResponse, Status> {
         let (turn, id) = self.turn_ref(request.turn)?;
-        let mut active = self
-            .inner
-            .current
-            .lock()
-            .await
-            .as_ref()
-            .filter(|active| active.id == id)
-            .cloned()
-            .ok_or_else(|| Status::not_found("turn has no local Runtime task scope"))?;
-        let policy = if active.finished.borrow().is_some() {
-            RuntimeTaskTrackerPolicy::wait_on_shutdown(Some(10_000))
-        } else {
-            RuntimeTaskTrackerPolicy::cancel_on_shutdown(Some(10_000))
+        let mut current = self.inner.current.lock().await;
+        let Some(active) = current.as_mut().filter(|active| active.id == id) else {
+            drop(current);
+            let recovered = self
+                .read_cancellation(GetSessionTurnCancellationRequest { turn: Some(turn) })
+                .await?;
+            let Some(Evidence::Recorded(runtime)) = recovered.evidence else {
+                return Err(Status::not_found(
+                    "turn has no local Runtime task scope or receipt",
+                ));
+            };
+            return Ok(CancelSessionTurnResponse {
+                turn: recovered.turn,
+                runtime: Some(runtime),
+                outcome: recovered.outcome,
+            });
         };
-        let receipt = active.runtime.shutdown_tasks(&policy).await;
-        let evidence = cancellation_evidence(&receipt);
-        self.inner
-            .reader
-            .record_cancellation(id, &evidence, now_ms())
-            .await
-            .map_err(journal_status)?;
-        let outcome = if evidence.completed() {
-            let outcome = active
-                .finished
-                .wait_for(Option::is_some)
-                .await
-                .map_err(|_| Status::internal("turn task ended without an outcome"))?;
-            outcome.as_ref().expect("completed outcome").clone()?
+        check_session_deadline(deadline)?;
+        let mut result = if let Some(existing) = active.shared_cancellation() {
+            existing
         } else {
-            SessionTurnOutcome::Unspecified
+            let owner = self.inner.clone();
+            let (publish, result) = owner.runtime.watch_channel(None);
+            let scope = active.runtime.clone();
+            let finished = active.finished.clone();
+            // The Session Runtime owns this operation while the turn scope retires.
+            let task = self.inner.runtime.spawn(async move {
+                let result = owner.cancel_turn(turn, id, scope, finished).await;
+                publish.send_replace(Some(result));
+            });
+            task.admission()
+                .map_err(|_| Status::unavailable("Session Runtime is not admitting work"))?;
+            active.cancellation = Some(result.clone());
+            result
         };
-        Ok(CancelSessionTurnResponse {
-            turn: Some(turn),
-            runtime: Some(runtime_receipt(evidence)),
-            outcome: outcome.into(),
-        })
+        drop(current);
+        let result = result
+            .wait_for(Option::is_some)
+            .await
+            .map_err(|_| Status::internal("turn cancellation task failed"))?;
+        result.as_ref().expect("cancellation result").clone()
     }
 
     pub(crate) async fn read_cancellation(
@@ -363,6 +411,48 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
 }
 
 impl<S: SessionEventStore> Binding<S> {
+    async fn cancel_turn(
+        &self,
+        turn: SessionTurnRef,
+        id: ConversationTurnId,
+        runtime: RuntimeTaskScope,
+        mut finished: watch::Receiver<Option<Result<SessionTurnOutcome, Status>>>,
+    ) -> Result<CancelSessionTurnResponse, Status> {
+        let policy = if finished.borrow().is_some() {
+            RuntimeTaskTrackerPolicy::wait_on_shutdown(Some(10_000))
+        } else {
+            RuntimeTaskTrackerPolicy::cancel_on_shutdown(Some(10_000))
+        };
+        let receipt = runtime.shutdown_tasks(&policy).await;
+        let evidence = self
+            .reader
+            .record_cancellation(id, &cancellation_evidence(&receipt), now_ms())
+            .await
+            .map_err(journal_status)?;
+        let outcome = if evidence.completed() {
+            let outcome = finished
+                .wait_for(Option::is_some)
+                .await
+                .map_err(|_| Status::internal("turn task ended without an outcome"))?;
+            outcome.as_ref().expect("completed outcome").clone()?
+        } else {
+            SessionTurnOutcome::Unspecified
+        };
+        Ok(CancelSessionTurnResponse {
+            turn: Some(turn),
+            runtime: Some(runtime_receipt(evidence)),
+            outcome: outcome.into(),
+        })
+    }
+
+    fn current_turn(&self) -> Result<tokio::sync::MutexGuard<'_, Option<ActiveTurn>>, Status> {
+        // Keep the read paired with the live owner. Admission can publish the
+        // task scope before a concurrent reader retries.
+        self.current
+            .try_lock()
+            .map_err(|_| Status::aborted("Session admission is busy"))
+    }
+
     fn wire_turn(&self, id: ConversationTurnId) -> SessionTurnRef {
         SessionTurnRef {
             session_id: self.session.as_str().to_owned(),
@@ -383,6 +473,24 @@ impl<S: SessionEventStore> Binding<S> {
     }
 }
 
+fn recovery_state(
+    tail: &ConversationTail,
+    running: Option<ConversationTurnId>,
+) -> SessionRecoveryState {
+    match tail.state {
+        ConversationTailState::Finished => SessionRecoveryState::Finished,
+        ConversationTailState::ToolContinuationPending => {
+            SessionRecoveryState::ToolContinuationPending
+        }
+        ConversationTailState::Unfinished if running == Some(tail.turn) => {
+            SessionRecoveryState::Active
+        }
+        ConversationTailState::Unfinished | ConversationTailState::Uncertain => {
+            SessionRecoveryState::Unresolved
+        }
+    }
+}
+
 async fn admit<S: SessionEventStore + Clone + 'static>(
     owner: Arc<Binding<S>>,
     mut current: OwnedMutexGuard<Option<ActiveTurn>>,
@@ -390,9 +498,19 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
     request: StartSessionTurnRequest,
     endpoint: ModelEndpoint,
     gateway: Arc<dyn ModelStreamingGateway>,
-    reply: oneshot::Sender<Result<SessionTurnRef, Status>>,
+    mut reply: oneshot::Sender<Result<SessionTurnRef, Status>>,
 ) {
-    match owner.resolve_submission(&submission, &request).await {
+    let cancelled = owner.runtime.cancellation_token();
+    let prior = tokio::select! {
+        biased;
+        _ = reply.closed() => return,
+        _ = cancelled.cancelled() => {
+            let _ = reply.send(Err(Status::cancelled("turn admission cancelled")));
+            return;
+        }
+        result = owner.resolve_submission(&submission, &request) => result,
+    };
+    match prior {
         Ok(None) => {}
         Ok(Some(turn)) => {
             let _ = reply.send(Ok(turn));
@@ -404,7 +522,7 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
         }
     }
     let admitted = async {
-        if reply.is_closed() || owner.runtime.cancellation_token().is_cancelled() {
+        if reply.is_closed() || cancelled.is_cancelled() {
             return Err(Status::cancelled("turn admission cancelled"));
         }
         if current
@@ -418,11 +536,12 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
         let mut history = Vec::new();
         let mut bytes = request.user_text.len();
         let mut history_error = None;
-        let mut journal = ConversationJournal::open_controlled(
+        let replay = ConversationJournal::open_controlled_bounded(
             owner.storage.clone(),
             owner.project.clone(),
             owner.session.clone(),
             owner.agent.clone(),
+            ADMISSION_PAGE_BODY_BUDGET,
             |turn| {
                 if matches!(
                     turn.outcome,
@@ -470,8 +589,13 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
                 }
                 true
             },
-        )
-        .await
+        );
+        let mut journal = tokio::select! {
+            biased;
+            _ = reply.closed() => return Err(Status::cancelled("turn admission cancelled")),
+            _ = cancelled.cancelled() => return Err(Status::cancelled("turn admission cancelled")),
+            result = replay => result,
+        }
         .map_err(|error| {
             if let Some(reason) = history_error {
                 Status::failed_precondition(reason)
@@ -481,10 +605,12 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
                 journal_status(error)
             }
         })?;
-        if reply.is_closed() || owner.runtime.cancellation_token().is_cancelled() {
+        if reply.is_closed() || cancelled.is_cancelled() {
             return Err(Status::cancelled("turn admission cancelled before commit"));
         }
         history.push(user_gateway_message(request.user_text.clone()));
+        // Once the atomic write starts, the Session Runtime resolves its commit
+        // and publishes the turn even if the caller disconnects.
         let id = journal
             .start_submission(
                 &submission,
@@ -505,10 +631,16 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
         Err(status) => {
             // Another binding can commit during replay or race the atomic write.
             // A recovered receipt is read-only, including after an ambiguous write.
-            let result = owner
-                .resolve_submission(&submission, &request)
-                .await
-                .and_then(|turn| turn.ok_or(status));
+            let result = tokio::select! {
+                biased;
+                _ = reply.closed() => return,
+                _ = cancelled.cancelled() => {
+                    let _ = reply.send(Err(status));
+                    return;
+                }
+                result = owner.resolve_submission(&submission, &request) =>
+                    result.and_then(|turn| turn.ok_or(status)),
+            };
             let _ = reply.send(result);
             return;
         }
@@ -522,6 +654,7 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
         id,
         runtime,
         finished,
+        cancellation: None,
     });
     drop(current);
     owner.changed.send_replace(());
@@ -736,6 +869,9 @@ fn journal_status(error: ConversationJournalError) -> Status {
         | ConversationJournalError::ReplayInconsistent => {
             Status::aborted("Session journal changed during admission")
         }
+        ConversationJournalError::Storage(StorageError::SessionEventBodyExceedsPageBudget {
+            ..
+        }) => Status::resource_exhausted("Session event exceeds the journal page byte limit"),
         ConversationJournalError::Storage(_) => {
             Status::unavailable("Session event storage unavailable")
         }

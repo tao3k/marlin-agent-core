@@ -2,11 +2,13 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use marlin_agent_storage::SessionEventStore;
+use std::num::NonZeroU32;
+
 use marlin_agent_storage::{
     AgentId, EventId, InMemoryAgentStorage, ProjectId, SessionEventCursor, SessionEventPageRequest,
     SessionEventRecord, SessionId, SessionPageRequest, StoragePageLimit, TurnId,
 };
+use marlin_agent_storage::{SessionEventStore, StorageError};
 
 fn project() -> ProjectId {
     ProjectId::new("project").unwrap()
@@ -128,6 +130,116 @@ async fn event_pages_seek_within_exact_project_and_session_scope() {
 }
 fn session(value: &str) -> SessionId {
     SessionId::new(value).unwrap()
+}
+
+#[tokio::test]
+async fn memory_turn_page_bounds_raw_bodies_and_preserves_the_cursor() {
+    verify_turn_page_budget(&InMemoryAgentStorage::new()).await;
+}
+
+#[cfg(feature = "turso")]
+#[tokio::test]
+async fn turso_turn_page_bounds_raw_bodies_and_preserves_the_cursor() {
+    use marlin_agent_storage::{
+        TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode,
+        TursoOptimizationProfile,
+    };
+
+    let root = tempfile::tempdir().unwrap();
+    let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
+        path: root.path().join("turn-pages.turso"),
+        optimization_profile: TursoOptimizationProfile::AsyncIoOnlyCompatibility,
+        batch_transaction_mode: TursoBatchTransactionMode::Immediate,
+    })
+    .await
+    .unwrap();
+    verify_turn_page_budget(&storage).await;
+}
+
+async fn verify_turn_page_budget(storage: &impl SessionEventStore) {
+    for (turn_id, event_id, bytes) in [
+        ("1", "1", 4),
+        ("1", "2", 4),
+        ("1", "3", 2),
+        ("1", "4", 1024 * 1024),
+        ("1", "5", 1),
+        ("2", "1", 4),
+    ] {
+        let mut record = session_event(session("a"), agent("one"), turn(turn_id), event(event_id));
+        record.body = vec![b'x'; bytes];
+        storage.append_session_event(record).await.unwrap();
+    }
+    let budget = NonZeroU32::new(6).unwrap();
+    let request = |after, count| {
+        SessionEventPageRequest::new(
+            project(),
+            session("a"),
+            StoragePageLimit::new(count).unwrap(),
+        )
+        .within_turn_after(SessionEventCursor::new(turn("1"), event(after)), budget)
+    };
+    let first = storage
+        .list_session_events_page(request("0", 16))
+        .await
+        .unwrap();
+    assert_eq!(first.items.len(), 1);
+    assert_eq!(first.next_cursor.unwrap().event_id(), &event("1"));
+    let second = storage
+        .list_session_events_page(request("1", 16))
+        .await
+        .unwrap();
+    assert_eq!(
+        second.items.iter().map(|row| row.body.len()).sum::<usize>(),
+        6
+    );
+    assert_eq!(second.next_cursor.unwrap().event_id(), &event("3"));
+    let count_limited = storage
+        .list_session_events_page(request("1", 1))
+        .await
+        .unwrap();
+    assert_eq!(count_limited.items.len(), 1);
+    assert_eq!(count_limited.next_cursor.unwrap().event_id(), &event("2"));
+    assert!(matches!(
+        storage.list_session_events_page(request("3", 16)).await,
+        Err(StorageError::SessionEventBodyExceedsPageBudget { budget: 6 })
+    ));
+    let last = storage
+        .list_session_events_page(request("4", 16))
+        .await
+        .unwrap();
+    assert_eq!(last.items[0].event_id, event("5"));
+    assert!(last.next_cursor.is_none());
+    let end = storage
+        .list_session_events_page(request("5", 16))
+        .await
+        .unwrap();
+    assert!(end.items.is_empty() && end.next_cursor.is_none());
+
+    let session_request = || {
+        SessionEventPageRequest::new(project(), session("a"), StoragePageLimit::new(16).unwrap())
+            .with_body_budget(budget)
+    };
+    let session_first = storage
+        .list_session_events_page(session_request())
+        .await
+        .unwrap();
+    assert_eq!(session_first.items.len(), 1);
+    assert_eq!(session_first.next_cursor.unwrap().event_id(), &event("1"));
+    let across_turns = storage
+        .list_session_events_page(
+            session_request().after(SessionEventCursor::new(turn("1"), event("4"))),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        across_turns
+            .items
+            .iter()
+            .map(|row| (row.turn_id.as_str(), row.event_id.as_str(), row.body.len()))
+            .collect::<Vec<_>>(),
+        [("1", "5", 1), ("2", "1", 4)]
+    );
+    assert!(across_turns.next_cursor.is_none());
 }
 fn agent(value: &str) -> AgentId {
     AgentId::new(value).unwrap()

@@ -42,16 +42,57 @@ async fn completed_cancellation_evidence_survives_late_incomplete_writes() {
         ..completed.clone()
     };
     assert_eq!(reader.cancellation_evidence(turn).await.unwrap(), None);
-    reader.record_cancellation(turn, &timeout, 1).await.unwrap();
+    let invalid = ConversationCancellationEvidence {
+        tracker_closed: false,
+        ..completed.clone()
+    };
+    assert!(matches!(
+        reader.record_cancellation(turn, &invalid, 0).await,
+        Err(ConversationJournalError::InvalidEvent(_)),
+    ));
+    assert_eq!(reader.cancellation_evidence(turn).await.unwrap(), None);
+    assert_eq!(
+        reader.record_cancellation(turn, &timeout, 1).await.unwrap(),
+        timeout
+    );
+    let later_timeout = ConversationCancellationEvidence {
+        remaining_tasks: 2,
+        ..timeout.clone()
+    };
+    assert_eq!(
+        reader
+            .record_cancellation(turn, &later_timeout, 2)
+            .await
+            .unwrap(),
+        timeout
+    );
     assert_eq!(
         reader.cancellation_evidence(turn).await.unwrap(),
         Some(timeout.clone())
     );
-    reader
-        .record_cancellation(turn, &completed, 2)
-        .await
-        .unwrap();
-    reader.record_cancellation(turn, &timeout, 3).await.unwrap();
+    assert_eq!(
+        reader
+            .record_cancellation(turn, &completed, 3)
+            .await
+            .unwrap(),
+        completed,
+    );
+    let repeated = ConversationCancellationEvidence {
+        cancellation_requested: false,
+        tracked_tasks_at_shutdown: 0,
+        ..completed.clone()
+    };
+    assert_eq!(
+        reader
+            .record_cancellation(turn, &repeated, 4)
+            .await
+            .unwrap(),
+        completed
+    );
+    assert_eq!(
+        reader.record_cancellation(turn, &timeout, 5).await.unwrap(),
+        completed
+    );
     assert_eq!(
         reader.cancellation_evidence(turn).await.unwrap(),
         Some(completed)

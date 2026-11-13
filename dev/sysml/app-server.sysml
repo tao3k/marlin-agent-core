@@ -43,12 +43,15 @@ package MarlinAppServer {
                deployment-owned gRPC-Web gateway on a trusted origin. */
     }
     part <'MAR-APP-A07'> weaverInterop {
-        doc /* tao3k/weaver owns A2A and client-facing Agent Client Protocol
-               adapters. A local Weaver transport test uses Marlin's generated
-               gRPC client to submit, reconnect and cancel on a host-bound
-               Session. External task and session identity mapping remains
-               delivery work in Weaver. Marlin owns Session admission, event
-               order, cancellation and local receipts. */
+        doc /* tao3k/weaver owns A2A and Client ACP identity, authorization
+               and lifecycle projections. Isolated local candidates exercise
+               A2A gRPC and ACP JSON-RPC through the generated client and a
+               Turso-backed Marlin process over HTTP/2. Production deployment
+               and authorization remain open. ACP session/new uses OpenSession
+               for host provisioning. The restart fixture persists principal
+               and Session admission in Turso. A replacement process reopens
+               authorized Sessions and reads prior receipts. Marlin owns
+               Session admission, event order, cancellation and local receipts. */
     }
     connection <'MAR-APP-C01'> grpcChannel connect externalClient to appServer.turnService;
     connection <'MAR-APP-C02'> weaverGrpcChannel connect weaverInterop to appServer.turnService;
@@ -145,25 +148,53 @@ package MarlinAppServer {
     requirement <'MAR-APP-R04'> recoverSubmission {
         doc /* The Session owner atomically binds an authorized submission ID
                and the original inputs to its committed turn before dispatch.
+               Loss of the caller during read-only admission releases the
+               Session for other requests. An atomic write already started
+               completes under the Session Runtime.
+               Admission reads Session history in pages of at most 16 records
+               and 8 MiB of stored event bodies before building model input.
+               An oversized record refuses the submission before dispatch.
                An identical retry resolves to that turn even after later
-               turns commit. A conflicting retry is rejected. Recovery of an
+               turns commit. When independent Runtime owners contend for the
+               same journal admission, only the committed writer can dispatch.
+               A conflicting retry is rejected. Recovery of an
                uncertain dispatch preserves the original identity. After a
                restart, replay committed events and report an unfinished turn
                without a live owner. Recovery does not dispatch that turn. */
     }
     requirement <'MAR-APP-R05'> boundedSessionRecovery {
-        doc /* GetSessionSummary reads one indexed event header for the
-               authorized Session and reports typed recovery state. Replay
+        doc /* GetSessionSummary reads one indexed header for the authorized
+               Session. GetSessionTurnStatus reads the specified turn's
+               header and any committed outcome through indexed lookups. Replay
                committed visible events after the caller's exclusive cursor.
-               Bound page work and bytes, and isolate slow replay from control
-               calls for other Sessions. A terminal commit racing attachment
-               remains visible in the journal suffix. */
+               The App Server admits at most 16 concurrent Session watch
+               operations, independently of control RPCs. Each replay reads
+               one page from the requested turn at a time, up to 16 records
+               and 8 MiB of stored event bodies. A record that exceeds the
+               budget by itself stops replay with RESOURCE_EXHAUSTED.
+               Each watch hands off at most one queued event to the HTTP/2
+               response. Disconnect or the RPC deadline releases the watch
+               admission, even when HTTP/2 credit
+               is exhausted. Session resolution, journal access and watch
+               delivery share that deadline. A terminal commit racing
+               attachment remains visible in the journal suffix. */
     }
     requirement <'MAR-APP-R06'> recoverCancellationEvidence {
         doc /* Keep Session outcome, local retirement and provider stop
                evidence independently observable by turn. CancelSessionTurn
-               records the local Runtime observation. GetSessionTurnCancellation
-               returns it after restart or reports missing evidence. */
+               records the local Runtime observation in the Session Runtime
+               after admission, including when the caller times out.
+               Concurrent Stop calls for the same local turn share a
+               retirement task. Repeated writes return the retained journal
+               observation. A completed receipt is reused; an
+               incomplete observation allows another retirement check while
+               the local turn scope exists. If the client loses its response
+               after the journal commit and the host restarts, retry reads
+               the same receipt without scheduling another cancellation.
+               GetSessionTurnCancellation
+               returns it after restart or reports missing evidence.
+               A failed Session terminal write leaves the outcome unresolved.
+               A separately committed retirement receipt remains readable. */
     }
     allocation submissionIdentity allocate recoverSubmission to appServer.sessionJournal;
     allocation recoveryBudget allocate boundedSessionRecovery to appServer.turnService;

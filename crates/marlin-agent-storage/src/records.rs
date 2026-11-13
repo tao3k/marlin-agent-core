@@ -4,6 +4,7 @@
 
 use std::fmt;
 use std::future::Future;
+use std::num::NonZeroU32;
 use std::pin::Pin;
 
 use serde::{Deserialize, Serialize};
@@ -207,6 +208,10 @@ pub struct SessionEventPageRequest {
     session_id: SessionId,
     after: Option<SessionEventCursor>,
     limit: StoragePageLimit,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    turn_body_budget: Option<NonZeroU32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    session_body_budget: Option<NonZeroU32>,
 }
 
 impl SessionEventPageRequest {
@@ -216,12 +221,54 @@ impl SessionEventPageRequest {
             session_id,
             after: None,
             limit,
+            turn_body_budget: None,
+            session_body_budget: None,
         }
     }
 
     pub fn after(mut self, cursor: SessionEventCursor) -> Self {
         self.after = Some(cursor);
         self
+    }
+
+    /// Read only the cursor's turn and return a contiguous prefix within the
+    /// combined budget for raw event bodies. The cursor is exclusive.
+    pub fn within_turn_after(
+        mut self,
+        cursor: SessionEventCursor,
+        body_budget: NonZeroU32,
+    ) -> Self {
+        self.after = Some(cursor);
+        self.turn_body_budget = Some(body_budget);
+        self.session_body_budget = None;
+        self
+    }
+
+    /// Bound the raw event bodies in a page spanning the Session.
+    pub fn with_body_budget(mut self, body_budget: NonZeroU32) -> Self {
+        self.session_body_budget = Some(body_budget);
+        self.turn_body_budget = None;
+        self
+    }
+
+    /// The budget for pages restricted to the cursor's turn.
+    pub fn turn_body_budget(&self) -> Option<NonZeroU32> {
+        self.turn_body_budget
+    }
+
+    /// Stores enforce this budget before copying bodies into the page.
+    pub fn body_budget(&self) -> Option<NonZeroU32> {
+        self.turn_body_budget.or(self.session_body_budget)
+    }
+
+    pub(crate) fn turn_bound(&self) -> StorageResult<Option<(&SessionEventCursor, NonZeroU32)>> {
+        self.turn_body_budget
+            .map(|budget| {
+                self.cursor()
+                    .map(|cursor| (cursor, budget))
+                    .ok_or(StorageError::MissingTurnPageCursor)
+            })
+            .transpose()
     }
 
     pub fn project_id(&self) -> &ProjectId {
@@ -573,6 +620,8 @@ pub trait SessionEventStore: Send + Sync {
         records: Vec<SessionEventRecord>,
     ) -> StorageFuture<'a, SessionEventBatchWriteReceipt>;
 
+    /// For a byte-bounded request, report the last returned cursor when
+    /// another record remains. An oversized first body returns an error.
     fn list_session_events_page<'a>(
         &'a self,
         request: SessionEventPageRequest,
@@ -637,6 +686,10 @@ pub enum StorageError {
     InvalidPageLimit {
         limit: u16,
     },
+    MissingTurnPageCursor,
+    SessionEventBodyExceedsPageBudget {
+        budget: u32,
+    },
     InvalidSyncConfiguration {
         reason: &'static str,
     },
@@ -688,6 +741,15 @@ impl fmt::Display for StorageError {
             }
             StorageError::InvalidPageLimit { limit } => {
                 write!(f, "storage page limit must be between 1 and 1000: {limit}")
+            }
+            StorageError::MissingTurnPageCursor => {
+                f.write_str("turn-scoped Session event page requires an exclusive cursor")
+            }
+            StorageError::SessionEventBodyExceedsPageBudget { budget } => {
+                write!(
+                    f,
+                    "Session event body exceeds the {budget}-byte page budget"
+                )
             }
             StorageError::InvalidSyncConfiguration { reason } => {
                 write!(f, "invalid Turso sync configuration: {reason}")

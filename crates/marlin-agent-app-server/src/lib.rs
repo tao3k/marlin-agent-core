@@ -13,6 +13,13 @@ mod session;
 #[cfg(feature = "grpc")]
 pub use session::SessionBinding;
 
+#[cfg(feature = "grpc")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionOpen {
+    Create,
+    Existing,
+}
+
 /// Versioned wire types and client bindings. The `grpc` feature adds service bindings.
 #[cfg(feature = "client")]
 pub mod v1 {

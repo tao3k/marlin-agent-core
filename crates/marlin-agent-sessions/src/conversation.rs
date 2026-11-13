@@ -398,6 +398,29 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         project: ProjectId,
         session: SessionId,
         agent: AgentId,
+        visit: impl FnMut(&ConversationTurn) -> bool,
+    ) -> Result<Self, ConversationJournalError> {
+        Self::replay(storage, project, session, agent, None, visit).await
+    }
+
+    /// Replay for admission with a byte limit on each storage page.
+    pub async fn open_controlled_bounded(
+        storage: S,
+        project: ProjectId,
+        session: SessionId,
+        agent: AgentId,
+        body_budget: std::num::NonZeroU32,
+        visit: impl FnMut(&ConversationTurn) -> bool,
+    ) -> Result<Self, ConversationJournalError> {
+        Self::replay(storage, project, session, agent, Some(body_budget), visit).await
+    }
+
+    async fn replay(
+        storage: S,
+        project: ProjectId,
+        session: SessionId,
+        agent: AgentId,
+        body_budget: Option<std::num::NonZeroU32>,
         mut visit: impl FnMut(&ConversationTurn) -> bool,
     ) -> Result<Self, ConversationJournalError> {
         let mut journal = Self {
@@ -431,6 +454,9 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             if let Some(after) = cursor {
                 request = request.after(after);
             }
+            if let Some(budget) = body_budget {
+                request = request.with_body_budget(budget);
+            }
             let page = journal.storage.list_session_events_page(request).await?;
             if page.items.len() > 16 {
                 return Err(ConversationJournalError::InvalidEvent(
@@ -438,7 +464,13 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                 ));
             }
             let has_items = !page.items.is_empty();
+            let mut remaining = body_budget.map_or(usize::MAX, |budget| budget.get() as usize);
             for event in page.items {
+                remaining = remaining.checked_sub(event.body.len()).ok_or_else(|| {
+                    ConversationJournalError::InvalidEvent(
+                        "storage page exceeds requested byte budget".into(),
+                    )
+                })?;
                 observed = observed
                     .checked_add(1)
                     .ok_or(ConversationJournalError::OrdinalExhausted)?;

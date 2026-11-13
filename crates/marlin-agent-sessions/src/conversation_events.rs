@@ -5,11 +5,13 @@
 //! Typed reads of the journal's existing committed records.
 
 use marlin_agent_storage::SessionEventCursor;
-use std::num::NonZeroU64;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use super::*;
 
 const CANCELLATION_KIND: &str = "marlin.conversation.cancellation.v1";
+/// Raw JSON journal bodies, including escaping and completion metadata.
+const TURN_PAGE_BODY_BUDGET: NonZeroU32 = NonZeroU32::new(8 * 1024 * 1024).unwrap();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ConversationRetirementStatus {
@@ -32,6 +34,13 @@ pub struct ConversationCancellationEvidence {
 impl ConversationCancellationEvidence {
     pub fn completed(&self) -> bool {
         self.status == ConversationRetirementStatus::Completed
+    }
+
+    fn validate(&self) -> Result<(), ConversationJournalError> {
+        if !self.tracker_closed || (self.completed() && self.remaining_tasks != 0) {
+            return Err(invalid());
+        }
+        Ok(())
     }
 }
 
@@ -89,13 +98,15 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
     }
 
     /// Retain the first observation at each strength. A completed observation
-    /// supersedes incomplete evidence, including out-of-order writes.
+    /// supersedes incomplete evidence, including out-of-order writes. Return
+    /// the stored observation so a retry can report the same evidence.
     pub async fn record_cancellation(
         &self,
         id: ConversationTurnId,
         evidence: &ConversationCancellationEvidence,
         created_at_unix_ms: i64,
-    ) -> Result<(), ConversationJournalError> {
+    ) -> Result<ConversationCancellationEvidence, ConversationJournalError> {
+        evidence.validate()?;
         let event = SessionEventRecord {
             project_id: self.project.clone(),
             session_id: self.session.clone(),
@@ -108,15 +119,13 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
             created_at_unix_ms,
         };
         match self.storage.append_session_event(event).await {
-            Ok(()) => Ok(()),
-            Err(StorageError::DuplicateSessionEvent { .. })
-                if self
-                    .cancellation_evidence(id)
-                    .await?
-                    .is_some_and(|stored| !evidence.completed() || stored.completed()) =>
-            {
-                Ok(())
-            }
+            Ok(()) if evidence.completed() => Ok(evidence.clone()),
+            Ok(()) => self.cancellation_evidence(id).await?.ok_or_else(invalid),
+            Err(error @ StorageError::DuplicateSessionEvent { .. }) => self
+                .cancellation_evidence(id)
+                .await?
+                .filter(|stored| !evidence.completed() || stored.completed())
+                .ok_or_else(|| error.into()),
             Err(error) => Err(error.into()),
         }
     }
@@ -132,7 +141,10 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
             self.session.clone(),
             StoragePageLimit::new(1)?,
         )
-        .after(SessionEventCursor::new(turn.clone(), EventId::new("\0")?));
+        .within_turn_after(
+            SessionEventCursor::new(turn.clone(), EventId::new("\0")?),
+            TURN_PAGE_BODY_BUDGET,
+        );
         let mut page = self.storage.list_session_events_page(request).await?;
         if page.items.len() > 1 {
             return Err(invalid());
@@ -142,12 +154,9 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
         };
         if record.project_id != self.project
             || record.session_id != self.session
-            || record.turn_id < turn
+            || record.turn_id != turn
         {
             return Err(invalid());
-        }
-        if record.turn_id > turn {
-            return Ok(None);
         }
         let completed = record.event_id == cancellation_event_id(true)?;
         if record.agent_id != self.agent
@@ -158,10 +167,8 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
             return Err(invalid());
         }
         let evidence: ConversationCancellationEvidence = serde_json::from_slice(&record.body)?;
-        if evidence.completed() != completed
-            || !evidence.tracker_closed
-            || (completed && evidence.remaining_tasks != 0)
-        {
+        evidence.validate()?;
+        if evidence.completed() != completed {
             return Err(invalid());
         }
         Ok(Some(evidence))
@@ -198,14 +205,37 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
         // Submission claims use `conversation-submission:` and are outside the range.
         let from = TurnId::new(TURN_PREFIX)?;
         let before = TurnId::new("conversation;")?;
+        self.tail_in_range(&from, &before).await
+    }
+
+    /// Seek the last committed event header of this turn, even after later turns start.
+    pub async fn turn_tail(
+        &self,
+        id: ConversationTurnId,
+    ) -> Result<Option<ConversationTail>, ConversationJournalError> {
+        let from = id.storage_id()?;
+        // Conversation keys are fixed-width decimal. This exclusive upper bound
+        // follows this key and precedes every later ordinal, including at u64::MAX.
+        let before = TurnId::new(format!("{}:", from.as_str()))?;
+        self.tail_in_range(&from, &before).await
+    }
+
+    async fn tail_in_range(
+        &self,
+        from: &TurnId,
+        before: &TurnId,
+    ) -> Result<Option<ConversationTail>, ConversationJournalError> {
         let Some(header) = self
             .storage
-            .latest_session_event_header(&self.project, &self.session, &from, &before)
+            .latest_session_event_header(&self.project, &self.session, from, before)
             .await?
         else {
             return Ok(None);
         };
-        if header.agent_id != self.agent {
+        if header.agent_id != self.agent
+            || header.cursor.turn_id() < from
+            || header.cursor.turn_id() >= before
+        {
             return Err(invalid());
         }
         let turn =
@@ -283,7 +313,10 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
             self.session.clone(),
             StoragePageLimit::new(1)?,
         )
-        .after(SessionEventCursor::new(turn.clone(), EventId::new("\0")?));
+        .within_turn_after(
+            SessionEventCursor::new(turn.clone(), EventId::new("\0")?),
+            TURN_PAGE_BODY_BUDGET,
+        );
         let mut page = self.storage.list_session_events_page(request).await?;
         if page.items.len() > 1 {
             return Err(invalid());
@@ -293,9 +326,6 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
         };
         if record.project_id != self.project || record.session_id != self.session {
             return Err(invalid());
-        }
-        if record.turn_id > turn {
-            return Ok(None);
         }
         if record.turn_id != turn
             || record.event_id != event
@@ -366,25 +396,27 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
         }
         let request =
             SessionEventPageRequest::new(self.project.clone(), self.session.clone(), limit)
-                .after(cursor.clone());
+                .within_turn_after(cursor.clone(), TURN_PAGE_BODY_BUDGET);
         let page = self.storage.list_session_events_page(request).await?;
         if page.items.len() > limit.get() {
             return Err(invalid());
         }
         let mut entries = Vec::new();
+        let mut remaining = TURN_PAGE_BODY_BUDGET.get() as usize;
         for record in page.items {
             if record.project_id != self.project
                 || record.session_id != self.session
+                || record.turn_id != turn
                 || (&record.turn_id, &record.event_id) <= (cursor.turn_id(), cursor.event_id())
             {
                 return Err(invalid());
             }
-            if record.turn_id != turn {
-                break;
-            }
             if record.agent_id != self.agent {
                 return Err(invalid());
             }
+            remaining = remaining
+                .checked_sub(record.body.len())
+                .ok_or_else(invalid)?;
             let event = decode_event(id, &record)?;
             cursor = SessionEventCursor::from_record(&record);
             entries.push(ConversationEventEntry {

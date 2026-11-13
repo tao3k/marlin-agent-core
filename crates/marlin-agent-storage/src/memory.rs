@@ -201,6 +201,7 @@ impl SessionEventStore for InMemoryAgentStorage {
         Box::pin(ready(self.with_state(|state| {
             use std::ops::Bound::{Excluded, Included, Unbounded};
             let limit = request.limit().get();
+            let turn_bound = request.turn_bound()?;
             let start = match request.cursor() {
                 Some(cursor) => Excluded(SessionEventKey {
                     project_id: request.project_id().clone(),
@@ -215,18 +216,35 @@ impl SessionEventStore for InMemoryAgentStorage {
                     event_id: crate::records::EventId::new("\0")?,
                 }),
             };
-            let mut items = state
+            let mut records = state
                 .session_events
                 .range((start, Unbounded))
                 .take_while(|(key, _)| {
                     &key.project_id == request.project_id()
                         && &key.session_id == request.session_id()
+                        && turn_bound.is_none_or(|(cursor, _)| &key.turn_id == cursor.turn_id())
                 })
-                .take(limit + 1)
-                .map(|(_, event)| event.clone())
-                .collect::<Vec<_>>();
-            let next_cursor = if items.len() > limit {
-                items.pop();
+                .map(|(_, event)| event);
+            let budget = request
+                .body_budget()
+                .map_or(usize::MAX, |bytes| bytes.get() as usize);
+            let mut remaining = budget;
+            let mut items = Vec::new();
+            let mut has_more = false;
+            for record in &mut records {
+                if items.len() == limit || record.body.len() > remaining {
+                    if items.is_empty() {
+                        return Err(StorageError::SessionEventBodyExceedsPageBudget {
+                            budget: budget as u32,
+                        });
+                    }
+                    has_more = true;
+                    break;
+                }
+                remaining -= record.body.len();
+                items.push(record.clone());
+            }
+            let next_cursor = if has_more {
                 items
                     .last()
                     .map(crate::records::SessionEventCursor::from_record)

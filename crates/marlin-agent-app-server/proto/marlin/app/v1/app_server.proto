@@ -13,8 +13,27 @@ service AppServer {
   rpc StartSessionTurn(StartSessionTurnRequest) returns (StartSessionTurnResponse);
   rpc WatchSessionTurn(WatchSessionTurnRequest) returns (stream SessionTurnEvent);
   rpc CancelSessionTurn(CancelSessionTurnRequest) returns (CancelSessionTurnResponse);
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   rpc GetSessionSummary(GetSessionSummaryRequest) returns (GetSessionSummaryResponse);
+  rpc GetSessionTurnStatus(GetSessionTurnStatusRequest) returns (GetSessionTurnStatusResponse);
   rpc GetSessionTurnCancellation(GetSessionTurnCancellationRequest) returns (GetSessionTurnCancellationResponse);
+}
+
+// The host owns Session admission and Runtime allocation. Reopen must resolve
+// an existing Session in the caller's authorized scope.
+message OpenSessionRequest {
+  string session_id = 1;
+  SessionOpenMode mode = 2;
+}
+
+enum SessionOpenMode {
+  SESSION_OPEN_MODE_UNSPECIFIED = 0;
+  SESSION_OPEN_MODE_CREATE = 1;
+  SESSION_OPEN_MODE_EXISTING = 2;
+}
+
+message OpenSessionResponse {
+  string session_id = 1;
 }
 
 message GetSessionSummaryRequest {
@@ -36,6 +55,20 @@ enum SessionRecoveryState {
   SESSION_RECOVERY_STATE_FINISHED = 3;
   SESSION_RECOVERY_STATE_UNRESOLVED = 4;
   SESSION_RECOVERY_STATE_TOOL_CONTINUATION_PENDING = 5;
+}
+
+message GetSessionTurnStatusRequest {
+  SessionTurnRef turn = 1;
+}
+
+message GetSessionTurnStatusResponse {
+  SessionTurnRef turn = 1;
+  // ACTIVE, FINISHED or UNRESOLVED. A missing turn returns NOT_FOUND.
+  SessionRecoveryState recovery_state = 2;
+  // Observed journal position. Watch still resumes from the client's applied cursor.
+  string latest_event_id = 3;
+  // Present only when the journal has an outcome for the observed turn.
+  optional SessionTurnOutcome outcome = 4;
 }
 
 message GetCapabilitiesRequest {}
