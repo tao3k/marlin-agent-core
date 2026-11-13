@@ -8,7 +8,7 @@
         (only-in :clan/poo/mop Fun Object Type.)
         (only-in :clan/poo/type Record String Exactly Or)
         (only-in :gerbil-ascent/temporal/lens temporal-answer?)
-        (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/types AiAgenticContextAdmissionType))
+        (only-in :agentic-ai-lab/modules/ai-agentic-context/types AiAgenticContextAdmissionType))
 
 (export MarlinContextModuleContract ContextCausalContract)
 

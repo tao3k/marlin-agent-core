@@ -5,7 +5,7 @@
 ;;; Use Lab's causal exchange and preserve the full ASCENT answer.
 
 (import (only-in :clan/poo/object .get)
-        (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/ascent-exchange
+        (only-in :agentic-ai-lab/modules/temporal-causality/ascent-exchange
                  agentic-ai-lab-ascent-exchange-solve agentic-ai-lab-ascent-exchange-verify))
 
 (export context-reason-causally context-replay-causal-answer)

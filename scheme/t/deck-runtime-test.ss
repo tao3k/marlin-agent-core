@@ -4,8 +4,8 @@
 
 ;;; Context messages preserve Actor identity and independent result retirement.
 (import (only-in :clan/poo/object .get .o)
-        (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
-        (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/funs-scope agentic-ai-lab-ai-agentic-context-scope-admit)
+        (only-in :agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
+        (only-in :agentic-ai-lab/modules/ai-agentic-context/funs-scope agentic-ai-lab-ai-agentic-context-scope-admit)
         (only-in :marlin-agent-core/deck-runtime/runtime check-deck-kernel!)
         :std/iter
         (only-in :std/sync/channel make-channel channel-put channel-get)

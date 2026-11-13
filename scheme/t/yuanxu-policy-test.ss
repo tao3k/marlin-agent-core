@@ -5,7 +5,7 @@
 ;;; Exercise Marlin's publications through the selected package entry.
 
 (import (only-in :clan/poo/object .get .o)
-        (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
+        (only-in :agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
         (only-in :clan/poo/mop TypeError?)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
 

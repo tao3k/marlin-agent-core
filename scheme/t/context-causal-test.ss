@@ -6,13 +6,13 @@
 
 (import (only-in :clan/poo/object .get .o)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
-        (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/objects
+        (only-in :agentic-ai-lab/modules/temporal-causality/objects
                  agentic-ai-lab-causal-event agentic-ai-lab-temporal-observation)
-        (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/funs
+        (only-in :agentic-ai-lab/modules/temporal-causality/funs
                  agentic-ai-lab-causal-event-graph agentic-ai-lab-causal-cut)
-        (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/time/objects
+        (only-in :agentic-ai-lab/modules/temporal-causality/time/objects
                  agentic-ai-lab-temporal-instant)
-        (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/ascent-exchange
+        (only-in :agentic-ai-lab/modules/temporal-causality/ascent-exchange
                  agentic-ai-lab-ascent-exchange agentic-ai-lab-ascent-event-binding)
         (only-in :gerbil-ascent/temporal/lens temporal-status temporal-rows temporal-receipt)
         (only-in :std/test check))

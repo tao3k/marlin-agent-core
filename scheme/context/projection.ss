@@ -5,7 +5,7 @@
 ;;; Shared typed Context projections for direct and Actor entry points.
 
 (import (only-in :clan/poo/object .get .o)
-        (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
+        (only-in :agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
         (only-in :std/encoding/hex hex-decode-byte))
 
 (export marlin-context-batch-requests marlin-context-scopes->bytes)
