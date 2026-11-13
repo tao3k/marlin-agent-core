@@ -4,18 +4,23 @@
 
 //! Terminal frame projection for the active conversation or workspace view.
 
+#[path = "render_main.rs"]
+mod main_view;
+
 use super::{
     app::{App, BufferView, GatewayObservation, ModelineActivity},
+    ui_elements,
+    ui_host::MainSource,
     viewport::{ScrollAnchor, TranscriptViewportCache},
 };
 use marlin_agent_ui::{
-    UiContent, UiLayoutPolicy, UiRegion, UiRgb, UiStatusItem, UiStatusTone, UiTheme, UiWorkbench,
+    UiLayoutPolicy, UiRegion, UiRgb, UiStatusItem, UiStatusTone, UiTheme, UiWorkbench,
 };
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::Paragraph,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -71,6 +76,35 @@ fn minibuffer_footer_rows(app: &App, base: u16) -> u16 {
     })
 }
 
+// Layout and painting must choose the same Scheme branch for a given frame.
+fn main_view_fact(app: &App, ui: &UiWorkbench, name: &str) -> bool {
+    match name {
+        "review" => app.tool_review_prompt.is_some(),
+        "messages" => app.buffer_view == BufferView::Messages,
+        "static" => match &app.buffer_view {
+            BufferView::Named(buffer) => ui.regions.iter().any(|region| {
+                matches!(region, UiRegion::Extension { id, focusable: false, .. }
+                    if id.as_str() == buffer.as_str())
+            }),
+            _ => false,
+        },
+        "runtime" => app.runtime_receipt_open,
+        "extension" => {
+            app.buffer_view == BufferView::Conversation
+                && app.workspace.view().is_none()
+                && !app.runtime_receipt_open
+                && ui.regions.iter().any(|region| {
+                    matches!(region, UiRegion::Extension { id, focusable: true, .. }
+                        if id == &ui.focus)
+                })
+        }
+        "workspace" => app.workspace.view().is_some(),
+        "command" => app.command_draft.is_some() || app.tool_review_prompt.is_some(),
+        "focused" => ui.focus.as_str() == "composer" || app.command_draft.is_some(),
+        _ => false,
+    }
+}
+
 pub(crate) fn chatbox_height(app: &App, policy: &UiLayoutPolicy, width: u16, height: u16) -> u16 {
     let frame = if app.command_draft.is_some() || app.tool_review_prompt.is_some() {
         &policy.command_frame
@@ -124,7 +158,7 @@ pub(crate) fn frame_regions(
     ui: &UiWorkbench,
     area: Rect,
 ) -> Vec<super::ui_elements::HitRegion> {
-    use super::ui_elements::{Extent, layout_regions};
+    use super::ui_elements::{Extent, layout_regions_with_facts};
     let command = app.command_draft.is_some() || app.tool_review_prompt.is_some();
     let policy = if command {
         &ui.layout.command_frame
@@ -182,7 +216,7 @@ pub(crate) fn frame_regions(
         0
     };
     let mut result = Vec::with_capacity(7);
-    layout_regions(
+    layout_regions_with_facts(
         &ui.layout.frame_tree,
         area,
         &|id| match id.as_str() {
@@ -194,6 +228,7 @@ pub(crate) fn frame_regions(
             _ => Extent::Cells(0),
         },
         &mut result,
+        &|id| main_view_fact(app, ui, id.as_str()),
     );
     result
 }
@@ -212,41 +247,6 @@ pub(crate) fn mouse_over_minibuffer(
                 && row > region.area.y
                 && row - 1 < region.area.bottom()
         })
-}
-
-fn draw_extension_content(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    label: &str,
-    content: &[UiContent],
-    theme: &UiTheme,
-    scroll: usize,
-) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(format!(" {} ", header_value(label)))
-        .border_style(Style::default().fg(rgb(theme.info)));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    let lines: Vec<Line<'static>> = content
-        .iter()
-        .map(|item| match item {
-            UiContent::Text(text) => Line::from(display_value(text, 256)),
-            UiContent::Field { label, value } => Line::from(vec![
-                Span::styled(
-                    format!("{}: ", display_value(label, 256)),
-                    Style::default().fg(rgb(theme.info)),
-                ),
-                Span::raw(display_value(value, 256)),
-            ]),
-        })
-        .collect();
-    frame.render_widget(
-        Paragraph::new(lines)
-            .wrap(Wrap { trim: false })
-            .scroll((scroll.min(u16::MAX as usize) as u16, 0)),
-        inner,
-    );
 }
 
 fn draw_modeline(
@@ -554,147 +554,35 @@ pub(crate) fn draw(
     if transcript_policy.role_bold {
         role_style = role_style.add_modifier(Modifier::BOLD);
     }
-    let main_facts = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
-        "review" => app.tool_review_prompt.is_some(),
-        "messages" => app.buffer_view == BufferView::Messages,
-        "static" => static_content.is_some(),
-        "runtime" => app.runtime_receipt_open,
-        "extension" => focused_content.is_some(),
-        "workspace" => app.workspace.view().is_some(),
-        _ => false,
+    let main_facts = |id: &marlin_agent_ui::UiComponentId| main_view_fact(app, ui, id.as_str());
+    let mut slots = main_view::MainSlots {
+        app,
+        theme: &ui.theme,
+        cache,
+        anchor,
+        role_style,
+        static_content,
+        focused_content,
+        effective_scroll: app.scroll_up,
     };
-    let main_slot = ui
-        .layout
-        .frame_tree
-        .region_child("transcript")
-        .map(|view| super::ui_elements::resolve_choice(view, &main_facts))
-        .and_then(|view| match view {
-            marlin_agent_ui::UiElement::Slot(id) => super::ui_host::MainSource::from_id(id),
-            _ => None,
-        });
-    let transcript_area = parts[0];
-    let effective_scroll = if transcript_area.is_empty() {
-        app.scroll_up
-    } else {
-        match main_slot {
-            Some(super::ui_host::MainSource::Review) => {
-                if let Some(prompt) = &app.tool_review_prompt {
-                    cache.with_top_view(
-                        &prompt.details,
-                        transcript_area.width,
-                        transcript_area.height,
-                        usize::from(prompt.scroll),
-                        |viewport| {
-                            viewport.render_with_role_style(
-                                transcript_area,
-                                frame.buffer_mut(),
-                                role_style,
-                            )
-                        },
-                    );
-                }
-                app.scroll_up
-            }
-            Some(super::ui_host::MainSource::Static) => {
-                if let Some((label, content)) = static_content {
-                    draw_extension_content(
-                        frame,
-                        transcript_area,
-                        label,
-                        content,
-                        &ui.theme,
-                        app.static_buffer_scroll,
-                    );
-                }
-                app.scroll_up
-            }
-            Some(super::ui_host::MainSource::Runtime) => {
-                draw_extension_content(
-                    frame,
-                    transcript_area,
-                    "Runtime policy",
-                    &app.runtime_content,
-                    &ui.theme,
-                    0,
-                );
-                app.scroll_up
-            }
-            Some(super::ui_host::MainSource::Extension) => {
-                if let Some((label, content)) = focused_content {
-                    draw_extension_content(frame, transcript_area, label, content, &ui.theme, 0);
-                }
-                app.scroll_up
-            }
-            Some(super::ui_host::MainSource::Messages) => {
-                let scroll = anchor.adjust(
-                    &app.messages,
-                    false,
-                    transcript_area.width,
-                    transcript_area.height,
-                    app.message_scroll_up,
-                );
-                cache.with_view(
-                    &app.messages,
-                    false,
-                    transcript_area.width,
-                    transcript_area.height,
-                    scroll,
-                    |viewport| {
-                        viewport.render_with_role_style(
-                            transcript_area,
-                            frame.buffer_mut(),
-                            role_style,
-                        );
-                        viewport.scroll_up
-                    },
-                )
-            }
-            Some(super::ui_host::MainSource::Workspace) => {
-                app.workspace.view().map_or(app.scroll_up, |view| {
-                    cache.with_top_view(
-                        &view.transcript,
-                        transcript_area.width,
-                        transcript_area.height,
-                        view.scroll_from_top,
-                        |viewport| {
-                            viewport.render_with_role_style(
-                                transcript_area,
-                                frame.buffer_mut(),
-                                role_style,
-                            );
-                            viewport.scroll_up
-                        },
-                    )
-                })
-            }
-            Some(super::ui_host::MainSource::Conversation) => {
-                let pending = app.pending.is_some();
-                let scroll = anchor.adjust(
-                    &app.transcript,
-                    pending,
-                    transcript_area.width,
-                    transcript_area.height,
-                    app.scroll_up,
-                );
-                cache.with_view(
-                    &app.transcript,
-                    pending,
-                    transcript_area.width,
-                    transcript_area.height,
-                    scroll,
-                    |viewport| {
-                        viewport.render_with_role_style(
-                            transcript_area,
-                            frame.buffer_mut(),
-                            role_style,
-                        );
-                        viewport.scroll_up
-                    },
-                )
-            }
-            _ => app.scroll_up,
-        }
-    };
+    if let Some(main_view) = ui.layout.frame_tree.region_child("transcript") {
+        let inputs = super::ui_elements::UiRenderInputs {
+            theme: &ui.theme,
+            offset: &|_| 0,
+            facts: &main_facts,
+            extent: &|_| super::ui_elements::Extent::Cells(0),
+            bindings: &[],
+        };
+        super::ui_elements::render_with_slots(
+            frame,
+            parts[0],
+            main_view,
+            &mut Vec::new(),
+            &inputs,
+            &mut slots,
+        );
+    }
+    let effective_scroll = slots.effective_scroll;
     let selected = app
         .selected_command()
         .filter(|name| suggestions.contains(name));
@@ -760,8 +648,6 @@ pub(crate) fn draw(
             },
         );
     }
-    let visible = usize::from(parts[4].height);
-    let start = selected_index.map_or(0, |index| index.saturating_add(1).saturating_sub(visible));
     let menu_prefix = app.command_menu.as_ref().map(|menu| menu.prefix.as_str());
     let name_width = suggestions
         .iter()
@@ -769,48 +655,43 @@ pub(crate) fn draw(
         .max()
         .unwrap_or(0)
         .min(28);
-    let templates = match ui.layout.frame_tree.region_child("candidates") {
-        Some(marlin_agent_ui::UiElement::Rows(templates)) => templates.as_slice(),
-        _ => &[],
-    };
-    if let Some(prompt) = &app.tool_review_prompt {
-        for (row, choice) in prompt.menu.choices.iter().take(visible).enumerate() {
-            let line = Rect::new(parts[4].x, parts[4].y + row as u16, parts[4].width, 1);
-            if let Some(template) = templates.get(usize::from(row != prompt.selected)) {
-                super::ui_elements::render_template(
-                    frame,
-                    line,
-                    template,
-                    &ui.theme,
-                    &[
-                        ("name", choice.label.as_str()),
-                        ("description", choice.description.as_str()),
-                    ],
-                );
-            }
-        }
-    }
-    for (row, name) in suggestions.iter().skip(start).take(visible).enumerate() {
-        let Some(command) = ui.commands().iter().find(|command| &command.name == name) else {
-            continue;
-        };
-        let line =
-            ratatui::layout::Rect::new(parts[4].x, parts[4].y + row as u16, parts[4].width, 1);
-        let active_row = active == Some(name);
-        if let Some(template) = templates.get(usize::from(!active_row)) {
-            let name = format!(
-                "{:<name_width$}",
-                menu_display_name(command.name.as_str(), menu_prefix)
-            );
-            let description = header_value(&command.description);
-            super::ui_elements::render_template(
-                frame,
-                line,
-                template,
-                &ui.theme,
-                &[("name", &name), ("description", &description)],
-            );
-        }
+    if let Some(template) = ui.layout.frame_tree.region_child("candidates") {
+        let count = app
+            .tool_review_prompt
+            .as_ref()
+            .map_or(suggestions.len(), |prompt| prompt.menu.choices.len());
+        super::ui_elements::render_list(
+            frame,
+            parts[4],
+            template,
+            &ui.theme,
+            count,
+            selected_index,
+            |index| {
+                let bindings = if let Some(prompt) = &app.tool_review_prompt {
+                    let choice = prompt.menu.choices.get(index)?;
+                    vec![
+                        ("name", choice.label.as_str().into()),
+                        ("description", choice.description.as_str().into()),
+                    ]
+                } else {
+                    let name = suggestions.get(index)?;
+                    let command = ui.commands().iter().find(|command| &command.name == name)?;
+                    vec![
+                        (
+                            "name",
+                            format!(
+                                "{:<name_width$}",
+                                menu_display_name(command.name.as_str(), menu_prefix)
+                            )
+                            .into(),
+                        ),
+                        ("description", header_value(&command.description).into()),
+                    ]
+                };
+                Some(super::ui_elements::UiListRow { bindings })
+            },
+        );
     }
     let visible = usize::from(parts[1].height);
     if visible > 0 {

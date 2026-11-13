@@ -27,7 +27,7 @@ pub(crate) fn tone_color(tone: UiTone, theme: &UiTheme) -> Color {
     Color::Rgb(color.red, color.green, color.blue)
 }
 
-fn terminal_text(value: &str) -> std::borrow::Cow<'_, str> {
+pub(super) fn terminal_text(value: &str) -> std::borrow::Cow<'_, str> {
     if value.chars().any(char::is_control) {
         std::borrow::Cow::Owned(
             value
@@ -100,6 +100,7 @@ fn group_demand(
             group_demand(resolve_choice(element, facts), vertical, extent, facts)
         }
         UiElement::Region { child, .. } => group_demand(child, vertical, extent, facts),
+        UiElement::Panel { child, .. } => group_demand(child, vertical, extent, facts),
         UiElement::Rows(children) if vertical => {
             children.iter().fold(Demand::default(), |sum, child| {
                 let next = group_demand(child, vertical, extent, facts);
@@ -215,6 +216,10 @@ pub fn layout_regions_with_facts(
         }
         UiElement::Sized { child, .. } => {
             layout_regions_with_facts(child, area, extent, regions, facts);
+        }
+        UiElement::Panel { child, .. } => {
+            let inner = Block::default().borders(Borders::ALL).inner(area);
+            layout_regions_with_facts(child, inner, extent, regions, facts);
         }
         UiElement::Rows(children) | UiElement::Columns(children) => {
             let vertical = matches!(element, UiElement::Rows(_));
@@ -405,92 +410,39 @@ pub struct UiRenderInputs<'a> {
     pub bindings: &'a [(&'a str, &'a str)],
 }
 
-/// Render an admitted input component using a host-provided editable value.
-pub fn render_input(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    element: &UiElement,
-    inputs: &UiRenderInputs<'_>,
-    show_cursor: bool,
-    value: impl FnOnce(u16, u16) -> Option<(Vec<String>, (u16, u16))>,
-) {
-    let element = resolve_choice(element, inputs.facts);
-    let UiElement::Input {
-        bordered,
-        background,
-        prefix,
-        title,
-        active,
-    } = element
-    else {
-        return;
-    };
-    let area = area.intersection(frame.area());
-    if area.is_empty() {
-        return;
+/// Host data bound to a Scheme-declared slot, independent of its placement.
+pub trait UiSlotRenderer {
+    fn title(&self, _id: &UiComponentId) -> Option<&str> {
+        None
     }
-    let binding = |name: &UiComponentId| {
-        inputs
-            .bindings
-            .iter()
-            .find_map(|(key, value)| (*key == name.as_str()).then_some(*value))
-            .unwrap_or("")
-    };
-    let background = match background {
-        UiBackground::None => None,
-        UiBackground::Canvas => Some(Color::Rgb(
-            inputs.theme.canvas.red,
-            inputs.theme.canvas.green,
-            inputs.theme.canvas.blue,
-        )),
-        UiBackground::Bar => Some(Color::Rgb(
-            inputs.theme.bar.red,
-            inputs.theme.bar.green,
-            inputs.theme.bar.blue,
-        )),
-        UiBackground::Tone(tone) => Some(tone_color(*tone, inputs.theme)),
-    };
-    let style = background.map_or(Style::default(), |color| {
-        Style::default()
-            .bg(color)
-            .fg(tone_color(UiTone::Normal, inputs.theme))
-    });
-    let mut content = area;
-    if *bordered {
-        let title = title.as_ref().map(&binding).unwrap_or("");
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(terminal_text(title).into_owned())
-            .border_style(if (inputs.facts)(active) {
-                Style::default().fg(tone_color(UiTone::Info, inputs.theme))
-            } else {
-                Style::default()
-            });
-        content = block.inner(area);
-        frame.render_widget(block, area);
-    } else {
-        frame.render_widget(Paragraph::new("").style(style), area);
+
+    fn render(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        area: Rect,
+        id: &UiComponentId,
+        field_tone: Option<UiTone>,
+        skip: usize,
+    );
+}
+
+struct EmptySlots;
+
+impl UiSlotRenderer for EmptySlots {
+    fn render(
+        &mut self,
+        _: &mut ratatui::Frame<'_>,
+        _: Rect,
+        _: &UiComponentId,
+        _: Option<UiTone>,
+        _: usize,
+    ) {
     }
-    if let Some(prefix) = prefix {
-        let prefix = terminal_text(binding(prefix));
-        let width = UnicodeWidthStr::width(prefix.as_ref()).min(usize::from(content.width)) as u16;
-        frame.render_widget(
-            Paragraph::new(prefix.into_owned())
-                .style(style.fg(tone_color(UiTone::Accent, inputs.theme))),
-            content,
-        );
-        content.x = content.x.saturating_add(width);
-        content.width = content.width.saturating_sub(width);
-    }
-    if content.is_empty() {
-        return;
-    }
-    if let Some((rows, cursor)) = value(content.width, content.height) {
-        frame.render_widget(Paragraph::new(rows.join("\n")).style(style), content);
-        if show_cursor && cursor.0 < content.width && cursor.1 < content.height {
-            frame.set_cursor_position((content.x + cursor.0, content.y + cursor.1));
-        }
-    }
+}
+
+struct Slots<'a> {
+    renderer: &'a mut dyn UiSlotRenderer,
+    field_tone: Option<UiTone>,
 }
 
 /// Paint a tree with named facts and bindings shared by every selected branch.
@@ -501,7 +453,23 @@ pub fn render_with_facts(
     regions: &mut Vec<HitRegion>,
     inputs: &UiRenderInputs<'_>,
 ) {
-    render_inner(frame, area, element, regions, inputs, 0);
+    render_with_slots(frame, area, element, regions, inputs, &mut EmptySlots);
+}
+
+/// Paint a declarative tree while resolving host data at its slot nodes.
+pub fn render_with_slots(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    element: &UiElement,
+    regions: &mut Vec<HitRegion>,
+    inputs: &UiRenderInputs<'_>,
+    renderer: &mut dyn UiSlotRenderer,
+) {
+    let mut slots = Slots {
+        renderer,
+        field_tone: None,
+    };
+    render_inner(frame, area, element, regions, inputs, 0, &mut slots);
 }
 
 fn render_inner(
@@ -511,14 +479,44 @@ fn render_inner(
     regions: &mut Vec<HitRegion>,
     inputs: &UiRenderInputs<'_>,
     skip: usize,
+    slots: &mut Slots<'_>,
 ) {
     let area = area.intersection(frame.area());
     if area.is_empty() {
         return;
     }
     match element {
-        UiElement::Sized { child, .. } => render_inner(frame, area, child, regions, inputs, skip),
-        UiElement::Input { .. } | UiElement::Slot(_) => {}
+        UiElement::Sized { child, .. } => {
+            render_inner(frame, area, child, regions, inputs, skip, slots)
+        }
+        UiElement::Panel {
+            border_tone,
+            field_tone,
+            child,
+        } => {
+            let mut block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(tone_color(*border_tone, inputs.theme)));
+            if let UiElement::Slot(id) = resolve_choice(child, inputs.facts)
+                && let Some(title) = slots.renderer.title(id)
+            {
+                let title: String = title
+                    .chars()
+                    .take(128)
+                    .map(|c| if c.is_control() { '�' } else { c })
+                    .collect();
+                block = block.title(format!(" {title} "));
+            }
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+            let previous = slots.field_tone.replace(*field_tone);
+            render_inner(frame, inner, child, regions, inputs, skip, slots);
+            slots.field_tone = previous;
+        }
+        UiElement::Input { .. } => {}
+        UiElement::Slot(id) => slots
+            .renderer
+            .render(frame, area, id, slots.field_tone, skip),
         UiElement::Choice { .. } => {
             render_inner(
                 frame,
@@ -527,6 +525,7 @@ fn render_inner(
                 regions,
                 inputs,
                 skip,
+                slots,
             );
         }
         UiElement::Template { .. } => {
@@ -552,6 +551,7 @@ fn render_inner(
                 regions,
                 inputs,
                 skip.saturating_add(scroll),
+                slots,
             );
         }
         UiElement::Text(spans) => {
@@ -616,6 +616,7 @@ fn render_inner(
                                 regions,
                                 inputs,
                                 visible_start - start,
+                                slots,
                             );
                         }
                     } else {
@@ -625,7 +626,7 @@ fn render_inner(
                             rect.width,
                             area.height,
                         );
-                        render_inner(frame, visible, child, regions, inputs, skip);
+                        render_inner(frame, visible, child, regions, inputs, skip, slots);
                     }
                 },
             );

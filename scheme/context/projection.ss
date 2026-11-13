@@ -29,6 +29,7 @@
   (def source-cut (vector-ref shared 4))
   (def common (.o (:: @ AiAgenticContextScope.)
                  (bundle) (organization) (epoch) (project) (worktree) (source-cut)))
+  ;; Fill the native vector directly; no intermediate row list is needed.
   (def output (make-vector count))
   (let loop ((i 0))
     (when (< i count)
@@ -51,6 +52,7 @@
 (def (marlin-context-scopes->bytes scopes)
   (def count (vector-length scopes))
   (unless (<= 1 count 64) (error "invalid Context result count"))
+  ;; Decode directly into the fixed-size native buffer.
   (def output (make-u8vector (* count 32)))
   (let loop ((i 0))
     (when (< i count)

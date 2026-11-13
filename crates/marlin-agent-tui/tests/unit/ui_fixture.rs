@@ -100,9 +100,18 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                             ]
                             .into_iter()
                             .map(|name| {
+                                let slot = UiElement::Slot(UiComponentId::new(name).unwrap());
                                 (
                                     UiComponentId::new(name).unwrap(),
-                                    UiElement::Slot(UiComponentId::new(name).unwrap()),
+                                    if matches!(name, "static" | "runtime" | "extension") {
+                                        UiElement::Panel {
+                                            border_tone: UiTone::Info,
+                                            field_tone: UiTone::Info,
+                                            child: Box::new(slot),
+                                        }
+                                    } else {
+                                        slot
+                                    },
                                 )
                             })
                             .collect(),
@@ -111,7 +120,10 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                             )),
                         }
                     } else if name == "candidates" {
-                        UiElement::Rows(vec![candidate(true), candidate(false)])
+                        UiElement::Choice {
+                            cases: vec![(UiComponentId::new("selected").unwrap(), candidate(true))],
+                            fallback: Box::new(candidate(false)),
+                        }
                     } else if name == "editor" {
                         let input =
                             |bordered, background, prefix: Option<&str>, title: Option<&str>| {

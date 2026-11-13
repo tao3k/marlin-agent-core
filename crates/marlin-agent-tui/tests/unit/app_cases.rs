@@ -72,8 +72,6 @@ fn install_test_commands(app: &mut App) {
         ("help", Args::None, Cap::SelectBuffer, Some("help")),
         ("models", Args::None, Cap::Models, None),
         ("model", Args::Required, Cap::Model, None),
-        ("sessions", Args::None, Cap::Sessions, None),
-        ("sessions-next", Args::None, Cap::Sessions, Some("next")),
         ("session", Args::Required, Cap::Session, None),
         ("history", Args::None, Cap::History, Some("newest")),
         ("history-older", Args::None, Cap::History, Some("older")),
@@ -343,27 +341,6 @@ proptest! {
             .collect::<String>();
         prop_assert!(!top.contains("BRAND"), "redundant top status at {width}x{height}");
     }
-}
-
-#[test]
-fn selecting_commands_runs_defaults_and_retains_required_arguments() {
-    let mut app = App::new(ModelEndpoint::new("provider", "model"));
-    install_test_commands(&mut app);
-    app.composer.insert_text("s");
-    assert!(app.accept_command_completion("sessions"));
-    assert_eq!(app.composer.text(), "sessions");
-    assert!(app.accept_command_completion("sessions-next"));
-    assert_eq!(app.composer.text(), "sessions-next");
-
-    assert!(app.accept_command_completion("diff "));
-    assert_eq!(app.composer.text(), "diff ");
-
-    assert!(!app.accept_command_completion("model "));
-    assert_eq!(app.composer.text(), "model ");
-    assert!(app.accept_command_completion("history"));
-    assert_eq!(app.composer.text(), "history");
-    assert!(app.accept_command_completion("history-older"));
-    assert_eq!(app.composer.text(), "history-older");
 }
 
 #[test]

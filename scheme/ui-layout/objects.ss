@@ -4,7 +4,9 @@
 
 ;;; Scheme owns presentation choices; the native host clips them to cells.
 (import (only-in :clan/poo/object .def .o seal-object!)
-        (only-in "../ui-elements/objects.ss" ui-text ui-rows ui-region ui-template ui-choice ui-sized ui-input ui-slot)
+        (only-in "../ui-elements/objects.ss"
+                 ui-text ui-rows ui-region ui-template ui-choice ui-sized
+                 ui-input ui-slot ui-panel)
         (only-in "../ui-components/commands.ss" marlin-ui-candidate-templates))
 (export marlin-ui-layout-policy)
 
@@ -41,13 +43,14 @@
   (ui-choice
     (list (list 'command (ui-input #f 'bar 'prompt #f 'focused)))
     (ui-input #t 'none #f 'title 'focused)))
+;;; The first true fact selects one bounded host-owned content source.
 (def main-view
   (ui-choice
     (list (list 'review (ui-slot 'review))
           (list 'messages (ui-slot 'messages))
-          (list 'static (ui-slot 'static))
-          (list 'runtime (ui-slot 'runtime))
-          (list 'extension (ui-slot 'extension))
+          (list 'static (ui-panel 'info 'info (ui-slot 'static)))
+          (list 'runtime (ui-panel 'info 'info (ui-slot 'runtime)))
+          (list 'extension (ui-panel 'info 'info (ui-slot 'extension)))
           (list 'workspace (ui-slot 'workspace)))
     (ui-slot 'conversation)))
 (def (frame-region slot)
@@ -58,9 +61,10 @@
                          (case name
                            ((transcript) main-view)
                            ((editor) editor-view)
-                           ((candidates) (ui-rows marlin-ui-candidate-templates))
+                           ((candidates) marlin-ui-candidate-templates)
                            ((minibuffer) minibuffer-status)
                            (else (ui-text '())))))))
+;;; The hover region encloses exactly the editor, candidates and status row.
 (.def UiLayoutBase.
   message-frame: MessageFrameValue
   command-frame: CommandFrameValue
@@ -70,7 +74,8 @@
     (list (ui-rows (map frame-region '((transcript . #t) (extensions . #f))))
           (frame-region '(modeline . #f))
           (ui-region 'minibuffer-hover #f
-                     (ui-rows (map frame-region '((editor . #f)
-                                                  (candidates . #t) (minibuffer . #f))))))))
+                     (ui-rows
+                       (map frame-region '((editor . #f) (candidates . #t)
+                                           (minibuffer . #f))))))))
 (def marlin-ui-layout-policy
   (seal-object! UiLayoutBase.))

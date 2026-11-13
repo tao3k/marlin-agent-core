@@ -10,6 +10,8 @@
         (only-in :yuanxu/poo-clos/generic-syntax .defgeneric .defmethod)
         (only-in :yuanxu/poo-clos/method-bundle-syntax .defmethod-bundle)
         (only-in :yuanxu/poo-clos/dispatch poo-clos-call)
+        (only-in :std/list/list duplicates)
+        (only-in "../ui-components/bounds.ss" marlin-ui-bounded-list?)
         (only-in "../ui-components/commands.ss" marlin-ui-browse-command)
         "../ui-components/components.ss")
 (export UiEvent. UiNextFocus. UiPreviousFocus. UiSubmit. UiDismiss. UiScroll. UiBrowseCommand. UiEventProtocol make-ui-event-generic
@@ -27,21 +29,15 @@
 (def (move-focus component event backwards?)
   (def identity-value (.ref component 'identity))
   (def order (.ref event 'order))
-  (let check ((rest order) (seen '()) (count 0))
-    (cond
-     ((null? rest)
-      (let (entry (memq identity-value order))
-        (unless entry (error "focused component is not in the focus order"))
-        (.o kind: 'focus identity:
-            (if backwards?
-                (let loop ((rest order) (previous (car (reverse order))))
-                  (if (eq? (car rest) identity-value) previous
-                      (loop (cdr rest) (car rest))))
-                (if (pair? (cdr entry)) (cadr entry) (car order))))))
-     ((or (not (pair? rest)) (>= count 64) (not (symbol? (car rest)))
-          (memq (car rest) seen))
-      (error "invalid UI focus order"))
-     (else (check (cdr rest) (cons (car rest) seen) (+ count 1))))))
+  (unless (and (marlin-ui-bounded-list? order 64) (pair? order)
+               (andmap symbol? order) (null? (duplicates order eq?)))
+    (error "invalid UI focus order"))
+  ;; Reverse only for backward navigation; memq keeps the existing ordered tail.
+  (let* ((sequence (if backwards? (reverse order) order))
+         (entry (memq identity-value sequence)))
+    (unless entry (error "focused component is not in the focus order"))
+    (.o kind: 'focus identity:
+        (if (pair? (cdr entry)) (cadr entry) (car sequence)))))
 
 (def (make-ui-event-generic bundles)
   (unless (and (vector? bundles) (<= (vector-length bundles) 16))

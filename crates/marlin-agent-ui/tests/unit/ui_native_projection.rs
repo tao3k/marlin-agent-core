@@ -130,8 +130,21 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
                             vector(
                                 runtime,
                                 &[
-                                    symbol(runtime, "slot"),
-                                    vector(runtime, &[symbol(runtime, "conversation")]),
+                                    symbol(runtime, "panel"),
+                                    vector(
+                                        runtime,
+                                        &[
+                                            symbol(runtime, "info"),
+                                            symbol(runtime, "accent"),
+                                            vector(
+                                                runtime,
+                                                &[
+                                                    symbol(runtime, "slot"),
+                                                    vector(runtime, &[symbol(runtime, "static")]),
+                                                ],
+                                            ),
+                                        ],
+                                    ),
                                 ],
                             )
                         } else if name == "candidates" {
@@ -588,7 +601,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     );
     let workbench = decode_workbench(root).unwrap();
     assert!(
-        matches!(workbench.layout.frame_tree.region_child("transcript"), Some(marlin_agent_ui::UiElement::Slot(id)) if id.as_str() == "conversation")
+        matches!(workbench.layout.frame_tree.region_child("transcript"), Some(marlin_agent_ui::UiElement::Panel { border_tone: marlin_agent_ui::UiTone::Info, field_tone: marlin_agent_ui::UiTone::Accent, child }) if matches!(child.as_ref(), marlin_agent_ui::UiElement::Slot(id) if id.as_str() == "static"))
     );
     assert_eq!(
         workbench.layout.transcript_policy.role_tone,

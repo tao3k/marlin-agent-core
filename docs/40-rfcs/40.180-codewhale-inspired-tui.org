@@ -1578,7 +1578,7 @@ own history. A local PTY and SSE fixture exercised two isolated sessions and
 reopened the first before a subsequent request. A separate crash fixture chose
 a fresh session while the prior session remained unfinished and blocked.
 The storage contract also provides project-and-agent-scoped, ID-ordered
-session pages. The TUI's =M-x sessions= and =M-x sessions-next= load 20 IDs per page
+session pages. The TUI's =M-x sessions= and =M-x sessions next= load 20 IDs per page
 asynchronously, allow one outstanding query, validate ordering and cursor, and
 mark the current ID. IDs above 512 bytes are omitted from that terminal view,
 with the command-line listing identified as the alternative. The count bound
@@ -1836,11 +1836,13 @@ without editing a Rust command name table. A new host effect still requires a
 typed Rust capability and admission rule.
 The host gate requires the exact =status= and =diff= argument forms from
 the selected descriptors; a forged optional =status= or argument-free =diff=
-cannot enter the workspace capability. Scheme now declares the distinct
-=sessions=, =sessions-next=, =history= and =history-older= commands with fixed
-capability values. Rust admits that finite mapping and executes it; it no
-longer parses the =next=, =older= or =newest= words from user input. This
+cannot enter the workspace capability. Scheme declares one =sessions= command;
+Rust admits only its optional =next= pagination argument. The separate
+=history= and =history-older= commands retain fixed capability values. This
 command migration does not add Scheme work to ordinary keypress or repaint paths.
+Scheme tests own the selected command catalog and completion order. Rust tests
+own descriptor admission, argument parsing, and observable host effects; native
+fixtures must not copy the full Scheme catalog or assert its exact ordering.
 Terminal bytes, cell width, cursor placement, viewport caching and Ratatui
 painting remain native; normal repaint must not call the VM.
 

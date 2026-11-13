@@ -16,6 +16,9 @@ use marlin_agent_ui::{
 use std::collections::HashSet;
 use termion::event::Key;
 
+#[cfg(all(test, not(feature = "linked-ui")))]
+use super::ui_fixture::{test_frame, test_layout};
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum UiKeyAction {
     Handled,
@@ -449,10 +452,20 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
     fn main_presentation(element: &marlin_agent_ui::UiElement) -> bool {
         match element {
             marlin_agent_ui::UiElement::Slot(id) => MainSource::from_id(id).is_some(),
+            marlin_agent_ui::UiElement::Panel { child, .. }
+            | marlin_agent_ui::UiElement::Sized { child, .. }
+            | marlin_agent_ui::UiElement::Region { child, .. } => main_presentation(child),
+            marlin_agent_ui::UiElement::Rows(children)
+            | marlin_agent_ui::UiElement::Columns(children) => {
+                children.iter().all(main_presentation)
+            }
             marlin_agent_ui::UiElement::Choice { cases, fallback } => {
                 cases.iter().all(|(_, item)| main_presentation(item)) && main_presentation(fallback)
             }
-            _ => false,
+            marlin_agent_ui::UiElement::Text(_) | marlin_agent_ui::UiElement::Template { .. } => {
+                true
+            }
+            marlin_agent_ui::UiElement::Input { .. } => false,
         }
     }
     fn input_presentation(element: &marlin_agent_ui::UiElement) -> bool {
@@ -478,7 +491,8 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             | marlin_agent_ui::UiElement::Columns(children) => children
                 .iter()
                 .all(|child| collect_slots(child, slots, within_region)),
-            marlin_agent_ui::UiElement::Sized { child, .. } => {
+            marlin_agent_ui::UiElement::Sized { child, .. }
+            | marlin_agent_ui::UiElement::Panel { child, .. } => {
                 collect_slots(child, slots, within_region)
             }
             // The terminal's required slots must exist independent of facts.
@@ -505,9 +519,30 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
     {
         return Err(UiProjectionError::Invalid("invalid terminal frame regions"));
     }
-    if !matches!(view.layout.frame_tree.region_child("candidates"),
-        Some(marlin_agent_ui::UiElement::Rows(templates)) if templates.len() == 2
-            && templates.iter().all(|item| matches!(item, marlin_agent_ui::UiElement::Template { .. })))
+    fn candidate_presentation(element: &marlin_agent_ui::UiElement) -> bool {
+        match element {
+            marlin_agent_ui::UiElement::Template { .. } | marlin_agent_ui::UiElement::Text(_) => {
+                true
+            }
+            marlin_agent_ui::UiElement::Choice { cases, fallback } => {
+                cases.iter().all(|(_, item)| candidate_presentation(item))
+                    && candidate_presentation(fallback)
+            }
+            marlin_agent_ui::UiElement::Rows(children)
+            | marlin_agent_ui::UiElement::Columns(children) => {
+                children.iter().all(candidate_presentation)
+            }
+            marlin_agent_ui::UiElement::Sized { child, .. }
+            | marlin_agent_ui::UiElement::Panel { child, .. }
+            | marlin_agent_ui::UiElement::Region { child, .. } => candidate_presentation(child),
+            marlin_agent_ui::UiElement::Slot(_) | marlin_agent_ui::UiElement::Input { .. } => false,
+        }
+    }
+    if !view
+        .layout
+        .frame_tree
+        .region_child("candidates")
+        .is_some_and(candidate_presentation)
     {
         return Err(UiProjectionError::Invalid("invalid candidate presentation"));
     }

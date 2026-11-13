@@ -17,6 +17,12 @@ pub enum UiElement {
     Text(Vec<UiSpan>),
     /// An opaque host-provided visual source selected by a Scheme component.
     Slot(UiComponentId),
+    /// A bordered presentation around a host-backed visual source.
+    Panel {
+        border_tone: UiTone,
+        field_tone: UiTone,
+        child: Box<UiElement>,
+    },
     /// A styled line whose named fields are bound by the host.
     Template {
         background: UiBackground,
@@ -107,6 +113,7 @@ impl UiElement {
             Self::Region { id, child, .. } if id.as_str() == name => Some(child),
             Self::Region { child, .. } => child.region_child(name),
             Self::Sized { child, .. } => child.region_child(name),
+            Self::Panel { child, .. } => child.region_child(name),
             Self::Rows(children) | Self::Columns(children) => {
                 children.iter().find_map(|child| child.region_child(name))
             }
@@ -139,6 +146,7 @@ impl UiElement {
                 .unwrap_or(0),
             Self::Region { child, .. } => child.intrinsic_rows(),
             Self::Sized { child, .. } => child.intrinsic_rows(),
+            Self::Panel { child, .. } => child.intrinsic_rows(),
         }
     }
 
@@ -160,6 +168,7 @@ impl UiElement {
                 .unwrap_or(0),
             Self::Region { child, .. } => child.intrinsic_rows_with(facts),
             Self::Sized { child, .. } => child.intrinsic_rows_with(facts),
+            Self::Panel { child, .. } => child.intrinsic_rows_with(facts),
             Self::Text(_) | Self::Slot(_) | Self::Template { .. } | Self::Input { .. } => {
                 self.intrinsic_rows()
             }
@@ -199,6 +208,19 @@ fn decode(
     let kind = identifier(node.element(0)?, names)?;
     let values = vector(node.element(1)?, 0, 64)?;
     match kind.as_str() {
+        "panel" => {
+            if values.len() != 3 {
+                return Err(UiProjectionError::Invalid("invalid UI panel"));
+            }
+            let border_tone = decode_tone(values.element(0)?, names)?;
+            let field_tone = decode_tone(values.element(1)?, names)?;
+            let child = Box::new(decode(values.element(2)?, depth + 1, budget, names)?);
+            Ok(UiElement::Panel {
+                border_tone,
+                field_tone,
+                child,
+            })
+        }
         "slot" => {
             if values.len() != 1 {
                 return Err(UiProjectionError::Invalid("invalid UI slot"));

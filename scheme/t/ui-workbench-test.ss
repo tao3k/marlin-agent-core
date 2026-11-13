@@ -32,12 +32,11 @@
   (.o model: "anthropic/example" session: "saved" contributions: values extensions: '()))
 (def output (workbench (facts (list (.o identity: 'example/status label: "Ready")))))
 (def command-entries (.get (list-ref (.get output regions) 2) entries))
-(def command-names (map car command-entries))
 (def (command-form name)
   (let (matches (filter (lambda (entry) (string=? (car entry) name)) command-entries))
     (unless (= (length matches) 1) (error "missing Scheme command form" name))
     (cddr (car matches))))
-(unless (and (equal? (command-form "sessions") '(none sessions #f))
+(unless (and (equal? (command-form "sessions") '(optional sessions #f))
              (equal? (command-form "help") '(none select-buffer "help"))
              (equal? (command-form "list-processes") '(none select-buffer "processes"))
              (equal? (command-form "kill-process") '(required kill-process #f))
@@ -49,7 +48,6 @@
                                          (string=? (car entry) "switch-themes"))
                                        command-entries)))
                      "Theme: ")
-             (equal? (command-form "sessions-next") '(none sessions "next"))
              (equal? (command-form "history") '(none history "newest"))
              (equal? (command-form "history-older") '(none history "older"))
              (equal? (command-form "hydra-history") '(none enter-transient "history"))
@@ -62,12 +60,6 @@
              (eq? (.get ui-themes identity) 'marlin/ui-themes)
              (eq? (.get ui-themes default-profile) 'doom-one)
              (eq? (.get ui components) (.get ui-components components))
-             (equal? command-names
-                     '("help" "models" "model" "sessions" "sessions-next" "session"
-                       "inspect" "history" "history-older" "hydra-history" "hydra-buffers" "status" "diff" "context-budget"
-                       "runtime" "list-processes" "kill-process" "switch-themes" "theme-doom-one" "theme-pi"
-                       "switch-buffer" "buffer-conversation" "buffer-messages" "buffer-help" "buffer-processes"
-                       "toggle-thinking" "clear"))
              (eq? (.get c-abi identity) 'marlin/c-abi)
              (eq? (.get c-abi ui) ui)
              (eq? (.get c-abi context) (.get marlin-agent-core.init.exports Marlin context))
@@ -200,6 +192,13 @@
                (equal? (car (candidates entries "alpha" '("gamma" "beta"))) "alpha")
                (rejected? (lambda () (candidates entries "" (make-list 257 "alpha")))))
     (error "command history ranking diverged")))
+(let* ((candidates (.get ui command-candidates))
+       (cyclic-history (list "alpha"))
+       (improper-entry (cons "alpha" 'invalid)))
+  (set-cdr! cyclic-history cyclic-history)
+  (unless (and (rejected? (lambda () (candidates command-entries "" cyclic-history)))
+               (rejected? (lambda () (candidates (list improper-entry) "" '()))))
+    (error "command admission must reject cyclic and improper lists")))
 (let ((record (.get ui record-command-history)))
   (let loop ((index 0) (history-value '()))
     (if (= index 300)

@@ -87,7 +87,7 @@ mod signals;
 #[path = "streaming.rs"]
 mod streaming;
 #[allow(dead_code)]
-#[path = "../../src/ui_elements.rs"]
+#[path = "../../src/ui_elements/mod.rs"]
 mod ui_elements;
 #[path = "ui_elements.rs"]
 mod ui_elements_cases;

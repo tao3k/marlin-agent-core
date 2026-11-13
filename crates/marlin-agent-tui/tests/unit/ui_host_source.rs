@@ -4,7 +4,7 @@
 
 use super::{
     UiHost, UiKeyAction, admit_command_choice, admit_terminal_view, admit_transition,
-    complete_command,
+    complete_command, test_frame, test_layout,
 };
 use gerbil_scheme::GerbilRuntime;
 use marlin_agent_ui::{
@@ -12,8 +12,6 @@ use marlin_agent_ui::{
     UiScrollDirection, UiWorkbench,
 };
 use termion::event::Key;
-
-use crate::harness::ui_fixture::{test_frame, test_layout};
 
 #[test]
 #[ignore = "requires a compiled Marlin Scheme dependency closure and Gerbil toolchain"]
@@ -217,7 +215,22 @@ fn terminal_rejects_unbound_main_source() {
     let UiElement::Region { child, .. } = child.as_mut() else {
         panic!("region")
     };
-    *child = Box::new(UiElement::Slot(UiComponentId::new("unbound").unwrap()));
+    *child = Box::new(UiElement::Rows(vec![UiElement::Slot(
+        UiComponentId::new("conversation").unwrap(),
+    )]));
+    assert!(admit_terminal_view(&workbench).is_ok());
+    let UiElement::Rows(slots) = &mut workbench.layout.frame_tree else {
+        unreachable!()
+    };
+    let UiElement::Sized { child, .. } = &mut slots[0] else {
+        unreachable!()
+    };
+    let UiElement::Region { child, .. } = child.as_mut() else {
+        unreachable!()
+    };
+    *child = Box::new(UiElement::Rows(vec![UiElement::Slot(
+        UiComponentId::new("unbound").unwrap(),
+    )]));
     assert!(admit_terminal_view(&workbench).is_err());
 }
 

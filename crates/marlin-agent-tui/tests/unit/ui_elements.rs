@@ -114,6 +114,92 @@ fn choice_uses_same_facts_for_layout_and_paint() {
 }
 
 #[test]
+fn nested_slots_follow_declared_layout_and_share_hit_regions() {
+    struct Labels;
+    impl super::ui_elements::UiSlotRenderer for Labels {
+        fn render(
+            &mut self,
+            frame: &mut ratatui::Frame<'_>,
+            area: Rect,
+            id: &UiComponentId,
+            _: Option<UiTone>,
+            _: usize,
+        ) {
+            frame.render_widget(ratatui::widgets::Paragraph::new(id.as_str()), area);
+        }
+    }
+    let region = |name: &str| UiElement::Region {
+        id: UiComponentId::new(name).unwrap(),
+        scrollable: true,
+        child: Box::new(UiElement::Slot(UiComponentId::new(name).unwrap())),
+    };
+    let tree = UiElement::Columns(vec![region("left"), region("right")]);
+    let theme = UiTheme::default();
+    let inputs = UiRenderInputs {
+        theme: &theme,
+        offset: &|_| 0,
+        facts: &|_| false,
+        extent: &|_| Extent::Flex(1),
+        bindings: &[],
+    };
+    let mut regions = Vec::new();
+    let mut terminal = Terminal::new(TestBackend::new(20, 1)).unwrap();
+    terminal
+        .draw(|frame| {
+            super::ui_elements::render_with_slots(
+                frame,
+                frame.area(),
+                &tree,
+                &mut regions,
+                &inputs,
+                &mut Labels,
+            )
+        })
+        .unwrap();
+    assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "l");
+    assert_eq!(terminal.backend().buffer()[(10, 0)].symbol(), "r");
+    assert_eq!(
+        hit_test_scroll(&regions, 10, 0).unwrap().id.as_str(),
+        "right"
+    );
+}
+
+#[test]
+fn list_renders_selected_scheme_template_and_keeps_selection_visible() {
+    let text = |label: &str| {
+        UiElement::Text(vec![UiSpan {
+            text: label.into(),
+            tone: UiTone::Normal,
+        }])
+    };
+    let template = UiElement::Choice {
+        cases: vec![(UiComponentId::new("selected").unwrap(), text("selected"))],
+        fallback: Box::new(text("ordinary")),
+    };
+    let mut terminal = Terminal::new(TestBackend::new(12, 2)).unwrap();
+    let generated = std::cell::Cell::new(0);
+    terminal
+        .draw(|frame| {
+            super::ui_elements::render_list(
+                frame,
+                frame.area(),
+                &template,
+                &UiTheme::default(),
+                4,
+                Some(3),
+                |_| {
+                    generated.set(generated.get() + 1);
+                    Some(super::ui_elements::UiListRow { bindings: vec![] })
+                },
+            )
+        })
+        .unwrap();
+    assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "o");
+    assert_eq!(terminal.backend().buffer()[(0, 1)].symbol(), "s");
+    assert_eq!(generated.get(), 2, "only visible rows should be prepared");
+}
+
+#[test]
 fn template_binds_untrusted_values_as_literal_cells() {
     let tree = UiElement::Template {
         background: marlin_agent_ui::UiBackground::Bar,
@@ -258,6 +344,56 @@ fn hit_regions_follow_painted_layout_and_clip_at_terminal_edges() {
     assert_eq!(terminal.backend().buffer()[(6, 0)].symbol(), "a");
     assert_eq!(hit_test(&regions, 2, 0).unwrap().id.as_str(), "frame");
     assert!(hit_test(&regions, 10, 0).is_none());
+}
+
+#[test]
+fn panel_maps_declared_tones_and_sanitizes_host_content() {
+    let panel = UiElement::Panel {
+        border_tone: UiTone::Accent,
+        field_tone: UiTone::Success,
+        child: Box::new(UiElement::Slot(UiComponentId::new("static").unwrap())),
+    };
+    let items = [marlin_agent_ui::UiContent::Field {
+        label: "K".into(),
+        value: "V\u{1b}X".into(),
+    }];
+    let theme = UiTheme::default();
+    let inputs = UiRenderInputs {
+        theme: &theme,
+        offset: &|_| 0,
+        facts: &|_| false,
+        extent: &|_| Extent::Cells(0),
+        bindings: &[],
+    };
+    let mut slot = super::ui_elements::UiContentSlot {
+        title: "Panel",
+        content: &items,
+        theme: &theme,
+        scroll: 0,
+    };
+    let mut terminal = Terminal::new(TestBackend::new(24, 4)).unwrap();
+    terminal
+        .draw(|frame| {
+            super::ui_elements::render_with_slots(
+                frame,
+                frame.area(),
+                &panel,
+                &mut Vec::new(),
+                &inputs,
+                &mut slot,
+            )
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    assert_eq!(
+        buffer[(0, 0)].fg,
+        Color::Rgb(theme.accent.red, theme.accent.green, theme.accent.blue)
+    );
+    assert_eq!(
+        buffer[(1, 1)].fg,
+        Color::Rgb(theme.success.red, theme.success.green, theme.success.blue)
+    );
+    assert_eq!(buffer[(5, 1)].symbol(), "�");
 }
 
 #[test]

@@ -4,7 +4,8 @@
 
 ;;; The selected Context publication owns source parsing. These procedures
 ;;; exchange Scheme values through the SDK's strong-root boundary.
-(import (only-in :clan/poo/object .get .o))
+(import (only-in :clan/poo/object .get .o)
+        (only-in :std/list/list length<=n?))
 (export marlin-context-org-source-open marlin-context-org-source-project
         marlin-context-org-source-fields marlin-context-org-contract-open
         marlin-context-org-contract-project)
@@ -13,11 +14,8 @@
 ;;; per-call lookup index. The parser has already produced its source graph;
 ;;; this bound does not claim to limit the parser's own working memory.
 (def (bounded-records! values limit)
-  (let loop ((rest values) (remaining limit))
-    (cond ((null? rest) (void))
-          ((or (zero? remaining) (not (pair? rest)))
-           (error "Context Org record limit exceeded or improper record list"))
-          (else (loop (cdr rest) (- remaining 1))))))
+  (unless (and (length<=n? values limit) (list? values))
+    (error "Context Org record limit exceeded or improper record list")))
 
 (def (marlin-context-org-contract-open input)
   (unless (and (vector? input) (= (vector-length input) 4))
@@ -84,6 +82,7 @@
       (cond ((not value) #f)
             ((string? value) value)
             ((or (null? value) (pair? value))
+             ;; Validate and charge once, stopping even on a cyclic list.
              (let loop ((remaining value) (count 0))
                (cond ((null? remaining)
                       (set! total-items (+ total-items count))

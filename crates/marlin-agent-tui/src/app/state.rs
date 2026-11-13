@@ -518,7 +518,7 @@ impl App {
                     output.push('\n');
                 }
                 if page.next_cursor.is_some() {
-                    output.push_str("Use M-x sessions-next for the next page.\n");
+                    output.push_str("Use M-x sessions next for the next page.\n");
                 }
                 output.push_str("Use M-x session followed by a quoted ID to switch; listing does not verify recovery status.");
                 output

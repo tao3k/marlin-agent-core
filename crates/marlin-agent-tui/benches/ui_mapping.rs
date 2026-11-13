@@ -5,8 +5,9 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use marlin_agent_tui::ui_elements::{
-    Extent, UiRenderInputs, hit_test, hit_test_scroll, layout_regions, render_input, render_prompt,
-    render_template, render_with_regions, render_with_scroll, resolve_choice,
+    Extent, UiContentSlot, UiListRow, UiRenderInputs, hit_test, hit_test_scroll, layout_regions,
+    layout_regions_with_facts, render_input, render_list, render_prompt, render_template,
+    render_with_regions, render_with_scroll, render_with_slots, resolve_choice,
 };
 use marlin_agent_ui::{
     UiComponentId, UiElement, UiSpan, UiTemplateSpan, UiTemplateValue, UiTheme, UiTone,
@@ -31,6 +32,32 @@ fn mapping(c: &mut Criterion) {
         ],
     };
     let theme = UiTheme::default();
+    let list_template = UiElement::Choice {
+        cases: vec![(UiComponentId::new("selected").unwrap(), template.clone())],
+        fallback: Box::new(template.clone()),
+    };
+    let mut list_terminal = Terminal::new(TestBackend::new(80, 10)).unwrap();
+    c.bench_function("ui/mapping/list-256-visible-10", |b| {
+        b.iter(|| {
+            list_terminal
+                .draw(|frame| {
+                    render_list(
+                        frame,
+                        frame.area(),
+                        &list_template,
+                        &theme,
+                        256,
+                        Some(255),
+                        |index| {
+                            Some(UiListRow {
+                                bindings: vec![("name", format!("command-{index}").into())],
+                            })
+                        },
+                    )
+                })
+                .unwrap();
+        })
+    });
     let choice = UiElement::Choice {
         cases: (0..10)
             .map(|index| {
@@ -96,6 +123,40 @@ fn mapping(c: &mut Criterion) {
                     render_input(frame, frame.area(), &input, &input_values, true, |_, _| {
                         Some((vec![black_box("command").to_owned()], (7, 0)))
                     });
+                })
+                .unwrap();
+        })
+    });
+    let panel = UiElement::Panel {
+        border_tone: UiTone::Info,
+        field_tone: UiTone::Accent,
+        child: Box::new(UiElement::Slot(UiComponentId::new("static").unwrap())),
+    };
+    let fields: Vec<_> = (0..16)
+        .map(|n| marlin_agent_ui::UiContent::Field {
+            label: format!("field-{n}"),
+            value: format!("value-{n}"),
+        })
+        .collect();
+    let mut panel_terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+    let mut panel_slot = UiContentSlot {
+        title: "Panel",
+        content: &fields,
+        theme: &theme,
+        scroll: 0,
+    };
+    c.bench_function("ui/mapping/panel-16-fields", |b| {
+        b.iter(|| {
+            panel_terminal
+                .draw(|frame| {
+                    render_with_slots(
+                        frame,
+                        frame.area(),
+                        black_box(&panel),
+                        &mut Vec::new(),
+                        &input_values,
+                        black_box(&mut panel_slot),
+                    );
                 })
                 .unwrap();
         })
@@ -177,6 +238,23 @@ fn mapping(c: &mut Criterion) {
                 &mut mapped,
             );
             black_box(hit_test(&mapped, 20, 38));
+        })
+    });
+    let selected_frame = UiElement::Choice {
+        cases: vec![(UiComponentId::new("active").unwrap(), grouped_frame.clone())],
+        fallback: Box::new(frame_tree),
+    };
+    c.bench_function("ui/mapping/selected-frame-hit", |b| {
+        b.iter(|| {
+            mapped.clear();
+            layout_regions_with_facts(
+                black_box(&selected_frame),
+                ratatui::layout::Rect::new(0, 0, 120, 40),
+                &|_| Extent::Cells(1),
+                &mut mapped,
+                &|id| id.as_str() == "active",
+            );
+            black_box(hit_test_scroll(&mapped, 20, 38));
         })
     });
     let mut empty = Terminal::new(TestBackend::new(120, 80)).unwrap();

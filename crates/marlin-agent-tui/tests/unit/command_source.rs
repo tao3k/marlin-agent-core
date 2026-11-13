@@ -30,23 +30,26 @@ fn selected_descriptors_define_names_and_native_capability_arguments() {
         Some(Command::Model("x"))
     );
     assert_eq!(Command::parse(&alias, "model x"), None);
-    let sessions = descriptor("browse-sessions", NoArguments, Capability::Sessions, None);
+    let sessions = descriptor("browse-sessions", Optional, Capability::Sessions, None);
     assert_eq!(
         Command::parse(&sessions, "browse-sessions"),
         Some(Command::Sessions(false))
     );
-    let next = descriptor(
-        "more-sessions",
+    assert_eq!(
+        Command::parse(&sessions, "browse-sessions next"),
+        Some(Command::Sessions(true))
+    );
+    assert_eq!(Command::parse(&sessions, "browse-sessions other"), None);
+    assert_eq!(
+        Command::parse(&sessions, "browse-sessions next other"),
+        None
+    );
+    assert!(!Command::admit(&descriptor(
+        "legacy-next",
         NoArguments,
         Capability::Sessions,
         Some("next"),
-    );
-    assert_eq!(
-        Command::parse(&next, "more-sessions"),
-        Some(Command::Sessions(true))
-    );
-    assert_eq!(Command::parse(&sessions, "browse-sessions next"), None);
-    assert_eq!(Command::parse(&next, "more-sessions next"), None);
+    )));
     let older = descriptor("earlier", NoArguments, Capability::History, Some("older"));
     assert_eq!(
         Command::parse(&older, "earlier"),

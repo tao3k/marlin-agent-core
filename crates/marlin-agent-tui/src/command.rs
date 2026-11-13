@@ -56,7 +56,7 @@ impl<'a> Command<'a> {
                 Required,
                 None,
             ) => true,
-            (Capability::Sessions, NoArguments, None | Some("next")) => true,
+            (Capability::Sessions, Optional, None) => true,
             (Capability::History, NoArguments, Some("older" | "newest")) => true,
             (Capability::Workspace, NoArguments, Some("status"))
             | (Capability::Workspace, Optional, Some("diff"))
@@ -105,7 +105,11 @@ impl<'a> Command<'a> {
         Some(match descriptor.capability {
             Capability::Models => Self::Models,
             Capability::Model => Self::Model(argument?.trim()),
-            Capability::Sessions => Self::Sessions(value == Some("next")),
+            Capability::Sessions => Self::Sessions(match argument.map(str::trim) {
+                None => false,
+                Some("next") => true,
+                _ => return None,
+            }),
             Capability::Session => Self::Session(argument?.trim()),
             Capability::Inspect => Self::Inspect(argument?.trim()),
             Capability::History => Self::History(value == Some("older")),

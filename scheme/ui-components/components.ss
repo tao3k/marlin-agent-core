@@ -36,18 +36,13 @@
 
 (def (marlin-ui-dynamic-modeline-template? value)
   (and (string? value)
-       (let loop ((index 0) (seen #f))
-         (if (= index (string-length value))
-           seen
-           (let ((character (string-ref value index)))
-             (cond
-              ((char=? character #\{)
-               (and (not seen)
-                    (<= (+ index 7) (string-length value))
-                    (string=? (substring value index (+ index 7)) "{value}")
-                    (loop (+ index 7) #t)))
-              ((char=? character #\}) #f)
-              (else (loop (+ index 1) seen))))))))
+       (let ((open (string-index value #\{))
+             (close (string-index value #\})))
+         ;; Exactly one complete placeholder and no unmatched braces.
+         (and open close (= close (+ open 6))
+              (string=? (substring value open (+ close 1)) "{value}")
+              (not (string-index value #\{ (+ close 1)))
+              (not (string-index value #\} (+ close 1)))))))
 
 (def (marlin-ui-modeline-node descriptor)
   (marlin-ui-required-object descriptor '(identity label compact tone active-tone min-width compact-below keep-priority))
