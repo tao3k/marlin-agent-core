@@ -77,6 +77,10 @@ mounts only. Put test functions and helpers in suite files under ~tests/unit~
 or another documented suite directory.
 Root-target module mounts should always be explicit ~#[path = "suite/file.rs"]~
 attributes rather than bare Rust ~mod helper;~ declarations.
+The TUI intentionally mounts ~tests/unit/harness.rs~ from ~src/lib.rs~ under
+~cfg(test)~, so ~cargo test -p marlin-agent-tui --lib~ exercises production
+modules once. Its test files stay under ~tests/unit~; do not mount the same
+production sources again from a second integration-test crate.
 Root ~build.rs~, when present, is scanned by the project harness and should stay
 a thin Cargo build-script entrypoint.
 

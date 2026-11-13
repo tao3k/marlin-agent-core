@@ -163,16 +163,40 @@ fn sgr_wheel_events_reach_the_scroll_queue_with_coordinates() {
 #[test]
 fn trackpad_pulses_coalesce_without_blocking_keyboard_input() {
     let wheel = WheelAccumulator::default();
-    assert!(wheel.push(true));
+    assert!(wheel.push(true, 24, 8));
     for _ in 0..100 {
-        assert!(!wheel.push(true));
+        assert!(!wheel.push(true, 24, 8));
     }
-    assert_eq!(wheel.take_lines(), Some((true, 48)));
+    assert_eq!(wheel.take_lines(), Some((true, 48, 24, 8)));
     assert_eq!(wheel.take_lines(), None);
-    assert!(wheel.push(false));
-    assert_eq!(wheel.take_lines(), Some((false, 3)));
-    assert!(wheel.push(true));
-    assert!(!wheel.push(false));
+    assert!(wheel.push(false, 24, 8));
+    assert_eq!(wheel.take_lines(), Some((false, 3, 24, 8)));
+    assert!(wheel.push(true, 24, 8));
+    assert!(!wheel.push(false, 24, 8));
+    assert_eq!(wheel.take_lines(), None);
+}
+
+#[test]
+fn wheel_batches_keep_the_pointer_position_at_each_gesture() {
+    let wheel = WheelAccumulator::default();
+    assert!(wheel.push(true, 4, 3));
+    assert!(!wheel.push(true, 4, 3));
+    assert!(!wheel.push(false, 4, 18));
+    assert_eq!(wheel.take_lines(), Some((true, 6, 4, 3)));
+    assert!(wheel.has_pending());
+    assert_eq!(wheel.take_lines(), Some((false, 3, 4, 18)));
+    assert!(!wheel.has_pending());
+}
+
+#[test]
+fn wheel_queue_is_bounded_without_retargeting_older_events() {
+    let wheel = WheelAccumulator::default();
+    for row in 1..=100 {
+        wheel.push(true, 1, row);
+    }
+    for row in 1..=64 {
+        assert_eq!(wheel.take_lines(), Some((true, 3, 1, row)));
+    }
     assert_eq!(wheel.take_lines(), None);
 }
 

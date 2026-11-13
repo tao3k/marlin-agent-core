@@ -35,7 +35,6 @@ impl Composer {
         self.limit_reached
     }
     #[cfg(test)]
-    #[allow(dead_code, reason = "used by the external unit-test harness")]
     pub fn cursor(&self) -> usize {
         self.cursor
     }

@@ -4,10 +4,11 @@
 
 //! Terminal input normalization, including explicit bracketed paste boundaries.
 
-use std::{
-    io::{self, Write},
-    sync::atomic::{AtomicI32, Ordering},
-};
+mod wheel;
+
+pub(crate) use wheel::WheelAccumulator;
+
+use std::io::{self, Write};
 
 use termion::event::{Event, Key, MouseButton, MouseEvent};
 
@@ -22,29 +23,6 @@ pub(crate) enum TerminalInput {
     WheelWake,
     Paste(String),
     PasteRejected,
-}
-
-/// Collapse high-rate trackpad pulses before they enter the bounded key queue.
-#[derive(Default)]
-pub(crate) struct WheelAccumulator(AtomicI32);
-
-impl WheelAccumulator {
-    /// A true result means the event loop needs one wake notification.
-    pub(crate) fn push(&self, up: bool) -> bool {
-        let step = if up { 1 } else { -1 };
-        self.0
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-                Some(value.saturating_add(step))
-            })
-            .expect("wheel update cannot fail")
-            == 0
-    }
-
-    /// Bound one frame's scroll while retaining direction and small gestures.
-    pub(crate) fn take_lines(&self) -> Option<(bool, usize)> {
-        let steps = self.0.swap(0, Ordering::Relaxed);
-        (steps != 0).then(|| (steps > 0, steps.unsigned_abs().min(16) as usize * 3))
-    }
 }
 
 #[derive(Default)]

@@ -53,15 +53,15 @@ marlin_rust_binary(
 
 marlin_rust_scenario(
     name = "unit",
-    srcs = ["tests/unit_test.rs"] + glob([
+    srcs = glob([
         "src/**/*.rs",
         "tests/unit/**/*.rs",
     ]),
     build_action = "none",
-    crate_root = "tests/unit_test.rs",
+    crate_root = "src/lib.rs",
     edition = crate_edition(),
     manifest = "Cargo.toml",
     scenario = "unit",
     visibility = ["//visibility:public"],
-    deps = _DEPS,
+    deps = _DEPS + crate_deps(["proptest"]),
 )

@@ -81,7 +81,7 @@ property-gate: sysml-check property-model-gate scheme-property-gate
   cargo test --locked -p marlin-agent-runtime --lib confirmed_process_does_not_release_until_pipe_endpoint_is_dropped
   cargo test --locked -p marlin-agent-kernel --test unit_test strict_tree_
   python3 dev/verification/process_quota_gate.py
-  cargo test --locked -p marlin-agent-tui --no-default-features --test unit_test
+  cargo test --locked -p marlin-agent-tui --no-default-features --lib
   cargo test --locked -p marlin-agent-ui --test ui_native_projection
   if [[ $(uname -s) == Darwin ]]; then just tui-runtime-gate; fi
 

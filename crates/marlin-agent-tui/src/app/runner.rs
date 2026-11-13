@@ -343,7 +343,7 @@ fn run(
                                     (u64::from(row) << 16) | u64::from(column),
                                     Ordering::Relaxed,
                                 );
-                                if input_wheel_steps.push(up) {
+                                if input_wheel_steps.push(up, column, row) {
                                     let _ = keys_tx.try_send(Ok(TerminalInput::WheelWake));
                                 }
                             }
@@ -560,6 +560,7 @@ fn run(
             }
             let wait = if processed == REPLY_BATCH_LIMIT
                 || runtime_processed == RUNTIME_EVENT_BATCH_LIMIT
+                || wheel_steps.has_pending()
                 || app
                     .history_search
                     .as_ref()
@@ -570,10 +571,7 @@ fn run(
                 schedule.wait_duration(Instant::now())
             };
             let received = keys_rx.recv_timeout(wait);
-            if let Some((up, lines)) = wheel_steps.take_lines() {
-                let pointer = mouse_position.load(Ordering::Relaxed);
-                let column = pointer as u16;
-                let row = (pointer >> 16) as u16;
+            if let Some((up, lines, column, row)) = wheel_steps.take_lines() {
                 let target = if column > 0 && row > 0 {
                     super::super::ui_elements::hit_test_scroll(&geometry, column - 1, row - 1)
                         .and_then(|region| region.scroll_target())

@@ -96,7 +96,6 @@ impl std::fmt::Display for SessionOpenError {
 
 impl<S: SessionEventStore + Clone + 'static> SessionBrowser<S> {
     #[cfg(test)]
-    #[cfg_attr(test, allow(dead_code))]
     pub(crate) fn new(storage: S, project: ProjectId, agent: AgentId) -> Self {
         Self::with_runtime(storage, project, agent, TokioAgentRuntime::new(64).0)
     }
@@ -120,7 +119,6 @@ impl<S: SessionEventStore + Clone + 'static> SessionBrowser<S> {
     }
 
     #[cfg(test)]
-    #[allow(dead_code, reason = "used by the external unit-test harness")]
     pub(crate) fn with_replay_limits(mut self, limits: ReplayLimits) -> Self {
         self.replay_limits = limits;
         self

@@ -649,13 +649,11 @@ impl TranscriptViewportCache {
     }
 
     #[cfg(test)]
-    #[allow(dead_code, reason = "used by the external unit-test harness")]
     pub(crate) fn build_count(&self) -> usize {
         self.builds
     }
 
     #[cfg(test)]
-    #[allow(dead_code, reason = "used by the external unit-test harness")]
     pub(crate) fn with_budget(max_bytes: usize) -> Self {
         Self {
             max_bytes,
@@ -664,7 +662,6 @@ impl TranscriptViewportCache {
     }
 
     #[cfg(test)]
-    #[allow(dead_code, reason = "used by the external unit-test benchmark")]
     pub(crate) fn row_index_bytes(&self) -> usize {
         self.row_index.as_ref().map_or(0, |index| {
             index
@@ -845,7 +842,6 @@ pub(crate) fn transcript_viewport(
 }
 
 #[cfg(test)]
-#[allow(dead_code, reason = "used by the external unit-test harness")]
 pub(crate) fn transcript_viewport_reference(
     transcript: &[(String, String)],
     pending: bool,

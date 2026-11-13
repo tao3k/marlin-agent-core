@@ -24,13 +24,17 @@ mod replay;
 mod session_browser;
 mod signals;
 pub mod ui_elements;
-#[cfg(all(test, not(feature = "linked-ui")))]
+#[cfg(test)]
 #[path = "../tests/unit/ui_fixture.rs"]
 mod ui_fixture;
 mod ui_host;
 mod viewport;
 mod workspace;
 mod wrap;
+
+#[cfg(test)]
+#[path = "../tests/unit/harness.rs"]
+mod harness;
 
 pub use app::run_cli;
 pub use bootstrap::launch;

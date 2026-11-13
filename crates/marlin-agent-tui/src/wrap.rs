@@ -90,7 +90,6 @@ pub(crate) fn visit_rows<'a>(text: &'a str, width: u16, mut visit: impl FnMut(&[
 }
 
 #[cfg(test)]
-#[allow(dead_code, reason = "used by the external unit-test harness")]
 pub(crate) fn visit_rows_counted<'a>(
     text: &'a str,
     width: u16,

@@ -3,6 +3,10 @@
 
 //! Terminal mapping and hit testing; excludes VM initialization and projection.
 
+// Reuse the production queue without exporting an internal terminal API.
+#[path = "../src/input/wheel.rs"]
+mod benchmark_input;
+
 use criterion::{Criterion, criterion_group, criterion_main};
 use marlin_agent_tui::ui_elements::{
     Extent, RegionExtents, UiContentSlot, UiListRow, UiRenderInputs, UiSlotRenderer, hit_test,
@@ -43,6 +47,24 @@ fn clear_scroll_targets(element: &mut UiElement) {
 }
 
 fn mapping(c: &mut Criterion) {
+    let wheel = benchmark_input::WheelAccumulator::default();
+    c.bench_function("ui/input/wheel-coalesced-16", |b| {
+        b.iter(|| {
+            for _ in 0..16 {
+                black_box(wheel.push(true, 4, 3));
+            }
+            black_box(wheel.take_lines());
+        })
+    });
+    c.bench_function("ui/input/wheel-two-regions", |b| {
+        b.iter(|| {
+            black_box(wheel.push(true, 4, 3));
+            black_box(wheel.push(false, 4, 18));
+            black_box(wheel.take_lines());
+            black_box(wheel.take_lines());
+            black_box(wheel.has_pending());
+        })
+    });
     let template = UiElement::Template {
         background: marlin_agent_ui::UiBackground::Bar,
         spans: vec![

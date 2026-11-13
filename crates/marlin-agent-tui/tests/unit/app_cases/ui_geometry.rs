@@ -4,6 +4,46 @@
 use super::{App, ModelEndpoint, test_frame, test_layout};
 
 #[test]
+fn wheel_gestures_are_hit_tested_at_their_own_positions() {
+    use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    app.toggle_command();
+    let mut view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![UiRegion::Transcript, UiRegion::Composer],
+        layout: test_layout(),
+        theme: Default::default(),
+        focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
+        transients: Vec::new(),
+    };
+    view.layout.command_frame.min_transcript_rows = 2;
+    let geometry =
+        super::super::render::frame_regions(&app, &view, ratatui::layout::Rect::new(0, 0, 80, 20));
+    let pos = |name| {
+        let area = geometry
+            .iter()
+            .find(|region| region.id.as_str() == name)
+            .unwrap()
+            .area;
+        (area.x + 1, area.y + 1)
+    };
+    let transcript = pos("transcript");
+    let candidates = pos("candidates");
+    let wheel = super::super::input::WheelAccumulator::default();
+    wheel.push(true, transcript.0, transcript.1);
+    wheel.push(false, candidates.0, candidates.1);
+    for expected in ["transcript", "candidates"] {
+        let (_, _, column, row) = wheel.take_lines().unwrap();
+        let hit = super::super::ui_elements::hit_test_scroll(&geometry, column - 1, row - 1)
+            .and_then(|region| region.scroll_target());
+        assert_eq!(hit, Some(expected));
+    }
+}
+
+#[test]
 fn extension_list_uses_the_projected_row_template() {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
     use ratatui::{Terminal, backend::TestBackend};
