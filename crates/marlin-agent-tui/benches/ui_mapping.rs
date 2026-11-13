@@ -363,6 +363,29 @@ fn mapping(c: &mut Criterion) {
                 .unwrap();
         })
     });
+    let prompt_tree = UiElement::Prompt {
+        field: UiComponentId::new("name").unwrap(),
+        template: Box::new(template.clone()),
+    };
+    let prompt_inputs = UiRenderInputs {
+        bindings: &[("name", query.as_str())],
+        ..inputs
+    };
+    c.bench_function("ui/mapping/prompt-tree-256", |b| {
+        b.iter(|| {
+            prompt_terminal
+                .draw(|frame| {
+                    render_with_facts(
+                        frame,
+                        frame.area(),
+                        black_box(&prompt_tree),
+                        &mut Vec::new(),
+                        &prompt_inputs,
+                    );
+                })
+                .unwrap();
+        })
+    });
     let input = UiElement::Input {
         bordered: false,
         background: marlin_agent_ui::UiBackground::Bar,
@@ -759,6 +782,25 @@ fn mapping(c: &mut Criterion) {
         extent: &|_| Extent::Cells(0),
         bindings: &[],
     };
+    // Criterion may skip the benchmark body when a different filter is used.
+    // Paint once independently so the fixture check is valid in either case.
+    ask_slots.list.begin_frame();
+    ask_terminal
+        .draw(|frame| {
+            render_with_slots(
+                frame,
+                frame.area(),
+                &ask_tree,
+                &mut ask_regions,
+                &ask_inputs,
+                &mut ask_slots,
+            );
+        })
+        .unwrap();
+    assert!(
+        ask_slots.list.hit(2, 39).is_some(),
+        "the fixed Ask frame must paint its second choice"
+    );
     c.bench_function("ui/mapping/selected-ask-frame-with-slots", |b| {
         b.iter(|| {
             ask_regions.clear();
@@ -778,10 +820,6 @@ fn mapping(c: &mut Criterion) {
             black_box(ask_slots.list.hit(2, 39));
         })
     });
-    assert!(
-        ask_slots.list.hit(2, 39).is_some(),
-        "the fixed Ask frame must paint its second choice"
-    );
     for count in [8, 64] {
         let tree = UiElement::Rows(
             (0..count)

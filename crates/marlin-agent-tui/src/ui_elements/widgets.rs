@@ -152,6 +152,7 @@ pub fn input_border(element: &UiElement, facts: &dyn Fn(&UiComponentId) -> bool)
         }
         UiElement::Text(_)
         | UiElement::Template { .. }
+        | UiElement::Prompt { .. }
         | UiElement::Slot(_)
         | UiElement::Bar { .. } => None,
     }

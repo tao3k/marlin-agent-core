@@ -29,6 +29,11 @@ pub enum UiElement {
         background: UiBackground,
         spans: Vec<UiTemplateSpan>,
     },
+    /// A one-line template with an editable trailing host-bound field.
+    Prompt {
+        field: UiComponentId,
+        template: Box<UiElement>,
+    },
     /// A single-row flow of Scheme-declared, priority-aware segments.
     Bar {
         background: UiBackground,
@@ -245,6 +250,7 @@ impl UiElement {
             Self::Text(_)
             | Self::Slot(_)
             | Self::Template { .. }
+            | Self::Prompt { .. }
             | Self::Input { .. }
             | Self::Bar { .. } => None,
         }
@@ -258,7 +264,11 @@ impl UiElement {
                     .map(|span| span.text.bytes().filter(|byte| *byte == b'\n').count())
                     .sum::<usize>(),
             ),
-            Self::Template { .. } | Self::Input { .. } | Self::Slot(_) | Self::Bar { .. } => 1,
+            Self::Template { .. }
+            | Self::Prompt { .. }
+            | Self::Input { .. }
+            | Self::Slot(_)
+            | Self::Bar { .. } => 1,
             Self::Rows(children) => children.iter().fold(0usize, |rows, child| {
                 rows.saturating_add(child.intrinsic_rows())
             }),
@@ -299,6 +309,7 @@ impl UiElement {
             Self::Text(_)
             | Self::Slot(_)
             | Self::Template { .. }
+            | Self::Prompt { .. }
             | Self::Input { .. }
             | Self::Bar { .. } => self.intrinsic_rows(),
         }
@@ -516,6 +527,20 @@ fn decode(
                 return Err(UiProjectionError::Invalid("invalid UI slot"));
             }
             Ok(UiElement::Slot(identifier(values.element(0)?, names)?))
+        }
+        "prompt" => {
+            if values.len() != 2 {
+                return Err(UiProjectionError::Invalid("invalid UI prompt"));
+            }
+            let field = identifier(values.element(0)?, names)?;
+            let template = decode(values.element(1)?, depth + 1, budget, names)?;
+            if !prompt_template(&template, &field) {
+                return Err(UiProjectionError::Invalid("invalid UI prompt template"));
+            }
+            Ok(UiElement::Prompt {
+                field,
+                template: Box::new(template),
+            })
         }
         "input" => {
             if values.len() != 5 {
@@ -751,6 +776,20 @@ fn inline_template(element: &UiElement) -> bool {
         UiElement::Template { .. } => true,
         UiElement::Choice { cases, fallback } => {
             cases.iter().all(|(_, child)| inline_template(child)) && inline_template(fallback)
+        }
+        _ => false,
+    }
+}
+
+fn prompt_template(element: &UiElement, field: &UiComponentId) -> bool {
+    match element {
+        UiElement::Template { spans, .. } => matches!(
+            spans.last().map(|span| &span.value),
+            Some(UiTemplateValue::Binding(id)) if id == field
+        ),
+        UiElement::Choice { cases, fallback } => {
+            cases.iter().all(|(_, child)| prompt_template(child, field))
+                && prompt_template(fallback, field)
         }
         _ => false,
     }

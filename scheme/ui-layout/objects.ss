@@ -8,7 +8,7 @@
                  ui-text ui-rows ui-columns ui-region ui-scroll-target ui-template ui-choice ui-sized-with
                  ui-size-cells ui-size-flex ui-size-binding ui-size-bounded ui-size-choice
                  ui-size-min ui-size-max ui-size-add ui-size-subtract
-                 ui-input ui-slot ui-panel ui-list)
+                 ui-input ui-slot ui-panel ui-list ui-prompt)
         (only-in "../ui-components/commands.ss" marlin-ui-candidate-templates marlin-ui-list-offset))
 (export marlin-ui-layout-policy-for)
 
@@ -23,8 +23,9 @@
 (def (status-text text)
   (status-line (list (list 'literal 'normal #f text))))
 (def (search-line prompt)
-  (ui-template 'none (list (list 'literal 'normal #f prompt)
-                           '(binding normal #f query))))
+  (ui-prompt 'query
+    (ui-template 'none (list (list 'literal 'normal #f prompt)
+                             '(binding normal #f query)))))
 (def status-prefix
   (ui-choice
     (list (list 'editor-collapsed
@@ -69,7 +70,8 @@
   (ui-choice
     (list (list 'searching (search-line " Searching: "))
           (list 'search-match (search-line " Search: "))
-          (list 'search-no-match (search-line " No match: ")))
+          (list 'search-no-match (search-line " No match: "))
+          (list 'transient (ui-slot 'transient-hint)))
     (ui-columns (list (ui-sized-with status-prefix-width status-prefix)
                       (ui-sized-with (ui-size-flex 1) status-body)))))
 (def editor-view

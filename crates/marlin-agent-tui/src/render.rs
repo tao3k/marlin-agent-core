@@ -149,6 +149,7 @@ fn frame_fact(
             .as_ref()
             .is_some_and(|search| search.preview().is_some()),
         "search-no-match" => app.history_search.is_some(),
+        "transient" => app.transient_hint.is_some(),
         "notice" => app.minibuffer_notice.is_some(),
         "static-buffer" => main_view_fact(app, ui, buffer, previewing, "static"),
         "editor-collapsed" => collapsed,
@@ -611,6 +612,12 @@ pub(crate) fn draw_with_snapshot(
         ("prompt", command_prompt.trim_start()),
         ("compact-prompt", command_prompt),
         ("title", title),
+        (
+            "query",
+            app.history_search
+                .as_ref()
+                .map_or("", |search| search.query()),
+        ),
         ("model", model.as_str()),
         ("session", session.as_str()),
         ("turns", turns.as_str()),

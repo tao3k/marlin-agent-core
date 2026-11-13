@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use crate::ui_elements::{Extent, UiRenderInputs, render_prompt, render_template};
+use crate::ui_elements::{Extent, UiRenderInputs, render_template};
 use marlin_agent_ui::{
     UiComponentId, UiElement, UiSpan, UiTemplateSpan, UiTemplateValue, UiTheme, UiTone,
 };
@@ -106,20 +106,23 @@ fn native_content_renderer_keeps_text_beyond_scheme_projection_limit() {
 
 #[test]
 fn prompt_clips_at_graphemes_and_positions_cursor() {
-    let tree = UiElement::Template {
-        background: marlin_agent_ui::UiBackground::None,
-        spans: vec![
-            UiTemplateSpan {
-                value: UiTemplateValue::Literal("> ".into()),
-                tone: UiTone::Normal,
-                bold: false,
-            },
-            UiTemplateSpan {
-                value: UiTemplateValue::Binding(UiComponentId::new("query").unwrap()),
-                tone: UiTone::Normal,
-                bold: false,
-            },
-        ],
+    let tree = UiElement::Prompt {
+        field: UiComponentId::new("query").unwrap(),
+        template: Box::new(UiElement::Template {
+            background: marlin_agent_ui::UiBackground::None,
+            spans: vec![
+                UiTemplateSpan {
+                    value: UiTemplateValue::Literal("> ".into()),
+                    tone: UiTone::Normal,
+                    bold: false,
+                },
+                UiTemplateSpan {
+                    value: UiTemplateValue::Binding(UiComponentId::new("query").unwrap()),
+                    tone: UiTone::Normal,
+                    bold: false,
+                },
+            ],
+        }),
     };
     let theme = UiTheme::default();
     let inputs = UiRenderInputs {
@@ -127,14 +130,24 @@ fn prompt_clips_at_graphemes_and_positions_cursor() {
         offset: &|_| 0,
         facts: &|_| false,
         extent: &|_| Extent::Cells(0),
-        bindings: &[],
+        bindings: &[("query", "a🐟bc")],
     };
     let mut terminal = Terminal::new(TestBackend::new(6, 1)).unwrap();
-    let mut cursor = None;
     terminal
-        .draw(|frame| cursor = render_prompt(frame, frame.area(), &tree, &inputs, "query", "a🐟bc"))
+        .draw(|frame| {
+            crate::ui_elements::render_with_facts(
+                frame,
+                frame.area(),
+                &tree,
+                &mut Vec::new(),
+                &inputs,
+            )
+        })
         .unwrap();
-    assert_eq!(cursor, Some((4, 0)));
+    assert_eq!(
+        terminal.backend().cursor_position(),
+        ratatui::layout::Position::new(4, 0)
+    );
     assert_eq!(terminal.backend().buffer()[(2, 0)].symbol(), "b");
     assert_eq!(terminal.backend().buffer()[(3, 0)].symbol(), "c");
 }

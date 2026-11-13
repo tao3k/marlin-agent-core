@@ -39,8 +39,11 @@ package MarlinDeclarativeUi {
                    bounded Scheme-authored views from named host facts; the
                    same facts select painted and interactive branches. Scheme
                    declares Mini Buffer status and search prompt precedence and
-                   text; the adapter maps the editable field and cursor by cell
-                   width. The terminal maps the whole selected frame tree in
+                   text; a bounded prompt node identifies its trailing editable
+                   field, and the adapter maps its clipped text and cursor by
+                   cell width. Scheme selects the transient hint slot rather
+                   than replacing the Mini Buffer region in the terminal host.
+                   The terminal maps the whole selected frame tree in
                    one rendering traversal, so ordinary additional regions do
                    not require a Rust paint branch. The terminal host still
                    binds transcript, editor and list data through dedicated

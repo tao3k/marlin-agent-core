@@ -19,6 +19,10 @@
 (def ui (.get marlin-agent-core.init.exports Marlin ui))
 (def ui-components (.get marlin-agent-core.init.exports Marlin ui-components))
 (def ui-elements (.get marlin-agent-core.init.exports Marlin ui-elements))
+(unless (equal? ((.get ui-elements prompt) 'query
+                 ((.get ui-elements template) 'none '((binding normal #f query))))
+                '#(prompt #(query #(template #(none #(#(binding normal #f query)))))))
+  (error "editable prompt projection failed"))
 (unless (equal? ((.get ui-elements region) 'messages ((.get ui-elements scroll-target) 'transcript 3)
                  ((.get ui-elements text) '((normal . "message"))))
                 '#(region #(messages #(transcript 3) #(text #(#(normal "message"))))))

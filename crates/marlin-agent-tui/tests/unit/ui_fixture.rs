@@ -353,27 +353,34 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                                 .map(|name| {
                                     (
                                         UiComponentId::new(name).unwrap(),
-                                        UiElement::Template {
-                                            background: marlin_agent_ui::UiBackground::None,
-                                            spans: vec![
-                                                UiTemplateSpan {
-                                                    value: UiTemplateValue::Literal(
-                                                        "fixture search ".into(),
-                                                    ),
-                                                    tone: UiTone::Normal,
-                                                    bold: false,
-                                                },
-                                                UiTemplateSpan {
-                                                    value: UiTemplateValue::Binding(
-                                                        UiComponentId::new("query").unwrap(),
-                                                    ),
-                                                    tone: UiTone::Normal,
-                                                    bold: false,
-                                                },
-                                            ],
+                                        UiElement::Prompt {
+                                            field: UiComponentId::new("query").unwrap(),
+                                            template: Box::new(UiElement::Template {
+                                                background: marlin_agent_ui::UiBackground::None,
+                                                spans: vec![
+                                                    UiTemplateSpan {
+                                                        value: UiTemplateValue::Literal(
+                                                            "fixture search ".into(),
+                                                        ),
+                                                        tone: UiTone::Normal,
+                                                        bold: false,
+                                                    },
+                                                    UiTemplateSpan {
+                                                        value: UiTemplateValue::Binding(
+                                                            UiComponentId::new("query").unwrap(),
+                                                        ),
+                                                        tone: UiTone::Normal,
+                                                        bold: false,
+                                                    },
+                                                ],
+                                            }),
                                         },
                                     )
                                 })
+                                .chain(std::iter::once((
+                                    UiComponentId::new("transient").unwrap(),
+                                    UiElement::Slot(UiComponentId::new("transient-hint").unwrap()),
+                                )))
                                 .chain(
                                     [
                                         "draft-limit",

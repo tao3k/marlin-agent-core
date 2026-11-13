@@ -32,6 +32,48 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     assert!(marlin_agent_ui::decode_element(element("info", "hello 🐟")).is_ok());
     assert!(marlin_agent_ui::decode_element(element("unknown", "hello")).is_err());
     assert!(marlin_agent_ui::decode_element(element("normal", "bad\u{1b}")).is_err());
+    let prompt = |field: &str, tail: &str| {
+        vector(
+            &runtime,
+            &[
+                symbol(&runtime, "prompt"),
+                vector(
+                    &runtime,
+                    &[
+                        symbol(&runtime, field),
+                        vector(
+                            &runtime,
+                            &[
+                                symbol(&runtime, "template"),
+                                vector(
+                                    &runtime,
+                                    &[
+                                        symbol(&runtime, "none"),
+                                        vector(
+                                            &runtime,
+                                            &[vector(
+                                                &runtime,
+                                                &[
+                                                    symbol(&runtime, "binding"),
+                                                    symbol(&runtime, "normal"),
+                                                    runtime
+                                                        .scalar_object(SchemeScalar::Boolean(false))
+                                                        .unwrap(),
+                                                    symbol(&runtime, tail),
+                                                ],
+                                            )],
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        )
+    };
+    assert!(marlin_agent_ui::decode_element(prompt("query", "query")).is_ok());
+    assert!(marlin_agent_ui::decode_element(prompt("query", "other")).is_err());
     let choice_case = |fact: &str| {
         vector(
             &runtime,

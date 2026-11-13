@@ -20,6 +20,7 @@
                rows: [(Fun UiElementVector <- UiElementValues)]
                columns: [(Fun UiElementVector <- UiElementValues)]
                template: [(Fun UiElementVector <- UiElementIdentity UiElementValues)]
+               prompt: [(Fun UiElementVector <- UiElementIdentity UiElementVector)]
                bar: [(Fun UiElementVector <- UiElementIdentity UiBarDivisor UiElementValues)]
                choice: [(Fun UiElementVector <- UiElementValues UiElementVector)]
                size-cells: [(Fun UiElementVector <- UiSizeCount)]

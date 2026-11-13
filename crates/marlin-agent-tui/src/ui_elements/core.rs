@@ -219,8 +219,9 @@ pub fn render_prompt(
         visible_width += width;
     }
     let visible = &sanitized[start..];
-    let mut bindings = inputs.bindings.to_vec();
+    let mut bindings = Vec::with_capacity(inputs.bindings.len() + 1);
     bindings.push((field, visible));
+    bindings.extend_from_slice(inputs.bindings);
     let bound = UiRenderInputs {
         bindings: &bindings,
         ..*inputs
@@ -301,18 +302,6 @@ pub trait UiSlotRenderer {
         _element: &UiElement,
         _inputs: &UiRenderInputs<'_>,
     ) {
-    }
-
-    /// Optionally replace a region with a dynamically supplied view.
-    fn region(
-        &mut self,
-        _frame: &mut ratatui::Frame<'_>,
-        _area: Rect,
-        _id: &UiComponentId,
-        _child: &UiElement,
-        _inputs: &UiRenderInputs<'_>,
-    ) -> bool {
-        false
     }
 }
 
@@ -444,15 +433,24 @@ fn render_inner<'tree>(
                 render_template(frame, area, element, inputs)
             }
         }
+        UiElement::Prompt { field, template } => {
+            if skip == 0
+                && let Some(value) = inputs
+                    .bindings
+                    .iter()
+                    .find_map(|(name, value)| (*name == field.as_str()).then_some(*value))
+                && let Some(cursor) =
+                    render_prompt(frame, area, template, inputs, field.as_str(), value)
+            {
+                frame.set_cursor_position(cursor);
+            }
+        }
         UiElement::Region {
             id,
             scroll_target,
             child,
         } => {
             regions.push(HitRegion::new(id, area, scroll_target.as_ref()));
-            if slots.renderer.region(frame, area, id, child, inputs) {
-                return;
-            }
             let scroll = if scroll_target.is_some() {
                 (inputs.offset)(id)
             } else {

@@ -431,6 +431,7 @@ fn layout_regions_inner(
         UiElement::Text(_)
         | UiElement::Slot(_)
         | UiElement::Template { .. }
+        | UiElement::Prompt { .. }
         | UiElement::Bar { .. }
         | UiElement::Input { .. }
         | UiElement::List { .. } => {}

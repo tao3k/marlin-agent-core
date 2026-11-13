@@ -144,7 +144,8 @@ fn linked_scheme_workbench_renders_through_the_native_boundary() {
             (expected_start..expected_start + 5).collect::<Vec<_>>()
         );
     }
-    host.refresh_labels("provider/next", "next-session").unwrap();
+    host.refresh_labels("provider/next", "next-session")
+        .unwrap();
     assert_eq!(host.view().model_label, "provider/next");
     assert_eq!(host.view().session_label, "next-session");
 }

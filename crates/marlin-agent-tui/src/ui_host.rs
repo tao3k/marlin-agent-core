@@ -539,7 +539,8 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             marlin_agent_ui::UiElement::Text(_) | marlin_agent_ui::UiElement::Template { .. } => {
                 true
             }
-            marlin_agent_ui::UiElement::Input { .. } => false,
+            marlin_agent_ui::UiElement::Input { .. }
+            | marlin_agent_ui::UiElement::Prompt { .. } => false,
         }
     }
     fn input_count(element: &marlin_agent_ui::UiElement) -> Option<usize> {
@@ -567,7 +568,9 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             marlin_agent_ui::UiElement::Text(_) | marlin_agent_ui::UiElement::Template { .. } => {
                 Some(0)
             }
-            marlin_agent_ui::UiElement::Slot(_) | marlin_agent_ui::UiElement::List { .. } => None,
+            marlin_agent_ui::UiElement::Slot(_)
+            | marlin_agent_ui::UiElement::List { .. }
+            | marlin_agent_ui::UiElement::Prompt { .. } => None,
         }
     }
     fn collect_slots<'a>(
@@ -596,6 +599,7 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             marlin_agent_ui::UiElement::Text(_)
             | marlin_agent_ui::UiElement::Slot(_)
             | marlin_agent_ui::UiElement::Template { .. }
+            | marlin_agent_ui::UiElement::Prompt { .. }
             | marlin_agent_ui::UiElement::Input { .. } => true,
         }
     }
@@ -636,7 +640,9 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             | marlin_agent_ui::UiElement::Panel { child, .. }
             | marlin_agent_ui::UiElement::List { child, .. }
             | marlin_agent_ui::UiElement::Region { child, .. } => candidate_presentation(child),
-            marlin_agent_ui::UiElement::Slot(_) | marlin_agent_ui::UiElement::Input { .. } => false,
+            marlin_agent_ui::UiElement::Slot(_)
+            | marlin_agent_ui::UiElement::Input { .. }
+            | marlin_agent_ui::UiElement::Prompt { .. } => false,
         }
     }
     let list = |name| match view.layout.frame_tree.region_child(name) {

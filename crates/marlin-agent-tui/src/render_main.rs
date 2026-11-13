@@ -29,6 +29,12 @@ impl ui_elements::UiSlotRenderer for FrameSlots<'_> {
         inputs: &ui_elements::UiRenderInputs<'_>,
         skip: usize,
     ) {
+        if id.as_str() == "transient-hint" {
+            if let Some(hint) = &self.app.transient_hint {
+                ui_elements::render_with_facts(frame, area, hint, &mut Vec::new(), inputs);
+            }
+            return;
+        }
         self.main
             .render(frame, area, id, field_template, inputs, skip);
     }
@@ -135,32 +141,6 @@ impl ui_elements::UiSlotRenderer for FrameSlots<'_> {
                     })
                 },
             );
-        }
-    }
-
-    fn region(
-        &mut self,
-        frame: &mut ratatui::Frame<'_>,
-        area: Rect,
-        id: &UiComponentId,
-        child: &UiElement,
-        inputs: &ui_elements::UiRenderInputs<'_>,
-    ) -> bool {
-        if id.as_str() != "minibuffer" {
-            return false;
-        }
-        if let Some(search) = &self.app.history_search {
-            if let Some(cursor) =
-                ui_elements::render_prompt(frame, area, child, inputs, "query", search.query())
-            {
-                frame.set_cursor_position(cursor);
-            }
-            true
-        } else if let Some(hint) = &self.app.transient_hint {
-            ui_elements::render_element(frame, area, hint, &self.ui.theme);
-            true
-        } else {
-            false
         }
     }
 }

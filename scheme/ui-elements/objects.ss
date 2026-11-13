@@ -2,7 +2,7 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 ;;; Native Scheme vectors carry the generic UI vocabulary across the ABI.
-(export ui-text ui-rows ui-columns ui-region ui-scroll-target ui-template ui-choice ui-sized ui-input ui-slot ui-panel ui-list ui-bar
+(export ui-text ui-rows ui-columns ui-region ui-scroll-target ui-template ui-prompt ui-choice ui-sized ui-input ui-slot ui-panel ui-list ui-bar
         ui-size-cells ui-size-flex ui-size-binding ui-size-bounded ui-size-choice ui-sized-with
         ui-size-min ui-size-max ui-size-add ui-size-subtract)
 
@@ -37,6 +37,8 @@
   (vector 'panel (vector border-tone-value field-template-value title-value child-value)))
 (def (ui-template background-value spans-value)
   (vector 'template (vector background-value (list->vector (map list->vector spans-value)))))
+(def (ui-prompt field-value template-value)
+  (vector 'prompt (vector field-value template-value)))
 (def (ui-bar background-value divisor-value segments-value)
   (vector 'bar (vector background-value divisor-value (list->vector (map list->vector segments-value)))))
 (def (ui-choice cases-value fallback-value)
