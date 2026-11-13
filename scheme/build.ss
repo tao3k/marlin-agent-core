@@ -7,32 +7,35 @@
 
 (import (for-syntax
           (only-in :std/source this-source-file)
-          (only-in :yuanxu/module-system/building/source-package register-module-build-source!)))
+          (only-in :tao3k/yuanxu/module-system/building/source-package register-module-build-source!)))
 (begin-syntax
   (register-module-build-source! (path-directory (this-source-file)) 'marlin-agent-core))
 
-(import (only-in :clan/poo/object .get)
+(import (only-in :clan/poo/object .get .call)
         (only-in :std/build-script defbuild-script)
         (only-in :std/source this-source-file)
-        (only-in :yuanxu/module-system/building/interface call-with-init-build-spec)
-        (only-in :yuanxu/module-system/building/products current-build-source-directory)
-        (only-in "./init.ss" marlin-agent-core.init.exports))
+        (only-in :tao3k/yuanxu/module-system/building/build-projection yuanxu-project-source-spec)
+        (only-in :tao3k/yuanxu/module-system/building/products current-build-source-directory))
 
-(export main)
+(export main marlin-build-projection)
 
-(def (main . args)
-  (def entry-source (this-source-file))
-  (call-with-init-build-spec
-    (lambda () ((.get marlin-agent-core.init.exports std-make-spec) '("init")))
-    (lambda (spec arguments (package-prefix #f))
-      (when package-prefix
-        (error "Marlin build has an unexpected package prefix" package-prefix))
-      (def (this-source-file)
-        (let (source-directory (current-build-source-directory))
-          (if source-directory
-            (path-expand (path-strip-directory entry-source) source-directory)
-            entry-source)))
-      (let ()
-        (defbuild-script spec)
-        (apply main arguments)))
-    args #f entry-source))
+(def build-script (this-source-file))
+(def source-root (path-directory build-script))
+
+(def (marlin-build-projection)
+  (yuanxu-project-source-spec (path-expand "init.ss" source-root) '("init")
+    source-root build-script))
+
+(def (main . arguments)
+  (def projection (marlin-build-projection))
+  (def spec (.get projection spec))
+  (def (dispatch)
+    (def (this-source-file)
+      (path-expand "build.ss" (or (current-build-source-directory) source-root)))
+    (defbuild-script spec)
+    (apply main arguments))
+  (match arguments
+    (["clean"] (.call projection .with-clean-outputs dispatch))
+    (["spec"] (dispatch))
+    (["meta"] (dispatch))
+    (else (.call projection .with-compiler-inputs dispatch))))

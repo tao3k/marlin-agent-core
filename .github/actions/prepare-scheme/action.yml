@@ -42,18 +42,25 @@ runs:
           | if length == 1 then .[0] else error("expected one locked Orgize revision") end
         ' <<< "$metadata")
         orgize_checkout="$GERBIL_PATH/pkg/$orgize_repo"
-        git init --quiet --initial-branch=main "$orgize_checkout"
-        git -C "$orgize_checkout" remote add origin "https://$orgize_repo.git"
-        git -C "$orgize_checkout" fetch --quiet --no-tags origin "$orgize_revision"
-        git -C "$orgize_checkout" cat-file -e "$orgize_revision^{tree}"
-        # Use the package manager's source-update API to register the revision.
-        # Dependency installation and indexing still run through gerbil deps.
-        (
-          cd scheme
-          ORGIZE_PACKAGE="$orgize_repo@$orgize_revision" gxi -e '
-            (import :gerbil/tools/gxpkg)
-            (pkg-update (getenv "ORGIZE_PACKAGE"))'
-        )
+        lab_repo=github.com/tao3k/agentic-ai-lab
+        lab_revision=$(sed -nE 's/.*"github\.com\/tao3k\/agentic-ai-lab@([0-9a-f]{40})".*/\1/p' scheme/gerbil.pkg)
+        [[ "$lab_revision" =~ ^[0-9a-f]{40}$ ]]
+        seed_revision() {
+          local repo=$1 revision=$2 checkout="$GERBIL_PATH/pkg/$1"
+          git init --quiet --initial-branch=main "$checkout"
+          git -C "$checkout" remote add origin "https://$repo.git"
+          git -C "$checkout" fetch --quiet --no-tags origin "$revision"
+          git -C "$checkout" cat-file -e "$revision^{tree}"
+          # Let the package manager register its own revision metadata.
+          (
+            cd scheme
+            GERBIL_PACKAGE_REVISION="$repo@$revision" gxi -e '
+              (import :gerbil/tools/gxpkg)
+              (pkg-update (getenv "GERBIL_PACKAGE_REVISION"))'
+          )
+        }
+        seed_revision "$lab_repo" "$lab_revision"
+        seed_revision "$orgize_repo" "$orgize_revision"
         if [[ "$TRACE_DEPENDENCY_CRASH" == true && "$RUNNER_OS" == Linux ]]; then
           command -v gdb >/dev/null || sudo apt-get install -y gdb
           crash_dir=$(mktemp -d "$RUNNER_TEMP/marlin-gerbil-crash.XXXXXX")
@@ -106,6 +113,7 @@ runs:
           exit "$status"
         }
         test "$(git -C "$orgize_checkout" rev-parse HEAD)" = "$orgize_revision"
+        test "$(git -C "$GERBIL_PATH/pkg/$lab_repo" rev-parse HEAD)" = "$lab_revision"
     - name: Save installed Scheme dependencies
       if: steps.dependencies.outputs.cache-hit != 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

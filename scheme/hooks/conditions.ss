@@ -8,7 +8,7 @@
 
 (import (only-in :clan/poo/object .def .get .o .slot?)
         (only-in :std/list/list append-map)
-        (only-in :yuanxu/poo-clos/syntax .defgeneric .defmethod))
+        (only-in :tao3k/yuanxu/poo-clos/syntax .defgeneric .defmethod))
 
 (export hook-condition-kind
         hook-condition-combinator-kind

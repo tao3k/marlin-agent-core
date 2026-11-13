@@ -62,7 +62,7 @@ weaver-llm = { git = "https://github.com/hardenedlinux/weaver", rev = "2cbb6bf7c
 memoffset = "0.9.1"
 mrr-data-backend = { git = "https://github.com/tao3k/mrr-data", rev = "daa6487820f798f0583713de8d03110aeac5d1fd", default-features = false }
 object = "0.39.1"
-orgize = { git = "https://github.com/tao3k/orgize", rev = "7a54cc75de8cf9a9986be70bac38be14010141bd" }
+orgize = { git = "https://github.com/tao3k/orgize", rev = "7d98b5355b866bfba9ce7d16f6d401d9addb50c4" }
 parking_lot = "0.12.5"
 proptest = "=1.12.0"
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }

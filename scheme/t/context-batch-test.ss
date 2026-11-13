@@ -5,7 +5,7 @@
 ;;; Batch output must match Lab's individual admissions in request order.
 
 (import (only-in :clan/poo/object .get .o)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
+        (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
         (only-in :std/encoding/hex hex-decode)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
         "../context/batch.ss")

@@ -4,4 +4,4 @@
 
 (package: marlin-agent-core
  prelude: :tao3k/yuanxu/prelude
- depend: ("github.com/tao3k/agentic-ai-lab@8933fa455d7649fc3c7284db4d94b8f3e860f96c"))
+ depend: ("github.com/tao3k/agentic-ai-lab@149f7dc34704691b2c216f6579050d88e8880496"))

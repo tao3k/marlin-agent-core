@@ -6,7 +6,7 @@
 (import (only-in :clan/poo/object .cc)
         (only-in :clan/poo/mop Bool Fun Object Type. element?)
         (only-in :clan/poo/type Exactly List Record String)
-        (only-in :yuanxu/poo-clos/types ClosGenericFunction ClosGenericProtocol)
+        (only-in :tao3k/yuanxu/poo-clos/types ClosGenericFunction ClosGenericProtocol)
         (only-in "../ui-components/bounds.ss" marlin-ui-bounded-list?))
 
 (export UiScopeContract)
