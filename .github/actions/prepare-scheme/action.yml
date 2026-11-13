@@ -119,12 +119,31 @@ runs:
                 worker_pid=${dump##*.}
                 worker_inputs="$crash_dir/$worker_pid.inputs"
                 [[ -s "$worker_inputs" ]] || continue
-                replay_status=0
-                (cd "$GERBIL_PATH/pkg" && timeout 120s "$MARLIN_TRACE_GXTAGS" \
-                  --global-env --jobs 1 --source-list "$worker_inputs" \
-                  -o "$crash_dir/$worker_pid.tags" > "$crash_dir/$worker_pid.log" 2>&1) || replay_status=$?
-                printf 'gxtags worker %s ordered replay status %s\n' "$worker_pid" "$replay_status"
-                tail -n 12 "$crash_dir/$worker_pid.log"
+                # Isolate the Orgize portion while preserving the worker's order.
+                WORKER_INPUTS="$worker_inputs" gxi -e '
+                  (let* ((paths (call-with-input-file (getenv "WORKER_INPUTS") read))
+                         (prefix "github.com/tao3k/orgize/")
+                         (length-prefix (string-length prefix))
+                         (orgize (filter (lambda (path)
+                                          (and (>= (string-length path) length-prefix)
+                                               (string=? prefix (substring path 0 length-prefix))))
+                                        paths)))
+                    (unless (pair? orgize) (error "worker did not index Orgize"))
+                    (write orgize)
+                    (newline))' \
+                  > "$worker_inputs.orgize"
+                for scope in orgize full; do
+                  inputs=$worker_inputs
+                  if [[ "$scope" == orgize ]]; then
+                    inputs="$worker_inputs.orgize"
+                  fi
+                  replay_status=0
+                  (cd "$GERBIL_PATH/pkg" && timeout 120s "$MARLIN_TRACE_GXTAGS" \
+                    --global-env --jobs 1 --source-list "$inputs" \
+                    -o "$crash_dir/$worker_pid.$scope.tags" > "$crash_dir/$worker_pid.$scope.log" 2>&1) || replay_status=$?
+                  printf 'gxtags worker %s %s ordered replay status %s\n' "$worker_pid" "$scope" "$replay_status"
+                  tail -n 12 "$crash_dir/$worker_pid.$scope.log"
+                done
               done
               for module in org-parser/grammar org-contract/expectation-grammar; do
                 import_status=0
