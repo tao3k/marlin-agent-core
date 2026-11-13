@@ -364,8 +364,11 @@ package MarlinDeclarativeUi {
                The PTY fixture must observe the workbench in under ten seconds
                from process creation. Pair a newly copied executable's first
                launch with a second launch of the same file, and record first
-               process output separately from the usable frame. Do not infer
-               VM cost from time before application entry; measure shutdown
+               process output separately from the usable frame. Serialize
+               competing cold-copy trials; the pre-application launch diagnostic
+               includes a fresh small-executable control for host variability.
+               Do not infer VM cost
+               from time before application entry; measure shutdown
                separately; do not promote an extended diagnostic window into
                a passing acceptance result. The VM owner and native roots must
                retire normally; suppressing cleanup is not an optimization. */

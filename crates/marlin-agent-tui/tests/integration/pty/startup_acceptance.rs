@@ -36,6 +36,8 @@ fn debug_linked_fresh_copy_startup_pair() {
 
 #[cfg(feature = "linked-ui")]
 fn linked_fresh_copy_startup_pair(binary: &std::path::Path, profile: &str) {
+    static STARTUP_BENCH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _serial = STARTUP_BENCH_LOCK.lock().expect("startup benchmark lock");
     assert!(binary.is_file(), "build the linked {profile} binary first");
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../scheme/.gerbil/native/tui/program.json");

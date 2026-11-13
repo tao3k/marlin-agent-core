@@ -7,6 +7,13 @@
 
 #[cfg(target_os = "macos")]
 #[test]
+#[ignore = "manual fresh-file launch diagnostic; build target/debug/marlin-tui first"]
+fn linked_debug_pre_ui_launch_pair() {
+    linked_pre_ui_launch_pair("debug");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 #[ignore = "manual fresh-file launch diagnostic; build target/release/marlin-tui first"]
 fn linked_release_pre_ui_launch_pair() {
     linked_pre_ui_launch_pair("release");
@@ -22,6 +29,9 @@ fn linked_release_size_pre_ui_launch_pair() {
 #[cfg(target_os = "macos")]
 fn linked_pre_ui_launch_pair(profile: &str) {
     use std::{fs, path::Path, process::Command, time::Instant};
+
+    static LAUNCH_BENCH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _serial = LAUNCH_BENCH_LOCK.lock().expect("launch benchmark lock");
 
     let binary = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
