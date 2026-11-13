@@ -247,18 +247,18 @@ impl<G: ModelStreamingGateway, S: SessionEventStore + 'static> ModelStreamingGat
                     let pending = journal.pending_tool_request().ok_or_else(|| {
                         ModelGatewayError::RequestNotDispatched("no committed tool results".into())
                     })?;
-                    let receipt = pending.results_receipt().ok_or_else(|| {
-                        ModelGatewayError::RequestNotDispatched(
-                            "tool results are not committed".into(),
-                        )
-                    })?;
-                    let result_messages = receipt.gateway_messages();
+                    let continuation_messages =
+                        pending.continuation_messages().ok_or_else(|| {
+                            ModelGatewayError::RequestNotDispatched(
+                                "tool review has no committed continuation".into(),
+                            )
+                        })?;
                     let preceding = request
                         .messages()
-                        .strip_suffix(result_messages.as_slice())
+                        .strip_suffix(continuation_messages.as_slice())
                         .ok_or_else(|| {
                             ModelGatewayError::RequestNotDispatched(
-                                "tool results do not match the committed batch".into(),
+                                "tool continuation does not match the committed review".into(),
                             )
                         })?;
                     if request.endpoint() != pending.endpoint()
@@ -271,7 +271,7 @@ impl<G: ModelStreamingGateway, S: SessionEventStore + 'static> ModelStreamingGat
                     }
                     let start = ConversationToolContinuationStart {
                         endpoint: request.endpoint().clone(),
-                        source: receipt.key().clone(),
+                        source: pending.key(),
                     };
                     journal
                         .start_tool_continuation(start, now_ms())

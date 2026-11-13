@@ -60,17 +60,13 @@ impl App {
             if self.pending_tool_request
                 && self.pending.is_none()
                 && self.tool_review_suppressed
-                && let Some(receipt) = self
+                && let Some(messages) = self
                     .tool_review
                     .as_ref()
                     .and_then(|review| review.try_pending())
-                    .filter(|pending| {
-                        pending.status()
-                            == marlin_agent_sessions::ConversationToolReviewStatus::ResultsCommitted
-                    })
-                    .and_then(|pending| pending.results_receipt().cloned())
+                    .and_then(|pending| pending.continuation_messages())
             {
-                self.continue_tool_turn(gateway, runtime, tx, &receipt);
+                self.continue_tool_turn(gateway, runtime, tx, &messages);
             }
             return;
         }
@@ -374,11 +370,10 @@ impl App {
         gateway: &G,
         runtime: &tokio::runtime::Runtime,
         tx: &ReplySender,
-        receipt: &marlin_agent_sessions::ConversationToolResultsReceipt,
+        messages: &[super::ModelGatewayMessage],
     ) {
-        let messages = receipt.gateway_messages();
-        if !self.history.ends_with(&messages) {
-            Arc::make_mut(&mut self.history).extend(messages);
+        if !self.history.ends_with(messages) {
+            Arc::make_mut(&mut self.history).extend_from_slice(messages);
         }
         self.begin_stream(gateway, runtime, tx, Vec::new(), None);
     }
@@ -643,7 +638,7 @@ impl App {
                     }
                     Some(_) => "Current draft retained; the rejected prompt remains visible above.",
                     None => {
-                        "Committed tool results remain in the session journal; press Enter to retry the model request without running the tool again."
+                        "The committed tool decision remains in the session journal; press Enter to retry the model request without running the tool."
                     }
                 };
                 self.publish_message(MessageEvent {

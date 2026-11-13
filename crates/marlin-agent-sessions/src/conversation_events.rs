@@ -217,7 +217,19 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
                 if *event_id == turn.review_event_id()?
                     && header.causality_parent_event_id == Some(turn.finish_event_id()?) =>
             {
-                ConversationTailState::Uncertain
+                let review = self
+                    .resolve_cursor(turn, event_id.clone())
+                    .await?
+                    .ok_or_else(invalid)?;
+                match review.event {
+                    ConversationEvent::ToolReview(receipt)
+                        if receipt.decision() == ConversationToolReviewDecision::Reject =>
+                    {
+                        ConversationTailState::ToolContinuationPending
+                    }
+                    ConversationEvent::ToolReview(_) => ConversationTailState::Uncertain,
+                    _ => return Err(invalid()),
+                }
             }
             tool_review::CLAIM_KIND
                 if *event_id == turn.claim_event_id()?

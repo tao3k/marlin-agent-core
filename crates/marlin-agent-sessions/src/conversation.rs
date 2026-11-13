@@ -263,6 +263,7 @@ pub struct ConversationTurn {
     pub start: ConversationTurnSource,
     pub outcome: Option<ConversationTurnOutcome>,
     pub tool_results: Option<ConversationToolResultsReceipt>,
+    pub tool_denial: Option<ConversationToolReviewReceipt>,
     /// Durable prefix of streamed text, possibly shorter than observed output.
     pub partial_text: String,
     /// Recorded thinking prefix. It is an observation, not a validated provider continuation.
@@ -292,6 +293,7 @@ impl fmt::Debug for ConversationTurn {
             .field("start", &self.start)
             .field("outcome", &self.outcome)
             .field("tool_results", &self.tool_results)
+            .field("tool_denial", &self.tool_denial)
             .field("partial_text", &self.partial_text)
             .field("partial_thinking_bytes", &self.partial_thinking.len())
             .field("checkpoint_spans", &self.checkpoint_spans)
@@ -300,6 +302,17 @@ impl fmt::Debug for ConversationTurn {
 }
 
 impl ConversationTurn {
+    pub fn continuation_messages(&self) -> Option<Vec<ModelGatewayMessage>> {
+        self.tool_results
+            .as_ref()
+            .map(ConversationToolResultsReceipt::gateway_messages)
+            .or_else(|| {
+                self.tool_denial
+                    .as_ref()
+                    .and_then(ConversationToolReviewReceipt::denial_messages)
+            })
+    }
+
     fn can_append_checkpoint(&self, channel: ConversationCheckpointChannel) -> bool {
         self.checkpoint_spans
             .last()
@@ -501,8 +514,8 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         .await
     }
 
-    /// Claim the next provider request only after this exact tool-result batch
-    /// was durably committed. No user input is fabricated for the turn.
+    /// Claim the next provider request after the exact review decision and,
+    /// when approved, its tool results are durable. No user input is fabricated.
     pub async fn start_tool_continuation(
         &mut self,
         start: ConversationToolContinuationStart,
@@ -566,8 +579,11 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             ConversationTurnSource::ToolResults(tool) => {
                 if submission.is_some()
                     || !self.pending_tool_request.as_ref().is_some_and(|pending| {
-                        pending.status == ConversationToolReviewStatus::ResultsCommitted
-                            && pending.key() == tool.source
+                        matches!(
+                            pending.status,
+                            ConversationToolReviewStatus::ResultsCommitted
+                                | ConversationToolReviewStatus::Rejected
+                        ) && pending.key() == tool.source
                             && pending.endpoint == tool.endpoint
                     })
                 {
@@ -615,6 +631,7 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             start,
             outcome: None,
             tool_results: None,
+            tool_denial: None,
             partial_text: String::new(),
             partial_thinking: String::new(),
             checkpoint_spans: Vec::new(),
@@ -885,8 +902,11 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                     ConversationTurnSource::User(_) => self.pending_tool_request.is_none(),
                     ConversationTurnSource::ToolResults(tool) => {
                         self.pending_tool_request.as_ref().is_some_and(|pending| {
-                            pending.status == ConversationToolReviewStatus::ResultsCommitted
-                                && pending.key() == tool.source
+                            matches!(
+                                pending.status,
+                                ConversationToolReviewStatus::ResultsCommitted
+                                    | ConversationToolReviewStatus::Rejected
+                            ) && pending.key() == tool.source
                                 && pending.endpoint == tool.endpoint
                         })
                     }
@@ -905,6 +925,7 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                     start,
                     outcome: None,
                     tool_results: None,
+                    tool_denial: None,
                     partial_text: String::new(),
                     partial_thinking: String::new(),
                     checkpoint_spans: Vec::new(),
@@ -995,7 +1016,26 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                     return Err(ConversationJournalError::ReplayStopped);
                 }
             }
-            ConversationEvent::ToolReview(_) => self.replay_tool_review(&event, id)?,
+            ConversationEvent::ToolReview(_) => {
+                self.replay_tool_review(&event, id)?;
+                let denial = self
+                    .pending_tool_request
+                    .as_ref()
+                    .filter(|pending| pending.status == ConversationToolReviewStatus::Rejected)
+                    .and_then(|pending| pending.review_receipt.clone());
+                if let Some(denial) = denial {
+                    let deferred = self
+                        .deferred_tool_turn
+                        .as_mut()
+                        .filter(|turn| turn.id == id)
+                        .ok_or_else(|| {
+                            ConversationJournalError::InvalidEvent(
+                                "tool denial without deferred request".into(),
+                            )
+                        })?;
+                    deferred.tool_denial = Some(denial);
+                }
+            }
             ConversationEvent::ToolExecutionClaim(_) => self.replay_tool_claim(&event, id)?,
             ConversationEvent::ToolResults(_) => {
                 self.replay_tool_results(&event, id)?;

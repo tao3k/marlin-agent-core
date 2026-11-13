@@ -89,6 +89,18 @@ impl ConversationToolReviewReceipt {
     pub fn decision(&self) -> ConversationToolReviewDecision {
         self.decision
     }
+
+    /// A rejected batch has one correlated denial for each requested call.
+    /// No execution claim or handler result is implied by these messages.
+    pub fn denial_messages(&self) -> Option<Vec<ModelGatewayMessage>> {
+        (self.decision == ConversationToolReviewDecision::Reject).then(|| {
+            self.key
+                .call_ids
+                .iter()
+                .map(|id| tool_gateway_message(id.clone(), "Tool execution denied by the user."))
+                .collect()
+        })
+    }
 }
 
 /// Unique committed claim that must be consumed before invoking handlers.
@@ -186,6 +198,20 @@ impl ConversationPendingToolRequest {
 
     pub fn results_receipt(&self) -> Option<&ConversationToolResultsReceipt> {
         self.results_receipt.as_ref()
+    }
+
+    pub fn continuation_messages(&self) -> Option<Vec<ModelGatewayMessage>> {
+        match self.status {
+            ConversationToolReviewStatus::Rejected => self
+                .review_receipt
+                .as_ref()
+                .and_then(ConversationToolReviewReceipt::denial_messages),
+            ConversationToolReviewStatus::ResultsCommitted => self
+                .results_receipt
+                .as_ref()
+                .map(ConversationToolResultsReceipt::gateway_messages),
+            _ => None,
+        }
     }
 }
 

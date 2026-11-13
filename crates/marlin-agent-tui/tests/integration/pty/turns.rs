@@ -27,6 +27,16 @@ use std::{
 #[test]
 #[ignore = "real PTY, linked Scheme tool catalog, loopback provider and local journal"]
 fn scheme_bash_ask_continues_with_one_committed_result() {
+    scheme_bash_review_continues(true);
+}
+
+#[test]
+#[ignore = "real PTY, linked Scheme tool catalog, loopback provider and local journal"]
+fn scheme_bash_denial_continues_without_executing() {
+    scheme_bash_review_continues(false);
+}
+
+fn scheme_bash_review_continues(approve: bool) {
     use marlin_agent_sessions::{
         ConversationJournal, ConversationTurnOutcome, ConversationTurnSource,
     };
@@ -61,17 +71,23 @@ fn scheme_bash_ask_continues_with_one_committed_result() {
         let output = request["input"].as_array().unwrap().last().unwrap();
         assert_eq!(output["type"], "function_call_output");
         assert_eq!(output["call_id"], "call-1");
-        assert!(
-            output["output"]
-                .as_str()
-                .unwrap()
-                .contains("marlin-tool-ok")
-        );
+        let tool_output = output["output"].as_str().unwrap();
+        if approve {
+            assert!(tool_output.contains("marlin-tool-ok"));
+        } else {
+            assert_eq!(tool_output, "Tool execution denied by the user.");
+        }
+        let answer = if approve {
+            "marker observed"
+        } else {
+            "denial observed"
+        };
+        let delta = serde_json::json!({"type":"response.output_text.delta","delta":answer});
         let response = serde_json::json!({"type":"response.completed","response":{
             "status":"completed","id":"resp-answer","model":"gpt-fixture",
-            "output":[{"type":"message","content":[{"type":"output_text","text":"marker observed"}]}]
+            "output":[{"type":"message","content":[{"type":"output_text","text":answer}]}]
         }});
-        write!(continuation, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {{\"type\":\"response.output_text.delta\",\"delta\":\"marker observed\"}}\n\ndata: {response}\n\n").unwrap();
+        write!(continuation, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {delta}\n\ndata: {response}\n\n").unwrap();
     });
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("session.db");
@@ -92,19 +108,30 @@ fn scheme_bash_ask_continues_with_one_committed_result() {
             .iter()
             .any(|line| line.contains("2/2 Tool request:"))
     });
-    terminal.send(b"\x1b[A");
-    terminal.wait_for(Duration::from_secs(5), "first Ask choice", |output| {
-        screen_lines(output)
-            .iter()
-            .any(|line| line.contains("1/2 Tool request:"))
-    });
+    if approve {
+        terminal.send(b"\x1b[A");
+        terminal.wait_for(Duration::from_secs(5), "first Ask choice", |output| {
+            screen_lines(output)
+                .iter()
+                .any(|line| line.contains("1/2 Tool request:"))
+        });
+    }
     terminal.send(b"\r");
-    terminal.wait_for(Duration::from_secs(20), "committed tool result", |output| {
+    let review_status = if approve {
+        "Tool results committed"
+    } else {
+        "Tool request denied"
+    };
+    terminal.wait_for(Duration::from_secs(20), review_status, |output| {
         screen_lines(output)
             .iter()
-            .any(|line| line.contains("Tool results committed"))
+            .any(|line| line.contains(review_status))
     });
-    terminal.wait_text("marker observed");
+    terminal.wait_text(if approve {
+        "marker observed"
+    } else {
+        "denial observed"
+    });
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(10));
     terminal.assert_restored();
@@ -133,10 +160,16 @@ fn scheme_bash_ask_continues_with_one_committed_result() {
         turns
     });
     assert_eq!(turns.len(), 2);
-    assert!(
-        format!("{:?}", turns[0].tool_results.as_ref().unwrap().results())
-            .contains("marlin-tool-ok")
-    );
+    if approve {
+        assert!(
+            format!("{:?}", turns[0].tool_results.as_ref().unwrap().results())
+                .contains("marlin-tool-ok")
+        );
+        assert!(turns[0].tool_denial.is_none());
+    } else {
+        assert!(turns[0].tool_results.is_none());
+        assert!(turns[0].tool_denial.is_some());
+    }
     assert!(matches!(
         turns[1].start,
         ConversationTurnSource::ToolResults(_)

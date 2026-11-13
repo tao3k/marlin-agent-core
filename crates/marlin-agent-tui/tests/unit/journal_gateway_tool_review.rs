@@ -304,10 +304,10 @@ async fn committed_results_continue_the_provider_with_exact_correlated_messages(
 }
 
 #[tokio::test]
-async fn review_handle_rejection_never_creates_a_claim_or_result() {
+async fn review_handle_rejection_continues_without_a_claim_or_result() {
     let storage = InMemoryAgentStorage::new();
-    let gateway =
-        JournalGateway::new(ToolFixture, open(storage.clone()).await).with_tool_offer(tool_offer());
+    let gateway = JournalGateway::new(ToolLoopFixture, open(storage.clone()).await)
+        .with_tool_offer(tool_offer());
     let review = gateway.tool_review_handle().unwrap();
     let mut stream = gateway.stream(tool_request()).await.unwrap();
     assert!(matches!(
@@ -324,15 +324,37 @@ async fn review_handle_rejection_never_creates_a_claim_or_result() {
         )
         .await
         .unwrap();
+    let crate::harness::journal_gateway::JournalToolReviewOutcome::Rejected(receipt) = outcome
+    else {
+        panic!("rejection must not execute the tool");
+    };
+    let pending = review.try_pending().unwrap();
+    let mut messages = tool_request().messages().to_vec();
+    messages.push(pending.assistant().clone());
+    messages.extend(receipt.denial_messages().unwrap());
+    let request = tool_request();
+    let (endpoint, _, options, _) = request.into_parts();
+    let continuation = ModelGatewayRequest::new(endpoint, messages)
+        .with_options(options.expect("tool fixture has options"));
+    let mut answer = gateway.stream(continuation).await.unwrap();
     assert!(matches!(
-        outcome,
-        crate::harness::journal_gateway::JournalToolReviewOutcome::Rejected(_)
+        answer.next().await,
+        Some(Ok(ModelStreamEvent::Completed { .. }))
     ));
+    assert!(answer.next().await.is_none());
     let (project, session, agent) = ids();
-    let reopened = ConversationJournal::open(storage, project, session, agent, |_| {})
-        .await
-        .unwrap();
-    let pending = reopened.pending_tool_request().unwrap();
-    assert_eq!(pending.status(), ConversationToolReviewStatus::Rejected);
-    assert!(pending.results_receipt().is_none());
+    let mut turns = Vec::new();
+    let reopened = ConversationJournal::open(storage, project, session, agent, |turn| {
+        turns.push(turn.clone())
+    })
+    .await
+    .unwrap();
+    assert!(reopened.pending_tool_request().is_none());
+    assert_eq!(turns.len(), 2);
+    assert_eq!(turns[0].tool_denial.as_ref(), Some(&receipt));
+    assert!(turns[0].tool_results.is_none());
+    assert!(matches!(
+        turns[1].start,
+        ConversationTurnSource::ToolResults(_)
+    ));
 }

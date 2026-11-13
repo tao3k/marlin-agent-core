@@ -526,7 +526,7 @@ async fn committed_tool_results_admit_a_typed_continuation_without_reexecuting()
 }
 
 #[tokio::test]
-async fn rejected_tool_request_cannot_claim_execution_after_replay() {
+async fn rejected_tool_request_continues_without_claiming_execution() {
     let storage = InMemoryAgentStorage::new();
     let (project, session, agent) = ids();
     let mut journal = ConversationJournal::open(
@@ -558,14 +558,65 @@ async fn rejected_tool_request_cannot_claim_execution_after_replay() {
         .await
         .unwrap();
     assert!(journal.claim_tool_execution(&receipt, 4).await.is_err());
-    let mut reopened = ConversationJournal::open(storage, project, session, agent, |_| {})
-        .await
-        .unwrap();
+    let denial = receipt.denial_messages().unwrap();
+    assert_eq!(denial.len(), 1);
+    assert_eq!(denial[0].tool_call_id.as_ref().unwrap().as_str(), "call_1");
+    assert_eq!(denial[0].content, "Tool execution denied by the user.");
+    let reader = ConversationEventReader::new(
+        storage.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+    );
+    assert_eq!(
+        reader.latest_turn().await.unwrap().unwrap().state,
+        marlin_agent_sessions::ConversationTailState::ToolContinuationPending
+    );
+    let mut turns = Vec::new();
+    let mut reopened = ConversationJournal::open(
+        storage.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+        |turn| turns.push(turn.clone()),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         reopened.pending_tool_request().unwrap().status(),
         ConversationToolReviewStatus::Rejected
     );
     assert!(reopened.claim_tool_execution(&receipt, 5).await.is_err());
+    assert_eq!(turns[0].tool_denial.as_ref(), Some(&receipt));
+    assert_eq!(turns[0].continuation_messages().unwrap(), denial);
+    let next = reopened
+        .start_tool_continuation(
+            ConversationToolContinuationStart {
+                endpoint: start("ignored").endpoint,
+                source: receipt.key().clone(),
+            },
+            6,
+        )
+        .await
+        .unwrap();
+    reopened
+        .finish(next, completion("understood"), 7)
+        .await
+        .unwrap();
+    assert!(reopened.pending_tool_request().is_none());
+    let mut recovered = Vec::new();
+    let reopened = ConversationJournal::open(storage, project, session, agent, |turn| {
+        recovered.push(turn.clone())
+    })
+    .await
+    .unwrap();
+    assert!(reopened.pending_tool_request().is_none());
+    assert_eq!(recovered.len(), 2);
+    assert_eq!(recovered[0].tool_denial.as_ref(), Some(&receipt));
+    assert!(matches!(
+        recovered[1].start,
+        ConversationTurnSource::ToolResults(_)
+    ));
 }
 
 #[tokio::test]

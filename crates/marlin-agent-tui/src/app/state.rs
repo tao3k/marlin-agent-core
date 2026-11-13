@@ -752,8 +752,8 @@ impl App {
                             history.push(user_gateway_message(prompt));
                         }
                         history.push(message.clone());
-                        if let Some(receipt) = &turn.tool_results {
-                            history.extend(receipt.gateway_messages());
+                        if let Some(messages) = &turn.tool_messages {
+                            history.extend(messages.iter().cloned());
                         }
                     }
                     self.restore_answer_suffix(
@@ -762,8 +762,8 @@ impl App {
                         merge_answer,
                         false,
                     );
-                    let detail = if turn.tool_results.is_some() {
-                        "Committed tool results await provider continuation.".to_owned()
+                    let detail = if turn.tool_messages.is_some() {
+                        "Committed tool review awaits provider continuation.".to_owned()
                     } else {
                         format!(
                             "The model requested {} tool(s). Execution and further turns await authorization.",
@@ -773,7 +773,7 @@ impl App {
                     self.publish_message(MessageEvent {
                         source: MessageSource::Gateway,
                         severity: MessageSeverity::Warning,
-                        summary: if turn.tool_results.is_some() {
+                        summary: if turn.tool_messages.is_some() {
                             "Tool continuation pending"
                         } else {
                             "Tool review pending"

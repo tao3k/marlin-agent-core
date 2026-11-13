@@ -316,7 +316,7 @@ fn restored_answer_suffix_merges_with_last_text_checkpoint() {
     app.restore(vec![ReplayTurn {
         id: serde_json::from_str("1").unwrap(),
         prompt: Some("prompt".into()),
-        tool_results: None,
+        tool_messages: None,
         thinking: String::new(),
         checkpoint_spans: vec![ConversationCheckpointSpan {
             channel: ConversationCheckpointChannel::Text,
@@ -348,7 +348,7 @@ fn recorded_thinking_is_visible_and_blocks_unverified_continuation() {
     app.restore(vec![ReplayTurn {
         id: serde_json::from_str("1").unwrap(),
         prompt: Some("question".into()),
-        tool_results: None,
+        tool_messages: None,
         thinking: "reasoning prefix".into(),
         checkpoint_spans: vec![marlin_agent_sessions::ConversationCheckpointSpan {
             channel: marlin_agent_sessions::ConversationCheckpointChannel::Thinking,
@@ -389,7 +389,7 @@ fn restored_session_reports_incompatible_model_route() {
     app.restore(vec![ReplayTurn {
         id: serde_json::from_str("1").unwrap(),
         prompt: Some("prompt".into()),
-        tool_results: None,
+        tool_messages: None,
         thinking: String::new(),
         checkpoint_spans: Vec::new(),
         outcome: ReplayOutcome::Completed(answer),
@@ -694,7 +694,7 @@ fn legacy_failure_blocks_submission_without_losing_draft() {
     app.restore(vec![ReplayTurn {
         id,
         prompt: Some("previous".into()),
-        tool_results: None,
+        tool_messages: None,
         thinking: String::new(),
         checkpoint_spans: Vec::new(),
         outcome: ReplayOutcome::LegacyFailed {

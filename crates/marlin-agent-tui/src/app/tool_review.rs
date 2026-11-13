@@ -98,17 +98,14 @@ pub(super) fn poll_tool_review<G: ModelStreamingGateway + Clone>(
         if app.pending_tool_request
             && app.pending.is_none()
             && !app.tool_review_suppressed
-            && let Some(receipt) = app
+            && let Some(messages) = app
                 .tool_review
                 .as_ref()
                 .and_then(|review| review.try_pending())
-                .filter(|pending| {
-                    pending.status() == ConversationToolReviewStatus::ResultsCommitted
-                })
-                .and_then(|pending| pending.results_receipt().cloned())
+                .and_then(|pending| pending.continuation_messages())
         {
             app.tool_review_suppressed = true;
-            app.continue_tool_turn(gateway, runtime, tx, &receipt);
+            app.continue_tool_turn(gateway, runtime, tx, &messages);
             return true;
         }
         return false;
@@ -131,13 +128,20 @@ pub(super) fn poll_tool_review<G: ModelStreamingGateway + Clone>(
     app.tool_review_inflight = None;
     app.tool_review_task = None;
     match result {
-        Ok(super::super::journal_gateway::JournalToolReviewOutcome::Rejected(receipt)) => app
-            .publish_message(MessageEvent {
+        Ok(super::super::journal_gateway::JournalToolReviewOutcome::Rejected(receipt)) => {
+            app.publish_message(MessageEvent {
                 source: MessageSource::Gateway,
                 severity: MessageSeverity::Info,
                 summary: "Tool request denied",
-                detail: &format!("Request in turn {} was denied.", receipt.key().turn().get()),
-            }),
+                detail: &format!(
+                    "Request in turn {} was denied; continuing the model turn.",
+                    receipt.key().turn().get()
+                ),
+            });
+            if let Some(messages) = receipt.denial_messages() {
+                app.continue_tool_turn(gateway, runtime, tx, &messages);
+            }
+        }
         Ok(super::super::journal_gateway::JournalToolReviewOutcome::Results(receipt)) => {
             app.publish_message(MessageEvent {
                 source: MessageSource::Gateway,
@@ -148,7 +152,7 @@ pub(super) fn poll_tool_review<G: ModelStreamingGateway + Clone>(
                     receipt.results().len()
                 ),
             });
-            app.continue_tool_turn(gateway, runtime, tx, &receipt);
+            app.continue_tool_turn(gateway, runtime, tx, &receipt.gateway_messages());
         }
         Err(error) => publish_error(app, MessageSource::Gateway, "Tool review failed", &error),
     }
