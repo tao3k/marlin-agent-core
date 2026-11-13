@@ -21,7 +21,7 @@ on:
         default: '["ubuntu-latest"]'
         type: string
       trace_dependency_crash:
-        description: Inspect dependency crash dumps and test the compiled Org grammar import on GitHub-hosted Ubuntu.
+        description: Inspect dependency crash dumps and replay the failed indexer's source order on GitHub-hosted Ubuntu.
         default: false
         type: boolean
       qualify_context_latency:

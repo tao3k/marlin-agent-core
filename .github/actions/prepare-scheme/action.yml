@@ -6,7 +6,7 @@ name: Build the Scheme package
 description: Use the Gerbil package manager and Builder on the selected platform.
 inputs:
   trace-dependency-crash:
-    description: Inspect Gerbil crash dumps and test the compiled Org grammar import on hosted Ubuntu.
+    description: Retain the failing Gerbil indexer's source order and inspect its crash dump on hosted Ubuntu.
     default: 'false'
 runs:
   using: composite
@@ -61,6 +61,23 @@ runs:
           trap 'sudo sysctl -q -w "kernel.core_pattern=$core_pattern"' EXIT
           sudo sysctl -q -w "kernel.core_pattern=$crash_dir/core.%e.%p"
           ulimit -c unlimited
+          export MARLIN_TRACE_GXTAGS="$(command -v gxtags)"
+          export MARLIN_TRACE_DIR="$crash_dir"
+          mkdir "$crash_dir/bin"
+          cat > "$crash_dir/bin/gxtags" <<'TRACE'
+        #!/usr/bin/env bash
+        previous=
+        for argument in "$@"; do
+          if [[ "$previous" == --source-list ]]; then
+            cp -- "$argument" "$MARLIN_TRACE_DIR/$BASHPID.inputs" || exit
+            break
+          fi
+          previous=$argument
+        done
+        exec "$MARLIN_TRACE_GXTAGS" "$@"
+        TRACE
+          chmod +x "$crash_dir/bin/gxtags"
+          export PATH="$crash_dir/bin:$PATH"
         fi
         # gxpkg captures gxtags stdout. Send uncaught Gambit errors to stderr.
         (cd scheme && GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+" gerbil deps --install) || {
@@ -71,11 +88,22 @@ runs:
               [[ -f "$dump" ]] || continue
               tool=${dump##*/core.}
               tool=${tool%%.*}
+              worker_pid=${dump##*.}
+              executable=$(command -v "$tool")
+              if [[ "$tool" == gxtags ]]; then
+                executable=$MARLIN_TRACE_GXTAGS
+              fi
+              worker_inputs="$crash_dir/$worker_pid.inputs"
+              if [[ -s "$worker_inputs" ]]; then
+                printf 'gxtags worker %s ordered source list\n' "$worker_pid"
+                cat -- "$worker_inputs"
+                printf '\n'
+              fi
               backtrace="$dump.txt"
               gdb --batch --nx -iex 'set auto-load off' \
                 -ex 'set print frame-arguments none' -ex 'thread apply all bt' \
                 -ex 'info registers' -ex 'disassemble /r $pc-32,$pc+48' \
-                "$(command -v "$tool")" "$dump" 2>&1 | tee "$backtrace" || true
+                "$executable" "$dump" 2>&1 | tee "$backtrace" || true
               if grep -Eq 'orgize/[^ ]*/(grammar|expectation-grammar)~0[.]o1' "$backtrace"; then
                 orgize_crashed=true
               fi
@@ -85,6 +113,19 @@ runs:
               # the same compiled dependencies as the full package index.
               ulimit -c 0
               export GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+"
+              # Reuse gxtags' actual worker input after the original workers exit.
+              for dump in "$crash_dir"/core.gxtags.* "$crash_dir"/core.gerbil.*; do
+                [[ -f "$dump" && "$dump" != *.txt ]] || continue
+                worker_pid=${dump##*.}
+                worker_inputs="$crash_dir/$worker_pid.inputs"
+                [[ -s "$worker_inputs" ]] || continue
+                replay_status=0
+                (cd "$GERBIL_PATH/pkg" && timeout 120s "$MARLIN_TRACE_GXTAGS" \
+                  --global-env --jobs 1 --source-list "$worker_inputs" \
+                  -o "$crash_dir/$worker_pid.tags" > "$crash_dir/$worker_pid.log" 2>&1) || replay_status=$?
+                printf 'gxtags worker %s ordered replay status %s\n' "$worker_pid" "$replay_status"
+                tail -n 12 "$crash_dir/$worker_pid.log"
+              done
               for module in org-parser/grammar org-contract/expectation-grammar; do
                 import_status=0
                 tag_status=0
