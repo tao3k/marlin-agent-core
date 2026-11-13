@@ -773,7 +773,11 @@ impl App {
                     self.publish_message(MessageEvent {
                         source: MessageSource::Gateway,
                         severity: MessageSeverity::Warning,
-                        summary: if turn.tool_results.is_some() { "Tool continuation pending" } else { "Tool review pending" },
+                        summary: if turn.tool_results.is_some() {
+                            "Tool continuation pending"
+                        } else {
+                            "Tool review pending"
+                        },
                         detail: &detail,
                     });
                 }

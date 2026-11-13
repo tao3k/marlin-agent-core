@@ -8,8 +8,8 @@ use std::{collections::VecDeque, error::Error, fmt, mem::size_of};
 
 use marlin_agent_protocol::{ModelGatewayMessage, ModelGatewayMessageRole};
 use marlin_agent_sessions::{
-    ConversationCheckpointSpan, ConversationJournal, ConversationJournalError, ConversationTurn,
-    ConversationToolResultsReceipt, ConversationTurnId, ConversationTurnOutcome,
+    ConversationCheckpointSpan, ConversationJournal, ConversationJournalError,
+    ConversationToolResultsReceipt, ConversationTurn, ConversationTurnId, ConversationTurnOutcome,
     ConversationUncertaintyReason,
 };
 use marlin_agent_storage::{AgentId, ProjectId, SessionEventStore, SessionId};
@@ -106,10 +106,13 @@ fn projected_bytes(turn: &ConversationTurn) -> Option<usize> {
         .saturating_add(turn.start.user_text().map_or(0, str::len))
         .saturating_add(turn.tool_results.as_ref().map_or(0, |receipt| {
             receipt.results().iter().fold(0usize, |sum, result| {
-                sum.saturating_add(result.id.as_str().len()).saturating_add(match &result.outcome {
-                    marlin_agent_sessions::ConversationToolResultOutcome::Completed(text)
-                    | marlin_agent_sessions::ConversationToolResultOutcome::Failed(text) => text.len(),
-                })
+                sum.saturating_add(result.id.as_str().len())
+                    .saturating_add(match &result.outcome {
+                        marlin_agent_sessions::ConversationToolResultOutcome::Completed(text)
+                        | marlin_agent_sessions::ConversationToolResultOutcome::Failed(text) => {
+                            text.len()
+                        }
+                    })
             })
         }))
         .saturating_add(turn.partial_thinking.len())

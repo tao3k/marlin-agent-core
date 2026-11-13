@@ -493,8 +493,12 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         start: ConversationTurnStart,
         created_at_unix_ms: i64,
     ) -> Result<ConversationTurnId, ConversationJournalError> {
-        self.commit_start(ConversationTurnSource::User(start), None, created_at_unix_ms)
-            .await
+        self.commit_start(
+            ConversationTurnSource::User(start),
+            None,
+            created_at_unix_ms,
+        )
+        .await
     }
 
     /// Claim the next provider request only after this exact tool-result batch
@@ -553,7 +557,9 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                     return Err(ConversationJournalError::ToolRequestPending);
                 }
                 if user.user_text.trim().is_empty() {
-                    return Err(ConversationJournalError::InvalidEvent("user text is empty".into()));
+                    return Err(ConversationJournalError::InvalidEvent(
+                        "user text is empty".into(),
+                    ));
                 }
                 (START_KIND, serde_json::to_vec(user)?)
             }
@@ -766,11 +772,19 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         let active = self.active.take().expect("active turn checked above");
         let pending_tool_request =
             pending_tool_request_from_outcome(&self.session, id, &active.start, &outcome);
-        if pending_tool_request.is_some() || !matches!(outcome, ConversationTurnOutcome::RejectedBeforeDispatch { .. }) {
+        if pending_tool_request.is_some()
+            || !matches!(
+                outcome,
+                ConversationTurnOutcome::RejectedBeforeDispatch { .. }
+            )
+        {
             self.pending_tool_request = pending_tool_request;
         }
         self.owns_active = false;
-        self.owns_pending_review = self.pending_tool_request.as_ref().is_some_and(|pending| pending.status == ConversationToolReviewStatus::AwaitingReview);
+        self.owns_pending_review = self
+            .pending_tool_request
+            .as_ref()
+            .is_some_and(|pending| pending.status == ConversationToolReviewStatus::AwaitingReview);
         self.owns_pending_result = false;
         Ok(())
     }
@@ -869,14 +883,13 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                 }
                 let allowed = match &start {
                     ConversationTurnSource::User(_) => self.pending_tool_request.is_none(),
-                    ConversationTurnSource::ToolResults(tool) => self
-                        .pending_tool_request
-                        .as_ref()
-                        .is_some_and(|pending| {
+                    ConversationTurnSource::ToolResults(tool) => {
+                        self.pending_tool_request.as_ref().is_some_and(|pending| {
                             pending.status == ConversationToolReviewStatus::ResultsCommitted
                                 && pending.key() == tool.source
                                 && pending.endpoint == tool.endpoint
-                        }),
+                        })
+                    }
                 };
                 if !allowed || self.active.is_some() || id.0 != self.next {
                     return Err(ConversationJournalError::InvalidEvent(
@@ -961,13 +974,22 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                     pending_tool_request_from_outcome(&self.session, id, &turn.start, outcome)
                 });
                 if next_pending.is_some()
-                    || !matches!(turn.outcome, Some(ConversationTurnOutcome::RejectedBeforeDispatch { .. }))
+                    || !matches!(
+                        turn.outcome,
+                        Some(ConversationTurnOutcome::RejectedBeforeDispatch { .. })
+                    )
                 {
                     self.pending_tool_request = next_pending;
                 }
-                self.owns_pending_review = self.pending_tool_request.as_ref().is_some_and(|pending| pending.status == ConversationToolReviewStatus::AwaitingReview);
+                self.owns_pending_review =
+                    self.pending_tool_request.as_ref().is_some_and(|pending| {
+                        pending.status == ConversationToolReviewStatus::AwaitingReview
+                    });
                 self.owns_pending_result = false;
-                if matches!(turn.outcome, Some(ConversationTurnOutcome::ToolRequested { .. })) {
+                if matches!(
+                    turn.outcome,
+                    Some(ConversationTurnOutcome::ToolRequested { .. })
+                ) {
                     self.deferred_tool_turn = Some(turn);
                 } else if !visit(&turn) {
                     return Err(ConversationJournalError::ReplayStopped);
@@ -977,8 +999,19 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             ConversationEvent::ToolExecutionClaim(_) => self.replay_tool_claim(&event, id)?,
             ConversationEvent::ToolResults(_) => {
                 self.replay_tool_results(&event, id)?;
-                let receipt = self.pending_tool_request.as_ref().and_then(|pending| pending.results_receipt.clone());
-                let deferred = self.deferred_tool_turn.as_mut().filter(|turn| turn.id == id).ok_or_else(|| ConversationJournalError::InvalidEvent("tool results without deferred request".into()))?;
+                let receipt = self
+                    .pending_tool_request
+                    .as_ref()
+                    .and_then(|pending| pending.results_receipt.clone());
+                let deferred = self
+                    .deferred_tool_turn
+                    .as_mut()
+                    .filter(|turn| turn.id == id)
+                    .ok_or_else(|| {
+                        ConversationJournalError::InvalidEvent(
+                            "tool results without deferred request".into(),
+                        )
+                    })?;
                 deferred.tool_results = receipt;
             }
             ConversationEvent::Outcome(ConversationTurnOutcome::Uncertain { reason }) => {

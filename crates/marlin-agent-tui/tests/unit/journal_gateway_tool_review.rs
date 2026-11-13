@@ -8,8 +8,8 @@ use super::{ids, open, request};
 use crate::harness::journal_gateway::JournalGateway;
 use marlin_agent_protocol::{
     ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
-    ModelGatewayError, ModelGatewayFuture, ModelGatewayRequest, ModelGatewayResult,
-    ModelGatewayMessageRole, ModelStreamInterruption, ModelToolCall, ModelToolCallId, ModelToolName,
+    ModelGatewayError, ModelGatewayFuture, ModelGatewayMessageRole, ModelGatewayRequest,
+    ModelGatewayResult, ModelStreamInterruption, ModelToolCall, ModelToolCallId, ModelToolName,
     assistant_gateway_message,
 };
 use marlin_agent_runtime::{
@@ -100,14 +100,24 @@ impl ModelStreamingGateway for ToolLoopFixture {
         &self,
         request: ModelGatewayRequest,
     ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayEventStream>> {
-        if request.messages().last().map(|message| &message.role) == Some(&ModelGatewayMessageRole::Tool) {
+        if request.messages().last().map(|message| &message.role)
+            == Some(&ModelGatewayMessageRole::Tool)
+        {
             let response = ModelGatewayCompletionResponse::new(
-                "answer", "model", vec![ModelGatewayCompletionChoice::new(
-                    0, assistant_gateway_message("marker read"), None,
+                "answer",
+                "model",
+                vec![ModelGatewayCompletionChoice::new(
+                    0,
+                    assistant_gateway_message("marker read"),
+                    None,
                 )],
             );
             return Box::pin(async move {
-                Ok(Box::pin(tokio_stream::iter([Ok(ModelStreamEvent::Completed { response })])) as ModelGatewayEventStream)
+                Ok(
+                    Box::pin(tokio_stream::iter([Ok(ModelStreamEvent::Completed {
+                        response,
+                    })])) as ModelGatewayEventStream,
+                )
             });
         }
         ToolFixture.stream(request)
@@ -242,11 +252,15 @@ async fn committed_results_continue_the_provider_with_exact_correlated_messages(
     assert!(stream.next().await.is_none());
     let key = review.try_pending().unwrap().key();
     let (owner, _) = TokioAgentRuntime::new(4);
-    let outcome = review.decide(
-        ConversationToolReviewRequest::new(key, ConversationToolReviewDecision::ApproveOnce),
-        owner.context(),
-    ).await.unwrap();
-    let crate::harness::journal_gateway::JournalToolReviewOutcome::Results(receipt) = outcome else {
+    let outcome = review
+        .decide(
+            ConversationToolReviewRequest::new(key, ConversationToolReviewDecision::ApproveOnce),
+            owner.context(),
+        )
+        .await
+        .unwrap();
+    let crate::harness::journal_gateway::JournalToolReviewOutcome::Results(receipt) = outcome
+    else {
         panic!("approval must commit results");
     };
     let mut messages = request().messages().to_vec();
@@ -258,19 +272,35 @@ async fn committed_results_continue_the_provider_with_exact_correlated_messages(
     let (endpoint, mut messages, options, _) = tampered.into_parts();
     messages.last_mut().unwrap().content = "foreign".into();
     tampered = ModelGatewayRequest::new(endpoint, messages).with_options(options.unwrap());
-    assert!(matches!(gateway.stream(tampered).await, Err(ModelGatewayError::RequestNotDispatched(_))));
+    assert!(matches!(
+        gateway.stream(tampered).await,
+        Err(ModelGatewayError::RequestNotDispatched(_))
+    ));
     let mut answer = gateway.stream(continuation.clone()).await.unwrap();
-    assert!(matches!(answer.next().await, Some(Ok(ModelStreamEvent::Completed { .. }))));
+    assert!(matches!(
+        answer.next().await,
+        Some(Ok(ModelStreamEvent::Completed { .. }))
+    ));
     assert!(answer.next().await.is_none());
     assert!(gateway.stream(continuation).await.is_err());
     let (project, session, agent) = ids();
     let mut turns = Vec::new();
-    let reopened = ConversationJournal::open(storage, project, session, agent, |turn| turns.push(turn.clone())).await.unwrap();
+    let reopened = ConversationJournal::open(storage, project, session, agent, |turn| {
+        turns.push(turn.clone())
+    })
+    .await
+    .unwrap();
     assert!(reopened.pending_tool_request().is_none());
     assert_eq!(turns.len(), 2);
     assert_eq!(turns[0].tool_results.as_ref(), Some(&receipt));
-    assert!(matches!(turns[1].start, ConversationTurnSource::ToolResults(_)));
-    assert!(matches!(turns[1].outcome, Some(ConversationTurnOutcome::Completed { .. })));
+    assert!(matches!(
+        turns[1].start,
+        ConversationTurnSource::ToolResults(_)
+    ));
+    assert!(matches!(
+        turns[1].outcome,
+        Some(ConversationTurnOutcome::Completed { .. })
+    ));
 }
 
 #[tokio::test]

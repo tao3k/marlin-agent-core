@@ -102,7 +102,9 @@ pub(super) fn poll_tool_review<G: ModelStreamingGateway + Clone>(
                 .tool_review
                 .as_ref()
                 .and_then(|review| review.try_pending())
-                .filter(|pending| pending.status() == ConversationToolReviewStatus::ResultsCommitted)
+                .filter(|pending| {
+                    pending.status() == ConversationToolReviewStatus::ResultsCommitted
+                })
                 .and_then(|pending| pending.results_receipt().cloned())
         {
             app.tool_review_suppressed = true;

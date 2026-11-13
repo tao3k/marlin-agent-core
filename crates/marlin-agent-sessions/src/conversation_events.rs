@@ -232,7 +232,8 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
                 ConversationTailState::ToolContinuationPending
             }
             START_KIND | TOOL_CONTINUATION_START_KIND
-                if *event_id == start && header.causality_parent_event_id.is_none() => {
+                if *event_id == start && header.causality_parent_event_id.is_none() =>
+            {
                 ConversationTailState::Unfinished
             }
             kind if header.causality_parent_event_id.as_ref() == Some(&start) => match kind {
@@ -403,20 +404,25 @@ pub(super) fn decode_event(
         if start.user_text.trim().is_empty() {
             return Err(invalid());
         }
-        return Ok(ConversationEvent::Started(ConversationTurnSource::User(start)));
+        return Ok(ConversationEvent::Started(ConversationTurnSource::User(
+            start,
+        )));
     }
     if record.event_kind == TOOL_CONTINUATION_START_KIND
         && record.event_id == start_id
         && record.causality_parent_event_id.is_none()
     {
         let start: ConversationToolContinuationStart = serde_json::from_slice(&record.body)?;
-        start.endpoint.validate_contract().map_err(|error| {
-            ConversationJournalError::InvalidEvent(error.to_string())
-        })?;
+        start
+            .endpoint
+            .validate_contract()
+            .map_err(|error| ConversationJournalError::InvalidEvent(error.to_string()))?;
         if start.source.session() != &record.session_id || start.source.turn() >= id {
             return Err(invalid());
         }
-        return Ok(ConversationEvent::Started(ConversationTurnSource::ToolResults(start)));
+        return Ok(ConversationEvent::Started(
+            ConversationTurnSource::ToolResults(start),
+        ));
     }
     if record.event_kind == tool_review::REVIEW_KIND
         && record.event_id == id.review_event_id()?

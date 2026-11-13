@@ -27,7 +27,9 @@ use std::{
 #[test]
 #[ignore = "real PTY, linked Scheme tool catalog, loopback provider and local journal"]
 fn scheme_bash_ask_continues_with_one_committed_result() {
-    use marlin_agent_sessions::{ConversationJournal, ConversationTurnOutcome, ConversationTurnSource};
+    use marlin_agent_sessions::{
+        ConversationJournal, ConversationTurnOutcome, ConversationTurnSource,
+    };
     use marlin_agent_storage::{
         AgentId, ProjectId, SessionId, TursoAgentStorage, TursoAgentStorageConfig,
         TursoBatchTransactionMode, TursoOptimizationProfile,
@@ -59,12 +61,17 @@ fn scheme_bash_ask_continues_with_one_committed_result() {
         let output = request["input"].as_array().unwrap().last().unwrap();
         assert_eq!(output["type"], "function_call_output");
         assert_eq!(output["call_id"], "call-1");
-        assert!(output["output"].as_str().unwrap().contains("marlin-tool-ok"));
+        assert!(
+            output["output"]
+                .as_str()
+                .unwrap()
+                .contains("marlin-tool-ok")
+        );
         let response = serde_json::json!({"type":"response.completed","response":{
             "status":"completed","id":"resp-answer","model":"gpt-fixture",
             "output":[{"type":"message","content":[{"type":"output_text","text":"marker observed"}]}]
         }});
-        write!(continuation, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {response}\n\n").unwrap();
+        write!(continuation, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {{\"type\":\"response.output_text.delta\",\"delta\":\"marker observed\"}}\n\ndata: {response}\n\n").unwrap();
     });
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("session.db");
@@ -127,10 +134,17 @@ fn scheme_bash_ask_continues_with_one_committed_result() {
     });
     assert_eq!(turns.len(), 2);
     assert!(
-        format!("{:?}", turns[0].tool_results.as_ref().unwrap().results()).contains("marlin-tool-ok")
+        format!("{:?}", turns[0].tool_results.as_ref().unwrap().results())
+            .contains("marlin-tool-ok")
     );
-    assert!(matches!(turns[1].start, ConversationTurnSource::ToolResults(_)));
-    assert!(matches!(turns[1].outcome, Some(ConversationTurnOutcome::Completed { .. })));
+    assert!(matches!(
+        turns[1].start,
+        ConversationTurnSource::ToolResults(_)
+    ));
+    assert!(matches!(
+        turns[1].outcome,
+        Some(ConversationTurnOutcome::Completed { .. })
+    ));
 }
 
 #[test]

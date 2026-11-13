@@ -4,7 +4,9 @@
 
 //! Durable review and pre-effect claim for a pending model tool batch.
 
-use marlin_agent_protocol::{ModelGatewayMessage, ModelToolCall, ModelToolCallId, tool_gateway_message};
+use marlin_agent_protocol::{
+    ModelGatewayMessage, ModelToolCall, ModelToolCallId, tool_gateway_message,
+};
 use marlin_agent_storage::{SessionEventRecord, SessionEventStore, SessionId};
 use serde::{Deserialize, Serialize};
 

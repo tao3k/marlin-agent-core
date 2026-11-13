@@ -57,6 +57,21 @@ impl App {
         tx: &ReplySender,
     ) {
         if self.command_draft.is_none() && self.composer.text().trim().is_empty() {
+            if self.pending_tool_request
+                && self.pending.is_none()
+                && self.tool_review_suppressed
+                && let Some(receipt) = self
+                    .tool_review
+                    .as_ref()
+                    .and_then(|review| review.try_pending())
+                    .filter(|pending| {
+                        pending.status()
+                            == marlin_agent_sessions::ConversationToolReviewStatus::ResultsCommitted
+                    })
+                    .and_then(|pending| pending.results_receipt().cloned())
+            {
+                self.continue_tool_turn(gateway, runtime, tx, &receipt);
+            }
             return;
         }
         if self.submit_process_command() {
@@ -345,7 +360,13 @@ impl App {
         let input = self.composer.take();
         self.prompt_history.restore(&mut self.composer);
         self.push_prompt(input.clone());
-        self.begin_stream(gateway, runtime, tx, vec![user_gateway_message(input.clone())], Some(input));
+        self.begin_stream(
+            gateway,
+            runtime,
+            tx,
+            vec![user_gateway_message(input.clone())],
+            Some(input),
+        );
     }
 
     pub(super) fn continue_tool_turn<G: ModelStreamingGateway + Clone>(
@@ -621,7 +642,9 @@ impl App {
                         "Prompt restored to the composer."
                     }
                     Some(_) => "Current draft retained; the rejected prompt remains visible above.",
-                    None => "Committed tool results remain in the session journal; no tool was run again.",
+                    None => {
+                        "Committed tool results remain in the session journal; press Enter to retry the model request without running the tool again."
+                    }
                 };
                 self.publish_message(MessageEvent {
                     source: MessageSource::Gateway,

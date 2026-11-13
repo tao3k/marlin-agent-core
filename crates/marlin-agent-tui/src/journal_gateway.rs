@@ -16,9 +16,9 @@ use marlin_agent_protocol::{
 use marlin_agent_runtime::{ModelToolOffer, ModelToolOutcome, RuntimeContext};
 use marlin_agent_sessions::{
     ConversationJournal, ConversationPendingToolRequest, ConversationTerminalObservation,
-    ConversationToolCallResult, ConversationToolResultOutcome, ConversationToolResultsReceipt,
-    ConversationToolReviewDecision, ConversationToolReviewReceipt, ConversationToolReviewRequest,
-    ConversationToolContinuationStart, ConversationTurnId, ConversationTurnStart,
+    ConversationToolCallResult, ConversationToolContinuationStart, ConversationToolResultOutcome,
+    ConversationToolResultsReceipt, ConversationToolReviewDecision, ConversationToolReviewReceipt,
+    ConversationToolReviewRequest, ConversationTurnId, ConversationTurnStart,
     ConversationUncertaintyReason,
 };
 use marlin_agent_storage::SessionEventStore;
@@ -234,7 +234,12 @@ impl<G: ModelStreamingGateway, S: SessionEventStore + 'static> ModelStreamingGat
                 Some(ModelGatewayMessageRole::User) => {
                     let start = ConversationTurnStart {
                         endpoint: request.endpoint().clone(),
-                        user_text: request.messages().last().expect("matched user").content.clone(),
+                        user_text: request
+                            .messages()
+                            .last()
+                            .expect("matched user")
+                            .content
+                            .clone(),
                     };
                     journal.start(start, now_ms()).await.map_err(failure)?
                 }
@@ -243,28 +248,42 @@ impl<G: ModelStreamingGateway, S: SessionEventStore + 'static> ModelStreamingGat
                         ModelGatewayError::RequestNotDispatched("no committed tool results".into())
                     })?;
                     let receipt = pending.results_receipt().ok_or_else(|| {
-                        ModelGatewayError::RequestNotDispatched("tool results are not committed".into())
+                        ModelGatewayError::RequestNotDispatched(
+                            "tool results are not committed".into(),
+                        )
                     })?;
                     let result_messages = receipt.gateway_messages();
-                    let preceding = request.messages().strip_suffix(result_messages.as_slice()).ok_or_else(|| {
-                        ModelGatewayError::RequestNotDispatched("tool results do not match the committed batch".into())
-                    })?;
+                    let preceding = request
+                        .messages()
+                        .strip_suffix(result_messages.as_slice())
+                        .ok_or_else(|| {
+                            ModelGatewayError::RequestNotDispatched(
+                                "tool results do not match the committed batch".into(),
+                            )
+                        })?;
                     if request.endpoint() != pending.endpoint()
                         || preceding.last() != Some(pending.assistant())
                     {
                         return Err(ModelGatewayError::RequestNotDispatched(
-                            "tool continuation route or assistant request differs from the journal".into(),
+                            "tool continuation route or assistant request differs from the journal"
+                                .into(),
                         ));
                     }
                     let start = ConversationToolContinuationStart {
                         endpoint: request.endpoint().clone(),
                         source: receipt.key().clone(),
                     };
-                    journal.start_tool_continuation(start, now_ms()).await.map_err(failure)?
+                    journal
+                        .start_tool_continuation(start, now_ms())
+                        .await
+                        .map_err(failure)?
                 }
-                _ => return Err(ModelGatewayError::RequestNotDispatched(
-                    "conversation request must end with user input or committed tool results".into(),
-                )),
+                _ => {
+                    return Err(ModelGatewayError::RequestNotDispatched(
+                        "conversation request must end with user input or committed tool results"
+                            .into(),
+                    ));
+                }
             };
             let mut source = match gateway.stream(request).await {
                 Ok(source) => source,

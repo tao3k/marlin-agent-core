@@ -24,8 +24,15 @@ fn linked_scheme_projects_the_editor_presentation() {
     assert!(
         matches!(host.view().layout.frame_tree.region_child("transcript"), Some(UiElement::Choice { fallback, .. }) if matches!(fallback.as_ref(), UiElement::Slot(id) if id.as_str() == "conversation"))
     );
-    let main = host.view().layout.frame_tree.region_child("transcript").unwrap();
-    let selected = super::super::ui_elements::resolve_choice(main, &|fact| matches!(fact.as_str(), "messages" | "runtime"));
+    let main = host
+        .view()
+        .layout
+        .frame_tree
+        .region_child("transcript")
+        .unwrap();
+    let selected = super::super::ui_elements::resolve_choice(main, &|fact| {
+        matches!(fact.as_str(), "messages" | "runtime")
+    });
     assert!(matches!(selected, UiElement::Slot(id) if id.as_str() == "messages"));
     assert!(
         matches!(host.view().layout.frame_tree.region_child("minibuffer-hover"), Some(UiElement::Rows(children)) if children.len() == 3)
