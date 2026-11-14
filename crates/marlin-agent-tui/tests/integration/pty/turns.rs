@@ -248,6 +248,10 @@ fn streaming_command_navigation_stays_within_admitted_candidates() {
 #[test]
 #[ignore = "real PTY and loopback acceptance; requires the built Scheme package"]
 fn anthropic_base_url_and_two_turns() {
+    let config = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("example.toml");
+    let config_value: toml::Value = toml::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
+    let configured_model = config_value["model"].as_str().unwrap().to_owned();
+    let provider_model = configured_model.clone();
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
@@ -262,7 +266,7 @@ fn anthropic_base_url_and_two_turns() {
             let request = read_request(&mut stream);
             sender.send(request).unwrap();
             let events = [
-                serde_json::json!({"type":"message_start", "message":{"id":"fixture", "model":"deepseek-v4-pro[1m]", "usage":{"input_tokens":1,"output_tokens":0}}}),
+                serde_json::json!({"type":"message_start", "message":{"id":"fixture", "model":provider_model.as_str(), "usage":{"input_tokens":1,"output_tokens":0}}}),
                 serde_json::json!({"type":"content_block_start", "index":0, "content_block":{"type":"text", "text":""}}),
                 serde_json::json!({"type":"content_block_delta", "index":0, "delta":{"type":"text_delta", "text":answer}}),
                 serde_json::json!({"type":"content_block_stop", "index":0}),
@@ -275,7 +279,6 @@ fn anthropic_base_url_and_two_turns() {
             }
         }
     });
-    let config = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("example.toml");
     let variables = [
         ("ANTHROPIC_BASE_URL", format!("http://{address}/anthropic")),
         ("ANTHROPIC_API_KEY", "fixture-key".into()),
@@ -288,14 +291,22 @@ fn anthropic_base_url_and_two_turns() {
     terminal.wait_for(
         Duration::from_secs(20),
         "first provider response",
-        |output| contains(output, b"fixture-connected"),
+        |output| {
+            screen_lines(output)
+                .iter()
+                .any(|line| line.contains("fixture-connected"))
+        },
     );
     thread::sleep(Duration::from_millis(500));
     terminal.send(b"follow-up\r");
     terminal.wait_for(
         Duration::from_secs(20),
         "second provider response",
-        |output| contains(output, b"fixture-second"),
+        |output| {
+            screen_lines(output)
+                .iter()
+                .any(|line| line.contains("fixture-second"))
+        },
     );
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(10));
@@ -307,7 +318,7 @@ fn anthropic_base_url_and_two_turns() {
             .to_ascii_lowercase()
             .contains("x-api-key: fixture-key")
     );
-    assert_eq!(first["model"], "deepseek-v4-pro[1m]");
+    assert_eq!(first["model"].as_str(), Some(configured_model.as_str()));
     assert_eq!(first["messages"][0]["content"], "hello");
     assert_eq!(second["messages"][0]["content"], "hello");
     assert_eq!(

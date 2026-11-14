@@ -128,4 +128,3 @@ pub enum UiCommandCapability {
     ToggleThinking,
     Clear,
 }
-

@@ -133,4 +133,3 @@ pub struct UiKeyBinding {
     pub sequence: Vec<UiKeyToken>,
     pub command: UiKeyCommand,
 }
-

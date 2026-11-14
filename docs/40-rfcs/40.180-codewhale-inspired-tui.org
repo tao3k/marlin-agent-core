@@ -2683,3 +2683,26 @@ run's inherited-binding 95% interval was =[22.298, 29.219, 41.437]=
 microseconds; the second's was =[86.546, 120.53, 162.69]= microseconds. The
 host load must be controlled before a comparison is used for an architecture
 decision.
+
+** PR #11 local integration (2026-11-15)
+
+The selected Lab release and its Yuanxu/POO dependencies are built through the
+standard package entry. On Darwin, dependency installation uses the same system
+toolchain path as the existing Scheme build entry; a Nix linker on that path
+previously left GCC's optimized =memset= unresolved. TUI staging observes the
+Yuanxu-selected compiler inputs inside their owner extent, with the normal
+Gerbil output and input paths available to the SDK metadata subprocess.
+
+The resulting linked debug TUI opened in a PTY; the ordinary PTY suite passed
+16 tests (36 ignored), and the =example.toml= Anthropic loopback fixture
+completed two turns. Unicode streaming, resize, wheel scrolling and history
+search also passed. The configured live-provider test was not run because the
+Anthropic environment variables were absent from this session.
+
+The independent =gerbil test t/ui-workbench-test.ss= run is *not* a pass:
+it printed =ERROR MODULE= even though the test driver returned status zero.
+The retained failure is =module link slot support changed= for
+=marlin-agent-core/context/interface=, caused by =stale slot dependency=
+on =(presence identity)=. A separate direct lookup of the selected Context
+identity reproduced the same refusal. TUI startup and loopback tests do not
+establish that this Scheme Context publication succeeds.

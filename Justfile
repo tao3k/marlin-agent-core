@@ -104,7 +104,14 @@ scheme-property-gate:
 
 # Install the dependency declared by the workspace Scheme package.
 scheme-deps:
-  cd scheme && gerbil deps --install
+  #!/usr/bin/env bash
+  set -euo pipefail
+  if [[ "$(uname -s)" == Darwin ]]; then
+    unset SDKROOT DEVELOPER_DIR NIX_CFLAGS_COMPILE
+    export PATH="${GERBIL_PREFIX:+$GERBIL_PREFIX/bin:}/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  fi
+  cd scheme
+  gerbil deps --install
 
 # Run the package's build and test through the embedded Gerbil VM.
 scheme-package-gate:
