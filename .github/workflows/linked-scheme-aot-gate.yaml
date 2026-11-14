@@ -75,6 +75,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Ensure the native compiler is available
+        id: compiler
         run: |
           if [[ "$RUNNER_OS" == Linux ]] && ! command -v clang >/dev/null; then
             sudo apt-get install -y clang
@@ -114,16 +115,45 @@ jobs:
           -- --ignored --exact --nocapture
 
       - name: Compile linked-selector tests
+        if: ${{ !cancelled() && steps.compiler.outcome == 'success' }}
+        id: linked-build
         run: |
           cargo test --locked -p marlin-deck-runtime --features actor-runtime --no-run
           cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector --no-run
 
       - name: Run linked-selector tests
+        if: ${{ !cancelled() && steps.linked-build.outcome == 'success' }}
+        id: linked-tests
         run: |
           cargo test --locked -p marlin-deck-runtime --features actor-runtime
           cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector
 
+      - name: Inspect the compiled INIT and Deck link input
+        if: ${{ !cancelled() && steps.linked-build.outcome != 'skipped' && steps.compiler.outcome == 'success' }}
+        shell: bash
+        run: |
+          describe_init() {
+            local file=$1
+            [[ -f "$file" ]] || return 0
+            shasum -a 256 "$file"
+            if grep -qE 'expand-yuanxu-program-declaration|module-program-namespace' "$file"; then
+              printf 'Compiled Module publication present in %s\n' "$file"
+            else
+              printf 'Compiled Module publication marker missing in %s\n' "$file"
+            fi
+          }
+          describe_init "$GERBIL_PATH/lib/.yuanxu-source/marlin-agent-core/init.ss"
+          describe_init "$GERBIL_PATH/lib/static/marlin-agent-core__init.scm"
+          shopt -s nullglob
+          for manifest in target/debug/build/marlin-deck-runtime-*/out/stage/program.json; do
+            while IFS= read -r source; do
+              describe_init "$source"
+            done < <(jq -r '.modules[] | select(.module == "marlin-agent-core/init") | .scm' "$manifest")
+          done
+
       - name: Stage the Brief-to-Draft Scheme program
+        if: ${{ !cancelled() && steps.compiler.outcome == 'success' }}
+        id: brief-stage
         working-directory: scheme
         shell: bash
         run: |
@@ -140,6 +170,7 @@ jobs:
             .gerbil/native/brief-to-draft/program.json
 
       - name: Verify Brief-to-Draft activation and offline replay
+        if: ${{ !cancelled() && steps.brief-stage.outcome == 'success' }}
         env:
           ORGIZE_GERBIL_PROGRAM_MANIFEST: ${{ github.workspace }}/scheme/.gerbil/pkg/github.com/tao3k/orgize/target/gerbil-parser/program.json
         shell: bash
@@ -153,6 +184,8 @@ jobs:
             --features brief-to-draft-vm-test --test brief_to_draft_vm
 
       - name: Compile linked selector benchmarks
+        if: ${{ !cancelled() && steps.linked-tests.outcome == 'success' }}
+        id: benchmark-build
         run: |
           cargo bench --locked -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor --no-run
           cargo bench --locked -p marlin-deck-runtime --features mailbox-benchmark --bench mailbox --bench context_profile --no-run
@@ -160,20 +193,23 @@ jobs:
           cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench allocation_shape --no-run
 
       - name: Run linked native allocation scenario performance gate
+        if: ${{ !cancelled() && steps.benchmark-build.outcome == 'success' }}
         run: cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench allocation_shape
 
       - name: Benchmark linked selector
+        if: ${{ !cancelled() && steps.benchmark-build.outcome == 'success' }}
         run: |
           cargo bench --locked -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 1 1024
           cargo bench --locked -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 64 1024
           cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench linked_selector
 
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
-        if: inputs.qualify_context_latency
+        if: ${{ !cancelled() && inputs.qualify_context_latency && steps.linked-tests.outcome == 'success' }}
+        id: just
         with:
           tool: just@1.56.0
       - name: Qualify full Context latency
-        if: inputs.qualify_context_latency
+        if: ${{ !cancelled() && steps.just.outcome == 'success' }}
         run: just context-latency-gate
 
       - name: Upload linked native benchmark artifacts
