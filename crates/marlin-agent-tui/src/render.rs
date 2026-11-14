@@ -17,7 +17,7 @@ use super::{
 use marlin_agent_ui::{UiLayoutPolicy, UiRegion, UiRgb, UiWorkbench};
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -527,14 +527,6 @@ pub(crate) fn draw_with_snapshot(
         }),
         _ => None,
     };
-    let transcript_policy = &ui.layout.transcript_policy;
-    let mut role_style = Style::default().fg(super::ui_elements::tone_color(
-        transcript_policy.role_tone,
-        &ui.theme,
-    ));
-    if transcript_policy.role_bold {
-        role_style = role_style.add_modifier(Modifier::BOLD);
-    }
     let selected = app
         .selected_command()
         .filter(|name| suggestions.contains(name));
@@ -641,7 +633,6 @@ pub(crate) fn draw_with_snapshot(
             app,
             cache,
             anchor,
-            role_style,
             static_content,
             focused_content,
             effective_scroll: app.scroll_up,

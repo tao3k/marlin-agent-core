@@ -81,6 +81,7 @@ impl UiSlotRenderer for AskFrameSlots {
         area: Rect,
         element: &UiElement,
         inputs: &UiRenderInputs<'_>,
+        _skip: usize,
     ) {
         render_list(
             frame,
@@ -349,6 +350,80 @@ fn mapping(c: &mut Criterion) {
             })
         });
     }
+    // Model the mapped portion of a cached transcript: the history and its
+    // wrap index are deliberately outside this per-frame measurement.
+    let transcript = UiElement::List {
+        id: UiComponentId::new("conversation").unwrap(),
+        offset: UiSize::Cells(0),
+        child: Box::new(UiElement::Template {
+            background: marlin_agent_ui::UiBackground::None,
+            spans: [
+                ("role-text", UiTone::Info, true),
+                ("body-text", UiTone::Normal, false),
+            ]
+            .into_iter()
+            .map(|(name, tone, bold)| UiTemplateSpan {
+                value: UiTemplateValue::Binding(UiComponentId::new(name).unwrap()),
+                tone,
+                bold,
+            })
+            .collect(),
+        }),
+    };
+    let frame_bindings = [
+        ("panel-title", ""),
+        ("selected-count", "1"),
+        ("candidate-count", "1"),
+        ("prompt", "M-x"),
+        ("compact-prompt", "M-x"),
+        ("title", "Message"),
+        ("query", ""),
+        ("model", "deepseek"),
+        ("session", "chat"),
+        ("turns", "2"),
+        ("extra-one", ""),
+        ("extra-two", ""),
+        ("notice", ""),
+        ("static-name", ""),
+    ];
+    let mut transcript_terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
+    let mut transcript_state = UiListState::default();
+    c.bench_function("ui/mapping/transcript-visible-30", |b| {
+        b.iter(|| {
+            transcript_state.begin_frame();
+            transcript_terminal
+                .draw(|frame| {
+                    render_list(
+                        frame,
+                        frame.area(),
+                        &transcript,
+                        &theme,
+                        marlin_agent_tui::ui_elements::UiListData {
+                            count: 30,
+                            selected: None,
+                            extent: &|_| Extent::Cells(0),
+                            facts: &|_| false,
+                            bindings: &frame_bindings,
+                        },
+                        &mut transcript_state,
+                        |index| {
+                            Some(UiListRow {
+                                key: None,
+                                bindings: if index % 6 == 0 {
+                                    vec![("role-text", "Thought".into()), ("body-text", "".into())]
+                                } else {
+                                    vec![
+                                        ("role-text", "".into()),
+                                        ("body-text", "A visible cached transcript row.".into()),
+                                    ]
+                                },
+                            })
+                        },
+                    )
+                })
+                .unwrap();
+        });
+    });
     let choice = UiElement::Choice {
         cases: (0..10)
             .map(|index| {

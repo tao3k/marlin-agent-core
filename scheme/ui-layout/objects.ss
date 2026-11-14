@@ -3,7 +3,7 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 ;;; Scheme owns presentation choices; the native host clips them to cells.
-(import (only-in :clan/poo/object .def .mix .o seal-object!)
+(import (only-in :clan/poo/object .def .mix .o .ref seal-object!)
         (only-in "../ui-elements/objects.ss"
                  ui-text ui-rows ui-columns ui-region ui-scroll-target ui-template ui-choice ui-sized-with
                  ui-size-cells ui-size-flex ui-size-binding ui-size-bounded ui-size-choice
@@ -104,15 +104,22 @@
 (def panel-field
   (ui-template 'none '((binding info #f label) (literal info #f ": ")
                        (binding normal #f value))))
-(def main-view
+(def (main-view transcript-policy)
+  (def row-template
+    (ui-template 'none
+      (list (list 'binding (.ref transcript-policy 'role-tone)
+                  (.ref transcript-policy 'role-bold) 'role-text)
+            '(binding normal #f body-text))))
+  (def (transcript-list source)
+    (ui-list source (ui-size-cells 0) row-template))
   (ui-choice
-    (list (list 'review (ui-slot 'review))
-          (list 'messages (ui-slot 'messages))
+    (list (list 'review (transcript-list 'review))
+          (list 'messages (transcript-list 'messages))
           (list 'static (ui-panel 'info panel-field named-panel-title (ui-slot 'static)))
           (list 'runtime (ui-panel 'info panel-field runtime-panel-title (ui-slot 'runtime)))
           (list 'extension (ui-panel 'info panel-field named-panel-title (ui-slot 'extension)))
-          (list 'workspace (ui-slot 'workspace)))
-    (ui-slot 'conversation)))
+          (list 'workspace (transcript-list 'workspace)))
+    (transcript-list 'conversation)))
 
 ;;; Size expressions contain only named facts and host-provided cell metrics.
 (def (size-choice cases) (ui-size-choice cases (ui-size-cells 0)))
@@ -165,7 +172,7 @@
                 (ui-size-min (ui-size-binding 'extension-count)
                              (ui-size-subtract candidate-budget
                                                (ui-size-binding 'region/candidates)))))))
-(def (frame-region modeline-value slot)
+(def (frame-region modeline-value transcript-value slot)
   (let (name (car slot))
     (ui-sized-with
       (case name ((transcript) (ui-size-flex 1)) ((candidates) candidate-size)
@@ -173,7 +180,7 @@
         ((minibuffer) footer-size) (else (ui-size-binding name)))
       (ui-region name (and (cadr slot) (ui-scroll-target (cadr slot) (caddr slot)))
                  (case name
-                   ((transcript) main-view)
+                   ((transcript) (main-view transcript-value))
                    ((extensions) extension-view)
                    ((editor) editor-view)
                    ((candidates) marlin-ui-candidate-templates)
@@ -186,8 +193,8 @@
   command-frame: CommandFrameValue
   max-chatbox-rows: 10
   max-command-rows: 10)
-(def (marlin-ui-layout-policy-for modeline-value)
-  (let (region (lambda (slot) (frame-region modeline-value slot)))
+(def (marlin-ui-layout-policy-for modeline-value transcript-value)
+  (let (region (lambda (slot) (frame-region modeline-value transcript-value slot)))
     (seal-object!
       (.mix (.o frame-tree: (ui-rows
               (list (ui-rows (map region '((transcript transcript 3) (extensions #f 0))))

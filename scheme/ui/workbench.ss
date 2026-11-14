@@ -45,6 +45,7 @@
     (let* ((owned-model (string-copy model-value))
            (owned-session (string-copy session-value))
            (modeline-values (modeline-nodes-for profile))
+           (transcript-value (transcript-for profile))
            (nodes (append (map modeline-node modeline-values)
                           (map contribution-node contribution-values)))
            (host-extensions (map extension-node extension-values))
@@ -59,8 +60,9 @@
                                host-extensions)))
         (error "duplicate UI contribution identity"))
       (.o (:: @ (.ref types 'workbench)) identity: 'workbench kind: 'workbench
-          model: owned-model session: owned-session geometry-policy: (layout-for (modeline-bar-for modeline-values))
-          transcript-policy: (transcript-for profile)
+          model: owned-model session: owned-session
+          geometry-policy: (layout-for (modeline-bar-for modeline-values) transcript-value)
+          transcript-policy: transcript-value
           theme-palette: (theme-for profile)
           focus-order: (append '(transcript composer commands) extension-focus)
           regions: (append (list (.o (:: @ (.ref types 'transcript)) identity: 'transcript kind: 'transcript)

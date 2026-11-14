@@ -264,8 +264,6 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
                     string(runtime, ""),
                     string(runtime, "folded"),
                     string(runtime, "revealed"),
-                    symbol(runtime, "accent"),
-                    runtime.scalar_object(SchemeScalar::Boolean(false)).unwrap(),
                 ],
             ),
             vector(

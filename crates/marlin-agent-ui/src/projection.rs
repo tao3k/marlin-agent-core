@@ -355,7 +355,7 @@ fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProj
             _ => Err(UiProjectionError::Invalid("invalid UI layout policy")),
         }
     };
-    let fold = vector(layout_values.element(4)?, 7, 7)?;
+    let fold = vector(layout_values.element(4)?, 5, 5)?;
     let default_collapsed = match fold.element(0)?.as_ref().scalar()? {
         SchemeScalar::Boolean(value) => value,
         _ => return Err(UiProjectionError::Invalid("invalid thinking fold flag")),
@@ -383,14 +383,6 @@ fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProj
             assistant_role: label(2, true)?,
             thinking_collapsed_role: label(3, false)?,
             thinking_expanded_role: label(4, false)?,
-            role_tone: crate::element::decode_tone(
-                fold.element(5)?,
-                &mut IdentifierBuffer::default(),
-            )?,
-            role_bold: match fold.element(6)?.as_ref().scalar()? {
-                SchemeScalar::Boolean(value) => value,
-                _ => return Err(UiProjectionError::Invalid("invalid transcript role weight")),
-            },
         },
     };
     Ok(layout)

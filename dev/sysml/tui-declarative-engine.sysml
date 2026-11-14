@@ -154,10 +154,11 @@ package MarlinDeclarativeUi {
                    while the selected Scheme role tone and weight are applied
                    during painting. A theme change can restyle cached rows
                    without rebuilding their geometry or deep-scroll index.
-                   The Scheme main-view choice selects an admitted native
-                   content slot from review, buffer, workspace and conversation
-                   facts; slot bindings borrow the existing owner data and do
-                   not materialize transcript history into the Scheme VM. */
+                   The Scheme main-view choice selects a list and row template
+                   for review, messages, workspace and conversation facts.
+                   The terminal binds only cached, wrapped visible rows to that
+                   generic list; it does not materialize transcript history in
+                   the Scheme VM. Static and runtime panels use content slots. */
         }
         part <'MAR-UI-T07'> terminalHost {
             doc /* Rust owns raw-mode lifecycle, input normalization,

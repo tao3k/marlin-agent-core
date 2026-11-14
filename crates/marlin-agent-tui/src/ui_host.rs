@@ -514,12 +514,22 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
                 Some(MainSource::Static | MainSource::Runtime | MainSource::Extension) => {
                     within_panel
                 }
-                Some(_) => true,
+                Some(_) => false,
                 None => false,
             },
             marlin_agent_ui::UiElement::Panel { child, .. } => main_presentation(child, true),
+            marlin_agent_ui::UiElement::List { id, child, .. } => {
+                matches!(
+                    MainSource::from_id(id),
+                    Some(
+                        MainSource::Review
+                            | MainSource::Messages
+                            | MainSource::Workspace
+                            | MainSource::Conversation
+                    )
+                ) && main_presentation(child, within_panel)
+            }
             marlin_agent_ui::UiElement::Sized { child, .. }
-            | marlin_agent_ui::UiElement::List { child, .. }
             | marlin_agent_ui::UiElement::Region { child, .. } => {
                 main_presentation(child, within_panel)
             }

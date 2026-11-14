@@ -75,9 +75,7 @@
                               (.get transcript user-prefix)
                               (.get transcript assistant-role)
                               (.get transcript thinking-collapsed-role)
-                              (.get transcript thinking-expanded-role)
-                              (.get transcript role-tone)
-                              (.get transcript role-bold)))
+                              (.get transcript thinking-expanded-role)))
                     (.get policy frame-tree)))
           (let (palette (.get workbench theme-palette))
             (list->vector

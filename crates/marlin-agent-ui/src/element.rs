@@ -74,12 +74,14 @@ pub enum UiElement {
     },
 }
 
+/// Placement of a Scheme-declared modeline segment within its terminal row.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UiBarSide {
     Left,
     Right,
 }
 
+/// One modeline segment with a priority and optional visibility condition.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiBarSegment {
     pub side: UiBarSide,
@@ -165,10 +167,13 @@ pub enum UiBackground {
 }
 
 impl UiElement {
-    /// Profile switches may replace presentation-only bar segments, not geometry or input.
+    /// Profile switches may restyle presentation without changing its data bindings.
     pub(crate) fn same_profile_structure(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Bar { .. }, Self::Bar { .. }) => true,
+            (Self::Template { spans: a, .. }, Self::Template { spans: b, .. }) => {
+                a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.value == y.value)
+            }
             (
                 Self::Region {
                     id: a,

@@ -5,7 +5,7 @@
 
 use super::{App, Composer, MainSource, ScrollAnchor, TranscriptViewportCache, ui_elements};
 use marlin_agent_ui::{UiCommandName, UiComponentId, UiContent, UiElement, UiWorkbench};
-use ratatui::{layout::Rect, style::Style};
+use ratatui::layout::Rect;
 
 /// Bind host data to nodes while the common mapper traverses the full frame.
 pub(super) struct FrameSlots<'a> {
@@ -55,10 +55,15 @@ impl ui_elements::UiSlotRenderer for FrameSlots<'_> {
         area: Rect,
         element: &UiElement,
         inputs: &ui_elements::UiRenderInputs<'_>,
+        skip: usize,
     ) {
         let UiElement::List { id, .. } = element else {
             return;
         };
+        if MainSource::from_id(id).is_some() {
+            self.main.list(frame, area, element, inputs, skip);
+            return;
+        }
         let matches_region = |name| matches!(self.ui.layout.frame_tree.region_child(name), Some(UiElement::List { id: expected, .. }) if expected == id);
         if matches_region("candidates") {
             let count = self
@@ -197,7 +202,6 @@ pub(super) struct MainSlots<'a> {
     pub app: &'a App,
     pub cache: &'a mut TranscriptViewportCache,
     pub anchor: &'a mut ScrollAnchor,
-    pub role_style: Style,
     pub static_content: Option<(&'a str, &'a [UiContent])>,
     pub focused_content: Option<(&'a str, &'a [UiContent])>,
     pub effective_scroll: usize,
@@ -240,6 +244,50 @@ impl ui_elements::UiSlotRenderer for MainSlots<'_> {
                     );
                 }
             }
+            _ => {}
+        }
+    }
+
+    fn list(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        area: Rect,
+        element: &UiElement,
+        inputs: &ui_elements::UiRenderInputs<'_>,
+        skip: usize,
+    ) {
+        let UiElement::List { id, .. } = element else {
+            return;
+        };
+        let Some(source) = MainSource::from_id(id) else {
+            return;
+        };
+        let app = self.app;
+        let paint = |frame: &mut ratatui::Frame<'_>,
+                     viewport: &super::super::viewport::TranscriptViewport| {
+            ui_elements::render_list(
+                frame,
+                area,
+                element,
+                inputs.theme,
+                ui_elements::UiListData {
+                    count: viewport.lines.len(),
+                    selected: None,
+                    extent: inputs.extent,
+                    facts: inputs.facts,
+                    bindings: inputs.bindings,
+                },
+                &mut app.list_state.borrow_mut(),
+                |index| {
+                    let (role, body) = viewport.lines.get(index)?.fields();
+                    Some(ui_elements::UiListRow {
+                        key: None,
+                        bindings: vec![("role-text", role.into()), ("body-text", body.into())],
+                    })
+                },
+            );
+        };
+        match source {
             MainSource::Review => {
                 if let Some(prompt) = &self.app.tool_review_prompt {
                     self.cache.with_top_view(
@@ -247,13 +295,7 @@ impl ui_elements::UiSlotRenderer for MainSlots<'_> {
                         area.width,
                         area.height,
                         usize::from(prompt.scroll).saturating_add(skip),
-                        |viewport| {
-                            viewport.render_with_role_style(
-                                area,
-                                frame.buffer_mut(),
-                                self.role_style,
-                            )
-                        },
+                        |viewport| paint(frame, viewport),
                     );
                 }
             }
@@ -272,7 +314,7 @@ impl ui_elements::UiSlotRenderer for MainSlots<'_> {
                     area.height,
                     scroll,
                     |viewport| {
-                        viewport.render_with_role_style(area, frame.buffer_mut(), self.role_style);
+                        paint(frame, viewport);
                         viewport.scroll_up
                     },
                 );
@@ -285,11 +327,7 @@ impl ui_elements::UiSlotRenderer for MainSlots<'_> {
                         area.height,
                         view.scroll_from_top.saturating_add(skip),
                         |viewport| {
-                            viewport.render_with_role_style(
-                                area,
-                                frame.buffer_mut(),
-                                self.role_style,
-                            );
+                            paint(frame, viewport);
                             viewport.scroll_up
                         },
                     );
@@ -311,11 +349,12 @@ impl ui_elements::UiSlotRenderer for MainSlots<'_> {
                     area.height,
                     scroll,
                     |viewport| {
-                        viewport.render_with_role_style(area, frame.buffer_mut(), self.role_style);
+                        paint(frame, viewport);
                         viewport.scroll_up
                     },
                 );
             }
+            _ => {}
         }
     }
 }

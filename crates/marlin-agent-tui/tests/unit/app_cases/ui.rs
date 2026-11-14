@@ -640,7 +640,7 @@ fn event_messages_use_a_switchable_buffer_without_polluting_conversation() {
     let marlin_agent_ui::UiElement::Region { child, .. } = child.as_mut() else {
         panic!("region")
     };
-    let marlin_agent_ui::UiElement::Choice { cases, .. } = child.as_mut() else {
+    let marlin_agent_ui::UiElement::Choice { cases, fallback } = child.as_mut() else {
         panic!("main choice")
     };
     let (_, selected) = cases
@@ -649,9 +649,7 @@ fn event_messages_use_a_switchable_buffer_without_polluting_conversation() {
         .unwrap();
     *selected = marlin_agent_ui::UiElement::Rows(vec![marlin_agent_ui::UiElement::Sized {
         size: marlin_agent_ui::UiSize::Flex(1),
-        child: Box::new(marlin_agent_ui::UiElement::Slot(
-            UiComponentId::new("conversation").unwrap(),
-        )),
+        child: fallback.clone(),
     }]);
     terminal
         .draw(|frame| {

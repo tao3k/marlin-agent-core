@@ -308,9 +308,10 @@ fn terminal_rejects_unbound_main_source() {
     let UiElement::Region { child, .. } = child.as_mut() else {
         panic!("region")
     };
-    **child = UiElement::Rows(vec![UiElement::Slot(
-        UiComponentId::new("conversation").unwrap(),
-    )]);
+    let UiElement::Choice { fallback, .. } = child.as_ref() else {
+        panic!("main choice")
+    };
+    **child = UiElement::Rows(vec![(**fallback).clone()]);
     assert!(admit_terminal_view(&workbench).is_ok());
     let UiElement::Rows(slots) = &mut workbench.layout.frame_tree else {
         unreachable!()

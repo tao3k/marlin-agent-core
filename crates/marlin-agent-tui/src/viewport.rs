@@ -13,9 +13,7 @@ use std::{
 };
 
 use ratatui::{
-    buffer::{Buffer, CellWidth},
-    layout::Rect,
-    style::Style,
+    buffer::CellWidth,
     text::{Line, Span},
 };
 
@@ -684,6 +682,18 @@ pub(crate) struct TranscriptLine {
     role: bool,
 }
 
+impl TranscriptLine {
+    /// Bind the cached, already wrapped row to the Scheme row template.
+    pub(crate) fn fields(&self) -> (&str, &str) {
+        let text = self
+            .line
+            .spans
+            .first()
+            .map_or("", |span| span.content.as_ref());
+        if self.role { (text, "") } else { ("", text) }
+    }
+}
+
 impl std::fmt::Display for TranscriptLine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.line.fmt(f)
@@ -710,36 +720,6 @@ impl TranscriptViewport {
             }
         }
         bytes
-    }
-
-    pub(crate) fn render_with_role_style(
-        &self,
-        area: Rect,
-        buffer: &mut Buffer,
-        role_style: Style,
-    ) {
-        let area = area.intersection(buffer.area);
-        for (row, line) in self.lines.iter().take(usize::from(area.height)).enumerate() {
-            let mut x = 0u16;
-            let style = if line.role {
-                role_style
-            } else {
-                Style::default()
-            };
-            for grapheme in line.line.styled_graphemes(style) {
-                let width = grapheme.symbol.cell_width();
-                if width == 0 {
-                    continue;
-                }
-                if width > area.width.saturating_sub(x) {
-                    break;
-                }
-                buffer[(area.x + x, area.y + row as u16)]
-                    .set_symbol(grapheme.symbol)
-                    .set_style(grapheme.style);
-                x += width;
-            }
-        }
     }
 }
 

@@ -9,5 +9,5 @@
 
 (def UiBarValue (.cc Type. '.element? vector?))
 (def UiLayoutScopeContract
-  (.cc (Record identity: [(Exactly 'marlin/ui-layout)] policy-for: [(Fun Object <- UiBarValue)])
+  (.cc (Record identity: [(Exactly 'marlin/ui-layout)] policy-for: [(Fun Object <- UiBarValue Object)])
        identity: 'marlin/ui-layout))

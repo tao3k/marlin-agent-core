@@ -46,8 +46,6 @@ fn test_layout() -> UiLayoutPolicy {
             assistant_role: String::new(),
             thinking_collapsed_role: "closed".into(),
             thinking_expanded_role: "open".into(),
-            role_tone: marlin_agent_ui::UiTone::Info,
-            role_bold: true,
         },
     }
 }
@@ -167,6 +165,40 @@ fn command_history_admits_only_catalog_names_without_changing_the_view() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn profile_admission_allows_template_style_but_not_binding_changes() {
+    use marlin_agent_ui::{
+        UiBackground, UiElement, UiProfileName, UiTemplateSpan, UiTemplateValue, UiTone,
+    };
+    let mut previous = workbench("composer");
+    previous.layout.frame_tree = UiElement::Template {
+        background: UiBackground::None,
+        spans: vec![UiTemplateSpan {
+            value: UiTemplateValue::Binding(id("role-text")),
+            tone: UiTone::Info,
+            bold: true,
+        }],
+    };
+    let event = UiEvent::SelectProfile(UiProfileName::new("pi").unwrap());
+    let intent = UiIntent::Focus(id("composer"));
+    let mut next = previous.clone();
+    let UiElement::Template { spans, .. } = &mut next.layout.frame_tree else {
+        unreachable!()
+    };
+    spans[0].tone = UiTone::Accent;
+    spans[0].bold = false;
+    assert!(
+        previous
+            .admit_successor(&next, event.clone(), &intent)
+            .is_ok()
+    );
+    let UiElement::Template { spans, .. } = &mut next.layout.frame_tree else {
+        unreachable!()
+    };
+    spans[0].value = UiTemplateValue::Binding(id("body-text"));
+    assert!(previous.admit_successor(&next, event, &intent).is_err());
 }
 
 #[test]

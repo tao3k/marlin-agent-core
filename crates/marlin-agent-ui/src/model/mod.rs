@@ -5,7 +5,6 @@
 //! Host-neutral UI state and transition contract.
 
 use gerbil_scheme::{NativeError, RootedCallError, RootedSchemeObject};
-use marlin_agent_protocol::HumanDecision;
 use std::sync::Arc;
 
 // Resource ceiling for the workbench, independent of Scheme's Buffer catalog.
@@ -88,133 +87,11 @@ pub struct UiWindow {
     pub buffer: UiBufferId,
 }
 
-/// A terminal-independent key sequence token admitted from Scheme.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct UiKeyToken(String);
-
-impl UiKeyToken {
-    pub fn new(value: &str) -> Result<Self, UiProjectionError> {
-        if value.is_empty()
-            || value.len() > 16
-            || !value
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-        {
-            return Err(UiProjectionError::Invalid("invalid UI key token"));
-        }
-        Ok(Self(value.to_owned()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-/// Host capabilities are fixed; Scheme owns their bindings and sequences.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UiKeyCommand {
-    OpenCommands,
-    Cancel,
-    Edit(UiEditorAction),
-    Invoke(UiCommandName),
-    /// Switch an editor mode; `cancel` preserves the active Escape action.
-    Mode {
-        mode: UiKeyMode,
-        cancel: bool,
-    },
-}
-
-/// The native editor's input interpretation mode.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum UiKeyMode {
-    Insert,
-    Normal,
-}
-
-/// Scheme selects whether a binding is global or applies in one editor mode.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum UiKeyScope {
-    Global,
-    Mode(UiKeyMode),
-}
-
-/// Identity of a temporary Scheme-declared keymap.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct UiTransientId(String);
-
-impl UiTransientId {
-    pub fn new(value: &str) -> Result<Self, UiProjectionError> {
-        if value.is_empty()
-            || value.len() > 20
-            || !value
-                .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-        {
-            return Err(UiProjectionError::Invalid("invalid transient identity"));
-        }
-        Ok(Self(value.to_owned()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-/// A bounded transient keymap projected from the selected Scheme module.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiTransient {
-    pub id: UiTransientId,
-    pub hint: crate::UiElement,
-    pub warning_hint: crate::UiElement,
-    pub foreign: UiTransientForeign,
-    pub heads: Vec<UiTransientHead>,
-}
-
-/// Action for a key outside the active transient keymap.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UiTransientForeign {
-    Exit,
-    Warn,
-    Run,
-}
-
-/// One key and command exposed by a temporary keymap.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiTransientHead {
-    pub key: UiKeyToken,
-    pub command: Option<UiCommandName>,
-    pub label: String,
-    pub exit: bool,
-}
-
-/// Native editor actions bound by the selected Scheme keymap at UI open.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UiEditorAction {
-    HistorySearch,
-    PreviousPrompt,
-    NextPrompt,
-    InsertNewline,
-    BackwardChar,
-    ForwardChar,
-    DeleteChar,
-    PreviousLine,
-    NextLine,
-    AppendInsert,
-    NextWord,
-    PreviousWord,
-    DeleteLine,
-    Undo,
-    LineStart,
-    LineEnd,
-}
-
-/// One Scheme-declared shortcut and the admitted host command it invokes.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiKeyBinding {
-    pub scope: UiKeyScope,
-    pub sequence: Vec<UiKeyToken>,
-    pub command: UiKeyCommand,
-}
+mod keymap;
+pub use keymap::{
+    UiEditorAction, UiKeyBinding, UiKeyCommand, UiKeyMode, UiKeyScope, UiKeyToken, UiTransient,
+    UiTransientForeign, UiTransientHead, UiTransientId,
+};
 
 /// Scheme-owned frame topology projected into a bounded native snapshot.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -235,127 +112,11 @@ impl UiFrame {
     }
 }
 
-impl UiCommandName {
-    /// Check a partial command without scanning past the admitted name limit.
-    pub fn is_valid_prefix(value: &str) -> bool {
-        value.len() <= 32
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-    }
-
-    pub fn new(value: &str) -> Result<Self, UiProjectionError> {
-        if value.is_empty() || !Self::is_valid_prefix(value) {
-            return Err(UiProjectionError::Invalid("invalid command name"));
-        }
-        Ok(Self(value.to_owned()))
-    }
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-/// A command descriptor projected from the selected Scheme UI.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiCommand {
-    pub name: UiCommandName,
-    pub description: String,
-    pub arguments: UiCommandArguments,
-    pub capability: UiCommandCapability,
-    pub value: Option<String>,
-}
-
-/// Ordered Scheme candidates and the user's still-visible locked selection.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiCommandCandidates {
-    pub names: Vec<UiCommandName>,
-    pub selected: Option<UiCommandName>,
-}
-
-/// Scheme-selected Minibuffer presentation for an existing runtime human gate.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiReviewMenu {
-    pub prompt: String,
-    pub choices: Vec<UiReviewChoice>,
-}
-
-/// Presentation of one finite Rust-owned human decision variant.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiReviewChoice {
-    pub decision: HumanDecision,
-    pub label: String,
-    pub description: String,
-}
-
-/// Scheme-selected Mini Buffer choices for a committed model tool request.
-/// These are presentation intents; the session journal validates the request
-/// identity and commits the actual review decision.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiToolReviewMenu {
-    pub prompt: String,
-    pub choices: Vec<UiToolReviewChoice>,
-    pub details_heading: String,
-}
-
-/// One visual action in the tool Ask Mini Buffer.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiToolReviewChoice {
-    pub decision: UiToolReviewDecision,
-    pub label: String,
-    pub description: String,
-}
-
-/// A finite UI selection that must be mapped to a matching journal request.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum UiToolReviewDecision {
-    ApproveOnce,
-    Reject,
-}
-
-impl UiToolReviewDecision {
-    /// An identity for pointer selection, separate from Scheme-owned labels.
-    pub fn selection_id(self) -> &'static str {
-        match self {
-            Self::ApproveOnce => "tool-review/approve-once",
-            Self::Reject => "tool-review/reject",
-        }
-    }
-}
-
-impl UiCommand {
-    pub fn accepts_arguments(&self) -> bool {
-        self.arguments != UiCommandArguments::None
-    }
-}
-
-/// Scheme-declared argument grammar, checked before invoking a host capability.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UiCommandArguments {
-    None,
-    Required,
-    Optional,
-}
-
-/// The finite Rust-owned capability catalog. Names and aliases stay in Scheme.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UiCommandCapability {
-    Models,
-    Model,
-    Sessions,
-    Session,
-    Inspect,
-    History,
-    Workspace,
-    ContextBudget,
-    Runtime,
-    OpenMenu,
-    SelectProfile,
-    SelectBuffer,
-    EnterTransient,
-    KillProcess,
-    ToggleThinking,
-    Clear,
-}
+mod commands;
+pub use commands::{
+    UiCommand, UiCommandArguments, UiCommandCandidates, UiCommandCapability, UiReviewChoice,
+    UiReviewMenu, UiToolReviewChoice, UiToolReviewDecision, UiToolReviewMenu,
+};
 
 impl UiComponentId {
     /// Construct a bounded, nonempty domain identity.
@@ -469,8 +230,6 @@ pub struct UiTranscriptPolicy {
     pub assistant_role: String,
     pub thinking_collapsed_role: String,
     pub thinking_expanded_role: String,
-    pub role_tone: crate::UiTone,
-    pub role_bold: bool,
 }
 
 /// An RGB color selected by Scheme and admitted at the native boundary.

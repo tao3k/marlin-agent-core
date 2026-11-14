@@ -301,6 +301,7 @@ pub trait UiSlotRenderer {
         _area: Rect,
         _element: &UiElement,
         _inputs: &UiRenderInputs<'_>,
+        _skip: usize,
     ) {
     }
 }
@@ -369,7 +370,7 @@ fn render_inner<'tree>(
         UiElement::Sized { child, .. } => {
             render_inner(frame, area, child, regions, inputs, skip, slots)
         }
-        UiElement::List { .. } => slots.renderer.list(frame, area, element, inputs),
+        UiElement::List { .. } => slots.renderer.list(frame, area, element, inputs, skip),
         UiElement::Panel {
             border_tone,
             field_template,

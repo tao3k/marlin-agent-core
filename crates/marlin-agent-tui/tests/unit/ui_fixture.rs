@@ -8,6 +8,24 @@ use marlin_agent_ui::{
 
 pub(super) fn test_layout() -> UiLayoutPolicy {
     use marlin_agent_ui::{UiElement, UiTemplateSpan, UiTemplateValue, UiTone};
+    let transcript_list = |name: &str| UiElement::List {
+        id: UiComponentId::new(name).unwrap(),
+        offset: marlin_agent_ui::UiSize::Cells(0),
+        child: Box::new(UiElement::Template {
+            background: marlin_agent_ui::UiBackground::None,
+            spans: [
+                ("role-text", UiTone::Info, true),
+                ("body-text", UiTone::Normal, false),
+            ]
+            .into_iter()
+            .map(|(name, tone, bold)| UiTemplateSpan {
+                value: UiTemplateValue::Binding(UiComponentId::new(name).unwrap()),
+                tone,
+                bold,
+            })
+            .collect(),
+        }),
+    };
     let candidate = |active| UiElement::Template {
         background: if active {
             marlin_agent_ui::UiBackground::Bar
@@ -242,14 +260,12 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                                             child: Box::new(slot),
                                         }
                                     } else {
-                                        slot
+                                        transcript_list(name)
                                     },
                                 )
                             })
                             .collect(),
-                            fallback: Box::new(UiElement::Slot(
-                                UiComponentId::new("conversation").unwrap(),
-                            )),
+                            fallback: Box::new(transcript_list("conversation")),
                         }
                     } else if name == "extensions" {
                         UiElement::List {
@@ -415,8 +431,6 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
             assistant_role: String::new(),
             thinking_collapsed_role: "closed".into(),
             thinking_expanded_role: "open".into(),
-            role_tone: marlin_agent_ui::UiTone::Info,
-            role_bold: true,
         },
     }
 }

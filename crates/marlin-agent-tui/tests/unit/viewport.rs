@@ -36,12 +36,34 @@ trait TestRender {
 
 impl TestRender for TranscriptViewport {
     fn render(&self, area: Rect, buffer: &mut Buffer) {
-        self.render_with_role_style(
+        render_cached_rows(
+            self,
             area,
             buffer,
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
+        );
+    }
+}
+
+// Independent test projection for checking the viewport's wrap and indexing.
+fn render_cached_rows(
+    view: &TranscriptViewport,
+    area: Rect,
+    buffer: &mut Buffer,
+    role_style: Style,
+) {
+    for (row, line) in view.lines.iter().take(usize::from(area.height)).enumerate() {
+        let (role, body) = line.fields();
+        let content = if role.is_empty() {
+            Span::raw(body)
+        } else {
+            Span::styled(role, role_style)
+        };
+        Paragraph::new(Line::from(content)).render(
+            Rect::new(area.x, area.y + row as u16, area.width, 1),
+            buffer,
         );
     }
 }
@@ -136,10 +158,10 @@ fn theme_changes_restyle_cached_roles_without_rebuilding_rows() {
     let mut first = Buffer::empty(area);
     let mut second = Buffer::empty(area);
     cache.with_view(&transcript, false, 20, 3, 0, |view| {
-        view.render_with_role_style(area, &mut first, Style::default().fg(Color::Red));
+        render_cached_rows(view, area, &mut first, Style::default().fg(Color::Red));
     });
     cache.with_view(&transcript, false, 20, 3, 0, |view| {
-        view.render_with_role_style(area, &mut second, Style::default().fg(Color::Blue));
+        render_cached_rows(view, area, &mut second, Style::default().fg(Color::Blue));
     });
     assert_eq!(cache.build_count(), 1);
     assert_eq!(first[(0, 0)].symbol(), second[(0, 0)].symbol());

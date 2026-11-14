@@ -109,8 +109,6 @@ fn view() -> UiWorkbench {
                 assistant_role: String::new(),
                 thinking_collapsed_role: "closed".into(),
                 thinking_expanded_role: "open".into(),
-                role_tone: marlin_agent_ui::UiTone::Info,
-                role_bold: true,
             },
         },
         theme: UiTheme::default(),

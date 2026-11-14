@@ -557,11 +557,6 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     assert!(
         matches!(workbench.layout.frame_tree.region_child("transcript"), Some(marlin_agent_ui::UiElement::Panel { border_tone: marlin_agent_ui::UiTone::Info, child, .. }) if matches!(child.as_ref(), marlin_agent_ui::UiElement::Slot(id) if id.as_str() == "static"))
     );
-    assert_eq!(
-        workbench.layout.transcript_policy.role_tone,
-        marlin_agent_ui::UiTone::Accent
-    );
-    assert!(!workbench.layout.transcript_policy.role_bold);
     assert!(matches!(
         workbench.layout.frame_tree.region_child("editor"),
         Some(marlin_agent_ui::UiElement::Input {

@@ -724,7 +724,7 @@ fn resize_stream_scroll_and_history_search() {
             return;
         };
         let _ = read_request(&mut stream);
-        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"INITIAL\"}\n\n").unwrap();
+        stream.write_all("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"INITIAL 中🐟\"}\n\n".as_bytes()).unwrap();
         initial_tx.send(()).unwrap();
         release_rx
             .recv_timeout(Duration::from_secs(15))
@@ -738,7 +738,7 @@ fn resize_stream_scroll_and_history_search() {
         );
         let events = [
             serde_json::json!({"type":"response.output_text.delta", "delta":chunk}),
-            serde_json::json!({"type":"response.completed", "response":{"id":"fixture", "model":"gpt-fixture", "status":"completed", "output":[{"type":"message", "content":[{"type":"output_text", "text":format!("INITIAL{chunk}")}]}]}}),
+            serde_json::json!({"type":"response.completed", "response":{"id":"fixture", "model":"gpt-fixture", "status":"completed", "output":[{"type":"message", "content":[{"type":"output_text", "text":format!("INITIAL 中🐟{chunk}")}]}]}}),
         ];
         for event in events {
             write!(stream, "data: {event}\n\n").unwrap();
@@ -759,6 +759,11 @@ fn resize_stream_scroll_and_history_search() {
         .recv_timeout(Duration::from_secs(10))
         .expect("initial stream chunk");
     terminal.wait_text("INITIAL");
+    terminal.wait_for(Duration::from_secs(15), "Unicode stream row", |output| {
+        screen_lines(output)
+            .iter()
+            .any(|line| line.contains("INITIAL") && line.contains('中') && line.contains('🐟'))
+    });
     for (rows, cols) in [(12, 32), (8, 12), (24, 100), (20, 80)] {
         terminal.resize(rows, cols);
         terminal.pump(Duration::from_millis(250));
