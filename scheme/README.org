@@ -137,6 +137,16 @@ have their own results.
 [[https://github.com/tao3k/marlin-agent-core/actions/runs/43531387991/job/132249692612][Linked replay and Context cohort]]
 [[https://github.com/tao3k/marlin-agent-core/actions/runs/43532069825/job/132251973119][Scheme working-copy acceptance]]
 
+The first macOS linked run completed compilation and all eleven Rust Deck
+unit tests. The real Actor test reached the VM and failed on =open= with
+=init has no compiled Module publication=. A second run stopped during
+linking with Apple =ld= reporting a bus error. The next run records the
+Yuanxu-generated INIT and the static input actually selected by the Deck
+link manifest. Brief-to-Draft staging and replay run after a successful
+package preparation even when Deck fails. Context latency still requires
+a successful linked Deck test.
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43533602217][INIT provenance and independent plugin replay]]
+
 Marlin selects Lab through its package declaration. The Lab package owns its
 Yuanxu, Parser, Orgize and ASCENT dependency selection. The Rust Orgize
 revision matches Lab's Scheme dependency so both build paths consume the
