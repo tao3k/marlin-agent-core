@@ -6,7 +6,7 @@
 ;;; vector of Scheme values, not a text serialization or a terminal command.
 (import (only-in :clan/poo/object .get .o .ref)
         (only-in :std/list/list find)
-        (only-in :yuanxu/poo-clos/types clos-instance?))
+        (only-in :tao3k/yuanxu/poo-clos/types clos-instance?))
 (export marlin-ui-native-facts marlin-ui-project-workbench marlin-ui-apply-native
         marlin-ui-project-intent marlin-ui-apply-event)
 

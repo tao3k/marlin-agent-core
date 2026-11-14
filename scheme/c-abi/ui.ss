@@ -6,7 +6,7 @@
 (import :gerbil-scheme-rust/scheme/runtime
         (only-in :clan/poo/object .def .get .o seal-object!)
         (only-in :std/list/list find filter)
-        (only-in :yuanxu/poo-clos/types clos-instance?)
+        (only-in :tao3k/yuanxu/poo-clos/types clos-instance?)
         (only-in "../ui-components/bounds.ss" marlin-ui-max-browse-steps)
         "../ui/projection.ss")
 (export marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch

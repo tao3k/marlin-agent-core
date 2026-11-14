@@ -3,6 +3,4 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 ;;; The selected native adapter Module owns its compiler inputs.
-(.def Build
-  kind: 'module/build
-  roots: '("context" "deck-runtime" "ui" "brief-to-draft"))
+(def Build '("context" "deck-runtime" "ui" "brief-to-draft"))

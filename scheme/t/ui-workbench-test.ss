@@ -8,9 +8,9 @@
         (only-in :marlin-agent-core/ui-hydra/objects defui-hydra marlin-ui-hydra-entries)
         (only-in :marlin-agent-core/ui/projection marlin-ui-native-facts marlin-ui-apply-native
                  marlin-ui-apply-event marlin-ui-project-intent)
-        (only-in :yuanxu/poo-clos/objects poo-clos-compose-method-bundle)
-        (only-in :yuanxu/poo-clos/generic-syntax .defgeneric .defmethod)
-        (only-in :yuanxu/poo-clos/method-bundle-syntax .defmethod-bundle)
+        (only-in :tao3k/yuanxu/poo-clos/objects poo-clos-compose-method-bundle)
+        (only-in :tao3k/yuanxu/poo-clos/generic-syntax .defgeneric .defmethod)
+        (only-in :tao3k/yuanxu/poo-clos/method-bundle-syntax .defmethod-bundle)
         (only-in :clan/poo/type Enum)
         (only-in :clan/poo/testing/type check-property report-diagnostics)
         (only-in :clan/poo/testing/property make-policy)

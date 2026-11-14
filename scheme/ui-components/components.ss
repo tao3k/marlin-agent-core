@@ -5,7 +5,7 @@
 ;;; Component constructors copy and admit presentation state. Runtime effects
 ;;; and terminal cells are outside this module's authority.
 (import (only-in :clan/poo/object .def .o .ref seal-object!)
-        (only-in :yuanxu/poo-clos/types clos-instance?)
+        (only-in :tao3k/yuanxu/poo-clos/types clos-instance?)
         (only-in "./bounds.ss" marlin-ui-max-content-items marlin-ui-bounded-label?
                  marlin-ui-bounded-list? marlin-ui-required-object)
         (only-in "./buffers.ss" marlin-ui-buffer-static-entries))

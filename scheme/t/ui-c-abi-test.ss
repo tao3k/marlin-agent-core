@@ -6,8 +6,8 @@
         (only-in :clan/poo/object .get .o)
         (only-in :gerbil-scheme-rust/scheme/runtime gerbil-rs-root-object)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
-        (only-in :yuanxu/poo-clos/generic-syntax .defgeneric .defmethod)
-        (only-in :yuanxu/poo-clos/method-bundle-syntax .defmethod-bundle)
+        (only-in :tao3k/yuanxu/poo-clos/generic-syntax .defgeneric .defmethod)
+        (only-in :tao3k/yuanxu/poo-clos/method-bundle-syntax .defmethod-bundle)
         (only-in :marlin-agent-core/t/ui-c-abi-driver ui-test-open ui-test-project ui-test-dispatch))
 (export ui-c-abi-test)
 (extern namespace: gerbil-scheme-rust/scheme/runtime

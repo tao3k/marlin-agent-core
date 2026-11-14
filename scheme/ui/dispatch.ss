@@ -5,11 +5,11 @@
 ;;; Multi-dispatch of a component and an event. Extensions compose their own
 ;;; methods into a fresh generic at module construction, not during painting.
 (import (only-in :clan/poo/object .def .o .ref)
-        (only-in :yuanxu/poo-clos/objects poo-clos-generic-protocol
+        (only-in :tao3k/yuanxu/poo-clos/objects poo-clos-generic-protocol
                  poo-clos-generic-binding-current poo-clos-compose-method-bundle)
-        (only-in :yuanxu/poo-clos/generic-syntax .defgeneric .defmethod)
-        (only-in :yuanxu/poo-clos/method-bundle-syntax .defmethod-bundle)
-        (only-in :yuanxu/poo-clos/dispatch poo-clos-call)
+        (only-in :tao3k/yuanxu/poo-clos/generic-syntax .defgeneric .defmethod)
+        (only-in :tao3k/yuanxu/poo-clos/method-bundle-syntax .defmethod-bundle)
+        (only-in :tao3k/yuanxu/poo-clos/dispatch poo-clos-call)
         (only-in :std/list/list duplicates)
         (only-in "../ui-components/bounds.ss" marlin-ui-bounded-list?)
         (only-in "../ui-components/commands.ss" marlin-ui-browse-command)
