@@ -6,7 +6,7 @@ name: Build the Scheme package
 description: Use the Gerbil package manager and Builder on the selected platform.
 inputs:
   trace-dependency-crash:
-    description: Inspect Gerbil crash dumps and test the compiled Org grammar import on hosted Ubuntu.
+    description: Retain the failing Gerbil indexer's source order and inspect its crash dump on hosted Ubuntu.
     default: 'false'
 runs:
   using: composite
@@ -61,6 +61,54 @@ runs:
           trap 'sudo sysctl -q -w "kernel.core_pattern=$core_pattern"' EXIT
           sudo sysctl -q -w "kernel.core_pattern=$crash_dir/core.%e.%p"
           ulimit -c unlimited
+          cat > "$crash_dir/grammar-global.gdb" <<'GDB'
+        python
+        import gdb
+        import re
+        import subprocess
+
+        try:
+            pc = int(gdb.parse_and_eval("$pc"))
+            module = gdb.solib_name(pc) or ""
+            if re.search(r"orgize/.*/(?:grammar|expectation-grammar)~0[.]o1$", module):
+                # On this x86-64 crash, a RIP-relative load fetches the global
+                # cell immediately before dereferencing its unbound value.
+                assembly = gdb.execute("disassemble /r $pc-10,$pc", to_string=True)
+                slot = re.search(r"# (0x[0-9a-f]+) <___glotbl\+(\d+)>", assembly)
+                if slot is None:
+                    raise ValueError("fault does not match the observed global load")
+                slot_address, byte_offset = int(slot[1], 16), int(slot[2])
+                pointer_size = gdb.lookup_type("void").pointer().sizeof
+                if byte_offset % pointer_size:
+                    raise ValueError("unaligned global table slot")
+                symbols = subprocess.check_output(["nm", "--defined-only", module], text=True)
+                offsets = {name: int(address, 16) for address, name in
+                           re.findall(r"^([0-9a-f]+) \w (___glotbl|___glo_names)$", symbols, re.M)}
+                name_slot = slot_address + offsets["___glo_names"] - offsets["___glotbl"]
+                name = gdb.parse_and_eval("*(char **)" + hex(name_slot)).string()
+                value = gdb.parse_and_eval("**(long **)" + hex(slot_address))
+                print(f"Orgize grammar fault global {name!r}, slot {byte_offset // pointer_size}, value {int(value)}")
+        except Exception as failure:
+            print(f"Orgize grammar fault global unavailable: {failure}")
+        end
+        GDB
+          export MARLIN_TRACE_GXTAGS="$(command -v gxtags)"
+          export MARLIN_TRACE_DIR="$crash_dir"
+          mkdir "$crash_dir/bin"
+          cat > "$crash_dir/bin/gxtags" <<'TRACE'
+        #!/usr/bin/env bash
+        previous=
+        for argument in "$@"; do
+          if [[ "$previous" == --source-list ]]; then
+            cp -- "$argument" "$MARLIN_TRACE_DIR/$BASHPID.inputs" || exit
+            break
+          fi
+          previous=$argument
+        done
+        exec "$MARLIN_TRACE_GXTAGS" "$@"
+        TRACE
+          chmod +x "$crash_dir/bin/gxtags"
+          export PATH="$crash_dir/bin:$PATH"
         fi
         # gxpkg captures gxtags stdout. Send uncaught Gambit errors to stderr.
         (cd scheme && GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+" gerbil deps --install) || {
@@ -71,11 +119,23 @@ runs:
               [[ -f "$dump" ]] || continue
               tool=${dump##*/core.}
               tool=${tool%%.*}
+              worker_pid=${dump##*.}
+              executable=$(command -v "$tool")
+              if [[ "$tool" == gxtags ]]; then
+                executable=$MARLIN_TRACE_GXTAGS
+              fi
+              worker_inputs="$crash_dir/$worker_pid.inputs"
+              if [[ -s "$worker_inputs" ]]; then
+                printf 'gxtags worker %s ordered source list\n' "$worker_pid"
+                cat -- "$worker_inputs"
+                printf '\n'
+              fi
               backtrace="$dump.txt"
               gdb --batch --nx -iex 'set auto-load off' \
                 -ex 'set print frame-arguments none' -ex 'thread apply all bt' \
                 -ex 'info registers' -ex 'disassemble /r $pc-32,$pc+48' \
-                "$(command -v "$tool")" "$dump" 2>&1 | tee "$backtrace" || true
+                -x "$crash_dir/grammar-global.gdb" \
+                "$executable" "$dump" 2>&1 | tee "$backtrace" || true
               if grep -Eq 'orgize/[^ ]*/(grammar|expectation-grammar)~0[.]o1' "$backtrace"; then
                 orgize_crashed=true
               fi
@@ -85,6 +145,38 @@ runs:
               # the same compiled dependencies as the full package index.
               ulimit -c 0
               export GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+"
+              # Reuse gxtags' actual worker input after the original workers exit.
+              for dump in "$crash_dir"/core.gxtags.* "$crash_dir"/core.gerbil.*; do
+                [[ -f "$dump" && "$dump" != *.txt ]] || continue
+                worker_pid=${dump##*.}
+                worker_inputs="$crash_dir/$worker_pid.inputs"
+                [[ -s "$worker_inputs" ]] || continue
+                # Isolate the Orgize portion while preserving the worker's order.
+                WORKER_INPUTS="$worker_inputs" gxi -e '
+                  (let* ((paths (call-with-input-file (getenv "WORKER_INPUTS") read))
+                         (prefix "github.com/tao3k/orgize/")
+                         (length-prefix (string-length prefix))
+                         (orgize (filter (lambda (path)
+                                          (and (>= (string-length path) length-prefix)
+                                               (string=? prefix (substring path 0 length-prefix))))
+                                        paths)))
+                    (unless (pair? orgize) (error "worker did not index Orgize"))
+                    (write orgize)
+                    (newline))' \
+                  > "$worker_inputs.orgize"
+                for scope in orgize full; do
+                  inputs=$worker_inputs
+                  if [[ "$scope" == orgize ]]; then
+                    inputs="$worker_inputs.orgize"
+                  fi
+                  replay_status=0
+                  (cd "$GERBIL_PATH/pkg" && timeout 120s "$MARLIN_TRACE_GXTAGS" \
+                    --global-env --jobs 1 --source-list "$inputs" \
+                    -o "$crash_dir/$worker_pid.$scope.tags" > "$crash_dir/$worker_pid.$scope.log" 2>&1) || replay_status=$?
+                  printf 'gxtags worker %s %s ordered replay status %s\n' "$worker_pid" "$scope" "$replay_status"
+                  tail -n 12 "$crash_dir/$worker_pid.$scope.log"
+                done
+              done
               for module in org-parser/grammar org-contract/expectation-grammar; do
                 import_status=0
                 tag_status=0
