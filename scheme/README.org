@@ -126,6 +126,17 @@ qualification.
 [[https://github.com/tao3k/marlin-agent-core/actions/runs/43486146039/job/132095014399][macOS failure]] ·
 [[https://github.com/tao3k/gebril-yuanxu/blob/ab7eed0e910d5ef2bea10d3f11b2ee79906cd8b9/module-system/source/reader-evaluation.ss][Yuanxu reader ownership]]
 
+The macOS release-pair candidate =8dbf3ef= installs Lab =8b6c57a= with
+Yuanxu v0.1.0 and completes Marlin's =gerbil build=. Lab installs a source
+catalog. Marlin registers the installed Lab source root through Yuanxu's
+package API before the Context publication imports Temporal Causality.
+The Working Copy and C ABI Build roles supply owner-relative Gerbil Make
+targets to the same selected graph. The linked tests and full Context cohort
+have their own results.
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43530919164/job/132248106945][macOS package build]]
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43531387991/job/132249692612][Linked replay and Context cohort]]
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43532069825/job/132251973119][Scheme working-copy acceptance]]
+
 Marlin selects Lab through its package declaration. The Lab package owns its
 Yuanxu, Parser, Orgize and ASCENT dependency selection. The Rust Orgize
 revision matches Lab's Scheme dependency so both build paths consume the
