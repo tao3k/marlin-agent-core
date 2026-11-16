@@ -4,12 +4,12 @@
 
 ;;; Typed publication contract for the Scheme-owned terminal workbench.
 (import (only-in :clan/poo/object .cc)
-        (only-in :clan/poo/mop Bool Fun Object Type. element?)
-        (only-in :clan/poo/type Exactly List Record String)
-        (only-in :tao3k/yuanxu/poo-clos/types ClosGenericFunction ClosGenericProtocol)
+        (only-in :clan/poo/mop Bool Fun Object Type. element?
+                 ClosGenericFunction ClosGenericProtocol)
+        (only-in :clan/poo/type Exactly List Or Record String)
         (only-in "../ui-components/bounds.ss" marlin-ui-bounded-list?))
 
-(export UiScopeContract)
+(export UiScopeContract ui-method-factories?)
 
 (def UiIdentity (.cc Type. '.element? symbol?))
 (def UiContribution (Record identity: [UiIdentity] label: [String]))
@@ -38,8 +38,10 @@
           theme-palette: [Object] regions: [(List UiRegion)]
           focus-order: [(List UiIdentity)]))
 (def UiNativeProjection (.cc Type. '.element? vector?))
-(def UiMethodBundles (.cc Type. '.element?
-  (lambda (value) (and (vector? value) (<= (vector-length value) 16)))))
+(def (ui-method-factories? value)
+  (and (vector? value) (<= (vector-length value) 16)
+       (andmap procedure? (vector->list value))))
+(def UiMethodFactories (.cc Type. '.element? ui-method-factories?))
 
 ;; Constructors also validate size and ownership; no runtime authority is conveyed.
 (def UiScopeContract
@@ -48,8 +50,8 @@
                project-workbench: [(Fun UiNativeProjection <- UiWorkbench)]
                focus-event: [(Fun Object <- UiWorkbench)]
                previous-focus-event: [(Fun Object <- UiWorkbench)]
-               make-dispatch: [(Fun ClosGenericFunction <- UiMethodBundles)]
-               dispatch: [(Fun Object <- ClosGenericFunction Object Object)]
+               make-dispatch: [(Fun ClosGenericFunction <- UiMethodFactories)]
+               dispatch: [(Fun Object <- ClosGenericFunction (Or Object UiIdentity) Object)]
                components: [Object]
                events: [Object] event-protocol: [ClosGenericProtocol])
        identity: 'marlin/ui))

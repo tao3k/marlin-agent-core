@@ -4,7 +4,7 @@
 
 ;;; Source-backed Org Elements use Lab's Scheme Orgize interface.
 (import (only-in :clan/poo/object .o)
-        (only-in :agentic-ai-lab/modules/query/semantic/orgize-source-interface
+        (only-in :tao3k/agentic-ai-lab/modules/query/semantic/orgize-source-interface
                  org-source-element-graph))
 (export marlin-context-org-source-graph)
 

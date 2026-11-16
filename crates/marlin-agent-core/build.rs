@@ -29,9 +29,14 @@ fn link_workflow_test() {
     }
 
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("Cargo manifest directory"));
-    let manifest = root.join("../../scheme/.gerbil/native/brief-to-draft/program.json");
-    println!("cargo:rerun-if-changed={}", manifest.display());
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory"));
+    let manifest = marlin_gerbil_aot_link::project_scheme_program(
+        &root.join("../../scheme"),
+        marlin_gerbil_aot_link::ProgramSelection::new(&["Marlin", "brief-to-draft"])
+            .expect("workflow Module selection"),
+        &out_dir.join("program"),
+    )
+    .expect("project the built Brief-to-Draft Module through its Interface");
     let gsc = discover_gambit_gsc_from_env().expect("paired Gambit compiler");
     let receipt = build_program_archive_observed(
         ProgramArchiveRequest {

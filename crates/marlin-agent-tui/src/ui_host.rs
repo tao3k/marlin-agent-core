@@ -5,9 +5,6 @@
 //! Admission of functional Scheme UI states into the terminal owner.
 
 use super::command::Command;
-use gerbil_scheme::GerbilRuntime;
-#[cfg(feature = "linked-ui")]
-use marlin_agent_ui::UiLinkedExports;
 use marlin_agent_ui::{
     UiBrowseDirection, UiCommandName, UiEditorAction, UiEvent, UiIntent, UiKeyCommand, UiKeyMode,
     UiModule, UiNativeSession, UiOpenFacts, UiProjectionError, UiTransient, UiTransientForeign,
@@ -32,33 +29,6 @@ pub(crate) enum UiKeyAction {
     Unhandled,
 }
 
-/// Native source bindings available to the Scheme-selected main view.
-#[derive(Clone, Copy)]
-pub(crate) enum MainSource {
-    Review,
-    Messages,
-    Static,
-    Runtime,
-    Extension,
-    Workspace,
-    Conversation,
-}
-
-impl MainSource {
-    pub(crate) fn from_id(id: &marlin_agent_ui::UiComponentId) -> Option<Self> {
-        match id.as_str() {
-            "review" => Some(Self::Review),
-            "messages" => Some(Self::Messages),
-            "static" => Some(Self::Static),
-            "runtime" => Some(Self::Runtime),
-            "extension" => Some(Self::Extension),
-            "workspace" => Some(Self::Workspace),
-            "conversation" => Some(Self::Conversation),
-            _ => None,
-        }
-    }
-}
-
 pub(crate) struct UiHost<'runtime> {
     module: UiModule<'runtime>,
     session: UiNativeSession<'runtime>,
@@ -70,32 +40,7 @@ pub(crate) struct UiHost<'runtime> {
 }
 
 impl<'runtime> UiHost<'runtime> {
-    #[cfg(not(feature = "linked-ui"))]
-    pub(crate) fn open(
-        runtime: &'runtime GerbilRuntime,
-        directory: &str,
-        facts: &UiOpenFacts<'_, '_>,
-    ) -> Result<Self, UiProjectionError> {
-        let module = UiModule::resolve(runtime, directory)?;
-        Self::from_module(module, facts)
-    }
-
-    /// Open the same UI protocol from the selected linked programme.
-    ///
-    /// # Safety
-    /// The caller must supply exports from `runtime`'s live AOT graph.
-    #[cfg(feature = "linked-ui")]
-    pub(crate) unsafe fn open_linked(
-        runtime: &'runtime GerbilRuntime,
-        exports: UiLinkedExports,
-        facts: &UiOpenFacts<'_, '_>,
-    ) -> Result<Self, UiProjectionError> {
-        // SAFETY: the linked runtime and exports are selected by the binary.
-        let module = unsafe { UiModule::resolve_linked(runtime, exports)? };
-        Self::from_module(module, facts)
-    }
-
-    fn from_module(
+    pub(crate) fn from_module(
         module: UiModule<'runtime>,
         facts: &UiOpenFacts<'_, '_>,
     ) -> Result<Self, UiProjectionError> {
@@ -510,23 +455,19 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
     }
     fn main_presentation(element: &marlin_agent_ui::UiElement, within_panel: bool) -> bool {
         match element {
-            marlin_agent_ui::UiElement::Slot(id) => match MainSource::from_id(id) {
-                Some(MainSource::Static | MainSource::Runtime | MainSource::Extension) => {
-                    within_panel
-                }
-                Some(_) => false,
-                None => false,
-            },
+            marlin_agent_ui::UiElement::Slot(source) => {
+                *source != marlin_agent_ui::UiSlotSource::TransientHint && within_panel
+            }
             marlin_agent_ui::UiElement::Panel { child, .. } => main_presentation(child, true),
-            marlin_agent_ui::UiElement::List { id, child, .. } => {
+            marlin_agent_ui::UiElement::List { source, child, .. } => {
+                use marlin_agent_ui::UiListSource;
                 matches!(
-                    MainSource::from_id(id),
-                    Some(
-                        MainSource::Review
-                            | MainSource::Messages
-                            | MainSource::Workspace
-                            | MainSource::Conversation
-                    )
+                    source,
+                    UiListSource::Review
+                        | UiListSource::Messages
+                        | UiListSource::Workspace
+                        | UiListSource::Conversation
+                        | UiListSource::Rows(_)
                 ) && main_presentation(child, within_panel)
             }
             marlin_agent_ui::UiElement::Sized { child, .. }
@@ -613,20 +554,13 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             | marlin_agent_ui::UiElement::Input { .. } => true,
         }
     }
+    use marlin_agent_ui::{UiFrameRole, UiListSource};
     let mut slots = HashSet::new();
     if !scroll_targets_admitted(&view.layout.frame_tree)
         || !collect_slots(&view.layout.frame_tree, &mut slots, false)
-        || [
-            "transcript",
-            "extensions",
-            "modeline",
-            "editor",
-            "candidates",
-            "minibuffer",
-            "minibuffer-hover",
-        ]
-        .iter()
-        .any(|name| !slots.contains(name))
+        || UiFrameRole::ALL
+            .iter()
+            .any(|role| !slots.contains(view.layout.regions.id(*role).as_str()))
     {
         return Err(UiProjectionError::Invalid("invalid terminal frame regions"));
     }
@@ -655,34 +589,30 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             | marlin_agent_ui::UiElement::Prompt { .. } => false,
         }
     }
-    let list = |name| match view.layout.frame_tree.region_child(name) {
-        Some(marlin_agent_ui::UiElement::List { id, child, .. })
-            if candidate_presentation(child) =>
-        {
-            Some(id)
-        }
+    let child_for = |role| {
+        view.layout
+            .frame_tree
+            .region_child(view.layout.regions.id(role).as_str())
+    };
+    let list = |role, capability| match child_for(role) {
+        Some(marlin_agent_ui::UiElement::List {
+            id, child, source, ..
+        }) if *source == capability && candidate_presentation(child) => Some(id),
         _ => None,
     };
-    let (Some(candidates), Some(extensions)) = (list("candidates"), list("extensions")) else {
+    let (Some(candidates), Some(extensions)) = (
+        list(UiFrameRole::Candidates, UiListSource::Candidates),
+        list(UiFrameRole::Extensions, UiListSource::Extensions),
+    ) else {
         return Err(UiProjectionError::Invalid("invalid candidate presentation"));
     };
     if candidates == extensions {
         return Err(UiProjectionError::Invalid("duplicate UI list identity"));
     }
-    if view
-        .layout
-        .frame_tree
-        .region_child("editor")
-        .and_then(input_count)
-        != Some(1)
-    {
+    if child_for(UiFrameRole::Editor).and_then(input_count) != Some(1) {
         return Err(UiProjectionError::Invalid("invalid input presentation"));
     }
-    if !view
-        .layout
-        .frame_tree
-        .region_child("transcript")
-        .is_some_and(|element| main_presentation(element, false))
+    if !child_for(UiFrameRole::Transcript).is_some_and(|element| main_presentation(element, false))
     {
         return Err(UiProjectionError::Invalid("invalid main presentation"));
     }

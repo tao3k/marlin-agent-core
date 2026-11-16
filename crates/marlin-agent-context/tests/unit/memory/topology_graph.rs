@@ -2,20 +2,19 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use marlin_agent_context::org::store::{MemoryOrgSourceStore, OrgProjectRootCandidate};
 use marlin_agent_context::org::{
     MemoryOrgWorkspace, TOPOLOGY_AGENT_ID_PROPERTY, TOPOLOGY_CONTENT_ID_PROPERTY,
     TOPOLOGY_CONTRACT_VALIDATED_PROPERTY, TOPOLOGY_EDGE_KIND_PROPERTY, TOPOLOGY_ID_PROPERTY,
     TOPOLOGY_NODE_KIND_PROPERTY, TOPOLOGY_PROJECT_ID_PROPERTY, TOPOLOGY_ROOT_SESSION_ID_PROPERTY,
     TOPOLOGY_SCOPE_PROPERTY, TOPOLOGY_SESSION_ID_PROPERTY, TOPOLOGY_SOURCE_ANCHOR_PROPERTY,
-    TOPOLOGY_WORKSPACE_ID_PROPERTY, TOPOLOGY_WORKTREE_ID_PROPERTY, TopologyGraphStoreQuery,
+    TOPOLOGY_WORKSPACE_ID_PROPERTY, TOPOLOGY_WORKTREE_ID_PROPERTY,
 };
 use marlin_agent_protocol::{
     GraphQueryContext, GraphQueryFamily, GraphQueryRelationshipFact, GraphQueryRequest,
 };
 use marlin_context_org_model::{OrgNode, OrgNodeId, OrgSourceSpan};
-use std::collections::BTreeMap;
 
+#[test]
 fn topology_graph_matches_project_import_overview() {
     let mut node = topology_node(TopologyNodeFixture {
         id: "topology-node:project-import",
@@ -100,6 +99,7 @@ fn topology_graph_matches_project_import_overview() {
     );
 }
 
+#[test]
 fn topology_graph_requires_external_project_policy() {
     let workspace = MemoryOrgWorkspace::from_nodes(vec![topology_node(TopologyNodeFixture {
         id: "topology-node:external",
@@ -129,68 +129,6 @@ fn topology_graph_requires_external_project_policy() {
         .expect("topology query succeeds");
 
     assert!(response.matches.is_empty());
-}
-
-fn topology_graph_executes_store_backed_root_query() {
-    let store = MemoryOrgSourceStore::new(BTreeMap::from([(
-        ".marlin/topology/project.org".to_string(),
-        "* Project topology: marlin-agent-core import\n\
-         :PROPERTIES:\n\
-         :TOPOLOGY_ID: topology.project-alpha.import\n\
-         :PROJECT_ID: project-alpha\n\
-         :WORKSPACE_ID: workspace-a\n\
-         :ROOT_SESSION_ID: root-a\n\
-         :CONTENT_ID: content:import\n\
-         :TOPOLOGY_SCOPE: project-overview\n\
-         :TOPOLOGY_NODE_KIND: project\n\
-         :TOPOLOGY_EDGE_KIND: imports-project\n\
-         :SOURCE_ANCHOR: docs/40-rfcs/40.120-project-scoped-agent-graph-runtime.org\n\
-         :CONTRACT_VALIDATED: true\n\
-         :END:\n\
-         ** Overview\n\
-         Project import topology overview.\n\
-         ** Navigation\n\
-         - project imports marlin-agent-core.\n\
-         ** Visibility Boundaries\n\
-         - sibling sessions stay transcript-hidden.\n"
-            .to_string(),
-    )]));
-    let workspace = MemoryOrgWorkspace::new();
-    let request = GraphQueryRequest::new(
-        GraphQueryContext::new("project-alpha")
-            .with_workspace("workspace-a")
-            .with_root_session("root-a")
-            .with_content_anchor("content:import"),
-        GraphQueryFamily::Topology,
-        "project-overview imports-project",
-    )
-    .with_content_anchor("content:import");
-
-    let response = workspace
-        .query_topology_graph_from_store(TopologyGraphStoreQuery {
-            receipt_id: "receipt:topology-store".to_string(),
-            request,
-            store: &store,
-            candidates: vec![OrgProjectRootCandidate::topology(
-                ".marlin/topology/project.org",
-            )],
-        })
-        .expect("store backed topology query succeeds");
-
-    assert_eq!(response.matches.len(), 1);
-    assert_eq!(response.receipt_id.as_str(), "receipt:topology-store");
-    assert!(
-        response.matches[0]
-            .relationship
-            .has_fact(GraphQueryRelationshipFact::ContractValidated)
-    );
-    assert_eq!(
-        response.matches[0]
-            .source_anchor_id
-            .as_ref()
-            .map(|anchor_id| anchor_id.as_str()),
-        Some("docs/40-rfcs/40.120-project-scoped-agent-graph-runtime.org")
-    );
 }
 
 struct TopologyNodeFixture<'a> {
@@ -266,19 +204,3 @@ fn topology_node(fixture: TopologyNodeFixture<'_>) -> OrgNode {
     );
     node
 }
-
-// Invoked after exclusive parser startup by unit_test.
-pub(super) const CASES: &[(&str, fn())] = &[
-    (
-        "topology_graph_matches_project_import_overview",
-        topology_graph_matches_project_import_overview,
-    ),
-    (
-        "topology_graph_requires_external_project_policy",
-        topology_graph_requires_external_project_policy,
-    ),
-    (
-        "topology_graph_executes_store_backed_root_query",
-        topology_graph_executes_store_backed_root_query,
-    ),
-];

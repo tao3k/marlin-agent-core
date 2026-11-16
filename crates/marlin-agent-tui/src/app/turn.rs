@@ -691,6 +691,9 @@ impl App {
             self.composer = draft;
             return;
         }
+        if self.workspace.close_view() {
+            return;
+        }
         if self.buffer_view != super::BufferView::Conversation {
             self.ui_request = Some(UiEvent::SelectBuffer(
                 marlin_agent_ui::UiBufferId::new("conversation").expect("static buffer ID"),
@@ -733,7 +736,6 @@ impl App {
                 detail: "The pending read was cancelled.",
             });
         } else {
-            self.workspace.close_view();
             self.runtime_receipt_open = false;
         }
     }
@@ -773,6 +775,16 @@ impl App {
 
     pub(crate) fn scroll_lines(&mut self, up: bool, lines: usize) {
         let preview = self.preview_buffer();
+        if preview.is_none()
+            && let Some(view) = self.workspace.view_mut()
+        {
+            view.scroll_from_top = if up {
+                view.scroll_from_top.saturating_sub(lines)
+            } else {
+                view.scroll_from_top.saturating_add(lines)
+            };
+            return;
+        }
         let buffer = preview.as_ref().unwrap_or(&self.buffer_view);
         if matches!(buffer, super::BufferView::Named(_)) {
             self.static_buffer_scroll = if up {
@@ -788,14 +800,6 @@ impl App {
             } else {
                 self.message_scroll_up.saturating_sub(lines)
             };
-        } else if preview.is_none()
-            && let Some(view) = self.workspace.view_mut()
-        {
-            view.scroll_from_top = if up {
-                view.scroll_from_top.saturating_sub(lines)
-            } else {
-                view.scroll_from_top.saturating_add(lines)
-            };
         } else {
             self.scroll_up = if up {
                 self.scroll_up.saturating_add(lines)
@@ -807,6 +811,12 @@ impl App {
 
     pub(super) fn set_effective_scroll(&mut self, value: usize) {
         let preview = self.preview_buffer();
+        if preview.is_none()
+            && let Some(view) = self.workspace.view_mut()
+        {
+            view.scroll_from_top = value;
+            return;
+        }
         let buffer = preview.as_ref().unwrap_or(&self.buffer_view);
         if matches!(buffer, super::BufferView::Named(_)) {
             return;
@@ -815,14 +825,7 @@ impl App {
             self.message_scroll_up = value;
             return;
         }
-        if preview.is_some() {
-            self.scroll_up = value;
-            return;
-        }
-        match self.workspace.view_mut() {
-            Some(view) => view.scroll_from_top = value,
-            None => self.scroll_up = value,
-        }
+        self.scroll_up = value;
     }
 }
 

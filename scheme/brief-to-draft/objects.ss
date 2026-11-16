@@ -42,4 +42,4 @@
                  (vector (if (eq? template 'release-note) 1 0) 2)))))
 
 (def BriefToDraftOperations
-  (.o identity: 'marlin/brief-to-draft validate-settings: project-settings propose: project-proposal))
+  (.o identity: 'marlin/brief-to-draft program-entry: 'marlin-agent-core/brief-to-draft/entry validate-settings: project-settings propose: project-proposal))

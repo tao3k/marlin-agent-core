@@ -3,8 +3,10 @@
 
 //! Bind host-owned content and cached transcripts to declarative UI slots.
 
-use super::{App, Composer, MainSource, ScrollAnchor, TranscriptViewportCache, ui_elements};
-use marlin_agent_ui::{UiCommandName, UiComponentId, UiContent, UiElement, UiWorkbench};
+use super::{App, Composer, ScrollAnchor, TranscriptViewportCache, ui_elements};
+use marlin_agent_ui::{
+    UiCommandName, UiComponentId, UiContent, UiElement, UiListSource, UiSlotSource, UiWorkbench,
+};
 use ratatui::layout::Rect;
 
 /// Bind host data to nodes while the common mapper traverses the full frame.
@@ -20,23 +22,31 @@ pub(super) struct FrameSlots<'a> {
 }
 
 impl ui_elements::UiSlotRenderer for FrameSlots<'_> {
+    fn list_state(&self) -> Option<&std::cell::RefCell<ui_elements::UiListState>> {
+        Some(&self.app.list_state)
+    }
+
+    fn tree(&self, source: &UiSlotSource) -> Option<(&UiElement, usize)> {
+        self.main.tree(source)
+    }
+
     fn render(
         &mut self,
         frame: &mut ratatui::Frame<'_>,
         area: Rect,
-        id: &UiComponentId,
+        source: &UiSlotSource,
         field_template: Option<&UiElement>,
         inputs: &ui_elements::UiRenderInputs<'_>,
         skip: usize,
     ) {
-        if id.as_str() == "transient-hint" {
+        if *source == UiSlotSource::TransientHint {
             if let Some(hint) = &self.app.transient_hint {
                 ui_elements::render_with_facts(frame, area, hint, &mut Vec::new(), inputs);
             }
             return;
         }
         self.main
-            .render(frame, area, id, field_template, inputs, skip);
+            .render(frame, area, source, field_template, inputs, skip);
     }
 
     fn input(
@@ -57,15 +67,14 @@ impl ui_elements::UiSlotRenderer for FrameSlots<'_> {
         inputs: &ui_elements::UiRenderInputs<'_>,
         skip: usize,
     ) {
-        let UiElement::List { id, .. } = element else {
+        let UiElement::List { source, .. } = element else {
             return;
         };
-        if MainSource::from_id(id).is_some() {
+        if !matches!(source, UiListSource::Candidates | UiListSource::Extensions) {
             self.main.list(frame, area, element, inputs, skip);
             return;
         }
-        let matches_region = |name| matches!(self.ui.layout.frame_tree.region_child(name), Some(UiElement::List { id: expected, .. }) if expected == id);
-        if matches_region("candidates") {
+        if *source == UiListSource::Candidates {
             let count = self
                 .app
                 .tool_review_prompt
@@ -122,7 +131,7 @@ impl ui_elements::UiSlotRenderer for FrameSlots<'_> {
                     Some(ui_elements::UiListRow { key, bindings })
                 },
             );
-        } else if matches_region("extensions") {
+        } else {
             let selected = self
                 .extensions
                 .iter()
@@ -165,7 +174,7 @@ impl ui_elements::UiSlotRenderer for EditorSlots<'_> {
         &mut self,
         _: &mut ratatui::Frame<'_>,
         _: Rect,
-        _: &UiComponentId,
+        _: &UiSlotSource,
         _: Option<&UiElement>,
         _: &ui_elements::UiRenderInputs<'_>,
         _: usize,
@@ -202,49 +211,51 @@ pub(super) struct MainSlots<'a> {
     pub app: &'a App,
     pub cache: &'a mut TranscriptViewportCache,
     pub anchor: &'a mut ScrollAnchor,
-    pub static_content: Option<(&'a str, &'a [UiContent])>,
-    pub focused_content: Option<(&'a str, &'a [UiContent])>,
+    pub static_content: Option<&'a UiElement>,
+    pub focused_content: Option<&'a UiElement>,
+    pub dynamic_content: Option<&'a [UiContent]>,
     pub effective_scroll: usize,
 }
 
 impl ui_elements::UiSlotRenderer for MainSlots<'_> {
+    fn tree(&self, source: &UiSlotSource) -> Option<(&UiElement, usize)> {
+        match source {
+            UiSlotSource::SelectedBuffer if self.dynamic_content.is_none() => self
+                .static_content
+                .map(|tree| (tree, self.app.static_buffer_scroll)),
+            UiSlotSource::FocusedExtension => self.focused_content.map(|tree| (tree, 0)),
+            _ => None,
+        }
+    }
+
     fn render(
         &mut self,
         frame: &mut ratatui::Frame<'_>,
         area: Rect,
-        id: &UiComponentId,
+        source: &UiSlotSource,
         field_template: Option<&UiElement>,
         inputs: &ui_elements::UiRenderInputs<'_>,
         skip: usize,
     ) {
-        let Some(source) = MainSource::from_id(id) else {
-            return;
+        let content = match source {
+            UiSlotSource::SelectedBuffer => self.dynamic_content,
+            UiSlotSource::RuntimePolicy => Some(self.app.runtime_content.as_slice()),
+            UiSlotSource::FocusedExtension | UiSlotSource::TransientHint => None,
         };
-        match source {
-            MainSource::Static | MainSource::Runtime | MainSource::Extension => {
-                let content = match source {
-                    MainSource::Static => self.static_content.map(|(_, content)| content),
-                    MainSource::Runtime => Some(self.app.runtime_content.as_slice()),
-                    MainSource::Extension => self.focused_content.map(|(_, content)| content),
-                    _ => None,
-                };
-                if let (Some(content), Some(field_template)) = (content, field_template) {
-                    let scroll = if matches!(source, MainSource::Static) {
-                        self.app.static_buffer_scroll
-                    } else {
-                        0
-                    };
-                    ui_elements::render_content(
-                        frame,
-                        area,
-                        content,
-                        field_template,
-                        inputs,
-                        scroll.saturating_add(skip),
-                    );
-                }
-            }
-            _ => {}
+        if let (Some(content), Some(field_template)) = (content, field_template) {
+            let scroll = if *source == UiSlotSource::SelectedBuffer {
+                self.app.static_buffer_scroll
+            } else {
+                0
+            };
+            ui_elements::render_content(
+                frame,
+                area,
+                content,
+                field_template,
+                inputs,
+                scroll.saturating_add(skip),
+            );
         }
     }
 
@@ -256,10 +267,7 @@ impl ui_elements::UiSlotRenderer for MainSlots<'_> {
         inputs: &ui_elements::UiRenderInputs<'_>,
         skip: usize,
     ) {
-        let UiElement::List { id, .. } = element else {
-            return;
-        };
-        let Some(source) = MainSource::from_id(id) else {
+        let UiElement::List { source, .. } = element else {
             return;
         };
         let app = self.app;
@@ -288,7 +296,7 @@ impl ui_elements::UiSlotRenderer for MainSlots<'_> {
             );
         };
         match source {
-            MainSource::Review => {
+            UiListSource::Review => {
                 if let Some(prompt) = &self.app.tool_review_prompt {
                     self.cache.with_top_view(
                         &prompt.details,
@@ -299,7 +307,7 @@ impl ui_elements::UiSlotRenderer for MainSlots<'_> {
                     );
                 }
             }
-            MainSource::Messages => {
+            UiListSource::Messages => {
                 let scroll = self.anchor.adjust(
                     &self.app.messages,
                     false,
@@ -319,7 +327,7 @@ impl ui_elements::UiSlotRenderer for MainSlots<'_> {
                     },
                 );
             }
-            MainSource::Workspace => {
+            UiListSource::Workspace => {
                 if let Some(view) = self.app.workspace.view() {
                     self.effective_scroll = self.cache.with_top_view(
                         &view.transcript,
@@ -333,7 +341,7 @@ impl ui_elements::UiSlotRenderer for MainSlots<'_> {
                     );
                 }
             }
-            MainSource::Conversation => {
+            UiListSource::Conversation => {
                 let pending = self.app.pending.is_some();
                 let scroll = self.anchor.adjust(
                     &self.app.transcript,

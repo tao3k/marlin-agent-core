@@ -7,8 +7,8 @@ use gerbil_scheme::{
     SchemeScalar,
 };
 use marlin_agent_ui::{
-    UiComponentId, UiContent, UiIntent, UiOpenFacts, UiRegion, UiScrollDirection, UiStatusItem,
-    decode_intent, decode_workbench, prepare_open_request,
+    UiComponentId, UiIntent, UiOpenFacts, UiRegion, UiScrollDirection, UiStatusItem, decode_intent,
+    decode_workbench, prepare_open_request,
 };
 
 #[path = "ui_native_projection/review.rs"]
@@ -166,7 +166,10 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
                                                 runtime,
                                                 &[
                                                     symbol(runtime, "slot"),
-                                                    vector(runtime, &[symbol(runtime, "static")]),
+                                                    vector(
+                                                        runtime,
+                                                        &[symbol(runtime, "selected-buffer")],
+                                                    ),
                                                 ],
                                             ),
                                         ],
@@ -284,6 +287,18 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
                         ],
                     ),
                 ],
+            ),
+            vector(
+                runtime,
+                &marlin_agent_ui::UiFrameRole::ALL.map(|role| {
+                    vector(
+                        runtime,
+                        &[
+                            symbol(runtime, role.as_str()),
+                            symbol(runtime, role.as_str()),
+                        ],
+                    )
+                }),
             ),
         ],
     )

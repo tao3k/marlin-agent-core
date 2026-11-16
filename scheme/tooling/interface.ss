@@ -4,7 +4,6 @@
 ;;; Tool declarations and governance belong to the selected Scheme Module.
 (.def Tooling
   identity: 'tooling
-  core: (.o requires: (.o)
-            scope-contract: ToolingScopeContract
+  core: (.o scope-contract: ToolingScopeContract
             exports: ToolingScope)
   features: (.o))

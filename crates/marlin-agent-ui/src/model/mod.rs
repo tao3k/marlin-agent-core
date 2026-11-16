@@ -4,6 +4,7 @@
 
 //! Host-neutral UI state and transition contract.
 
+use crate::UiElement;
 use gerbil_scheme::{NativeError, RootedCallError, RootedSchemeObject};
 use std::sync::Arc;
 
@@ -14,9 +15,7 @@ pub(crate) const MAX_HOST_STATUS: usize = 8;
 pub(crate) const MODELINE_SLOTS: usize = 15;
 pub(crate) const MAX_STATUS: usize = 23;
 pub(crate) const MAX_EXTENSIONS: usize = 16;
-// Admit the bounded Help projection after global and modal keymaps compose.
-pub(crate) const MAX_CONTENT_ITEMS: usize = 64;
-pub(crate) const MAX_METHOD_BUNDLES: usize = 16;
+pub(crate) const MAX_METHOD_FACTORIES: usize = 16;
 pub(crate) const MAX_COMMANDS: usize = 256;
 pub(crate) const MAX_TEXT_CHARS: usize = 256;
 pub(crate) const MAX_ID_BYTES: usize = 1024;
@@ -143,7 +142,7 @@ pub enum UiRegion {
         id: UiComponentId,
         label: String,
         focusable: bool,
-        content: Vec<UiContent>,
+        content: UiElement,
     },
 }
 
@@ -220,6 +219,62 @@ pub struct UiLayoutPolicy {
     pub transcript_policy: UiTranscriptPolicy,
     /// Ordered frame regions, authored by the selected Scheme layout.
     pub frame_tree: crate::UiElement,
+    pub regions: UiFrameRegions,
+}
+
+/// A terminal mechanism, independent of the Scheme region that provides it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiFrameRole {
+    Transcript,
+    Extensions,
+    Modeline,
+    Editor,
+    Candidates,
+    Minibuffer,
+    MinibufferHover,
+}
+
+impl UiFrameRole {
+    pub const ALL: [Self; 7] = [
+        Self::Transcript,
+        Self::Extensions,
+        Self::Modeline,
+        Self::Editor,
+        Self::Candidates,
+        Self::Minibuffer,
+        Self::MinibufferHover,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Transcript => "transcript",
+            Self::Extensions => "extensions",
+            Self::Modeline => "modeline",
+            Self::Editor => "editor",
+            Self::Candidates => "candidates",
+            Self::Minibuffer => "minibuffer",
+            Self::MinibufferHover => "minibuffer-hover",
+        }
+    }
+}
+
+/// Admitted role bindings in `UiFrameRole::ALL` order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiFrameRegions([UiComponentId; 7]);
+
+impl UiFrameRegions {
+    pub fn new(ids: [UiComponentId; 7]) -> Result<Self, UiProjectionError> {
+        for (index, id) in ids.iter().enumerate() {
+            if ids[..index].contains(id) {
+                return Err(UiProjectionError::Invalid("duplicate frame role binding"));
+            }
+        }
+        Ok(Self(ids))
+    }
+
+    pub fn id(&self, role: UiFrameRole) -> &UiComponentId {
+        &self.0[role as usize]
+    }
 }
 
 /// Scheme-selected compact conversation presentation; raw messages remain in history.
@@ -282,7 +337,8 @@ pub struct UiOpenFacts<'a, 'runtime> {
     pub session_label: &'a str,
     pub status: &'a [UiStatusItem],
     pub extensions: &'a [RootedSchemeObject<'runtime>],
-    pub method_bundles: &'a [RootedSchemeObject<'runtime>],
+    /// Scheme thunks returning fresh method bundles for this session.
+    pub method_factories: &'a [RootedSchemeObject<'runtime>],
 }
 
 /// An owned candidate. Publication and effect admission remain host duties.
@@ -359,7 +415,10 @@ impl UiWorkbench {
         let supported = matches!(
             (&event, intent),
             (
-                UiEvent::NextFocus | UiEvent::PreviousFocus | UiEvent::Dismiss,
+                UiEvent::NextFocus
+                    | UiEvent::PreviousFocus
+                    | UiEvent::Dismiss
+                    | UiEvent::SelectListRow { .. },
                 UiIntent::Focus(_)
             ) | (UiEvent::ScrollUp, UiIntent::Scroll(UiScrollDirection::Up))
                 | (
@@ -388,6 +447,7 @@ impl UiWorkbench {
             || self.session_label != next.session_label
             || if profile_change {
                 self.layout.message_frame != next.layout.message_frame
+                    || self.layout.regions != next.layout.regions
                     || self.layout.command_frame != next.layout.command_frame
                     || self.layout.max_chatbox_rows != next.layout.max_chatbox_rows
                     || self.layout.max_command_rows != next.layout.max_command_rows
@@ -502,6 +562,10 @@ pub enum UiEvent {
     ScrollDown,
     SelectProfile(UiProfileName),
     SelectBuffer(UiBufferId),
+    SelectListRow {
+        list: UiComponentId,
+        row: UiComponentId,
+    },
     /// A successfully admitted command, for Scheme-owned completion history.
     RecordCommand(UiCommandName),
 }

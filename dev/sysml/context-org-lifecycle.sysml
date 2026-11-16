@@ -28,8 +28,10 @@ package MarlinContextOrgLifecycle {
                provides that Session host or a durable turn transaction.
                The Rust boundary must check native readiness. */
         part <'MAR-CONTEXT-P02'> sourceOwner {
-            doc /* Rust owns Org serialization and must retain every accepted
-                   conversation turn and typed continuation. A successful write
+            doc /* Scheme owns Org interpretation and source construction;
+                   Rust persists exact source snapshots through typed host I/O.
+                   The durable owner must retain every accepted conversation
+                   turn and typed continuation. A successful write
                    alone is not evidence of a durable atomic turn commit.
                    Filesystem writes sync the replacement file and, on Unix,
                    its immediate parent after rename; this does not supply
@@ -44,9 +46,10 @@ package MarlinContextOrgLifecycle {
         part <'MAR-CONTEXT-P03'> labProjection {
             doc /* A scoped, bounded projection and replay of source, not a
                    complete turn journal, source authentication, current-use
-                   authorization, or proof of durable storage. Marlin Cargo and
-                   Lab declare the same Orgize revision; that does not prove
-                   a shared VM, a qualified native closure, or a turn journal. */
+                   authorization, or proof of durable storage. Orgize belongs
+                   to Lab's Scheme dependency graph; Cargo has no Orgize parser
+                   dependency. Rust consumes typed results on the existing VM.
+                   Native qualification does not establish a turn journal. */
         }
         part <'MAR-CONTEXT-P04'> labSessionHost {
             doc /* Coordinates enrolled source snapshots and Session input
@@ -59,9 +62,9 @@ package MarlinContextOrgLifecycle {
                    selected publication can return a source-preserving Lab
                    Contract cut and bounded anchors through rooted Scheme
                    values. Its digest is not authentication or a commit;
-                   projection and lookup reject over-limit record lists before
-                   allocating their output or index, but parsing occurs first
-                   and is not bounded by that projection gate;
+                   admission limits sources to one MiB, graphs to 4,096
+                   Elements, field batches to 64 and anchors to 32. These
+                   admission/output limits do not prove peak parser memory;
                    the Session host and durable journal remain unconnected. */
         }
         part <'MAR-CONTEXT-P06'> terminalClient {
@@ -69,10 +72,12 @@ package MarlinContextOrgLifecycle {
                    it is not the source or lifecycle authority. */
         }
         part <'MAR-CONTEXT-P07'> orgBuildClosure {
-            doc /* Orgize and Lab do not declare the Scheme bridge in their
-                   Scheme package manifests. Lab's current Bazel producer
-                   still wires the bridge for Orgize; migration
-                   of that build closure to Orgize remains open. */
+            doc /* Gerbil pkg resolves Orgize through the selected Lab graph.
+                   Standard Scheme builds and the typed VM bridge qualify the
+                   closure; no Rust Orgize library, separate parser runtime or
+                   Orgize-specific artifact environment channel is used.
+                   Package construction, native acceptance and durable Session
+                   integration remain separate gates. */
         }
         dependency projectionReadsSource from labProjection to sourceOwner;
         dependency hostUsesProjection from labSessionHost to labProjection;

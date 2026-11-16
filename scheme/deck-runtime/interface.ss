@@ -6,7 +6,6 @@
 
 (.def DeckRuntime
   identity: 'deck-runtime
-  core: (.o requires: (.o Context: (.o module-id: 'context))
-            scope-contract: DeckScopeContract
+  core: (.o scope-contract: DeckScopeContract
             exports: DeckScope)
   features: (.o))

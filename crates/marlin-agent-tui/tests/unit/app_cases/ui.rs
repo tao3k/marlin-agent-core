@@ -700,7 +700,10 @@ fn scheme_static_buffer_replaces_window_content_without_changing_conversation() 
             UiRegion::Extension {
                 id: UiComponentId::new("help").unwrap(),
                 label: "*Help*".into(),
-                content: vec![UiContent::Text("Ctrl-R  Search prompts".into())],
+                content: marlin_agent_ui::UiElement::Text(vec![marlin_agent_ui::UiSpan {
+                    text: "Ctrl-R  Search prompts".into(),
+                    tone: marlin_agent_ui::UiTone::Normal,
+                }]),
                 focusable: false,
             },
             UiRegion::Status(vec![]),
@@ -741,7 +744,7 @@ fn scheme_static_buffer_replaces_window_content_without_changing_conversation() 
     view.regions.push(UiRegion::Extension {
         id: UiComponentId::new("processes").unwrap(),
         label: "*Processes*".into(),
-        content: vec![],
+        content: marlin_agent_ui::UiElement::Rows(vec![]),
         focusable: false,
     });
     app.replace_dynamic_buffer_content(

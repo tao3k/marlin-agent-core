@@ -13,13 +13,13 @@ use gerbil_scheme::{
 use marlin_agent_protocol::HumanDecision;
 
 use crate::model::{
-    MAX_COMMANDS, MAX_CONTENT_ITEMS, MAX_ID_BYTES, MAX_REGIONS, MAX_STATUS, MAX_TEXT_CHARS,
-    MODELINE_SLOTS, UiBufferId, UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName,
-    UiComponentId, UiContent, UiFrame, UiFrameSpec, UiIntent, UiKeyBinding, UiKeyCommand,
-    UiKeyMode, UiKeyScope, UiKeyToken, UiLayoutPolicy, UiProjectionError, UiRegion, UiReviewChoice,
-    UiReviewMenu, UiRgb, UiScrollDirection, UiStatusItem, UiStatusTone, UiTheme,
-    UiToolReviewChoice, UiToolReviewDecision, UiToolReviewMenu, UiTransient, UiTransientForeign,
-    UiTransientHead, UiTransientId, UiWindow, UiWorkbench,
+    MAX_COMMANDS, MAX_ID_BYTES, MAX_REGIONS, MAX_STATUS, MAX_TEXT_CHARS, MODELINE_SLOTS,
+    UiBufferId, UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName, UiComponentId,
+    UiFrame, UiFrameSpec, UiIntent, UiKeyBinding, UiKeyCommand, UiKeyMode, UiKeyScope, UiKeyToken,
+    UiLayoutPolicy, UiProjectionError, UiRegion, UiReviewChoice, UiReviewMenu, UiRgb,
+    UiScrollDirection, UiStatusItem, UiStatusTone, UiTheme, UiToolReviewChoice,
+    UiToolReviewDecision, UiToolReviewMenu, UiTransient, UiTransientForeign, UiTransientHead,
+    UiTransientId, UiWindow, UiWorkbench,
 };
 
 /// Admit a finite Scheme presentation without granting review authority.
@@ -348,7 +348,7 @@ fn decode_frame_state(value: RootedSchemeObject<'_>) -> Result<UiFrame, UiProjec
 }
 
 fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProjectionError> {
-    let layout_values = vector(value, 6, 6)?;
+    let layout_values = vector(value, 7, 7)?;
     let field = |index, lower, upper| -> Result<u16, UiProjectionError> {
         match layout_values.element(index)?.as_ref().scalar()? {
             SchemeScalar::Fixnum(value) if (lower..=upper).contains(&value) => Ok(value as u16),
@@ -377,6 +377,7 @@ fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProj
         max_chatbox_rows: field(2, 3, 20)?,
         max_command_rows: field(3, 1, MAX_COMMANDS as isize)?,
         frame_tree,
+        regions: decode_frame_regions(layout_values.element(6)?)?,
         transcript_policy: super::model::UiTranscriptPolicy {
             default_collapsed,
             user_prefix: label(1, false)?,
@@ -386,6 +387,35 @@ fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProj
         },
     };
     Ok(layout)
+}
+
+fn decode_frame_regions(
+    value: RootedSchemeObject<'_>,
+) -> Result<crate::UiFrameRegions, UiProjectionError> {
+    use crate::UiFrameRole;
+    let bindings = vector(value, UiFrameRole::ALL.len(), UiFrameRole::ALL.len())?;
+    let mut names = IdentifierBuffer::default();
+    let mut ids: [Option<UiComponentId>; 7] = std::array::from_fn(|_| None);
+    for index in 0..bindings.len() {
+        let binding = vector(bindings.element(index)?, 2, 2)?;
+        let name = identifier(binding.element(0)?, &mut names)?;
+        let role = UiFrameRole::ALL
+            .iter()
+            .position(|role| role.as_str() == name.as_str())
+            .ok_or(UiProjectionError::Invalid("unknown frame role"))?;
+        let id = identifier(binding.element(1)?, &mut names)?;
+        if ids[role].replace(id).is_some() {
+            return Err(UiProjectionError::Invalid("duplicate frame role"));
+        }
+    }
+    let ids = ids
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+        .ok_or(UiProjectionError::Invalid("missing frame role"))?;
+    crate::UiFrameRegions::new(
+        ids.try_into()
+            .map_err(|_| UiProjectionError::Invalid("missing frame role"))?,
+    )
 }
 
 fn decode_frame(value: RootedSchemeObject<'_>) -> Result<UiFrameSpec, UiProjectionError> {
@@ -458,27 +488,31 @@ fn decode_regions(
         }
         let payload = region.element(2)?;
         let node = match kind.as_str() {
-            "transcript" if index == 0 && id.as_str() == "transcript" => {
+            "transcript" if id.as_str() == "transcript" => {
                 vector(payload, 0, 0)?;
                 UiRegion::Transcript
             }
-            "composer" if index == 1 && id.as_str() == "composer" => {
+            "composer" if id.as_str() == "composer" => {
                 vector(payload, 0, 0)?;
                 UiRegion::Composer
             }
-            "commands" if index == 2 && id.as_str() == "commands" => decode_commands(payload)?,
-            "status" if index + 1 == regions.len() && id.as_str() == "status" => {
+            "commands" if id.as_str() == "commands" => decode_commands(payload)?,
+            "status" if id.as_str() == "status" => {
                 decode_status(payload, &mut ids, &mut names, &mut modeline_slots)?
             }
-            "extension" if index >= 3 && index + 1 < regions.len() => {
-                decode_extension(id, payload, &mut names)?
-            }
+            "extension" => decode_extension(id, payload)?,
             _ => return Err(UiProjectionError::Invalid("invalid workbench region")),
         };
         result.push(node);
     }
-    if !matches!(result.last(), Some(UiRegion::Status(_))) {
-        return Err(UiProjectionError::Invalid("missing status region"));
+    // Region order is presentation data. Admit the host capabilities once,
+    // regardless of where a Scheme package places the corresponding nodes.
+    let role_count = result
+        .iter()
+        .filter(|region| !matches!(region, UiRegion::Extension { .. }))
+        .count();
+    if role_count != 4 {
+        return Err(UiProjectionError::Invalid("missing workbench capability"));
     }
     if modeline_slots.iter().any(|slot| *slot) && !modeline_slots.iter().all(|slot| *slot) {
         return Err(UiProjectionError::Invalid("incomplete modeline"));
@@ -682,7 +716,6 @@ fn decode_status(
 fn decode_extension(
     id: UiComponentId,
     payload: RootedSchemeObject<'_>,
-    names: &mut IdentifierBuffer,
 ) -> Result<UiRegion, UiProjectionError> {
     let data = vector(payload, 3, 3)?;
     let label = string(data.element(0)?)?;
@@ -690,21 +723,7 @@ fn decode_extension(
         SchemeScalar::Boolean(value) => value,
         _ => return Err(UiProjectionError::Invalid("invalid focusable value")),
     };
-    let entries = vector(data.element(2)?, 0, MAX_CONTENT_ITEMS)?;
-    let mut content = Vec::with_capacity(entries.len());
-    for item_index in 0..entries.len() {
-        let item = vector(entries.element(item_index)?, 2, 3)?;
-        let kind = identifier(item.element(0)?, names)?;
-        let value = match (kind.as_str(), item.len()) {
-            ("text", 2) => UiContent::Text(string(item.element(1)?)?),
-            ("field", 3) => UiContent::Field {
-                label: string(item.element(1)?)?,
-                value: string(item.element(2)?)?,
-            },
-            _ => return Err(UiProjectionError::Invalid("invalid UI content item")),
-        };
-        content.push(value);
-    }
+    let content = crate::decode_element(data.element(2)?)?;
     Ok(UiRegion::Extension {
         id,
         label,

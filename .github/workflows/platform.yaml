@@ -73,15 +73,13 @@ jobs:
         if: matrix.gate == 'tui'
         with:
           tool: just@1.56.0
-      - name: Stage the linked TUI program
+      - name: Build the selected Scheme modules
         if: matrix.gate == 'tui'
-        run: just tui-program-stage
+        run: just scheme-build
       - name: Run the Rust gate
         shell: bash
         env:
           GATE: ${{ matrix.gate }}
-          # The Rust workspace document and contract APIs still consume Orgize directly.
-          ORGIZE_GERBIL_PROGRAM_MANIFEST: ${{ matrix.gate != 'tui' && format('{0}/scheme/.gerbil/pkg/github.com/tao3k/orgize/target/gerbil-parser/program.json', github.workspace) || '' }}
         run: |
           case "$GATE" in
             check)
@@ -124,16 +122,12 @@ jobs:
           cargo test --locked -p marlin-agent-context --features gerbil
           --test org_scheme_vm selected_lab_org_graph_preserves_source_and_utf8_byte_spans
           -- --ignored --exact --nocapture
-      - name: Build and test the Scheme package in process
-        working-directory: scheme
-        env:
-          ORGIZE_GERBIL_PROGRAM_MANIFEST: ${{ github.workspace }}/scheme/.gerbil/pkg/github.com/tao3k/orgize/target/gerbil-parser/program.json
-        run: |
-          export GERBIL_LOADPATH="$GERBIL_PATH/pkg/github.com/tao3k/agentic-ai-lab:$GERBIL_LOADPATH"
-          gxpkg env cargo test --locked -p marlin-gerbil-scheme --test unit_test scheme_package::gerbil_builds_and_tests_the_marlin_package_in_process -- --ignored --exact --nocapture
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just@1.56.0
+      - name: Test the Scheme package through Gerbil
+        run: just scheme-package-gate
       - name: Check Rust projections and linked policy routing
-        env:
-          ORGIZE_GERBIL_PROGRAM_MANIFEST: ${{ github.workspace }}/scheme/.gerbil/pkg/github.com/tao3k/orgize/target/gerbil-parser/program.json
         run: |
           cargo test --locked -p marlin-gerbil-scheme --test unit_test
           cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector

@@ -5,10 +5,10 @@
 ;;; Component constructors copy and admit presentation state. Runtime effects
 ;;; and terminal cells are outside this module's authority.
 (import (only-in :clan/poo/object .def .o .ref seal-object!)
-        (only-in :tao3k/yuanxu/poo-clos/types clos-instance?)
+        (only-in :clan/poo/mop prototype-instance?)
         (only-in "./bounds.ss" marlin-ui-max-content-items marlin-ui-bounded-label?
                  marlin-ui-bounded-list? marlin-ui-required-object)
-        (only-in "./buffers.ss" marlin-ui-buffer-static-entries))
+        (only-in "./buffers.ss" marlin-ui-buffer-static-entries marlin-ui-buffer-catalog))
 (export UiComponent. UiWorkbench. UiTranscript. UiComposer. UiCommands. UiStatus.
         UiStatusItem. UiExtension. UiText. UiField.
         marlin-ui-contribution-node marlin-ui-modeline-node marlin-ui-extension-node
@@ -22,6 +22,7 @@
 (.def (UiStatus. @ UiComponent.))
 (.def (UiStatusItem. @ UiComponent.))
 (.def (UiExtension. @ UiComponent.))
+(.def UiTree.)
 (.def (UiText. @ UiComponent.))
 (.def (UiField. @ UiComponent.))
 
@@ -94,11 +95,11 @@
 (def (checked-content item)
   (marlin-ui-required-object item '(kind))
   (cond
-   ((and (clos-instance? UiText. item) (eq? (.ref item 'kind) 'text))
+   ((and (prototype-instance? UiText. item) (eq? (.ref item 'kind) 'text))
     (marlin-ui-required-object item '(text))
     (unless (marlin-ui-bounded-label? (.ref item 'text)) (error "invalid UI text content"))
     (seal-object! (.o (:: @ UiText.) kind: 'text text: (string-copy (.ref item 'text)))))
-   ((and (clos-instance? UiField. item) (eq? (.ref item 'kind) 'field))
+   ((and (prototype-instance? UiField. item) (eq? (.ref item 'kind) 'field))
     (marlin-ui-required-object item '(label value))
     (unless (and (marlin-ui-bounded-label? (.ref item 'label))
                  (marlin-ui-bounded-label? (.ref item 'value)))
@@ -106,11 +107,14 @@
     (seal-object! (.o (:: @ UiField.) kind: 'field
                       label: (string-copy (.ref item 'label))
                       value: (string-copy (.ref item 'value)))))
+   ((and (prototype-instance? UiTree. item) (eq? (.ref item 'kind) 'tree)
+         (vector? (.ref item 'tree)))
+    (seal-object! (.o (:: @ UiTree.) kind: 'tree tree: (.ref item 'tree))))
    (else (error "unsupported UI content component"))))
 
 (def (marlin-ui-extension-node component)
   (marlin-ui-required-object component '(identity kind label focusable content))
-  (unless (and (clos-instance? UiExtension. component)
+  (unless (and (prototype-instance? UiExtension. component)
                (symbol? (.ref component 'identity))
                (not (memq (.ref component 'identity) reserved-identities))
                (eq? (.ref component 'kind) 'extension)
@@ -129,15 +133,16 @@
 
 ;;; Static Buffer content shares the same bounded component contract as host
 ;;; extensions. The Buffer catalog is the sole source of its identity and text.
-(def (marlin-ui-static-buffer-nodes)
+(def (marlin-ui-static-buffer-nodes (catalog marlin-ui-buffer-catalog))
   (map (lambda (entry)
          (let* ((presentation (caddr entry))
-                (lines (cadr presentation)))
+                (body (cadr presentation)))
            (marlin-ui-extension-node
              (.o (:: @ UiExtension.) identity: (car entry) kind: 'extension
                  label: (car presentation) focusable: #f
-                 content: (map (lambda (line-value)
-                                 (.o (:: @ UiText.) kind: 'text
-                                     text: (string-copy line-value)))
-                               lines)))))
-       (marlin-ui-buffer-static-entries)))
+                 content: (if (vector? body)
+                            (list (.o (:: @ UiTree.) kind: 'tree tree: body))
+                            (map (lambda (line-value)
+                                   (.o (:: @ UiText.) kind: 'text text: line-value))
+                                 body))))))
+       (marlin-ui-buffer-static-entries catalog)))

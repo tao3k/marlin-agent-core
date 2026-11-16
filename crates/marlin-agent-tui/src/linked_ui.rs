@@ -4,7 +4,9 @@
 
 //! Process-owned Gerbil VM and its linked, Yuanxu-selected module graph.
 
-use gerbil_scheme::{GerbilRuntime, LinkedGerbilProgram, NativeError};
+use gerbil_scheme::{
+    CollectionKind, GerbilRuntime, LinkedGerbilProgram, NativeError, RootedSchemeObject,
+};
 use gerbil_scheme_sys::{GerbilGlobalState, GerbilModuleOrLink};
 use marlin_agent_ui::UiLinkedExports;
 
@@ -14,6 +16,7 @@ use super::ui_host::UiHost as TestUiHost;
 unsafe extern "C" {
     fn ___LNK_marlin__tui(gs: *mut GerbilGlobalState) -> *mut GerbilModuleOrLink;
     fn marlin_ui_publication(root: i64) -> i64;
+    fn marlin_ui_package_publication(root: i64) -> i64;
     fn marlin_ui_open(root: i64) -> i64;
     fn marlin_ui_project_workbench(root: i64) -> i64;
     fn marlin_ui_dispatch_event(root: i64) -> i64;
@@ -42,6 +45,21 @@ pub(crate) fn exports() -> UiLinkedExports {
         review_menu: marlin_ui_review_menu,
         refresh_labels: marlin_ui_refresh_labels,
     }
+}
+
+pub(crate) fn package_publication<'a>(
+    runtime: &'a GerbilRuntime,
+    directory: &str,
+    module: &RootedSchemeObject<'_>,
+    export: &RootedSchemeObject<'_>,
+) -> Result<RootedSchemeObject<'a>, NativeError> {
+    let directory = runtime.string_from_utf8(directory)?.into_object();
+    let request = runtime
+        .collection_from_objects(CollectionKind::Vector, &[&directory, module, export])?
+        .into_object();
+    // SAFETY: this strong-root export belongs to the initialized linked VM.
+    let loader = unsafe { runtime.bind_object_export(marlin_ui_package_publication) }?;
+    loader.call(&request).into_result()
 }
 
 pub(crate) fn tooling_declarations(

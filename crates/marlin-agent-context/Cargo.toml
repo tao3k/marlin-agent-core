@@ -23,13 +23,9 @@ org-source = [
     "dep:serde",
     "dep:serde_json",
 ]
-org-workspace = [
-    "org-source",
-    "dep:orgize",
-]
-org-workflow = ["org-workspace"]
+org-workflow = ["org-source"]
 org-memory = [
-    "org-workspace",
+    "org-source",
     "dep:marlin-agent-graph",
     "dep:marlin-workspace-query",
     "dep:marlin-workspace-view",
@@ -44,7 +40,6 @@ marlin-workspace-query = { workspace = true, optional = true }
 marlin-workspace-status = { workspace = true, optional = true }
 marlin-workspace-view = { workspace = true, optional = true }
 parking_lot = { workspace = true, optional = true }
-orgize = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 gerbil-scheme = { workspace = true, optional = true }

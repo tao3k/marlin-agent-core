@@ -11,6 +11,6 @@ HTTP adapter have been removed. Their earlier examples no longer name
 executable interfaces. The historical design is retained in Git.
 
 The typed engine entry is [[file:40.166-plugin-contract.org::#single-vm-actor-runtime][Deck Runtime Context admission]]. The terminal client
-is owned by [[file:40.180-codewhale-inspired-tui.org][the TUI RFC]]. Rust owns runtime lifecycle, queues and receipts;
+is owned by [[file:40.180-emacs-scheme-tui.org][the TUI RFC]]. Rust owns runtime lifecycle, queues and receipts;
 Scheme owns the selected Lab Context operation and resident green actors.
 Graph execution still consumes typed proposals through its C ABI readiness gate.

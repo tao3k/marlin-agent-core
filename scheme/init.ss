@@ -4,15 +4,13 @@
 
 ;;; Select the modules owned by Marlin.
 
+(import (only-in :tao3k/yuanxu/prelude yuanxu!))
+
 (yuanxu!
-  :load-modules "modules"
-  package: "github.com/tao3k/agentic-ai-lab"
-  mode: explicit
-  rename: Lab
-  (ai-agentic-context)
   :load-modules "."
   mode: explicit
   rename: Marlin
+  :test-dir "./t"
   (context +causal)
   (brief-to-draft)
   (ui-components)
@@ -23,6 +21,7 @@
   (ui-themes)
   (ui-layout)
   (ui)
+  (ui-tui)
   (tooling)
   (hooks)
   (policy)

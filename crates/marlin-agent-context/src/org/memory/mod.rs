@@ -67,7 +67,4 @@ pub use topology_graph::{
     TOPOLOGY_SESSION_ID_PROPERTY, TOPOLOGY_SOURCE_ANCHOR_PROPERTY, TOPOLOGY_WORKSPACE_ID_PROPERTY,
     TOPOLOGY_WORKTREE_ID_PROPERTY,
 };
-pub use workspace::{
-    MemoryOrgWorkspace, ProjectMemoryGraphStoreQuery, ProjectMemoryStoreRecall,
-    ToolCapabilityGraphStoreQuery, TopologyGraphStoreQuery,
-};
+pub use workspace::MemoryOrgWorkspace;

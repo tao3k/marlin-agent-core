@@ -5,12 +5,9 @@
 (import (only-in :clan/poo/mop Bool)
         (only-in :clan/poo/object .o .ref)
         (only-in :clan/poo/type Enum Record)
-        (only-in :agentic-ai-lab/modules/module-authoring/module-interface
-                 yuanxu-module-interface)
-        (only-in :agentic-ai-lab/modules/module-authoring/module-descriptor
-                 agentic-ai-lab-modules agentic-ai-lab-module-closure
-                 agentic-ai-lab-module-names)
-        (only-in :agentic-ai-lab/modules/module-authoring/module-option-projection
+        (only-in "../interface.ss"
+                 yuanxu-module-interface agentic-ai-lab-modules
+                 agentic-ai-lab-module-closure agentic-ai-lab-module-names
                  agentic-ai-lab-module-option-schemas
                  agentic-ai-lab-module-validation-receipts)
         (only-in :tao3k/yuanxu/module-system/source/imports yuanxu-import))

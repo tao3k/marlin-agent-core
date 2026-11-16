@@ -56,8 +56,15 @@ fn linked_fresh_copy_startup_pair(binary: &std::path::Path, profile: &str) {
             "linked {profile} binary depends on the SDK build-only image: {images}"
         );
     }
-    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../scheme/.gerbil/native/tui/program.json");
+    // Cargo's dep-info names the exact program plan of this profile. A
+    // shared stage path can accidentally test an unrelated link cohort.
+    let dep_info = fs::read_to_string(binary.with_extension("d")).expect("Cargo binary dep-info");
+    let manifest = dep_info
+        .replace("\\ ", "\u{1f}")
+        .split_whitespace()
+        .find(|path| path.ends_with("/program/linked-program.json"))
+        .expect("Cargo binary must depend on its linked programme plan")
+        .replace('\u{1f}', " ");
     let binary_time = fs::metadata(binary).unwrap().modified().unwrap();
     let manifest_time = fs::metadata(&manifest).unwrap().modified().unwrap();
     assert!(

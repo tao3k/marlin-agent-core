@@ -162,6 +162,7 @@ fn list_renders_selected_scheme_template_and_keeps_selection_visible() {
     };
     let template = UiElement::List {
         id: UiComponentId::new("test-list").unwrap(),
+        source: marlin_agent_ui::UiListSource::Candidates,
         offset: marlin_agent_ui::UiSize::Cells(2),
         child: Box::new(UiElement::Choice {
             cases: vec![(UiComponentId::new("selected").unwrap(), text("selected"))],
@@ -211,6 +212,7 @@ fn list_mapper_inherits_frame_scope_and_shadows_row_bindings() {
     };
     let tree = UiElement::List {
         id: id("items"),
+        source: marlin_agent_ui::UiListSource::Candidates,
         offset: marlin_agent_ui::UiSize::Cells(0),
         child: Box::new(UiElement::Choice {
             cases: vec![(
@@ -259,6 +261,7 @@ fn list_hit_uses_painted_row_identity_and_excludes_unrendered_rows() {
     let id = |name: &str| UiComponentId::new(name).unwrap();
     let template = UiElement::List {
         id: id("items"),
+        source: marlin_agent_ui::UiListSource::Candidates,
         offset: marlin_agent_ui::UiSize::Cells(2),
         child: Box::new(UiElement::Text(vec![])),
     };
@@ -321,6 +324,7 @@ fn declared_list_offsets_are_independent_between_identities() {
     use marlin_agent_ui::UiSize;
     let list = |name| UiElement::List {
         id: UiComponentId::new(name).unwrap(),
+        source: marlin_agent_ui::UiListSource::Candidates,
         offset: UiSize::Add(
             Box::new(UiSize::Binding(UiComponentId::new("list-offset").unwrap())),
             Box::new(UiSize::Cells(1)),
@@ -488,7 +492,9 @@ fn panel_maps_declared_tones_and_sanitizes_host_content() {
                 bold: false,
             }],
         })),
-        child: Box::new(UiElement::Slot(UiComponentId::new("static").unwrap())),
+        child: Box::new(UiElement::Slot(
+            marlin_agent_ui::UiSlotSource::SelectedBuffer,
+        )),
     };
     let items = [marlin_agent_ui::UiContent::Field {
         label: "K".into(),

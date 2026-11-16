@@ -23,16 +23,19 @@ receipt and verifies replay against the caller's exact exchange.
 | Role | Responsibility |
 |------+----------------|
 | =context/= | Adapt Lab's Context library to Marlin's runtime boundary. |
-| =ui-components/= | Publish component prototypes, bounded constructors, Guide and the POO-composed command catalog. |
+| [[file:ui-components/README.org][ui-components]] | Publish component prototypes, buffers, keymaps and the POO command catalog. |
 | =ui-layout/= | Publish bounded presentation geometry for native hosts; the terminal clips to actual cells. |
 | =ui-themes/= | Publish the selected semantic color palette; Doom One is the initial theme. |
 | =ui/= | Compose the selected component scope into a workbench; own generic event dispatch and typed native projection. |
+| [[file:ui-tui/README.org][ui-tui]] | Publish the terminal program entry and start from the admitted UI scope. |
 | =hooks/= | Publish Scheme hook selection, composable conditions, and higher-order matchers. |
 | =policy/= | Project graph policy, topology and continuation with a declared dependency on Hooks. |
 | =deck-runtime/= | Publish Scheme-owned runtime metadata and route Context messages to identity-owned mailbox Actors. |
 | =policy/projection/deck/= | Project policy packs. |
 | =policy/projection/graph/= | Project routing, topology and continuation for the Rust graph runtime. |
 | =c-abi/= | Own the C entry points and their bindings. |
+| [[file:brief-to-draft/README.org][brief-to-draft]] | Publish draft validation, proposals and the program entry. |
+| [[file:working-copy/README.org][working-copy]] | Select a provider for Git working-copy operations. |
 | =t/= | Exercise policy composition, projections, and receipt fixtures. |
 | =bench/= | Own the optional SDK-linked mailbox qualification workload. |
 
@@ -75,18 +78,16 @@ The =actor-runtime= feature links the single-VM image and submits owned
 Context/Session requests. Wiring a live TUI conversation to its authoritative
 Session binding remains integration work.
 
-Install the package dependencies with =just scheme-deps=. CI activates the
-bridge's SDK action. On a dependency cache miss, CI uses =gerbil build= on
-Cargo's selected bridge to provide the tools used by Orgize's Builder, then
-runs =gerbil deps --install= in Marlin's Scheme package. Run
-=just scheme-package-gate= to initialize the VM and call
-=GerbilRuntime::build_package= and =GerbilRuntime::test_package=.
+Install the declared Scheme dependencies with =just scheme-deps=. Build the
+selected modules with =just scheme-build= and verify them with
+=just scheme-package-gate=. Both use the official Gerbil package entry points.
+The package does not install the Rust SDK. Cargo resolves its ABI separately.
 The platform workflow builds the Yuanxu-selected Scheme package once per
 runner platform. Rust checks, tests, Scheme ABI checks and linked AOT jobs
 restore that run's package artifact. The Context test calls the Lab-backed
-Scheme Org interface through typed Rust values. The TUI job stages its linked
-program from the shared package. Rust workspace checks that still consume
-Orgize directly use the parser program built during Scheme dependency install.
+Scheme Org interface through typed Rust values. Cargo consumes the compiled
+=ui-tui= and =brief-to-draft= entry points through the same Yuanxu Interface
+projection, then links the Cargo-selected ABI carriers into the executable.
 The cross-run Scheme cache stores the installed dependencies before compiling
 Marlin modules. Its key includes the runner architecture, SDK and host
 toolchain identity and dependency locks.

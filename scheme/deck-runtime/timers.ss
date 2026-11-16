@@ -4,8 +4,10 @@
 
 ;;; Module-owned timer observations use Gambit's own timed mailbox wait.
 ;;; Temporal policy deadlines and durable Agenda remain owned by AI Agentic Lab.
-(import (only-in :clan/poo/object .o)
-        (only-in :agentic-ai-lab/modules/temporal-causality/runtime/monotonic-clock monotonic-seconds))
+(import (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/runtime/monotonic-clock
+                 monotonic-seconds)
+        (only-in :clan/poo/object .o))
+
 (export open-deck-timers)
 (def (open-deck-timers module notify)
   (def timers (make-hash-table-eqv))

@@ -107,8 +107,6 @@ jobs:
           echo "$RUNNER_TEMP/worktrunk-$target" >> "$GITHUB_PATH"
       - name: Verify Scheme working-copy selection and Git receipts
         if: steps.worktrunk.outcome == 'success'
-        env:
-          ORGIZE_GERBIL_PROGRAM_MANIFEST: ${{ github.workspace }}/scheme/.gerbil/pkg/github.com/tao3k/orgize/target/gerbil-parser/program.json
         run: >-
           cargo test --locked -p marlin-gerbil-scheme --test unit_test
           working_copy_policy::scheme_selects_the_provider_for_a_real_git_worktree
@@ -151,28 +149,22 @@ jobs:
             done < <(jq -r '.modules[] | select(.module == "marlin-agent-core/init") | .scm' "$manifest")
           done
 
-      - name: Stage the Brief-to-Draft Scheme program
+      - name: Link the Interface-selected Brief-to-Draft program
         if: ${{ !cancelled() && steps.compiler.outcome == 'success' }}
         id: brief-stage
-        working-directory: scheme
         shell: bash
         run: |
-          bridge_manifest=$(cargo metadata --locked --format-version 1 |
-            jq -er '.packages[] | select(.name == "gerbil-scheme-build") | .manifest_path')
-          bridge_root=${bridge_manifest%/crates/gerbil-scheme-build/Cargo.toml}
-          bridge_prefix="$RUNNER_TEMP/brief-to-draft-bridge"
-          (cd "$bridge_root" && GERBIL_PATH="$bridge_prefix" gerbil build)
-          test -s "$bridge_prefix/lib/gerbil-scheme-rust/scheme/program-build.ssi"
-          export GERBIL_LOADPATH="$bridge_prefix/lib:$GERBIL_LOADPATH"
-          gxi brief-to-draft-stage.ss
+          receipt=$(cargo test --locked -p marlin-agent-core --features brief-to-draft-vm-test \
+            --test brief_to_draft_vm --no-run --message-format=json)
+          program_out=$(jq -ers '[.[] | select(.reason == "build-script-executed" and
+            (.package_id | test("/marlin-agent-core#|#marlin-agent-core@"))) | .out_dir] |
+            if length == 1 then .[0] else error("expected one Brief-to-Draft build receipt") end' <<< "$receipt")
           jq -e 'any(.modules[]; .module == "marlin-agent-core/context/types" and .deferred == true) and
             any(.modules[]; .module == "marlin-agent-core/brief-to-draft/config" and .deferred == true)' \
-            .gerbil/native/brief-to-draft/program.json
+            "$program_out/program/program.json"
 
       - name: Verify Brief-to-Draft activation and offline replay
         if: ${{ !cancelled() && steps.brief-stage.outcome == 'success' }}
-        env:
-          ORGIZE_GERBIL_PROGRAM_MANIFEST: ${{ github.workspace }}/scheme/.gerbil/pkg/github.com/tao3k/orgize/target/gerbil-parser/program.json
         shell: bash
         run: |
           cargo test --locked -p marlin-agent-core --no-default-features \

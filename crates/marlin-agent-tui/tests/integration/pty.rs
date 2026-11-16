@@ -37,6 +37,9 @@ mod live_provider;
 #[path = "pty/minibuffer.rs"]
 #[cfg(feature = "linked-ui")]
 mod minibuffer;
+#[path = "pty/scheme_package.rs"]
+#[cfg(feature = "linked-ui")]
+mod scheme_package;
 #[path = "pty/session_replay.rs"]
 mod session_replay;
 
@@ -280,12 +283,9 @@ impl Terminal {
                 return;
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
-            assert!(
-                !remaining.is_zero(),
-                "timed out waiting for {description}; screen: {:?}; output tail: {:?}",
-                screen_lines(&self.output),
-                String::from_utf8_lossy(&self.output[self.output.len().saturating_sub(1200)..])
-            );
+            if remaining.is_zero() {
+                self.fail_wait(description, "deadline expired");
+            }
             match self.received.recv_timeout(remaining) {
                 Ok(chunk) => {
                     if self.first_output_elapsed.is_none() {
@@ -297,14 +297,23 @@ impl Terminal {
                     }
                     self.output.extend_from_slice(&chunk);
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) => panic!(
-                    "timed out waiting for {description}; screen: {:?}; output tail: {:?}",
-                    screen_lines(&self.output),
-                    String::from_utf8_lossy(&self.output[self.output.len().saturating_sub(1200)..])
-                ),
-                Err(error) => panic!("PTY ended waiting for {description}: {error}"),
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    self.fail_wait(description, "deadline expired");
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    self.fail_wait(description, "PTY output closed");
+                }
             }
         }
+    }
+
+    fn fail_wait(&mut self, description: &str, reason: &str) -> ! {
+        let status = self.child.try_wait();
+        panic!(
+            "waiting for {description}: {reason}; process status: {status:?}; screen: {:?}; output tail: {:?}",
+            screen_lines(&self.output),
+            String::from_utf8_lossy(&self.output[self.output.len().saturating_sub(1200)..])
+        );
     }
 
     fn wait_status(&mut self, expected: &str) {
@@ -887,6 +896,10 @@ fn release_linked_ui_first_frame_without_a_gerbil_package_tree() {
 
 #[path = "pty/startup_acceptance.rs"]
 mod startup_acceptance;
+
+#[cfg(feature = "linked-ui")]
+#[path = "pty/workspace.rs"]
+mod workspace;
 
 #[path = "pty/turns.rs"]
 mod turns;

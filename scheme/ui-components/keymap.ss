@@ -6,7 +6,7 @@
 ;;; bounded native lookup table at UI open. Keystrokes never enter the VM loop.
 (import (only-in :clan/poo/object .def .get seal-object!)
         (only-in :std/list/list group-n-consecutive))
-(export marlin-ui-keymap-entries marlin-ui-keymap-help)
+(export marlin-ui-keymap-entries marlin-ui-keymap-help marlin-ui-keymap)
 
 (.def UiKeymap.
   entries: '((global (M-x) open-commands "Open commands")
@@ -47,10 +47,10 @@
 
 (def marlin-ui-keymap (seal-object! UiKeymap.))
 
-(def (marlin-ui-keymap-entries)
+(def (marlin-ui-keymap-entries (keymap marlin-ui-keymap))
   (list->vector
     (map (lambda (entry) (vector (car entry) (list->vector (cadr entry)) (caddr entry)))
-         (.get marlin-ui-keymap entries))))
+         (.get keymap entries))))
 
 (def (marlin-ui-keymap-help)
   (map (lambda (group) (string-join group "  ·  "))

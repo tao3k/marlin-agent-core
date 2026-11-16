@@ -3,7 +3,7 @@
 
 use super::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, SchemeScalar, UiComponentId,
-    UiContent, UiIntent, UiOpenFacts, UiRegion, UiScrollDirection, UiStatusItem,
+    UiIntent, UiOpenFacts, UiRegion, UiScrollDirection, UiStatusItem,
     assert_review_menu_projection_requires_each_typed_decision_once,
     assert_tool_review_projection_rejects_missing_or_duplicate_choices, decode_intent,
     decode_workbench, frame, frame_state, keymap_state, layout, palette, prepare_open_request,
@@ -187,7 +187,8 @@ fn sdk_roots_project_to_typed_ui_workbench() {
                 vector(
                     &runtime,
                     &[
-                        symbol(&runtime, "commands"),
+                        symbol(&runtime, "test-list"),
+                        symbol(&runtime, "candidates"),
                         offset,
                         element("normal", "row"),
                     ],
@@ -349,7 +350,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
         session_label: "session",
         status: &status,
         extensions: &[],
-        method_bundles: &[],
+        method_factories: &[],
     };
     let request = prepare_open_request(&runtime, &scope, &facts)
         .unwrap()
@@ -438,7 +439,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
         session_label: "session",
         status: &status,
         extensions: &extensions,
-        method_bundles: &bundles,
+        method_factories: &bundles,
     };
     let request = prepare_open_request(&runtime, &scope, &with_contributions)
         .unwrap()
@@ -489,20 +490,28 @@ fn sdk_roots_project_to_typed_ui_workbench() {
         ],
     );
     let focus = runtime.scalar_object(SchemeScalar::Boolean(true)).unwrap();
+    let text = |tone, value| {
+        vector(
+            &runtime,
+            &[
+                symbol(&runtime, "text"),
+                vector(
+                    &runtime,
+                    &[vector(
+                        &runtime,
+                        &[symbol(&runtime, tone), string(&runtime, value)],
+                    )],
+                ),
+            ],
+        )
+    };
     let content = vector(
         &runtime,
         &[
+            symbol(&runtime, "rows"),
             vector(
                 &runtime,
-                &[symbol(&runtime, "text"), string(&runtime, "Preview")],
-            ),
-            vector(
-                &runtime,
-                &[
-                    symbol(&runtime, "field"),
-                    string(&runtime, "Mode"),
-                    string(&runtime, "Review"),
-                ],
+                &[text("normal", "Preview"), text("info", "Mode: Review")],
             ),
         ],
     );
@@ -555,7 +564,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     );
     let workbench = decode_workbench(root).unwrap();
     assert!(
-        matches!(workbench.layout.frame_tree.region_child("transcript"), Some(marlin_agent_ui::UiElement::Panel { border_tone: marlin_agent_ui::UiTone::Info, child, .. }) if matches!(child.as_ref(), marlin_agent_ui::UiElement::Slot(id) if id.as_str() == "static"))
+        matches!(workbench.layout.frame_tree.region_child("transcript"), Some(marlin_agent_ui::UiElement::Panel { border_tone: marlin_agent_ui::UiTone::Info, child, .. }) if matches!(child.as_ref(), marlin_agent_ui::UiElement::Slot(marlin_agent_ui::UiSlotSource::SelectedBuffer)))
     );
     assert!(matches!(
         workbench.layout.frame_tree.region_child("editor"),
@@ -629,11 +638,9 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     );
     assert!(matches!(
         &workbench.regions[3],
-        UiRegion::Extension { content, .. }
-            if content == &vec![
-                UiContent::Text("Preview".into()),
-                UiContent::Field { label: "Mode".into(), value: "Review".into() }
-            ]
+        UiRegion::Extension { content: marlin_agent_ui::UiElement::Rows(children), .. }
+            if matches!(&children[..], [marlin_agent_ui::UiElement::Text(first), marlin_agent_ui::UiElement::Text(second)]
+                if first[0].text == "Preview" && second[0].text == "Mode: Review")
     ));
     assert!(
         matches!(&workbench.regions[4], UiRegion::Status(items) if items[0].label == "Ready 🐟")

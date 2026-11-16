@@ -4,7 +4,6 @@
 ;;; Declarative transient command groups and their host-neutral projection.
 (.def UiHydra
   identity: 'ui-hydra
-  core: (.o requires: (.o UiElements: (.o module-id: 'ui-elements))
-            scope-contract: UiHydraScopeContract
+  core: (.o scope-contract: UiHydraScopeContract
             exports: UiHydraScope)
   features: (.o))

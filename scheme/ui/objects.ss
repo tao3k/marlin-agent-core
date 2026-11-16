@@ -6,13 +6,14 @@
 (import (only-in :clan/poo/object .get .o)
         "./workbench.ss" "./dispatch.ss" "./projection.ss")
 (export make-ui-operations)
-(def (make-ui-operations ui-components ui-modeline ui-transcript ui-themes ui-layout)
+(def (make-ui-operations ui-components ui-modeline ui-transcript ui-themes ui-layout package-factories)
   (.o workbench: (make-marlin-ui-workbench ui-components ui-modeline ui-transcript ui-themes ui-layout)
       profile-workbench: (make-marlin-ui-profile-workbench ui-components ui-modeline ui-transcript ui-themes ui-layout)
       project-workbench: marlin-ui-project-workbench
       focus-event: marlin-ui-focus-event
       previous-focus-event: marlin-ui-previous-focus-event
-      make-dispatch: make-ui-event-generic dispatch: ui-event-dispatch
+      make-dispatch: (cut make-ui-event-generic <> package-factories)
+      dispatch: ui-event-dispatch
       event-protocol: UiEventProtocol
       components: (.get ui-components components)
       make-frame: (.get ui-components make-frame)
@@ -24,4 +25,5 @@
       record-command-history: (.get ui-components record-command-history)
       review-menu: (.get ui-components review-menu)
       events: (.o base: UiEvent. next-focus: UiNextFocus. previous-focus: UiPreviousFocus. submit: UiSubmit.
-                  dismiss: UiDismiss. scroll: UiScroll. browse-command: UiBrowseCommand.)))
+                  dismiss: UiDismiss. scroll: UiScroll. browse-command: UiBrowseCommand.
+                  select-list-row: UiSelectListRow.)))

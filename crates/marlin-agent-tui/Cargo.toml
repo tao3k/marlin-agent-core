@@ -64,6 +64,7 @@ weaver-llm.workspace = true
 libc.workspace = true
 
 [build-dependencies]
+marlin-gerbil-aot-link.workspace = true
 gerbil-scheme-aot-build = { workspace = true, optional = true }
 
 [dev-dependencies]

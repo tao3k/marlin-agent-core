@@ -22,10 +22,14 @@ fn linked_scheme_workbench_renders_through_the_native_boundary() {
         session_label: "session",
         status: &statuses,
         extensions: &[],
-        method_bundles: &[],
+        method_factories: &[],
     };
     // SAFETY: the runtime and exports originate in the same linked programme.
-    let mut host = unsafe { TestUiHost::open_linked(&runtime, super::exports(), &facts) }.unwrap();
+    let mut host = TestUiHost::from_module(
+        unsafe { marlin_agent_ui::UiModule::resolve_linked(&runtime, super::exports()) }.unwrap(),
+        &facts,
+    )
+    .unwrap();
     let candidates = host.command_candidates("mode", None).unwrap().names;
     assert!(!candidates.is_empty());
     assert_eq!(

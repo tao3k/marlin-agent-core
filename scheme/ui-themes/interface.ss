@@ -5,6 +5,6 @@
 ;;; Selected visual themes are UI data, independent of the terminal backend.
 (.def UiThemes
   identity: 'ui-themes
-  core: (.o requires: (.o) scope-contract: UiThemesScopeContract
+  core: (.o scope-contract: UiThemesScopeContract
             exports: UiThemesScope)
   features: (.o))

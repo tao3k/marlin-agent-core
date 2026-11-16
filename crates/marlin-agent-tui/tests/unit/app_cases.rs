@@ -78,7 +78,14 @@ fn mouse_over_minibuffer(
         transients: vec![],
     };
     let regions = frame_regions(app, &view, ratatui::layout::Rect::new(0, 0, width, height));
-    super::render::mouse_over_minibuffer(&regions, 1, row)
+    super::render::mouse_over_minibuffer(
+        &regions,
+        layout
+            .regions
+            .id(marlin_agent_ui::UiFrameRole::MinibufferHover),
+        1,
+        row,
+    )
 }
 
 /// Native tests exercise only the capabilities they use. The selected Scheme
@@ -431,7 +438,7 @@ fn render_keeps_focused_extension_visible_and_sanitizes_its_label() {
             id: UiComponentId::new(id).unwrap(),
             label: label.into(),
             focusable: true,
-            content: vec![],
+            content: marlin_agent_ui::UiElement::Rows(vec![]),
         });
     }
     regions.push(UiRegion::Status(vec![]));
@@ -469,7 +476,7 @@ fn render_keeps_focused_extension_visible_and_sanitizes_its_label() {
 
 #[test]
 fn render_focused_scheme_content_on_narrow_and_wide_terminals() {
-    use marlin_agent_ui::{UiComponentId, UiContent, UiRegion, UiWorkbench};
+    use marlin_agent_ui::{UiComponentId, UiElement, UiRegion, UiSpan, UiTone, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));
     let view = UiWorkbench {
         layout: test_layout(),
@@ -484,13 +491,16 @@ fn render_focused_scheme_content_on_narrow_and_wide_terminals() {
                 id: UiComponentId::new("details").unwrap(),
                 label: "Details".into(),
                 focusable: true,
-                content: vec![
-                    UiContent::Text("Scheme component body".into()),
-                    UiContent::Field {
-                        label: "Source".into(),
-                        value: "safe\u{1b}[2J".into(),
-                    },
-                ],
+                content: UiElement::Rows(vec![
+                    UiElement::Text(vec![UiSpan {
+                        text: "Scheme component body".into(),
+                        tone: UiTone::Normal,
+                    }]),
+                    UiElement::Text(vec![UiSpan {
+                        text: "Source: safe\u{1b}[2J".into(),
+                        tone: UiTone::Info,
+                    }]),
+                ]),
             },
             UiRegion::Status(vec![]),
         ],
@@ -526,7 +536,7 @@ fn render_focused_scheme_content_on_narrow_and_wide_terminals() {
 
 #[test]
 fn unfocused_extension_does_not_create_a_default_sidebar() {
-    use marlin_agent_ui::{UiComponentId, UiContent, UiRegion, UiWorkbench};
+    use marlin_agent_ui::{UiComponentId, UiElement, UiRegion, UiSpan, UiTone, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));
     let view = UiWorkbench {
         layout: test_layout(),
@@ -541,7 +551,10 @@ fn unfocused_extension_does_not_create_a_default_sidebar() {
                 id: UiComponentId::new("guide").unwrap(),
                 label: "Guide".into(),
                 focusable: true,
-                content: vec![UiContent::Text("Get started".into())],
+                content: UiElement::Text(vec![UiSpan {
+                    text: "Get started".into(),
+                    tone: UiTone::Normal,
+                }]),
             },
             UiRegion::Status(vec![]),
         ],
@@ -590,7 +603,7 @@ fn focused_extension_remains_visible_at_short_terminal_heights() {
                 id: UiComponentId::new("extension").unwrap(),
                 label: "Focused panel".into(),
                 focusable: true,
-                content: vec![],
+                content: marlin_agent_ui::UiElement::Rows(vec![]),
             },
             UiRegion::Status(vec![]),
         ],

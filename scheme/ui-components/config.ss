@@ -4,10 +4,13 @@
 
 (import (only-in :clan/poo/object .get)
         (only-in :clan/poo/mop element? validate)
+        (only-in "../ui-hydra/config.ss" UiHydraScope)
         (only-in "../ui-hydra/types.ss" UiHydraScopeContract)
         "./types.ss" "./objects.ss")
-(export make-ui-components-scope)
+(export make-ui-components-scope UiComponentsScope)
 (def (make-ui-components-scope hydra)
   (unless (element? UiHydraScopeContract hydra) (error "invalid selected hydra scope"))
   (validate UiComponentsScopeContract
             (make-ui-components-operations (.get hydra command-entries) (.get hydra entries))))
+
+(def UiComponentsScope (make-ui-components-scope UiHydraScope))

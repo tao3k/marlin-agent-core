@@ -17,13 +17,13 @@
           (eval-syntax '(import (only-in :marlin-agent-core/init marlin-agent-core.init.exports)))
           (let (selected (.get (eval 'marlin-agent-core.init.exports) Marlin ui))
             (check (eq? selected expected) => #t))
-          (eval-syntax '(import (only-in :marlin-agent-core/c-abi/ui
+          (eval-syntax '(import (only-in :marlin-agent-core/ui/session
                                         marlin-ui-session-open marlin-ui-session-project
                                         marlin-ui-session-dispatch
                                         marlin-ui-session-browse-command
                                         marlin-ui-session-command-candidates
                                         marlin-ui-session-review-menu)))
-          (let* ((publication (eval 'marlin-agent-core.init.exports))
+          (let* ((publication expected)
                  (open (eval 'marlin-ui-session-open))
                  (project (eval 'marlin-ui-session-project))
                  (dispatch (eval 'marlin-ui-session-dispatch))

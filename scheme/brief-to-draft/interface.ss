@@ -4,7 +4,7 @@
 
 (.def BriefToDraft
   identity: 'brief-to-draft
-  core: (.o requires: (.o)
-            scope-contract: BriefToDraftScopeContract
-            exports: BriefToDraftScope)
+  core: (.o scope-contract: BriefToDraftScopeContract
+            exports: BriefToDraftScope
+            projections: (list Build))
   features: (.o))

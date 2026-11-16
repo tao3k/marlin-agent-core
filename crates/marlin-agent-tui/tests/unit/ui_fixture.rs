@@ -10,6 +10,12 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
     use marlin_agent_ui::{UiElement, UiTemplateSpan, UiTemplateValue, UiTone};
     let transcript_list = |name: &str| UiElement::List {
         id: UiComponentId::new(name).unwrap(),
+        source: match name {
+            "review" => marlin_agent_ui::UiListSource::Review,
+            "messages" => marlin_agent_ui::UiListSource::Messages,
+            "workspace" => marlin_agent_ui::UiListSource::Workspace,
+            _ => marlin_agent_ui::UiListSource::Conversation,
+        },
         offset: marlin_agent_ui::UiSize::Cells(0),
         child: Box::new(UiElement::Template {
             background: marlin_agent_ui::UiBackground::None,
@@ -174,6 +180,11 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
         },
         max_chatbox_rows: 10,
         max_command_rows: 32,
+        regions: marlin_agent_ui::UiFrameRegions::new(
+            marlin_agent_ui::UiFrameRole::ALL
+                .map(|role| marlin_agent_ui::UiComponentId::new(role.as_str()).unwrap()),
+        )
+        .unwrap(),
         frame_tree: {
             let mut slots: Vec<_> = [
                 "transcript",
@@ -215,7 +226,11 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                             ]
                             .into_iter()
                             .map(|name| {
-                                let slot = UiElement::Slot(UiComponentId::new(name).unwrap());
+                                let slot = UiElement::Slot(match name {
+                                    "runtime" => marlin_agent_ui::UiSlotSource::RuntimePolicy,
+                                    "extension" => marlin_agent_ui::UiSlotSource::FocusedExtension,
+                                    _ => marlin_agent_ui::UiSlotSource::SelectedBuffer,
+                                });
                                 (
                                     UiComponentId::new(name).unwrap(),
                                     if matches!(name, "static" | "runtime" | "extension") {
@@ -270,6 +285,7 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                     } else if name == "extensions" {
                         UiElement::List {
                             id: UiComponentId::new("extensions").unwrap(),
+                            source: marlin_agent_ui::UiListSource::Extensions,
                             offset: UiSize::Cells(0),
                             child: Box::new(UiElement::Template {
                                 background: marlin_agent_ui::UiBackground::None,
@@ -292,6 +308,7 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                     } else if name == "candidates" {
                         UiElement::List {
                             id: UiComponentId::new("candidates").unwrap(),
+                            source: marlin_agent_ui::UiListSource::Candidates,
                             offset: UiSize::Subtract(
                                 Box::new(UiSize::Add(
                                     Box::new(UiSize::Binding(
@@ -395,7 +412,7 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                                 })
                                 .chain(std::iter::once((
                                     UiComponentId::new("transient").unwrap(),
-                                    UiElement::Slot(UiComponentId::new("transient-hint").unwrap()),
+                                    UiElement::Slot(marlin_agent_ui::UiSlotSource::TransientHint),
                                 )))
                                 .chain(
                                     [

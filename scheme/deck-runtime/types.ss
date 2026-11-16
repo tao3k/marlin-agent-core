@@ -4,11 +4,12 @@
 
 ;;; Deck Module contracts: one owner, on-demand Context actors.
 
-(import (only-in :clan/poo/object .cc)
+(import (only-in :marlin-agent-core/interface LabContext)
+        (only-in :clan/poo/object .get .cc)
+
         (only-in :clan/poo/mop Fun Type.)
         (only-in :clan/poo/number UInt)
-        (only-in :clan/poo/type Record String True)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/types AiAgenticContextAdmissionType))
+        (only-in :clan/poo/type Record String True))
 
 (export DeckScopeContract DeckActorRuntime)
 
@@ -31,5 +32,5 @@
           close: [(Fun MessageIds <-)]))
 (def DeckScopeContract
   (.cc (Record metadata: [DeckMetadata]
-               open: [(Fun DeckActorRuntime <- AiAgenticContextAdmissionType ScopeEncoder)])
+               open: [(Fun DeckActorRuntime <- (.get LabContext admission-type) ScopeEncoder)])
        identity: 'marlin/deck-runtime))

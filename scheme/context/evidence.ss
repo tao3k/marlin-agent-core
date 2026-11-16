@@ -4,15 +4,13 @@
 
 ;;; Use Lab's causal exchange and preserve the full ASCENT answer.
 
-(import (only-in :clan/poo/object .get)
-        (only-in :agentic-ai-lab/modules/temporal-causality/ascent-exchange
-                 agentic-ai-lab-ascent-exchange-solve agentic-ai-lab-ascent-exchange-verify))
+(import (only-in :marlin-agent-core/interface LabTemporal)
+        (only-in :clan/poo/object .get .call))
 
 (export context-reason-causally context-replay-causal-answer)
 
 (def (context-reason-causally request)
-  (agentic-ai-lab-ascent-exchange-solve (.get request exchange) (.get request root)))
+  (.call LabTemporal ascent-exchange-solve (.get request exchange) (.get request root)))
 
 (def (context-replay-causal-answer request)
-  (agentic-ai-lab-ascent-exchange-verify
-   (.get request exchange) (.get request root) (.get request answer)))
+  (.call LabTemporal ascent-exchange-verify (.get request exchange) (.get request root) (.get request answer)))

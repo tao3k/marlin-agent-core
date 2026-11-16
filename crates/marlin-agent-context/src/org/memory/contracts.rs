@@ -6,52 +6,8 @@
 
 use std::collections::BTreeSet;
 
-use crate::org::workspace::OrgDocumentWorkspace;
-use marlin_context_org_model::{
-    OrgContractRegistry, OrgContractResolutionReport, OrgContractTemplate,
-    OrgContractValidationReport,
-};
-use marlin_workspace_view::{RenderedContractFacts, RenderedContractFactsInput};
-
-pub(super) fn merge_document_workspace(
-    target: &mut OrgDocumentWorkspace,
-    workspace: OrgDocumentWorkspace,
-) {
-    append_contracts_unique(&mut target.contracts, workspace.contracts);
-    target.nodes.extend(workspace.nodes);
-    target
-        .contract_resolutions
-        .references
-        .extend(workspace.contract_resolutions.references);
-    target
-        .contract_resolutions
-        .diagnostics
-        .extend(workspace.contract_resolutions.diagnostics);
-    target
-        .contract_validations
-        .receipts
-        .extend(workspace.contract_validations.receipts);
-    target
-        .contract_validations
-        .diagnostics
-        .extend(workspace.contract_validations.diagnostics);
-}
-
-pub(super) fn contract_facts_from_workspace(
-    registry: OrgContractRegistry,
-    resolutions: OrgContractResolutionReport,
-    validations: OrgContractValidationReport,
-) -> RenderedContractFacts {
-    let templates = contract_templates_from_registry(&registry);
-
-    RenderedContractFacts::from_input(RenderedContractFactsInput {
-        registry,
-        resolutions: resolutions.references,
-        diagnostics: resolutions.diagnostics,
-        templates,
-        validations,
-    })
-}
+use marlin_context_org_model::{OrgContractRegistry, OrgContractTemplate};
+use marlin_workspace_view::RenderedContractFacts;
 
 pub(super) fn merge_contract_facts(
     target: &mut RenderedContractFacts,

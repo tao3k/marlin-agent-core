@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / ui - UI workbench
+#+language: en
+
+* Responsibility
+
+Composes components, themes, layout, Modeline and Transcript. Owns event
+dispatch, package contributions and workbench projection.
+
+* Interface and contracts
+
+=interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
+and scope assembly. =UiScope= is the admitted value consumed by =session.ss=.
+An external package publishes its own scope using =make-ui-package=; it does
+not need to reconstruct the agent-wide =init.exports= publication.
+
+* Build and verification
+
+[[file:../init.ss][init.ss]] selects this module. Its Build role, if present,
+contributes to the package's =std-make-spec=. See the
+[[file:../README.org][Scheme package README]] for the shared build and test commands.
+
+UI package tests exercise the real Ratatui mapping through the Scheme test
+window. Terminal startup and exit are verified with PTY tests.

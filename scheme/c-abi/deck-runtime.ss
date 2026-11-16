@@ -9,7 +9,7 @@
 (import (only-in :marlin-agent-core/deck-runtime/objects DeckOperations)
         (only-in :marlin-agent-core/context/objects MarlinContextOperations)
         (only-in :marlin-agent-core/deck-runtime/runtime check-deck-kernel!)
-        :gerbil-scheme-rust/scheme/runtime
+        (only-in :marlin-agent-core/c-abi/roots marlin-rooted-call)
         (only-in :clan/poo/object .get)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
 
@@ -75,28 +75,28 @@
 
 (begin-foreign
   (c-define (deck-open root) (int64) int64 "marlin_deck_runtime_open" "extern"
-    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root marlin-agent-core/c-abi/deck-runtime#open))
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root marlin-agent-core/c-abi/deck-runtime#open))
   (c-define (deck-submit root) (int64) int64 "marlin_deck_runtime_submit" "extern"
-    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root marlin-agent-core/c-abi/deck-runtime#submit))
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root marlin-agent-core/c-abi/deck-runtime#submit))
   (c-define (deck-receive root) (int64) int64 "marlin_deck_runtime_receive" "extern"
-    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root marlin-agent-core/c-abi/deck-runtime#receive))
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root marlin-agent-core/c-abi/deck-runtime#receive))
   (c-define (deck-close root) (int64) int64 "marlin_deck_runtime_close" "extern"
-    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root marlin-agent-core/c-abi/deck-runtime#close)))
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root marlin-agent-core/c-abi/deck-runtime#close)))
 
 ;; Diagnostic snapshot uses the existing runtime counters, not a wire encoding.
 (begin-foreign
   (c-define (deck-statistics root) (int64) int64 "marlin_deck_runtime_statistics" "extern"
-    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root
       (lambda (_) (##process-statistics)))))
 
 (begin-foreign
   (c-define (deck-activate root) (int64) int64 "marlin_deck_runtime_activate" "extern"
-    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root marlin-agent-core/c-abi/deck-runtime#activate)))
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root marlin-agent-core/c-abi/deck-runtime#activate)))
 
 (begin-foreign
   (c-define (deck-retire root) (int64) int64 "marlin_deck_runtime_retire" "extern"
-    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root marlin-agent-core/c-abi/deck-runtime#retire)))
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root marlin-agent-core/c-abi/deck-runtime#retire)))
 
 (begin-foreign
   (c-define (deck-arm root) (int64) int64 "marlin_deck_runtime_arm" "extern"
-    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root marlin-agent-core/c-abi/deck-runtime#arm)))
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root marlin-agent-core/c-abi/deck-runtime#arm)))

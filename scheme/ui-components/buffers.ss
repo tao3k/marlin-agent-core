@@ -9,7 +9,7 @@
         (only-in "./keymap.ss" marlin-ui-keymap-help))
 (export marlin-ui-make-frame marlin-ui-select-buffer marlin-ui-project-frame
         marlin-ui-buffer-command-entries marlin-ui-buffer-alias-command-entries
-        marlin-ui-buffer-static-entries marlin-ui-buffer-identities)
+        marlin-ui-buffer-static-entries marlin-ui-buffer-identities marlin-ui-buffer-catalog)
 
 (.def UiBuffer.)
 (.def UiWindow.)
@@ -31,31 +31,31 @@
              (sessions "*Sessions* recorded conversations" ("*Sessions*" ()) #f)))
 (def marlin-ui-buffer-catalog (seal-object! UiBufferCatalog.))
 
-(def (marlin-ui-buffer-identities)
-  (map car (.get marlin-ui-buffer-catalog entries)))
+(def (marlin-ui-buffer-identities (catalog marlin-ui-buffer-catalog))
+  (map car (.get catalog entries)))
 
-(def (marlin-ui-buffer-static-entries)
+(def (marlin-ui-buffer-static-entries (catalog marlin-ui-buffer-catalog))
   (filter (lambda (entry) (caddr entry))
-          (.get marlin-ui-buffer-catalog entries)))
+          (.get catalog entries)))
 
-(def (marlin-ui-buffer-alias-command-entries)
+(def (marlin-ui-buffer-alias-command-entries (catalog marlin-ui-buffer-catalog))
   (map (lambda (entry)
          (list (cadddr entry) (cadr entry) 'none 'select-buffer
                (symbol->string (car entry))))
        (filter (lambda (entry) (cadddr entry))
-               (.get marlin-ui-buffer-catalog entries))))
+               (.get catalog entries))))
 
-(def (marlin-ui-buffer-command-entries)
+(def (marlin-ui-buffer-command-entries (catalog marlin-ui-buffer-catalog))
   (map (lambda (entry)
          (let (identity-value (symbol->string (car entry)))
            (list (string-append "buffer-" identity-value) (cadr entry)
                  'none 'select-buffer identity-value)))
-       (.get marlin-ui-buffer-catalog entries)))
+       (.get catalog entries)))
 
-(def (marlin-ui-make-frame)
+(def (marlin-ui-make-frame (catalog marlin-ui-buffer-catalog))
   (let* ((buffer-values (map (lambda (entry)
                                (seal-object! (.o (:: @ UiBuffer.) identity: (car entry))))
-                             (.get marlin-ui-buffer-catalog entries)))
+                             (.get catalog entries)))
          (window (seal-object! (.o (:: @ UiWindow.) identity: 'main
                                     buffer: (car buffer-values))))
          (mini (seal-object! (.o (:: @ UiMiniBuffer.) identity: 'minibuffer))))

@@ -5,8 +5,6 @@
 ;;; Host-neutral, bounded terminal layout policy.
 (.def UiLayout
   identity: 'ui-layout
-  core: (.o requires: (.o UiElements: (.o module-id: 'ui-elements)
-                          UiComponents: (.o module-id: 'ui-components))
-            scope-contract: UiLayoutScopeContract
+  core: (.o scope-contract: UiLayoutScopeContract
             exports: UiLayoutScope)
   features: (.o))

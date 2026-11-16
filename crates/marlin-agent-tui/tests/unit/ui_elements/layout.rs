@@ -219,18 +219,31 @@ fn nested_slots_follow_declared_layout_and_share_hit_regions() {
             &mut self,
             frame: &mut ratatui::Frame<'_>,
             area: Rect,
-            id: &UiComponentId,
+            source: &marlin_agent_ui::UiSlotSource,
             _: Option<&UiElement>,
             _: &UiRenderInputs<'_>,
             _: usize,
         ) {
-            frame.render_widget(ratatui::widgets::Paragraph::new(id.as_str()), area);
+            frame.render_widget(
+                ratatui::widgets::Paragraph::new(
+                    if *source == marlin_agent_ui::UiSlotSource::RuntimePolicy {
+                        "left"
+                    } else {
+                        "right"
+                    },
+                ),
+                area,
+            );
         }
     }
     let region = |name: &str| UiElement::Region {
         id: UiComponentId::new(name).unwrap(),
         scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript", 3).unwrap()),
-        child: Box::new(UiElement::Slot(UiComponentId::new(name).unwrap())),
+        child: Box::new(UiElement::Slot(if name == "left" {
+            marlin_agent_ui::UiSlotSource::RuntimePolicy
+        } else {
+            marlin_agent_ui::UiSlotSource::SelectedBuffer
+        })),
     };
     let tree = UiElement::Columns(vec![region("left"), region("right")]);
     let theme = UiTheme::default();

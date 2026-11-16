@@ -119,6 +119,8 @@ impl GitOperations {
             "--no-textconv",
             "--no-color",
             "--no-renames",
+            // A worktree query always includes paths outside the launch directory.
+            "--no-relative",
         ]
         .into_iter()
         .map(Into::into)

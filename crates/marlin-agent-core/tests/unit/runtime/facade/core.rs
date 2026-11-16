@@ -2,11 +2,6 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use marlin_agent_core::context::org::workspace::{
-    STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID,
-    STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID, load_standard_agent_contract_workspace,
-    standard_agent_contract_documents,
-};
 use marlin_agent_core::{
     AGENT_HARNESS_PERFORMANCE_EVIDENCE_KEYS, AgentExecutionTrace, AgentExecutionTraceSummary,
     AgentGraph, AgentGraphPlanningStatus, AgentGraphPlanningTarget, AgentHarnessEvidence,
@@ -50,51 +45,6 @@ fn core_facade_exposes_runtime_execution_identity() {
 
     assert_eq!(identity.run_id(), "run-core");
     assert_eq!(identity.graph_id(), "graph-core");
-}
-
-#[test]
-fn core_facade_exposes_standard_agent_contract_library() {
-    let documents = standard_agent_contract_documents();
-    let workspace =
-        load_standard_agent_contract_workspace().expect("standard agent contracts load");
-
-    assert_eq!(documents.len(), 5);
-    assert!(
-        documents
-            .iter()
-            .any(|document| document.id.as_str() == STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID)
-    );
-    assert!(
-        documents
-            .iter()
-            .any(|document| document.id.as_str() == STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID)
-    );
-    assert!(
-        documents
-            .iter()
-            .any(|document| document.id.as_str() == STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID)
-    );
-    assert!(
-        workspace
-            .contracts
-            .contracts
-            .iter()
-            .any(|contract| contract.id.as_str() == "agent.plan.v1")
-    );
-    assert!(
-        workspace
-            .contracts
-            .contracts
-            .iter()
-            .any(|contract| contract.id.as_str() == "agent.topology.v1")
-    );
-    assert!(
-        workspace
-            .contracts
-            .contracts
-            .iter()
-            .any(|contract| contract.id.as_str() == "agent.memory.v1")
-    );
 }
 
 #[test]

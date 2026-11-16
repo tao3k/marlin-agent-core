@@ -151,11 +151,26 @@ async fn diff_selected_path_is_root_relative_and_interpreted_literally() {
     for path in ["file[1].txt", "file1.txt", "-option"] {
         std::fs::write(dir.path().join(path), format!("changed:{path}\n")).unwrap();
     }
+    assert!(
+        Command::new("git")
+            .args(["config", "diff.relative", "true"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap()
+            .success()
+    );
+    let nested = dir.path().join("nested");
+    let all = GitOperations::diff(&nested, GitDiffRequest::all(GitDiffScope::Worktree))
+        .await
+        .unwrap()
+        .display_escaped();
+    assert!(all.contains("changed:file[1].txt"));
+    assert!(all.contains("changed:file1.txt"));
     let request = GitDiffRequest::for_path(
         GitDiffScope::Worktree,
         GitRepositoryPath::new("file[1].txt").unwrap(),
     );
-    let diff = GitOperations::diff(&dir.path().join("nested"), request)
+    let diff = GitOperations::diff(&nested, request)
         .await
         .unwrap()
         .display_escaped();

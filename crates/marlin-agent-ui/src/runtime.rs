@@ -13,7 +13,7 @@ use gerbil_scheme::{
 use marlin_agent_protocol::HumanReviewKind;
 
 use crate::model::{
-    MAX_COMMANDS, MAX_EXTENSIONS, MAX_HOST_STATUS, MAX_METHOD_BUNDLES, MAX_TEXT_CHARS,
+    MAX_COMMANDS, MAX_EXTENSIONS, MAX_HOST_STATUS, MAX_METHOD_FACTORIES, MAX_TEXT_CHARS,
     UiBrowseDirection, UiBrowseRequest, UiCommandCandidates, UiCommandName, UiEvent, UiIntent,
     UiOpenFacts, UiProjectionError, UiReviewMenu, UiStatusTone, UiToolReviewMenu, UiWorkbench,
 };
@@ -117,6 +117,12 @@ pub struct UiLinkedExports {
 }
 
 impl<'runtime> UiModule<'runtime> {
+    /// Select a package-composed publication in this module's VM. The ordinary
+    /// open/project admission gates still validate every returned value.
+    pub fn with_publication(mut self, publication: RootedSchemeObject<'runtime>) -> Self {
+        self.publication = publication;
+        self
+    }
     /// Resolve the declared publication and UI procedure exports in one VM.
     #[cfg(not(feature = "linked-ui"))]
     pub fn resolve(
@@ -150,11 +156,11 @@ impl<'runtime> UiModule<'runtime> {
         let publication = export(
             runtime,
             directory,
-            ":marlin-agent-core/init",
-            "marlin-agent-core.init.exports",
+            ":marlin-agent-core/ui/config",
+            "UiScope",
         )?;
-        trace("init publication");
-        let ui = ":marlin-agent-core/c-abi/ui";
+        trace("UI scope");
+        let ui = ":marlin-agent-core/ui/session";
         let open = export(runtime, directory, ui, "marlin-ui-session-open")?;
         trace("session open");
         let project = export(runtime, directory, ui, "marlin-ui-session-project")?;
@@ -205,7 +211,7 @@ impl<'runtime> UiModule<'runtime> {
     /// # Safety
     /// Every export must belong to `runtime`'s linked programme, catch Scheme
     /// exceptions and transfer one fresh strong result root. The publication
-    /// must be the complete selected `init.exports` value for this UI graph.
+    /// must be the admitted UI scope for this graph.
     pub unsafe fn resolve_linked(
         runtime: &'runtime GerbilRuntime,
         exports: UiLinkedExports,
@@ -465,7 +471,7 @@ fn validate_open_facts(facts: &UiOpenFacts<'_, '_>) -> Result<(), UiProjectionEr
         || facts.session_label.chars().take(MAX_TEXT_CHARS + 1).count() > MAX_TEXT_CHARS
         || facts.status.len() > MAX_HOST_STATUS
         || facts.extensions.len() > MAX_EXTENSIONS
-        || facts.method_bundles.len() > MAX_METHOD_BUNDLES
+        || facts.method_factories.len() > MAX_METHOD_FACTORIES
     {
         return Err(UiProjectionError::Invalid("UI facts exceed limits"));
     }
@@ -513,7 +519,7 @@ fn encode_open_facts<'runtime>(
     let extensions = runtime
         .collection_from_objects(CollectionKind::Vector, &extension_refs)?
         .into_object();
-    let bundle_refs: Vec<_> = facts.method_bundles.iter().collect();
+    let bundle_refs: Vec<_> = facts.method_factories.iter().collect();
     let bundles = runtime
         .collection_from_objects(CollectionKind::Vector, &bundle_refs)?
         .into_object();
@@ -529,8 +535,8 @@ fn encode_open_facts<'runtime>(
 }
 
 /// Open a Scheme-owned session using typed host facts and SDK-rooted values.
-/// The scope root is the complete Yuanxu publication, not its UI child. The VM
-/// owner must establish the export and selected publication's provenance.
+/// The scope root is the selected UI Module scope. The VM owner must establish
+/// the export and scope's provenance.
 pub fn open_session<'runtime>(
     runtime: &'runtime GerbilRuntime,
     export: &RootedSchemeObject<'runtime>,
@@ -594,6 +600,7 @@ fn dispatch_event_with<'runtime>(
         UiEvent::ScrollDown => "scroll-down",
         UiEvent::SelectProfile(_) => "select-profile",
         UiEvent::SelectBuffer(_) => "select-buffer",
+        UiEvent::SelectListRow { .. } => "select-list-row",
         UiEvent::RecordCommand(_) => "record-command",
     };
     let symbol = runtime.intern_identifier(IdentifierKind::Symbol, name)?;
@@ -603,6 +610,15 @@ fn dispatch_event_with<'runtime>(
         }
         UiEvent::SelectBuffer(name) => {
             Some(runtime.intern_identifier(IdentifierKind::Symbol, name.as_str())?)
+        }
+        UiEvent::SelectListRow { list, row } => {
+            let list = runtime.intern_identifier(IdentifierKind::Symbol, list.as_str())?;
+            let row = runtime.intern_identifier(IdentifierKind::Symbol, row.as_str())?;
+            Some(
+                runtime
+                    .collection_from_objects(CollectionKind::Vector, &[&list, &row])?
+                    .into_object(),
+            )
         }
         UiEvent::RecordCommand(name) => {
             Some(runtime.intern_identifier(IdentifierKind::Symbol, name.as_str())?)

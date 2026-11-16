@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / working-copy - Working-copy policy
+#+language: en
+
+* Responsibility
+
+Selects Git Worktree or Worktrunk for a requested operation. This module does not create
+directories or execute Git commands.
+
+* Interface and contracts
+
+=interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
+and scope assembly. WorkingCopyScope and select-provider.
+Consumers access selected exports through =marlin-agent-core.init.exports=.
+
+* Build and verification
+
+[[file:../init.ss][init.ss]] selects this module. Its Build role, if present,
+contributes to the package's =std-make-spec=. See the
+[[file:../README.org][Scheme package README]] for the shared build and test commands.
+
+* Selection and consumers
+
+The input contains the operation, Git availability, Worktrunk availability and
+whether Worktrunk is preferred. For =create/switch/list/remove=, use available
+preferred Worktrunk, then Git Worktree, then available Worktrunk.
+=pull-request-checkout= requires Worktrunk. Return =#f= when no provider applies.
+
+=crates/marlin-gerbil-scheme/src/working_copy_policy.rs= converts the result to
+a typed request. =marlin-agent-gitops= owns plans and receipts; Environment
+executes external commands. Selecting this module does not create a worktree.

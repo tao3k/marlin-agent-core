@@ -182,7 +182,7 @@ fn extension_list_uses_the_projected_row_template() {
             UiRegion::Extension {
                 id: UiComponentId::new("extension/test").unwrap(),
                 label: "Tools".into(),
-                content: vec![],
+                content: marlin_agent_ui::UiElement::Rows(vec![]),
                 focusable: true,
             },
         ],

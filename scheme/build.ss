@@ -10,10 +10,10 @@
           (only-in :std/source this-source-file)
           (only-in :tao3k/yuanxu/module-system/building/source-package register-module-build-source!)))
 (begin-syntax
-  ;; Lab installs its source catalog. Its selected roles can import ordinary
-  ;; libraries before Yuanxu constructs the consumer's compiler inputs.
+  ;; Register the dependency's source owner for native public imports. Module
+  ;; import/export closure supplies dependencies; INIT selects Marlin only.
   (register-module-build-source!
-    (path-expand "github.com/tao3k/agentic-ai-lab" (pkg-root-dir)) 'agentic-ai-lab)
+    (path-expand "github.com/tao3k/agentic-ai-lab" (pkg-root-dir)) 'tao3k/agentic-ai-lab)
   (register-module-build-source! (path-directory (this-source-file)) 'marlin-agent-core))
 
 (import (only-in :clan/poo/object .get .call)

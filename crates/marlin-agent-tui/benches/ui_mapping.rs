@@ -57,7 +57,7 @@ impl UiSlotRenderer for AskFrameSlots {
         &mut self,
         frame: &mut ratatui::Frame<'_>,
         area: Rect,
-        _: &UiComponentId,
+        _: &marlin_agent_ui::UiSlotSource,
         _: Option<&UiElement>,
         _: &UiRenderInputs<'_>,
         _: usize,
@@ -299,6 +299,7 @@ fn mapping(c: &mut Criterion) {
     ] {
         let list_template = UiElement::List {
             id: UiComponentId::new("benchmark-list").unwrap(),
+            source: marlin_agent_ui::UiListSource::Candidates,
             offset: UiSize::Cells(246),
             child: Box::new(UiElement::Choice {
                 cases: vec![(UiComponentId::new("selected").unwrap(), row.clone())],
@@ -354,6 +355,7 @@ fn mapping(c: &mut Criterion) {
     // wrap index are deliberately outside this per-frame measurement.
     let transcript = UiElement::List {
         id: UiComponentId::new("conversation").unwrap(),
+        source: marlin_agent_ui::UiListSource::Conversation,
         offset: UiSize::Cells(0),
         child: Box::new(UiElement::Template {
             background: marlin_agent_ui::UiBackground::None,
@@ -531,7 +533,7 @@ fn mapping(c: &mut Criterion) {
             &mut self,
             _: &mut ratatui::Frame<'_>,
             _: ratatui::layout::Rect,
-            _: &UiComponentId,
+            _: &marlin_agent_ui::UiSlotSource,
             _: Option<&UiElement>,
             _: &UiRenderInputs<'_>,
             _: usize,
@@ -599,7 +601,9 @@ fn mapping(c: &mut Criterion) {
                 bold: false,
             }],
         })),
-        child: Box::new(UiElement::Slot(UiComponentId::new("static").unwrap())),
+        child: Box::new(UiElement::Slot(
+            marlin_agent_ui::UiSlotSource::SelectedBuffer,
+        )),
     };
     let fields: Vec<_> = (0..16)
         .map(|n| marlin_agent_ui::UiContent::Field {
@@ -840,7 +844,9 @@ fn mapping(c: &mut Criterion) {
                     UiElement::Region {
                         id: UiComponentId::new("conversation").unwrap(),
                         scroll_target: None,
-                        child: Box::new(UiElement::Slot(UiComponentId::new("transcript").unwrap())),
+                        child: Box::new(UiElement::Slot(
+                            marlin_agent_ui::UiSlotSource::SelectedBuffer,
+                        )),
                     },
                 ),
                 sized(
@@ -868,6 +874,7 @@ fn mapping(c: &mut Criterion) {
                     marlin_agent_ui::UiSize::Cells(2),
                     UiElement::List {
                         id: UiComponentId::new("ask-choices").unwrap(),
+                        source: marlin_agent_ui::UiListSource::Candidates,
                         offset: marlin_agent_ui::UiSize::Cells(0),
                         child: Box::new(template.clone()),
                     },

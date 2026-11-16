@@ -6,7 +6,6 @@
 
 (.def Hooks
   identity: 'hooks
-  core: (.o requires: (.o)
-            scope-contract: HooksScopeContract
+  core: (.o scope-contract: HooksScopeContract
             exports: HooksScope)
   features: (.o))

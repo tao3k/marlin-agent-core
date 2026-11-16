@@ -2,5 +2,5 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 (.def UiElements
   identity: 'ui-elements
-  core: (.o requires: (.o) scope-contract: UiElementsScopeContract exports: UiElementsScope)
+  core: (.o scope-contract: UiElementsScopeContract exports: UiElementsScope)
   features: (.o))

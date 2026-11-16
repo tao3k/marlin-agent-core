@@ -6,7 +6,6 @@
 
 (.def Policy
   identity: 'policy
-  core: (.o requires: (.o Hooks: (.o module-id: 'hooks))
-            scope-contract: PolicyScopeContract
+  core: (.o scope-contract: PolicyScopeContract
             exports: PolicyScope)
   features: (.o))

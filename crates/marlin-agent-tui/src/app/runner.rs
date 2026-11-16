@@ -125,20 +125,40 @@ fn run(
         session_label,
         status: &status,
         extensions: &[],
-        method_bundles: &[],
+        method_factories: &[],
     };
     #[cfg(feature = "linked-ui")]
     // SAFETY: the binary links these exports from the archive built from the
     // same selected Scheme programme as `linked_ui::initialize`.
-    let mut ui = unsafe {
-        UiHost::open_linked(
+    let mut ui_module = unsafe {
+        marlin_agent_ui::UiModule::resolve_linked(
             &scheme_runtime,
             super::super::linked_ui::exports(),
-            &ui_facts,
         )?
     };
     #[cfg(not(feature = "linked-ui"))]
-    let mut ui = UiHost::open(&scheme_runtime, directory, &ui_facts)?;
+    let mut ui_module = marlin_agent_ui::UiModule::resolve(&scheme_runtime, directory)?;
+    if let Some(package) = &config.tui_ui_package {
+        let module = scheme_runtime
+            .intern_identifier(gerbil_scheme::IdentifierKind::Symbol, &package.module)?;
+        let export = scheme_runtime
+            .intern_identifier(gerbil_scheme::IdentifierKind::Symbol, &package.export)?;
+        let directory = package
+            .directory
+            .to_str()
+            .ok_or("UI package path is not UTF-8")?;
+        #[cfg(feature = "linked-ui")]
+        let publication = super::super::linked_ui::package_publication(
+            &scheme_runtime,
+            directory,
+            &module,
+            &export,
+        )?;
+        #[cfg(not(feature = "linked-ui"))]
+        let publication = scheme_runtime.resolve_package_export(directory, &module, &export)?;
+        ui_module = ui_module.with_publication(publication);
+    }
+    let mut ui = UiHost::from_module(ui_module, &ui_facts)?;
     if let Some(status) = status.first()
         && !ui.view().regions.iter().any(|region| {
             matches!(region, marlin_agent_ui::UiRegion::Status(items) if items.iter().any(|item| item == status))
@@ -467,8 +487,15 @@ fn run(
             let mouse = mouse_position.load(Ordering::Relaxed);
             let area = ratatui::layout::Rect::new(0, 0, size.0, size.1);
             let mut snapshot = frame_snapshot(&app, ui.view(), area);
-            let hovered =
-                mouse_over_minibuffer(&snapshot.regions, mouse as u16, (mouse >> 16) as u16);
+            let hovered = mouse_over_minibuffer(
+                &snapshot.regions,
+                ui.view()
+                    .layout
+                    .regions
+                    .id(marlin_agent_ui::UiFrameRole::MinibufferHover),
+                mouse as u16,
+                (mouse >> 16) as u16,
+            );
             if hovered != app.minibuffer_hovered {
                 app.minibuffer_hovered = hovered;
                 snapshot = frame_snapshot(&app, ui.view(), area);
@@ -509,16 +536,17 @@ fn run(
                     if snapshot.area != frame.area() {
                         snapshot = frame_snapshot(&app, ui.view(), frame.area());
                     }
-                    effective_scroll = draw_with_snapshot(
+                    let painted = draw_with_snapshot(
                         frame,
                         &app,
                         ui.view(),
                         &mut viewport_cache,
                         &mut scroll_anchor,
                         &snapshot,
-                    )
+                    );
+                    effective_scroll = painted.scroll;
+                    painted_regions = painted.regions;
                 })?;
-                painted_regions = std::mem::take(&mut snapshot.regions);
                 app.set_effective_scroll(effective_scroll);
                 schedule.drawn(Instant::now());
                 if first_frame_elapsed.is_none() {
@@ -620,7 +648,7 @@ fn run(
                 app.disarm_exit();
             }
             if let Ok(Ok(TerminalInput::MouseClick(column, row))) = &received {
-                select_clicked_list_row(&mut app, &ui, *column, *row);
+                select_clicked_list_row(&mut app, &mut ui, *column, *row);
                 continue;
             }
             if let Some(search) = app.history_search.as_mut() {

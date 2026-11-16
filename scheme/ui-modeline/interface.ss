@@ -5,6 +5,6 @@
 ;;; Host-neutral mode line slots. The terminal owns cells and colors.
 (.def UiModeline
   identity: 'ui-modeline
-  core: (.o requires: (.o) scope-contract: UiModelineScopeContract
+  core: (.o scope-contract: UiModelineScopeContract
             exports: UiModelineScope)
   features: (.o))

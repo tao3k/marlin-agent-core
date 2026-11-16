@@ -45,7 +45,7 @@ without default features replaces =target/debug/marlin-tui= with the slower
 dynamic artifact; rerun =just tui-aot-debug= before measuring the linked path.
 
 =just tui-aot-build= builds the selected Scheme package, compiles
-=scheme/tui-entry.ss=, stages the programme from =init.exports.std-make-spec=,
+=scheme/ui-tui/= through =init.exports.std-make-spec=,
 and links the resulting graph with the VM into =target/release/marlin-tui=.
 The =linked-ui= feature uses the SDK's =external-program= lifecycle and rooted
 object ABI; the executable does not resolve a Gerbil package at runtime.
@@ -187,8 +187,9 @@ stream. Its timeout comes from =timeout_seconds=. The runtime edge timeout
 applies only until the gateway returns a stream; it does not govern the length
 of the stream, approve tools, or confirm remote cancellation.
 
-=M-x status= reads Git status for the current working directory in the background
-and displays index and worktree states, untracked entries and rename sources.
+=M-x status= reads the Git worktree containing the directory where Marlin was
+launched. It displays index and worktree states, untracked entries and rename
+sources for that whole worktree, including when launched from a subdirectory.
 It uses Git's normal ignore and submodule configuration; it is a point-in-time
 observation, not a snapshot or an authorization for changes. Git's optional
 index locks and filesystem-monitor hooks are disabled for this read. A result
@@ -196,13 +197,13 @@ over 1 MiB or 10,000 entries, or taking more than 10 seconds, is rejected in
 full. Esc or Ctrl-C requests local cancellation. Paths are escaped for display;
 the status is not added to the model conversation.
 
-Successful workspace reads appear in a separate view starting at the top;
-PageUp/PageDown scroll it, and Esc or Ctrl-C returns to the conversation while
-retaining the draft. Submitting a new command or message also closes the view.
+Successful workspace reads appear in a separate view starting at the top.
+PageUp/PageDown scroll it; Esc or Ctrl-C restores the previous Buffer and
+retains the draft. Submitting a new command or message also closes the view.
 Only the latest workspace result is retained and it is not saved to the session;
 run the command again to refresh it. While a workspace read is pending, new
-submissions are held in the editor. Short progress and error messages still
-enter the transcript; this does not bound total transcript or process memory.
+submissions are held in the editor. Progress and errors appear in the
+Minibuffer and are recorded in =*Messages*=.
 The workspace view lays out from the top through the requested visible rows;
 deep scrolling still traverses preceding content, and oversized individual
 graphemes and rendering allocations have separate costs.
@@ -214,6 +215,7 @@ task has retired. Conversion still uses memory and occupies its worker.
 =M-x diff= shows unstaged tracked changes (worktree against index), and =M-x diff
 staged= shows staged changes (index against HEAD). Git presents renames as
 deletions and additions; binary files follow Git's normal binary-diff summary.
+Both commands inspect the full launch worktree by default.
 Untracked files are listed by =M-x status= and are not included in these diffs.
 External diff programs, text conversion and color are disabled. The same
 1 MiB and 10-second limits apply; over-limit output is rejected in full.

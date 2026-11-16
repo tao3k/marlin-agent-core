@@ -3,7 +3,7 @@
 
 //! Host-neutral UI primitives admitted from rooted Scheme values.
 
-use gerbil_scheme::{IdentifierBuffer, RootedSchemeObject, SchemeScalar};
+use gerbil_scheme::{IdentifierBuffer, ObjectKind, RootedSchemeObject, SchemeScalar};
 use std::collections::HashSet;
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
 pub enum UiElement {
     Text(Vec<UiSpan>),
     /// An opaque host-provided visual source selected by a Scheme component.
-    Slot(UiComponentId),
+    Slot(UiSlotSource),
     /// A bordered presentation around a host-backed visual source.
     Panel {
         border_tone: UiTone,
@@ -43,6 +43,7 @@ pub enum UiElement {
     /// A repeated row and its Scheme-declared window offset.
     List {
         id: UiComponentId,
+        source: UiListSource,
         offset: UiSize,
         child: Box<UiElement>,
     },
@@ -72,6 +73,34 @@ pub enum UiElement {
         scroll_target: Option<UiScrollTarget>,
         child: Box<UiElement>,
     },
+}
+
+/// A list's data source is independent of its widget identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UiListSource {
+    Conversation,
+    Messages,
+    Workspace,
+    Review,
+    Candidates,
+    Extensions,
+    Rows(Vec<UiListValue>),
+}
+
+/// A visual capability whose placement is selected by the Scheme tree.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiSlotSource {
+    SelectedBuffer,
+    FocusedExtension,
+    RuntimePolicy,
+    TransientHint,
+}
+
+/// A Scheme-authored row for the same list mapper used by host capabilities.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiListValue {
+    pub id: Option<UiComponentId>,
+    pub fields: Vec<(UiComponentId, String)>,
 }
 
 /// Placement of a Scheme-declared modeline segment within its terminal row.
@@ -211,15 +240,17 @@ impl UiElement {
             (
                 Self::List {
                     id: a,
+                    source: sa,
                     offset: x,
                     child: c,
                 },
                 Self::List {
                     id: b,
+                    source: sb,
                     offset: y,
                     child: d,
                 },
-            ) => a == b && x == y && c.same_profile_structure(d),
+            ) => a == b && sa == sb && x == y && c.same_profile_structure(d),
             (
                 Self::Panel {
                     border_tone: a,
@@ -423,6 +454,70 @@ pub fn decode_element(value: RootedSchemeObject<'_>) -> Result<UiElement, UiProj
     decode(value, 0, &mut budget, &mut IdentifierBuffer::default())
 }
 
+fn decode_list_source(
+    source: RootedSchemeObject<'_>,
+    budget: &mut Budget,
+    names: &mut IdentifierBuffer,
+) -> Result<UiListSource, UiProjectionError> {
+    if source.as_ref().kind()? == ObjectKind::Symbol {
+        return match identifier(source, names)?.as_str() {
+            "conversation" => Ok(UiListSource::Conversation),
+            "messages" => Ok(UiListSource::Messages),
+            "workspace" => Ok(UiListSource::Workspace),
+            "review" => Ok(UiListSource::Review),
+            "candidates" => Ok(UiListSource::Candidates),
+            "extensions" => Ok(UiListSource::Extensions),
+            _ => Err(UiProjectionError::Invalid("unknown list data capability")),
+        };
+    }
+    let rows = vector(source, 0, 64)?;
+    let mut ids = HashSet::new();
+    let mut result = Vec::with_capacity(rows.len());
+    for index in 0..rows.len() {
+        let row = vector(rows.element(index)?, 2, 2)?;
+        let key = row.element(0)?;
+        let id = if matches!(key.as_ref().scalar(), Ok(SchemeScalar::Boolean(false))) {
+            None
+        } else {
+            let id = identifier(key, names)?;
+            if !ids.insert(id.clone()) {
+                return Err(UiProjectionError::Invalid("duplicate list row identity"));
+            }
+            Some(id)
+        };
+        let fields = vector(row.element(1)?, 0, 16)?;
+        budget.nodes =
+            budget
+                .nodes
+                .checked_sub(fields.len() + 1)
+                .ok_or(UiProjectionError::Invalid(
+                    "UI list data exceeds node limit",
+                ))?;
+        let mut keys = HashSet::new();
+        let mut bindings = Vec::with_capacity(fields.len());
+        for entry in 0..fields.len() {
+            let field = vector(fields.element(entry)?, 2, 2)?;
+            let key = identifier(field.element(0)?, names)?;
+            if !keys.insert(key.clone()) {
+                return Err(UiProjectionError::Invalid("duplicate list row field"));
+            }
+            let text = crate::projection::string(field.element(1)?)?;
+            budget.bytes = budget
+                .bytes
+                .checked_sub(key.as_str().len() + text.len())
+                .ok_or(UiProjectionError::Invalid(
+                    "UI list data exceeds text limit",
+                ))?;
+            bindings.push((key, text));
+        }
+        result.push(UiListValue {
+            id,
+            fields: bindings,
+        });
+    }
+    Ok(UiListSource::Rows(result))
+}
+
 fn decode(
     value: RootedSchemeObject<'_>,
     depth: usize,
@@ -531,7 +626,14 @@ fn decode(
             if values.len() != 1 {
                 return Err(UiProjectionError::Invalid("invalid UI slot"));
             }
-            Ok(UiElement::Slot(identifier(values.element(0)?, names)?))
+            let source = match identifier(values.element(0)?, names)?.as_str() {
+                "selected-buffer" => UiSlotSource::SelectedBuffer,
+                "focused-extension" => UiSlotSource::FocusedExtension,
+                "runtime-policy" => UiSlotSource::RuntimePolicy,
+                "transient-hint" => UiSlotSource::TransientHint,
+                _ => return Err(UiProjectionError::Invalid("unknown visual capability")),
+            };
+            Ok(UiElement::Slot(source))
         }
         "prompt" => {
             if values.len() != 2 {
@@ -603,14 +705,20 @@ fn decode(
             Ok(UiElement::Sized { size, child })
         }
         "list" => {
-            if values.len() != 3 {
+            if values.len() != 4 {
                 return Err(UiProjectionError::Invalid("invalid UI list"));
             }
             let id = identifier(values.element(0)?, names)?;
-            let size = vector(values.element(1)?, 2, 2)?;
+            let source = decode_list_source(values.element(1)?, budget, names)?;
+            let size = vector(values.element(2)?, 2, 2)?;
             let offset = decode_size(size.element(0)?, size.element(1)?, 0, budget, names)?;
-            let child = Box::new(decode(values.element(2)?, depth + 1, budget, names)?);
-            Ok(UiElement::List { id, offset, child })
+            let child = Box::new(decode(values.element(3)?, depth + 1, budget, names)?);
+            Ok(UiElement::List {
+                id,
+                source,
+                offset,
+                child,
+            })
         }
         "template" => {
             if values.len() != 2 {

@@ -16,6 +16,7 @@ use marlin_agent_protocol::{
 };
 use marlin_context_org_model::{LinkKind, OrgLink, OrgNode, OrgNodeId, OrgSourceSpan};
 
+#[test]
 fn content_graph_matches_exact_anchor_and_parent_ancestry() {
     let mut node = content_node(ContentNodeFixture {
         id: "content-node:summary-a",
@@ -105,6 +106,7 @@ fn content_graph_matches_exact_anchor_and_parent_ancestry() {
     );
 }
 
+#[test]
 fn content_graph_requires_external_project_policy() {
     let workspace = MemoryOrgWorkspace::from_nodes(vec![content_node(ContentNodeFixture {
         id: "content-node:external",
@@ -197,15 +199,3 @@ fn content_node(fixture: ContentNodeFixture<'_>) -> OrgNode {
     );
     node
 }
-
-// Invoked after exclusive parser startup by unit_test.
-pub(super) const CASES: &[(&str, fn())] = &[
-    (
-        "content_graph_matches_exact_anchor_and_parent_ancestry",
-        content_graph_matches_exact_anchor_and_parent_ancestry,
-    ),
-    (
-        "content_graph_requires_external_project_policy",
-        content_graph_requires_external_project_policy,
-    ),
-];

@@ -4,15 +4,14 @@
 
 ;;; Component probes call the existing Lab and Marlin operations unchanged.
 package: marlin-benchmark
-(import (only-in :clan/poo/object .get)
+(import (only-in :marlin-agent-core/interface LabContext)
+        (only-in :clan/poo/object .get .call)
         (only-in :clan/poo/mop validate)
         (only-in :marlin-benchmark/compiler-roots compiler-roots-snapshot)
         (only-in :marlin-benchmark/mailbox mailbox-clock-ns)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/types
-                 agentic-ai-lab-ai-agentic-context-scope-shape? AiAgenticContextAdmissionType)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/funs-scope
-                 agentic-ai-lab-ai-agentic-context-scope-admit)
+
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
+
 (export run-context-profile run-context-retention-profile)
 (extern context-profile-phase!)
 (begin-foreign
@@ -49,10 +48,10 @@ static void marlin_context_set_phase(int phase) { marlin_context_profile_phase =
   (let (inputs (prepare))
     (measure 1 (lambda ()
       (map-rows (lambda (request)
-        (unless (agentic-ai-lab-ai-agentic-context-scope-shape? request)
+        (unless (.call LabContext scope-shape? request)
           (error "profile input failed Lab validation")) #t) inputs))))
   (let (inputs (prepare))
-    (measure 2 (lambda () (map-rows agentic-ai-lab-ai-agentic-context-scope-admit inputs))))
+    (measure 2 (lambda () (map-rows (.get LabContext admit-scope) inputs))))
   (let (inputs (prepare))
     (measure 3 (lambda () (map-rows admit inputs))))
   (let (scopes (map-rows admit (prepare)))
@@ -66,7 +65,7 @@ static void marlin_context_set_phase(int phase) { marlin_context_profile_phase =
         (let (scopes (vector-map admit (decode input)))
           (vector-for-each (lambda (scope) (.get scope semantic-digest)) scopes)
           (encode scopes))) batches))))
-  (def rechecked (validate AiAgenticContextAdmissionType admit))
+  (def rechecked (validate (.get LabContext admission-type) admit))
   (let (inputs (prepare))
     (measure 7 (lambda () (map-rows rechecked inputs))))
   (def deck ((.get marlin-agent-core.init.exports Marlin deck-runtime open) admit encode))
@@ -124,7 +123,7 @@ static void marlin_context_set_phase(int phase) { marlin_context_profile_phase =
   ((.get deck close))
   (vector (list->vector (reverse observations)) output
           (u64vector (if (eq? admit rechecked) 1 0)
-                     (if (eq? admit agentic-ai-lab-ai-agentic-context-scope-admit) 1 0))))
+                     (if (eq? admit (.get LabContext admit-scope)) 1 0))))
 
 ;; Separate forced-GC diagnostic. This function is NEVER called by the timed
 ;; production or component workloads, and its times are not performance evidence.
@@ -138,7 +137,9 @@ static void marlin_context_set_phase(int phase) { marlin_context_profile_phase =
       (cons (vector (##process-statistics) (vector-ref roots 0) (vector-ref roots 1)) snapshots)))
   (snapshot)
   (context-profile-phase! 10)
-  (def lab (.get marlin-agent-core.init.exports Lab ai-agentic-context))
+  ;; Lab is a native imported dependency, not a second root Loader mount.
+  ;; Retain its public admission Type during this diagnostic snapshot.
+  (def lab (.get LabContext admission-type))
   (context-profile-phase! 0)
   (snapshot)
   (def context (.get marlin-agent-core.init.exports Marlin context))

@@ -4,9 +4,9 @@
 
 ;;; Assemble Marlin's Context operations.
 
-(import (only-in :clan/poo/object .o)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/funs-scope
-                 agentic-ai-lab-ai-agentic-context-scope-admit)
+(import (only-in :marlin-agent-core/interface LabContext)
+        (only-in :clan/poo/object .get .o)
+
         :marlin-agent-core/context/projection
         :marlin-agent-core/context/org-contract
         :marlin-agent-core/context/org-source
@@ -15,7 +15,7 @@
 (export MarlinContextOperations EnableCausalEvidence)
 
 (def MarlinContextOperations
-  (.o admit-scope: agentic-ai-lab-ai-agentic-context-scope-admit
+  (.o admit-scope: (.get LabContext admit-scope)
       org-contract-source: marlin-context-org-contract-source
       org-source-graph: marlin-context-org-source-graph
       bridge: (.o decode-batch: marlin-context-batch-requests

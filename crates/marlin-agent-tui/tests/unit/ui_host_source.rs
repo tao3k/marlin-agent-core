@@ -8,8 +8,8 @@ use super::{
 };
 use gerbil_scheme::GerbilRuntime;
 use marlin_agent_ui::{
-    UiCommandName, UiComponentId, UiEditorAction, UiEvent, UiIntent, UiOpenFacts, UiRegion,
-    UiScrollDirection, UiWorkbench,
+    UiCommandName, UiComponentId, UiEvent, UiIntent, UiOpenFacts, UiRegion, UiScrollDirection,
+    UiWorkbench,
 };
 use termion::event::Key;
 
@@ -17,7 +17,6 @@ use termion::event::Key;
 #[ignore = "requires a compiled Marlin Scheme dependency closure and Gerbil toolchain"]
 fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
     use gerbil_scheme::IdentifierKind;
-    use marlin_agent_protocol::ModelEndpoint;
     use marlin_agent_ui::UiStatusItem;
     use std::path::Path;
 
@@ -44,34 +43,83 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
             .unwrap()
     };
     let extension = load("test-extension");
-    let methods = load("test-methods");
+    assert_eq!(
+        crate::test_window::run(&runtime, &load("extension-test-window")).unwrap(),
+        1
+    );
+    // Package semantics and screen assertions live in the compiled Scheme
+    // scenario. Rust supplies the same mapper used by the terminal.
+    assert_eq!(
+        crate::test_window::run(&runtime, &load("test-window")).unwrap(),
+        2
+    );
+    let factory = load("make-test-window");
+    let mut elapsed = Vec::new();
+    for _ in 0..30 {
+        let scenario = runtime
+            .call_rooted(&factory, &runtime.void_object().unwrap())
+            .unwrap();
+        let started = std::time::Instant::now();
+        crate::test_window::run(&runtime, &scenario).unwrap();
+        elapsed.push(started.elapsed());
+    }
+    elapsed.sort();
+    eprintln!(
+        "Scheme test window: 30 two-frame samples, p50={:?}, p95={:?}; debug scenario and Scheme assertions, excludes scenario creation",
+        elapsed[15], elapsed[28]
+    );
+    let package_module = marlin_agent_ui::UiModule::resolve(&runtime, root)
+        .unwrap()
+        .with_publication(load("test-publication"));
+    let mut package_host = UiHost::from_module(
+        package_module,
+        &UiOpenFacts {
+            model_label: "model",
+            session_label: "session",
+            status: &[],
+            extensions: &[],
+            method_factories: &[],
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        package_host
+            .route_key(
+                Key::Alt('z'),
+                false,
+                false,
+                marlin_agent_ui::UiKeyMode::Insert
+            )
+            .unwrap(),
+        UiKeyAction::InvokeCommand(_)
+    ));
+    let methods = load("make-test-methods");
     let extensions = [extension];
     let bundles = [methods];
     let status = [UiStatusItem::host(
         UiComponentId::new("test/status").unwrap(),
         "VM ready",
     )];
-    let mut host = UiHost::open(
-        &runtime,
-        root,
+    let mut host = UiHost::from_module(
+        marlin_agent_ui::UiModule::resolve(&runtime, root).unwrap(),
         &UiOpenFacts {
             model_label: "model",
             session_label: "session",
             status: &status,
             extensions: &extensions,
-            method_bundles: &bundles,
+            method_factories: &bundles,
         },
     )
     .unwrap();
     assert_eq!(host.view().focus.as_str(), "composer");
-    assert_eq!(
-        host.command_candidates("mode", None)
+    // Scheme owns catalog contents and ranking; this check only crosses the
+    // actual VM candidate projection before exercising native admission below.
+    assert!(
+        !host
+            .command_candidates("mode", None)
             .unwrap()
             .names
-            .iter()
-            .map(UiCommandName::as_str)
-            .collect::<Vec<_>>(),
-        vec!["model", "models"]
+            .is_empty()
     );
     let restricted = [UiCommandName::new("models").unwrap()];
     assert_eq!(
@@ -85,36 +133,6 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
         )
         .unwrap(),
         Some(restricted[0].clone())
-    );
-    assert_eq!(
-        host.route_key(
-            Key::Ctrl('r'),
-            false,
-            false,
-            marlin_agent_ui::UiKeyMode::Insert
-        )
-        .unwrap(),
-        UiKeyAction::Edit(UiEditorAction::HistorySearch)
-    );
-    assert_eq!(
-        host.route_key(
-            Key::Ctrl('n'),
-            false,
-            false,
-            marlin_agent_ui::UiKeyMode::Insert
-        )
-        .unwrap(),
-        UiKeyAction::Edit(UiEditorAction::InsertNewline)
-    );
-    assert_eq!(
-        host.route_key(
-            Key::Alt('p'),
-            false,
-            false,
-            marlin_agent_ui::UiKeyMode::Insert
-        )
-        .unwrap(),
-        UiKeyAction::Edit(UiEditorAction::PreviousPrompt)
     );
     assert_eq!(
         host.route_key(
@@ -138,30 +156,6 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
         UiKeyAction::Handled
     );
     assert_eq!(host.view().focus.as_str(), "test/extension");
-    let app = super::super::app::App::new(ModelEndpoint::new("provider", "model"));
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 20)).unwrap();
-    terminal
-        .draw(|frame| {
-            super::super::render::draw(
-                frame,
-                &app,
-                host.view(),
-                &mut Default::default(),
-                &mut Default::default(),
-            );
-        })
-        .unwrap();
-    let buffer = terminal.backend().buffer();
-    let screen: String = (0..20)
-        .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
-        .collect();
-    assert!(
-        screen.contains("VM ready")
-            && screen.contains("Test extension")
-            && screen.contains("Scheme component body")
-            && screen.contains("Source: selected module"),
-        "{screen}"
-    );
     host.refresh_labels("other/model", "other-session").unwrap();
     assert_eq!(host.view().focus.as_str(), "test/extension");
     assert_eq!(host.view().model_label, "other/model");
@@ -177,16 +171,15 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
     );
     assert_eq!(host.view().focus.as_str(), "composer");
 
-    let forged_bundles = [load("test-forged-methods")];
-    let mut forged = UiHost::open(
-        &runtime,
-        root,
+    let forged_bundles = [load("make-test-forged-methods")];
+    let mut forged = UiHost::from_module(
+        marlin_agent_ui::UiModule::resolve(&runtime, root).unwrap(),
         &UiOpenFacts {
             model_label: "model",
             session_label: "session",
             status: &[],
             extensions: &extensions,
-            method_bundles: &forged_bundles,
+            method_factories: &forged_bundles,
         },
     )
     .unwrap();
@@ -323,7 +316,7 @@ fn terminal_rejects_unbound_main_source() {
         unreachable!()
     };
     **child = UiElement::Rows(vec![UiElement::Slot(
-        UiComponentId::new("unbound").unwrap(),
+        marlin_agent_ui::UiSlotSource::TransientHint,
     )]);
     assert!(admit_terminal_view(&workbench).is_err());
 }
@@ -350,7 +343,9 @@ fn terminal_rejects_unknown_scroll_target_inside_choice() {
                 child: Box::new(UiElement::Text(vec![])),
             },
         )],
-        fallback: Box::new(UiElement::Slot(UiComponentId::new("conversation").unwrap())),
+        fallback: Box::new(UiElement::Slot(
+            marlin_agent_ui::UiSlotSource::TransientHint,
+        )),
     };
     assert!(admit_terminal_view(&workbench).is_err());
 }
@@ -376,7 +371,9 @@ fn terminal_checks_bar_segment_children_before_admission() {
             priority: 0,
             min_width: 0,
             condition: None,
-            child: Box::new(UiElement::Slot(UiComponentId::new("unbound").unwrap())),
+            child: Box::new(UiElement::Slot(
+                marlin_agent_ui::UiSlotSource::TransientHint,
+            )),
         }],
     };
     assert!(admit_terminal_view(&workbench).is_err());
@@ -571,7 +568,7 @@ fn scroll_direction_and_extension_focus_are_checked() {
         id: UiComponentId::new("sample").unwrap(),
         label: "sample".into(),
         focusable: true,
-        content: vec![],
+        content: marlin_agent_ui::UiElement::Rows(vec![]),
     });
     extended.focus = UiComponentId::new("sample").unwrap();
     assert!(admit_terminal_view(&extended).is_ok());

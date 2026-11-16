@@ -1,0 +1,66 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: RFC 40.180 — Marlin's Emacs-style Scheme TUI
+
+* Decision
+
+Marlin's interaction architecture follows the Emacs ecosystem: independent
+Buffers, Windows that display them, a Modeline above the Minibuffer, commands,
+keymaps and declarative packages. Scheme owns their composition and behavior.
+Rust supplies typed host boundaries and a general Ratatui interpreter.
+
+This is Marlin's architecture, rather than a reproduction of another agent
+terminal. Doom informs the visual language and modal keymaps; Vertico informs
+completion; Hydra informs transient command declarations. oh-my-pi and
+Codewhale supply specific lessons about agent output and rendering. Their
+screen layouts and command systems do not define Marlin's public API.
+
+* Reading map
+
+| Topic | Owning document |
+|-------+-----------------|
+| Buffer, Window, Modeline and Minibuffer behavior | [[file:40.180-emacs-scheme-tui/01-interaction.org][Interaction]] |
+| Scheme modules, packages, commands and keymaps | [[file:40.180-emacs-scheme-tui/02-packages.org][Packages and extension]] |
+| Typed projection, Ratatui, geometry and host effects | [[file:40.180-emacs-scheme-tui/03-native-mapping.org][Native mapping contract]] |
+| VM startup, scheduling, rendering and retention | [[file:40.180-emacs-scheme-tui/04-runtime-performance.org][Runtime and performance]] |
+| Test ownership, qualification commands and current evidence | [[file:40.180-emacs-scheme-tui/05-verification.org][Verification]] |
+| Inspected upstream sources and adaptation boundaries | [[file:40.180-emacs-scheme-tui/06-references.org][Reference sources]] |
+
+Each document owns one concern. Design rules belong there; raw traces,
+benchmark samples and chronological debugging notes belong in local artifacts.
+Acceptance conclusions must identify the workload and source cohort. A narrow
+mapper test cannot establish package loading, terminal behavior or startup.
+
+* Ownership
+
+| Owner | Responsibility |
+|-------+----------------|
+| Scheme UI modules | Layout, templates, completion, command catalogs, keymaps, themes, hit-region declarations and scroll policy |
+| Rust UI library | Domain identifiers, typed request/response admission and SDK value conversion |
+| Rust TUI | Terminal I/O, host facts, effects, generic Ratatui mapping and measured caches |
+| Yuanxu and Gerbil | Selected module publication, source currentness, compilation and package resolution |
+| Scheme Rust | VM ownership, rooted Scheme values and native ABI conversion |
+| Agent Runtime and Weaver | Agent lifecycle, provider configuration and model transport |
+
+There is no context-compression subsystem. Context/Org ownership is specified
+in [[file:40.181-context-org-ownership.org][RFC 40.181]]. Provider configuration belongs to [[file:40.90-configurable-model-routing-and-environment.org][RFC 40.90]], not the UI renderer.
+The plugin and single-VM runtime boundary belongs to [[file:40.166-plugin-contract.org][RFC 40.166]]. Build ownership
+belongs to [[file:40.170-marlin-bazel-modular-build.org][RFC 40.170]]. This RFC references those contracts without duplicating them.
+
+* Architecture and qualification
+:PROPERTIES:
+:CUSTOM_ID: tui-performance
+:END:
+
+The structural models are [[file:../../dev/sysml/tui-architecture.sysml][TUI architecture]], [[file:../../dev/sysml/tui-declarative-engine.sysml][declarative engine]] and
+[[file:../../dev/sysml/tui-lifecycle.sysml][terminal lifecycle]]. Their stable requirement identities map to the
+[[file:40.180-emacs-scheme-tui/05-verification.org][verification matrix]]. Source-inspected implementation, intended behavior and
+measured acceptance are separate claims.
+
+The extension acceptance test is an independent compiled Scheme package that
+adds a Buffer, a command and a key binding without modifying Rust. It must run
+through the production mapper, the Scheme test window and a real PTY. Linked
+release qualification also requires startup without the source package tree.
+Future GUI clients are outside Agent Core; they may consume the same semantic
+packages through their own host mappings.

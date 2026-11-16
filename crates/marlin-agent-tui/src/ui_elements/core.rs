@@ -274,11 +274,20 @@ pub struct UiRenderInputs<'a> {
 
 /// Host data bound to a Scheme-declared slot, independent of its placement.
 pub trait UiSlotRenderer {
+    /// Bind a Scheme-authored subtree and its current viewport offset.
+    fn tree(&self, _source: &marlin_agent_ui::UiSlotSource) -> Option<(&UiElement, usize)> {
+        None
+    }
+
+    fn list_state(&self) -> Option<&std::cell::RefCell<super::UiListState>> {
+        None
+    }
+
     fn render(
         &mut self,
         frame: &mut ratatui::Frame<'_>,
         area: Rect,
-        id: &UiComponentId,
+        source: &marlin_agent_ui::UiSlotSource,
         field_template: Option<&UiElement>,
         inputs: &UiRenderInputs<'_>,
         skip: usize,
@@ -306,14 +315,18 @@ pub trait UiSlotRenderer {
     }
 }
 
-struct EmptySlots;
+struct EmptySlots<'a>(Option<&'a std::cell::RefCell<super::UiListState>>);
 
-impl UiSlotRenderer for EmptySlots {
+impl UiSlotRenderer for EmptySlots<'_> {
+    fn list_state(&self) -> Option<&std::cell::RefCell<super::UiListState>> {
+        self.0
+    }
+
     fn render(
         &mut self,
         _: &mut ratatui::Frame<'_>,
         _: Rect,
-        _: &UiComponentId,
+        _: &marlin_agent_ui::UiSlotSource,
         _: Option<&UiElement>,
         _: &UiRenderInputs<'_>,
         _: usize,
@@ -334,7 +347,7 @@ pub fn render_with_facts(
     regions: &mut Vec<HitRegion>,
     inputs: &UiRenderInputs<'_>,
 ) {
-    render_with_slots(frame, area, element, regions, inputs, &mut EmptySlots);
+    render_with_slots(frame, area, element, regions, inputs, &mut EmptySlots(None));
 }
 
 /// Paint a declarative tree while resolving host data at its slot nodes.
@@ -369,6 +382,19 @@ fn render_inner<'tree>(
     match element {
         UiElement::Sized { child, .. } => {
             render_inner(frame, area, child, regions, inputs, skip, slots)
+        }
+        UiElement::List {
+            source: marlin_agent_ui::UiListSource::Rows(rows),
+            ..
+        } => {
+            super::widgets::render_bound_rows(
+                frame,
+                area,
+                element,
+                inputs,
+                slots.renderer.list_state(),
+                &rows[skip.min(rows.len())..],
+            );
         }
         UiElement::List { .. } => slots.renderer.list(frame, area, element, inputs, skip),
         UiElement::Panel {
@@ -414,9 +440,25 @@ fn render_inner<'tree>(
             }
         }
         UiElement::Slot(id) => {
-            slots
-                .renderer
-                .render(frame, area, id, slots.field_template, inputs, skip)
+            if let Some((tree, offset)) = slots.renderer.tree(id) {
+                let mut nested = Slots {
+                    renderer: &mut EmptySlots(slots.renderer.list_state()),
+                    field_template: None,
+                };
+                render_inner(
+                    frame,
+                    area,
+                    tree,
+                    regions,
+                    inputs,
+                    skip.saturating_add(offset),
+                    &mut nested,
+                );
+            } else {
+                slots
+                    .renderer
+                    .render(frame, area, id, slots.field_template, inputs, skip);
+            }
         }
         UiElement::Choice { .. } => {
             render_inner(
@@ -479,7 +521,7 @@ fn render_inner<'tree>(
                         .last_mut()
                         .expect("at least one line")
                         .spans
-                        .push(Span::styled(text, style));
+                        .push(Span::styled(terminal_text(text), style));
                 }
             }
             frame.render_widget(

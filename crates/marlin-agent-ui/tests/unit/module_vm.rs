@@ -27,7 +27,7 @@ fn selected_ui_module_crosses_the_live_vm_boundary() {
         session_label: "session",
         status: &[],
         extensions: &[],
-        method_bundles: &[],
+        method_factories: &[],
     };
     let initial = module.open(&facts).expect("open selected UI");
     let projected = module.project(&initial).expect("decode selected UI");

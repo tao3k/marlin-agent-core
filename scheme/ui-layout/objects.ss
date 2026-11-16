@@ -54,13 +54,13 @@
 (def status-body
   (ui-choice
     (list (list 'notice (status-line '((binding normal #f notice))))
+          (list 'workspace (status-text "Workspace: PageUp/PageDown scroll  Esc/Ctrl-C return  Enter submit draft"))
           (list 'messages (status-text "*Messages* · Esc returns to conversation"))
           (list 'static-buffer (status-line '((binding normal #f static-name)
                                              (literal normal #f " · Esc returns"))))
           (list 'quit-armed (status-text "Press Ctrl-C again to quit; another key cancels. Draft will not be saved."))
           (list 'draft-limit (status-text "Draft limit: 1 MiB. Insertion rejected; draft retained."))
           (list 'runtime (status-text "Runtime: Esc/Ctrl-C return  Enter submit draft"))
-          (list 'workspace (status-text "Workspace: PageUp/PageDown scroll  Esc/Ctrl-C return  Enter submit draft"))
           (list 'commands-focus (status-text "Commands: Enter open  M-x search  Ctrl-Q quit"))
           (list 'transcript-focus (status-text "Transcript: scroll to browse  M-x commands  Ctrl-Q quit"))
           (list 'extension-focus (status-text "Extension: Enter activate  M-x commands  Ctrl-Q quit"))
@@ -89,7 +89,7 @@
                   #f 'focused)))
     (ui-input #t 'none #f 'title 'focused)))
 (def extension-view
-  (ui-list 'extensions marlin-ui-list-offset (ui-choice
+  (ui-list 'extension-list 'extensions marlin-ui-list-offset (ui-choice
     (list (list 'selected
                 (ui-template 'none '((literal info #t " › ")
                                      (binding info #t label)))))
@@ -111,14 +111,14 @@
                   (.ref transcript-policy 'role-bold) 'role-text)
             '(binding normal #f body-text))))
   (def (transcript-list source)
-    (ui-list source (ui-size-cells 0) row-template))
+    (ui-list source source (ui-size-cells 0) row-template))
   (ui-choice
     (list (list 'review (transcript-list 'review))
+          (list 'workspace (transcript-list 'workspace))
           (list 'messages (transcript-list 'messages))
-          (list 'static (ui-panel 'info panel-field named-panel-title (ui-slot 'static)))
-          (list 'runtime (ui-panel 'info panel-field runtime-panel-title (ui-slot 'runtime)))
-          (list 'extension (ui-panel 'info panel-field named-panel-title (ui-slot 'extension)))
-          (list 'workspace (transcript-list 'workspace)))
+          (list 'static (ui-panel 'info panel-field named-panel-title (ui-slot 'selected-buffer)))
+          (list 'runtime (ui-panel 'info panel-field runtime-panel-title (ui-slot 'runtime-policy)))
+          (list 'extension (ui-panel 'info panel-field named-panel-title (ui-slot 'focused-extension))))
     (transcript-list 'conversation)))
 
 ;;; Size expressions contain only named facts and host-provided cell metrics.
@@ -143,7 +143,16 @@
                                         editor-budget)))))
 ;;; Named region bindings let the layout express priorities without host-side
 ;;; knowledge of any particular component or its neighbours.
-(def editor-rows (ui-size-binding 'region/editor))
+;; A host role is not a widget name. The extent expression and region node
+;; both reference the identity selected by this layout.
+(def frame-regions
+  '((transcript . transcript) (extensions . extensions) (modeline . modeline)
+    (editor . composer-window) (candidates . candidates) (minibuffer . minibuffer)
+    (minibuffer-hover . minibuffer-envelope)))
+(def (frame-region-id role) (cdr (assq role frame-regions)))
+(def (frame-region-extent role)
+  (ui-size-binding (string->symbol (string-append "region/" (symbol->string (frame-region-id role))))))
+(def editor-rows (frame-region-extent 'editor))
 (def footer-size
   (ui-size-max
     (ui-size-min footer-reservation
@@ -171,14 +180,14 @@
     (list (list 'extensions-enabled
                 (ui-size-min (ui-size-binding 'extension-count)
                              (ui-size-subtract candidate-budget
-                                               (ui-size-binding 'region/candidates)))))))
+                                               (frame-region-extent 'candidates)))))))
 (def (frame-region modeline-value transcript-value slot)
   (let (name (car slot))
     (ui-sized-with
       (case name ((transcript) (ui-size-flex 1)) ((candidates) candidate-size)
         ((extensions) extension-size) ((editor) editor-size) ((modeline) modeline-size)
         ((minibuffer) footer-size) (else (ui-size-binding name)))
-      (ui-region name (and (cadr slot) (ui-scroll-target (cadr slot) (caddr slot)))
+      (ui-region (frame-region-id name) (and (cadr slot) (ui-scroll-target (cadr slot) (caddr slot)))
                  (case name
                    ((transcript) (main-view transcript-value))
                    ((extensions) extension-view)
@@ -191,6 +200,7 @@
 (.def UiLayoutBase.
   message-frame: MessageFrameValue
   command-frame: CommandFrameValue
+  region-bindings: (list->vector (map (lambda (binding) (vector (car binding) (cdr binding))) frame-regions))
   max-chatbox-rows: 10
   max-command-rows: 10)
 (def (marlin-ui-layout-policy-for modeline-value transcript-value)
@@ -199,7 +209,7 @@
       (.mix (.o frame-tree: (ui-rows
               (list (ui-rows (map region '((transcript transcript 3) (extensions #f 0))))
                     (region '(modeline #f 0))
-                    (ui-region 'minibuffer-hover #f
+                    (ui-region (frame-region-id 'minibuffer-hover) #f
                       (ui-rows (map region '((editor #f 0) (candidates candidates 1)
                                              (minibuffer #f 0))))))))
             UiLayoutBase.))))

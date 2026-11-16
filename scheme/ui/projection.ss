@@ -6,7 +6,8 @@
 ;;; vector of Scheme values, not a text serialization or a terminal command.
 (import (only-in :clan/poo/object .get .o .ref)
         (only-in :std/list/list find)
-        (only-in :tao3k/yuanxu/poo-clos/types clos-instance?))
+        (only-in :clan/poo/mop prototype-instance?)
+        (only-in "../ui-elements/objects.ss" ui-rows ui-text))
 (export marlin-ui-native-facts marlin-ui-project-workbench marlin-ui-apply-native
         marlin-ui-project-intent marlin-ui-apply-event)
 
@@ -31,15 +32,17 @@
       ((extension)
        (vector identity-value kind-value
          (vector (.get node label) (.get node focusable)
-                 (list->vector (map content-value (.get node content))))))
+                 (ui-rows (map content-value (.get node content))))))
       ((commands) (vector identity-value kind-value
                           (list->vector (map list->vector (.get node entries)))))
       (else (vector identity-value kind-value #())))))
 
 (def (content-value item)
   (case (.get item kind)
-    ((text) (vector 'text (.get item text)))
-    ((field) (vector 'field (.get item label) (.get item value)))
+    ((text) (ui-text (list (cons 'normal (.get item text)))))
+    ((field) (ui-text (list (cons 'info (string-append (.get item label) ": "))
+                            (cons 'normal (.get item value)))))
+    ((tree) (.get item tree))
     (else (error "unsupported UI content projection"))))
 
 (def (marlin-ui-native-facts input)
@@ -76,7 +79,7 @@
                               (.get transcript assistant-role)
                               (.get transcript thinking-collapsed-role)
                               (.get transcript thinking-expanded-role)))
-                    (.get policy frame-tree)))
+                    (.get policy frame-tree) (.get policy region-bindings)))
           (let (palette (.get workbench theme-palette))
             (list->vector
              (map (lambda (name) (list->vector (.ref palette name)))
@@ -110,7 +113,7 @@
          (component (find (lambda (region) (eq? (.get region identity) focus-value))
                           (.get workbench regions))))
     (unless component (error "focused UI component is missing"))
-    (when (and (clos-instance? (.get ui events next-focus) event)
+    (when (and (prototype-instance? (.get ui events next-focus) event)
                (not (equal? (.get event order) order)))
       (error "UI focus event does not match the workbench"))
     (let (intent (marlin-ui-project-intent ((.get ui dispatch) generic component event)))

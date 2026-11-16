@@ -8,6 +8,7 @@ mod archive;
 mod deck_actor;
 mod discovery;
 mod header;
+mod program;
 mod script;
 mod toolchain;
 
@@ -18,5 +19,6 @@ pub use archive::{
 };
 pub use deck_actor::emit_deck_actor_link_directives;
 pub use header::{CHeaderGenerationReceipt, write_c_header};
+pub use program::{ProgramSelection, project_scheme_program};
 pub use script::{emit_agent_policy_routing_abi_link_directives, rustc_wrapper_is_clippy};
 pub use toolchain::{CCompilerTool, discover_c_compiler};

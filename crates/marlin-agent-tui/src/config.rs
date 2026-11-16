@@ -35,6 +35,16 @@ pub struct Config {
     #[serde(default = "default_timeout")]
     pub timeout_seconds: u64,
     pub process_budget: Option<marlin_agent_runtime::RuntimeProcessBudget>,
+    pub tui_ui_package: Option<TuiUiPackageConfig>,
+}
+
+/// An already compiled Scheme publication resolved by the SDK package API.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TuiUiPackageConfig {
+    pub directory: PathBuf,
+    pub module: String,
+    pub export: String,
 }
 
 /// Persistent session identity and local storage location.

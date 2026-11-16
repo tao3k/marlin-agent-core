@@ -25,6 +25,7 @@ mod render;
 mod replay;
 mod session_browser;
 mod signals;
+pub mod test_window;
 pub mod ui_elements;
 #[cfg(test)]
 #[path = "../tests/unit/ui_fixture.rs"]

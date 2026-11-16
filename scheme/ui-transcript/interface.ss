@@ -5,6 +5,6 @@
 ;;; Profile-selected transcript labels; no runtime or session ownership.
 (.def UiTranscript
   identity: 'ui-transcript
-  core: (.o requires: (.o) scope-contract: UiTranscriptScopeContract
+  core: (.o scope-contract: UiTranscriptScopeContract
             exports: UiTranscriptScope)
   features: (.o))

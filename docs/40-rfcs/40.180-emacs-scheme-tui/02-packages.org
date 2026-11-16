@@ -1,0 +1,130 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin TUI — Scheme packages and extension
+
+[[file:../40.180-emacs-scheme-tui.org][RFC entry]] · [[file:01-interaction.org][Interaction]] · [[file:05-verification.org][Verification]]
+
+* Module ownership
+
+| Module | Owned behavior |
+|--------+----------------|
+| =ui-elements= | Host-neutral element vocabulary and template composition |
+| =ui-layout= | Frame constraints, region geometry, Minibuffer modes and sizing |
+| =ui-components= | Buffer contributions, command completion, keymaps and reusable components |
+| =ui-hydra= | Functional transient declarations and their command/key projections |
+| =ui-modeline= | Ordered semantic status segments |
+| =ui-themes= | Theme/profile values and palette selection |
+| =ui-transcript= | Conversation presentation, thinking and tool folding policy |
+| =ui= | Workbench composition, generic dispatch and package publication |
+| =c-abi= | Native adapter entry points and their module-owned Build contribution |
+
+Use Gerbil std and SRFI functions for collections, strings, sorting and folds.
+Prefer ordinary functions and POO values. Use the supported generic/method and
+CLOS/MOP facilities for real dispatch axes; do not invent a parallel object
+protocol. Macros project declarations into the same normal values, rather
+than introducing another runtime registry.
+
+Interface files publish module values. Config roles compose profiles and
+scopes. Native imports express source dependencies; removed =core.requires=
+and =core.link= must not be retained as compatibility paths. Consumers demand
+selected scopes through the owning =init.exports= and ordinary POO access.
+Lab dependency access is centralized in [[file:../../../scheme/interface.ss][scheme/interface.ss]]. No second
+dependencies facade, source inventory or downstream package resolver is needed.
+
+* Commands, keymaps and transients
+
+A command declaration owns its identity, annotation, argument selection and
+semantic action. M-x discovery, key dispatch and transient heads project from
+that declaration. Rust must not repeat the command names, themes, shortcut
+tables or candidate limits.
+
+A keymap declaration binds normalized keys to commands in a mode/context.
+Scheme owns insert/normal distinctions, prefixes, transient lifetime and
+fallback rules. Doom/Vi bindings such as SPC x and Emacs M-x can invoke the same
+command. Native terminal decoding remains a Rust responsibility.
+
+Hydra-style declarations belong in the module's config. Head keys, commands,
+color/exit behavior and hints share one declaration. Generated body commands
+are discoverable in M-x; slash command aliases and separate Rust handlers are
+unnecessary. Adapt Hydra semantics deliberately; do not claim Elisp macro
+compatibility or copy implementation details without checking their license.
+
+* Package publication
+
+[[file:../../../scheme/ui/package.ss][UiPackage. and make-ui-package]] compose Buffer, command and keymap contributions
+into a distinct publication. Composition leaves the base publication unchanged.
+An explicitly configured package is resolved in the existing VM through
+Gerbil's standard import/export context and installed package environment.
+The linked host passes directory and symbol values through the strong-root
+ABI; Scheme owns publication loading. It does not invoke the SDK's build-host
+API or create a second VM. The default linked publication needs no package
+resolution request. Dynamic development packages require their compiled
+modules in the standard Gerbil package environment.
+
+Packages declare =method-factories:=, a vector of Scheme thunks that create
+method bundles for each session.
+POO methods belong to exactly one generic; sharing a previously installed
+method across session generics is rejected. Each fresh bundle extends the
+session's generic through the admitted protocol, before publishing the session.
+Existing sessions retain their own dispatch and method ownership.
+
+* Where to use the MOP
+
+Use the public =:clan/poo/mop= interface when a package needs to specialize
+behavior. The workbench already dispatches on both the component prototype
+and the event prototype. A package can add methods for its own Buffer or
+component, for example to interpret submit, dismiss, or selection in that
+Buffer. Use the existing generic protocol and contribute a fresh
+=.defmethod-bundle= rather than registering methods globally.
+
+Keep data-only extensions as declarations: commands, keymaps, theme tokens,
+and Modeline segments can be composed and checked at publication. Use a
+generic when two independently extensible inputs affect an operation, such
+as a Buffer and its event. Keep row layout, cell painting, and terminal
+geometry on the existing frame and Ratatui mapping path. The host receives
+the same typed intents from built-in and contributed methods.
+
+During verification, check method composition, conflicting contributions,
+and session isolation in Scheme. Exercise one package in a PTY to verify its
+typed intents cross the native boundary. Measure event dispatch separately
+from first frame and painting so a cost in one path cannot hide in another.
+
+* Selecting a terminal package
+
+The current terminal selector is =[tui_ui_package]= with =directory=, =module=
+and =export= fields. It resolves a precompiled publication through the existing
+Scheme Rust SDK. The TUI configuration envelope is Rust-owned; the package's
+UI behavior is Scheme-owned. This terminal selector is separate from the
+general semantic package API and from any future GUI loader.
+
+A package using existing elements, facts and effects requires no Rust source
+change. New host effects or terminal primitives require an explicit typed
+boundary extension. A statically linked executable must be relinked when its
+compiled package closure changes; dynamic loading and static distribution
+have different discovery rules.
+
+A contributed Buffer supplies its title and the tree built with
+=ui-elements=. Its list can carry local rows of named bindings. A method
+bundle can specialize the =select-list-row= event on the list identity; the
+host derives the clicked row from the painted frame and admits the returned
+focus intent. The independent package fixture exercises this path without
+adding a package identity to Rust.
+
+* Build and contracts
+
+Yuanxu's init-owned =std-make-spec= and Gerbil package tools own compilation.
+Module-local =build.ss= owns exceptional native products. Consumers must not
+list the same modules again in a custom build manifest or load private source
+roles to bypass selection.
+
+Runtime Scheme values stay Scheme values executed by the VM. Native compilation
+and linking can remove runtime source expansion. They do not mean an arbitrary
+Scheme program has been translated into Rust or a restricted IR. FFI is the
+typed native boundary; compilation is a build choice. Neither substitutes for
+the other's contracts.
+
+Slot names and assigned values must remain unambiguous under POO binding rules;
+use meaningful value bindings when the declaration would otherwise self-bind.
+Currentness, publication isolation, callback and source-identity checks remain
+active for development links as well as packaged dependencies.

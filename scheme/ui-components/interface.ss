@@ -5,8 +5,6 @@
 ;;; Reusable component vocabulary and declarative command catalog.
 (.def UiComponents
   identity: 'ui-components
-  core: (.o requires: (.o UiHydra: (.o module-id: 'ui-hydra)
-                          UiElements: (.o module-id: 'ui-elements))
-            scope-contract: UiComponentsScopeContract
-            exports: (make-ui-components-scope UiHydra))
+  core: (.o scope-contract: UiComponentsScopeContract
+            exports: UiComponentsScope)
   features: (.o))

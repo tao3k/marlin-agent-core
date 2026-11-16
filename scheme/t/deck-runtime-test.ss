@@ -3,25 +3,26 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 ;;; Context messages preserve Actor identity and independent result retirement.
-(import (only-in :clan/poo/object .get .o)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/funs-scope agentic-ai-lab-ai-agentic-context-scope-admit)
+(import (only-in :marlin-agent-core/interface LabContext)
+        (only-in :clan/poo/object .get .o)
+
         (only-in :marlin-agent-core/deck-runtime/runtime check-deck-kernel!)
         :std/iter
         (only-in :std/sync/channel make-channel channel-put channel-get)
         (only-in :marlin-agent-core/deck-runtime/mailbox
                  open-deck-mailboxes deck-reply-id deck-reply-failed? deck-reply-value)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
+
 (def published (.get marlin-agent-core.init.exports Marlin deck-runtime))
 (def admit (.get marlin-agent-core.init.exports Marlin context admit-scope))
 (def (require value message) (unless value (error message)))
 (def (request turn-index)
-  (.o (:: @ AiAgenticContextScope.) bundle: "bundle" organization: "org" epoch: 1
+  (.o (:: @ (.get LabContext scope-prototype)) bundle: "bundle" organization: "org" epoch: 1
       project: "project" worktree: "worktree" source-cut: "cut"
       actor: "assistant" task: "review" destination: "panel" session: "session" turn: turn-index))
 (def rows (list->vector (for/collect ((index (in-range 70))) (request index))))
 (def expected (vector-map admit rows))
-(require (eq? admit agentic-ai-lab-ai-agentic-context-scope-admit)
+(require (eq? admit (.get LabContext admit-scope))
          "Module publication wrapped the library-owned admission again")
 (def owner (current-thread))
 (def handling-actor #f)

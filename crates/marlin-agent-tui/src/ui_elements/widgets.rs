@@ -185,6 +185,7 @@ pub struct UiListState {
 /// One painted row, identified independently of its current list position.
 pub struct UiListHit {
     pub list: UiComponentId,
+    pub selects_command: bool,
     pub key: UiComponentId,
     pub area: Rect,
 }
@@ -229,7 +230,13 @@ pub fn render_list<'a>(
     state: &mut UiListState,
     mut row: impl FnMut(usize) -> Option<UiListRow<'a>>,
 ) {
-    let UiElement::List { id, offset, child } = template else {
+    let UiElement::List {
+        id,
+        source,
+        offset,
+        child,
+    } = template
+    else {
         return;
     };
     state.hits.retain(|hit| &hit.list != id);
@@ -264,6 +271,7 @@ pub fn render_list<'a>(
         if let Some(key) = row.key {
             state.hits.push(UiListHit {
                 list: id.clone(),
+                selects_command: *source == marlin_agent_ui::UiListSource::Candidates,
                 key,
                 area: line,
             });
@@ -291,6 +299,43 @@ pub fn render_list<'a>(
     }
 }
 
+pub(super) fn render_bound_rows(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    element: &UiElement,
+    inputs: &UiRenderInputs<'_>,
+    state: Option<&std::cell::RefCell<UiListState>>,
+    rows: &[marlin_agent_ui::UiListValue],
+) {
+    let local_state = std::cell::RefCell::new(UiListState::default());
+    let mut state = state.unwrap_or(&local_state).borrow_mut();
+    render_list(
+        frame,
+        area,
+        element,
+        inputs.theme,
+        UiListData {
+            count: rows.len(),
+            selected: None,
+            extent: inputs.extent,
+            facts: inputs.facts,
+            bindings: inputs.bindings,
+        },
+        &mut state,
+        |index| {
+            let row = rows.get(index)?;
+            Some(UiListRow {
+                key: row.id.clone(),
+                bindings: row
+                    .fields
+                    .iter()
+                    .map(|(key, value)| (key.as_str(), value.as_str().into()))
+                    .collect(),
+            })
+        },
+    );
+}
+
 /// Bind a single host content source to a declarative slot.
 pub struct UiContentSlot<'a> {
     pub content: &'a [UiContent],
@@ -302,7 +347,7 @@ impl UiSlotRenderer for UiContentSlot<'_> {
         &mut self,
         frame: &mut ratatui::Frame<'_>,
         area: Rect,
-        _: &UiComponentId,
+        _: &marlin_agent_ui::UiSlotSource,
         field_template: Option<&UiElement>,
         inputs: &UiRenderInputs<'_>,
         skip: usize,

@@ -4,8 +4,8 @@
 
 ;;; Shared typed Context projections for direct and Actor entry points.
 
-(import (only-in :clan/poo/object .get .o)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
+(import (only-in :marlin-agent-core/interface LabContext)
+        (only-in :clan/poo/object .get .o)
         (only-in :std/encoding/hex hex-decode-byte))
 
 (export marlin-context-batch-requests marlin-context-scopes->bytes)
@@ -27,7 +27,7 @@
   (def project (vector-ref shared 2))
   (def worktree (vector-ref shared 3))
   (def source-cut (vector-ref shared 4))
-  (def common (.o (:: @ AiAgenticContextScope.)
+  (def common (.o (:: @ (.get LabContext scope-prototype))
                  (bundle) (organization) (epoch) (project) (worktree) (source-cut)))
   ;; Fill the native vector directly; no intermediate row list is needed.
   (def output (make-vector count))

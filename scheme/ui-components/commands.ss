@@ -34,7 +34,7 @@
 (def candidate-name-width
   (ui-size-min (ui-size-binding 'candidate-name-width) (ui-size-cells 28)))
 (def marlin-ui-candidate-templates
-  (ui-list 'candidates marlin-ui-list-offset (ui-choice
+  (ui-list 'candidate-list 'candidates marlin-ui-list-offset (ui-choice
     (list (list 'selected
                 (ui-template 'bar (list '(literal accent #f " › ")
                                         (list 'column 'info #t 'name candidate-name-width)

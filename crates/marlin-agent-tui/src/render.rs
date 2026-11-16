@@ -11,10 +11,9 @@ use super::{
     app::{App, BufferView, GatewayObservation, ModelineActivity},
     composer::Composer,
     ui_elements,
-    ui_host::MainSource,
     viewport::{ScrollAnchor, TranscriptViewportCache},
 };
-use marlin_agent_ui::{UiLayoutPolicy, UiRegion, UiRgb, UiWorkbench};
+use marlin_agent_ui::{UiComponentId, UiFrameRole, UiLayoutPolicy, UiRegion, UiRgb, UiWorkbench};
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -232,7 +231,7 @@ pub(crate) fn editor_measurements<'a>(
         .unwrap_or(&app.composer);
     let border = policy
         .frame_tree
-        .region_child("editor")
+        .region_child(policy.regions.id(UiFrameRole::Editor).as_str())
         .and_then(|editor| super::ui_elements::input_border(editor, facts))
         .unwrap_or(0);
     EditorMeasurements {
@@ -335,7 +334,7 @@ pub(crate) fn frame_snapshot(app: &App, ui: &UiWorkbench, area: Rect) -> FrameSn
         );
         let actual = regions
             .iter()
-            .find(|region| region.id.as_str() == "editor")
+            .find(|region| &region.id == ui.layout.regions.id(UiFrameRole::Editor))
             .is_none_or(|region| region.area.height == 0);
         if actual == collapsed || attempt == 2 {
             return FrameSnapshot {
@@ -406,13 +405,14 @@ impl<'a> FrameMeasurements<'a> {
 
 pub(crate) fn mouse_over_minibuffer(
     regions: &[super::ui_elements::HitRegion],
+    hover: &UiComponentId,
     column: u16,
     row: u16,
 ) -> bool {
     column > 0
         && row > 0
         && regions.iter().any(|region| {
-            region.id.as_str() == "minibuffer-hover"
+            &region.id == hover
                 && column > region.area.x
                 && column - 1 < region.area.right()
                 && row > region.area.y
@@ -429,7 +429,12 @@ pub(crate) fn draw(
     anchor: &mut ScrollAnchor,
 ) -> usize {
     let snapshot = frame_snapshot(app, ui, frame.area());
-    draw_with_snapshot(frame, app, ui, cache, anchor, &snapshot)
+    draw_with_snapshot(frame, app, ui, cache, anchor, &snapshot).scroll
+}
+
+pub(crate) struct PaintedFrame {
+    pub(crate) scroll: usize,
+    pub(crate) regions: Vec<super::ui_elements::HitRegion>,
 }
 
 pub(crate) fn draw_with_snapshot(
@@ -439,7 +444,7 @@ pub(crate) fn draw_with_snapshot(
     cache: &mut TranscriptViewportCache,
     anchor: &mut ScrollAnchor,
     snapshot: &FrameSnapshot,
-) -> usize {
+) -> PaintedFrame {
     use super::ui_elements::{Extent, RegionExtents, UiRenderInputs};
 
     app.list_state.borrow_mut().begin_frame();
@@ -483,14 +488,14 @@ pub(crate) fn draw_with_snapshot(
         &[]
     };
     let regions = &snapshot.regions;
-    let part = |name: &str| {
+    let part = |role| {
         regions
             .iter()
-            .find(|region| region.id.as_str() == name)
+            .find(|region| &region.id == ui.layout.regions.id(role))
             .map_or(Rect::default(), |region| region.area)
     };
-    let editor_area = part("editor");
-    let minibuffer_area = part("minibuffer");
+    let editor_area = part(UiFrameRole::Editor);
+    let minibuffer_area = part(UiFrameRole::Minibuffer);
     let preview = app.preview_buffer();
     let buffer = preview.as_ref().unwrap_or(&app.buffer_view);
     let focused_content = if preview.is_none()
@@ -504,7 +509,7 @@ pub(crate) fn draw_with_snapshot(
                 label,
                 content,
                 focusable: true,
-            } if id == &ui.focus => Some((label.as_str(), content.as_slice())),
+            } if id == &ui.focus => Some((label.as_str(), content)),
             _ => None,
         })
     } else {
@@ -519,9 +524,8 @@ pub(crate) fn draw_with_snapshot(
                 focusable: false,
             } if id.as_str() == buffer.as_str() => Some((
                 label.as_str(),
-                app.dynamic_buffer_content
-                    .get(buffer)
-                    .map_or(content.as_slice(), Vec::as_slice),
+                content,
+                app.dynamic_buffer_content.get(buffer).map(Vec::as_slice),
             )),
             _ => None,
         }),
@@ -564,10 +568,11 @@ pub(crate) fn draw_with_snapshot(
     let model = header_value(&ui.model_label);
     let session = header_value(&ui.session_label);
     let turns = (app.history.len() / 2).to_string();
-    let static_name = static_content.map(|(label, _)| header_value(label));
+    let static_name = static_content.map(|(label, _, _)| header_value(label));
     let panel_title = static_content
-        .or(focused_content)
-        .map_or_else(String::new, |(title, _)| header_value(title));
+        .map(|(label, _, _)| label)
+        .or(focused_content.map(|(label, _)| label))
+        .map_or_else(String::new, header_value);
     let extra_one = snapshot.extras.first();
     let extra_two = snapshot.extras.get(1);
     let facts = |id: &marlin_agent_ui::UiComponentId| {
@@ -633,8 +638,9 @@ pub(crate) fn draw_with_snapshot(
             app,
             cache,
             anchor,
-            static_content,
-            focused_content,
+            static_content: static_content.map(|(_, content, _)| content),
+            focused_content: focused_content.map(|(_, content)| content),
+            dynamic_content: static_content.and_then(|(_, _, dynamic)| dynamic),
             effective_scroll: app.scroll_up,
         },
         editor: main_view::EditorSlots {
@@ -650,11 +656,12 @@ pub(crate) fn draw_with_snapshot(
         selected: selected_index,
         menu_prefix,
     };
+    let mut painted = Vec::with_capacity(snapshot.regions.len());
     super::ui_elements::render_with_slots(
         frame,
         area,
         &ui.layout.frame_tree,
-        &mut Vec::new(),
+        &mut painted,
         &inputs,
         &mut slots,
     );
@@ -666,5 +673,8 @@ pub(crate) fn draw_with_snapshot(
     {
         frame.set_cursor_position((minibuffer_area.x + 2, minibuffer_area.y));
     }
-    slots.main.effective_scroll
+    PaintedFrame {
+        scroll: slots.main.effective_scroll,
+        regions: painted,
+    }
 }

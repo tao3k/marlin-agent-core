@@ -4,11 +4,11 @@
 
 ;;; Build-owned entry for the upstream rooted-object C ABI.
 
-(import :gerbil-scheme-rust/scheme/runtime
+(import (only-in :marlin-agent-core/c-abi/roots marlin-rooted-call)
         "../context/batch.ss")
 
 (begin-foreign
   (c-define (context-admit-batch root) (int64) int64
     "marlin_context_admit_batch" "extern"
-    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root
       marlin-agent-core/context/batch#marlin-context-admit-batch)))

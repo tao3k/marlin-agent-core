@@ -87,7 +87,7 @@ property-gate: sysml-check property-model-gate scheme-property-gate
 
 # Real linked macOS TUI: override MARLIN_TUI_SOAK_SECONDS for longer runs.
 tui-runtime-gate:
-  just tui-aot-stage
+  just scheme-build
   MARLIN_TUI_SOAK_SECONDS="${MARLIN_TUI_SOAK_SECONDS:-30}" cargo test --locked -p marlin-agent-tui --test pty repeated_stream_cancellation_soak -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty workspace_tool_cancel_reaps_process -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty workspace_tool_shutdown_reaps_after_exit -- --ignored --nocapture
@@ -98,9 +98,23 @@ tui-runtime-gate:
 
 # Gerbil's native test runner discovers the selected package's maintained suite.
 scheme-property-gate:
-  python3 -m unittest discover -s dev/verification -p test_gerbil_gate.py
-  python3 dev/verification/run_gerbil_property_gate.py
-  python3 dev/verification/run_gerbil_property_gate.py t/ui-native-test.ss
+  just scheme-test
+  just scheme-test t/ui-native-test.ss
+
+# Gerbil owns discovery and assertions; retain its complete receipt because
+# the tool can return zero after a failing Harness.
+scheme-test module="t/all-test.ss":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  mkdir -p .cache/scheme-tests
+  log=$(mktemp "$PWD/.cache/scheme-tests/$(basename '{{module}}' .ss).XXXXXX")
+  export GAMBOPT="${GAMBOPT:+$GAMBOPT,}max-heap=2G,debug=q"
+  cd scheme
+  timeout --signal=TERM --kill-after=5s 600s gxpkg env gerbil -:max-heap=2G,debug=q test '{{module}}' 2>&1 | tee "$log"
+  rg -q -F -x 'MODULE-OK {{module}}' "$log"
+  rg -q '^HARNESS-OK ' "$log"
+  rg -q '^OK$' "$log"
+  ! rg -q 'ERROR CASE|ERROR CHECK|ERROR HARNESS|Heap overflow|Stack overflow' "$log"
 
 # Install the dependency declared by the workspace Scheme package.
 scheme-deps:
@@ -114,8 +128,24 @@ scheme-deps:
   gerbil deps --install
 
 # Run the package's build and test through the embedded Gerbil VM.
+scheme-ui-package-gate:
+  cd scheme && gxpkg env cargo test --locked -p marlin-agent-tui --no-default-features --lib ui_host::tests::real_vm_routes_a_contributed_method_without_submitting_the_draft -- --ignored --exact --nocapture
+
+# The fixture owns platform linking; the ordinary Gerbil runner owns tests.
+scheme-ui-abi-gate:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  original_path="$PATH"
+  if [[ "$(uname -s)" == Darwin ]]; then
+    unset SDKROOT DEVELOPER_DIR NIX_CFLAGS_COMPILE
+    export PATH="${GERBIL_PREFIX:+$GERBIL_PREFIX/bin:}/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  fi
+  (cd scheme && gxpkg env gxi t/build.ss)
+  export PATH="$original_path"
+  just scheme-test t/ui-c-abi-test.ss
+
 scheme-package-gate:
-  direnv exec . bash -ec 'cd scheme && gxpkg env cargo test --locked -p marlin-gerbil-scheme --test unit_test scheme_package::gerbil_builds_and_tests_the_marlin_package_in_process -- --ignored --exact --nocapture'
+  just scheme-test
 
 # Build the init-selected Scheme graph through the package Builder.
 scheme-build:
@@ -171,31 +201,16 @@ context-latency-gate:
   done
   exit "$failed"
 
-# Stage the selected package's linked TUI programme.
-tui-aot-stage: scheme-build tui-program-stage
-
-# Consume the Scheme package already built by scheme-build.
-tui-program-stage:
-  #!/usr/bin/env bash
-  set -euo pipefail
-  if [[ "$(uname -s)" == Darwin ]]; then
-    unset SDKROOT DEVELOPER_DIR NIX_CFLAGS_COMPILE
-    export PATH="${GERBIL_PREFIX:+$GERBIL_PREFIX/bin:}/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-  fi
-  cd scheme
-  gxpkg env gxc -S -s -d .gerbil/lib tui-entry.ss
-  gxpkg env gxi tui-stage.ss
-
 # Build the default linked debug binary used by target/debug/marlin-tui.
-tui-aot-debug: tui-aot-stage
+tui-aot-debug: scheme-build
   cargo build --locked -p marlin-agent-tui --bin marlin-tui
 
 # Link the staged Scheme graph and VM into the terminal application.
-tui-aot-build: tui-aot-stage
+tui-aot-build: scheme-build
   cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --release
 
 # Build the same linked binary as distribution while measuring Rust UI mapping.
-tui-ui-mapping-bench: tui-aot-stage
+tui-ui-mapping-bench: scheme-build
   cargo bench --locked -p marlin-agent-tui --bench ui_mapping
 
 # Keep interaction latency, first-copy startup, and source-free release
@@ -213,7 +228,7 @@ tui-performance-bench: tui-aot-debug tui-aot-build
 # Diagnose whether the size-oriented profile improves a source-matched linked
 # TUI. Stage the Scheme programme first; comparing against a stale native
 # manifest can produce a misleading projection failure.
-tui-size-performance-bench: tui-aot-stage
+tui-size-performance-bench: scheme-build
   cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --profile release-size
   cargo test --locked -p marlin-agent-tui --test launch linked_release_size_pre_ui_launch_pair -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty release_size_linked_fresh_copy_startup_pair -- --ignored --nocapture

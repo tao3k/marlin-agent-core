@@ -9,13 +9,7 @@ use super::{
     agent_graph_projection, content_graph, contracts, project_graph, query, render, session_graph,
     status, tool_graph, topology_graph,
 };
-use crate::org::store::{
-    OrgProjectRoot, OrgProjectRootCandidate, OrgSourceStore, discover_project_roots,
-};
-use crate::org::workspace::{
-    OrgDocument, OrgDocumentLoader, OrgDocumentWorkspace, WorkspaceError, WorkspaceResult,
-    standard_agent_contract_documents,
-};
+use crate::org::{WorkspaceError, WorkspaceResult};
 use marlin_agent_protocol::{
     GraphQueryRequest, GraphQueryResponse, ProjectMemoryContextFact, ProjectMemoryContextPack,
     ProjectMemoryRecallRequest, ProjectRuntimeToolCapabilityCard,
@@ -38,51 +32,6 @@ pub struct MemoryOrgWorkspace {
     nodes: RwLock<BTreeMap<OrgNodeId, OrgNode>>,
     contract_facts: RwLock<RenderedContractFacts>,
     release_status: RwLock<Option<ReleaseStatus>>,
-}
-
-/// Store-backed project memory recall request with named call-site fields.
-pub struct ProjectMemoryStoreRecall<'a, S>
-where
-    S: OrgSourceStore,
-{
-    pub context_pack_id: String,
-    pub receipt_id: String,
-    pub request: ProjectMemoryRecallRequest,
-    pub store: &'a S,
-    pub candidates: Vec<OrgProjectRootCandidate>,
-}
-
-/// Store-backed project memory graph query request with named call-site fields.
-pub struct ProjectMemoryGraphStoreQuery<'a, S>
-where
-    S: OrgSourceStore,
-{
-    pub receipt_id: String,
-    pub request: GraphQueryRequest,
-    pub store: &'a S,
-    pub candidates: Vec<OrgProjectRootCandidate>,
-}
-
-/// Store-backed tool capability graph query request with named call-site fields.
-pub struct ToolCapabilityGraphStoreQuery<'a, S>
-where
-    S: OrgSourceStore,
-{
-    pub receipt_id: String,
-    pub request: GraphQueryRequest,
-    pub store: &'a S,
-    pub candidates: Vec<OrgProjectRootCandidate>,
-}
-
-/// Store-backed project topology graph query request with named call-site fields.
-pub struct TopologyGraphStoreQuery<'a, S>
-where
-    S: OrgSourceStore,
-{
-    pub receipt_id: String,
-    pub request: GraphQueryRequest,
-    pub store: &'a S,
-    pub candidates: Vec<OrgProjectRootCandidate>,
 }
 
 impl MemoryOrgWorkspace {
@@ -142,92 +91,22 @@ impl MemoryOrgWorkspace {
             .is_some_and(|status| status.record_gate_receipt(receipt)))
     }
 
-    /// Load a raw `Org` document into the in-memory workspace.
-    pub fn load_document(&self, document: OrgDocument) -> WorkspaceResult<Vec<OrgNodeId>> {
-        let workspace = OrgDocumentLoader::load_workspace(&document)?;
-        self.load_workspace(workspace)
-    }
-
-    /// Load a raw `Org` document with additional external contract documents.
-    pub fn load_document_with_contracts(
+    /// Apply Scheme-produced facts to the host cache. This operation neither
+    /// parses Org text nor evaluates contracts and grants no execution authority.
+    pub fn apply_projection(
         &self,
-        document: OrgDocument,
-        contract_documents: &[OrgDocument],
+        projected_nodes: impl IntoIterator<Item = OrgNode>,
+        facts: RenderedContractFacts,
     ) -> WorkspaceResult<Vec<OrgNodeId>> {
-        let workspace =
-            OrgDocumentLoader::load_workspace_with_contracts(&document, contract_documents)?;
-        self.load_workspace(workspace)
-    }
-
-    /// Load a raw `Org` document with the built-in agent Contract Org library.
-    pub fn load_document_with_standard_agent_contracts(
-        &self,
-        document: OrgDocument,
-    ) -> WorkspaceResult<Vec<OrgNodeId>> {
-        let contract_documents = standard_agent_contract_documents();
-        self.load_document_with_contracts(document, &contract_documents)
-    }
-
-    /// Load multiple `Org` documents and discover contract registry documents from the batch.
-    pub fn load_documents_with_discovered_contracts(
-        &self,
-        documents: &[OrgDocument],
-    ) -> WorkspaceResult<Vec<OrgNodeId>> {
-        let contract_documents = OrgDocumentLoader::discover_contract_documents(documents)?;
-        self.load_documents_with_contracts(documents, &contract_documents)
-    }
-
-    /// Load multiple `Org` documents with discovered contracts plus built-in agent contracts.
-    pub fn load_documents_with_standard_agent_contracts(
-        &self,
-        documents: &[OrgDocument],
-    ) -> WorkspaceResult<Vec<OrgNodeId>> {
-        let mut contract_documents = OrgDocumentLoader::discover_contract_documents(documents)?;
-        contract_documents.extend(standard_agent_contract_documents());
-        self.load_documents_with_contracts(documents, &contract_documents)
-    }
-
-    /// Load multiple `Org` documents with explicit contract registry documents.
-    pub fn load_documents_with_contracts(
-        &self,
-        documents: &[OrgDocument],
-        contract_documents: &[OrgDocument],
-    ) -> WorkspaceResult<Vec<OrgNodeId>> {
-        let mut merged_workspace = OrgDocumentWorkspace::default();
-        for document in documents {
-            let external_contract_documents = contract_documents
-                .iter()
-                .filter(|contract_document| contract_document.id != document.id)
-                .cloned()
-                .collect::<Vec<_>>();
-            let workspace = OrgDocumentLoader::load_workspace_with_contracts(
-                document,
-                &external_contract_documents,
-            )?;
-            contracts::merge_document_workspace(&mut merged_workspace, workspace);
-        }
-        self.load_workspace(merged_workspace)
-    }
-
-    fn load_workspace(&self, workspace: OrgDocumentWorkspace) -> WorkspaceResult<Vec<OrgNodeId>> {
-        let ids = workspace
-            .nodes
-            .iter()
-            .map(|node| node.id.clone())
-            .collect::<Vec<_>>();
+        let mut ids = Vec::new();
         {
             let mut nodes = self.nodes.write();
-            for node in workspace.nodes {
+            for node in projected_nodes {
+                ids.push(node.id.clone());
                 nodes.insert(node.id.clone(), node);
             }
         }
-        let incoming_contract_facts = contracts::contract_facts_from_workspace(
-            workspace.contracts,
-            workspace.contract_resolutions,
-            workspace.contract_validations,
-        );
-        let mut contract_facts = self.contract_facts.write();
-        contracts::merge_contract_facts(&mut contract_facts, incoming_contract_facts);
+        contracts::merge_contract_facts(&mut self.contract_facts.write(), facts);
         Ok(ids)
     }
 
@@ -323,23 +202,6 @@ impl MemoryOrgWorkspace {
         ))
     }
 
-    /// Recall project memory from discovered Org roots and pack compact facts.
-    pub fn recall_project_memory_from_roots(
-        &self,
-        context_pack_id: impl Into<String>,
-        receipt_id: impl Into<String>,
-        request: ProjectMemoryRecallRequest,
-        roots: &[OrgProjectRoot],
-    ) -> WorkspaceResult<ProjectMemoryContextPack> {
-        let documents = roots
-            .iter()
-            .map(|root| OrgDocument::new(root.document.clone(), root.body.clone()))
-            .collect::<Vec<_>>();
-        self.load_documents_with_discovered_contracts(&documents)?;
-
-        self.recall_project_memory_from_loaded_nodes(context_pack_id, receipt_id, request)
-    }
-
     /// Recall project memory from the currently loaded Org nodes.
     pub fn recall_project_memory_from_loaded_nodes(
         &self,
@@ -356,122 +218,6 @@ impl MemoryOrgWorkspace {
             pack = pack.with_fact(project_memory_context_fact(query_match, &nodes));
         }
         Ok(pack)
-    }
-
-    /// Discover project memory roots from a store and pack compact recall facts.
-    pub fn recall_project_memory_from_store<S>(
-        &self,
-        recall: ProjectMemoryStoreRecall<'_, S>,
-    ) -> WorkspaceResult<ProjectMemoryContextPack>
-    where
-        S: OrgSourceStore,
-    {
-        let ProjectMemoryStoreRecall {
-            context_pack_id,
-            receipt_id,
-            request,
-            store,
-            candidates,
-        } = recall;
-        let roots = discover_project_roots(store, candidates)
-            .map_err(|error| WorkspaceError::Backend(error.message))?;
-        self.recall_project_memory_from_roots(context_pack_id, receipt_id, request, &roots)
-    }
-
-    /// Discover project memory roots from a store and run a compact graph query.
-    pub fn query_project_memory_graph_from_store<S>(
-        &self,
-        query: ProjectMemoryGraphStoreQuery<'_, S>,
-    ) -> WorkspaceResult<GraphQueryResponse>
-    where
-        S: OrgSourceStore,
-    {
-        let ProjectMemoryGraphStoreQuery {
-            receipt_id,
-            request,
-            store,
-            candidates,
-        } = query;
-        let roots = discover_project_roots(store, candidates)
-            .map_err(|error| WorkspaceError::Backend(error.message))?;
-        let documents = roots
-            .iter()
-            .map(|root| OrgDocument::new(root.document.clone(), root.body.clone()))
-            .collect::<Vec<_>>();
-        self.load_documents_with_discovered_contracts(&documents)?;
-        self.query_project_memory_graph(receipt_id, request)
-    }
-
-    /// Discover tool capability roots from a store and run a compact graph query.
-    pub fn query_tool_capability_graph_from_store<S>(
-        &self,
-        query: ToolCapabilityGraphStoreQuery<'_, S>,
-    ) -> WorkspaceResult<GraphQueryResponse>
-    where
-        S: OrgSourceStore,
-    {
-        let ToolCapabilityGraphStoreQuery {
-            receipt_id,
-            request,
-            store,
-            candidates,
-        } = query;
-        let roots = discover_project_roots(store, candidates)
-            .map_err(|error| WorkspaceError::Backend(error.message))?;
-        let documents = roots
-            .iter()
-            .map(|root| OrgDocument::new(root.document.clone(), root.body.clone()))
-            .collect::<Vec<_>>();
-        self.load_documents_with_discovered_contracts(&documents)?;
-        self.query_tool_capability_graph(receipt_id, request)
-    }
-
-    /// Discover tool capability roots from a store and return typed cards.
-    pub fn query_tool_capability_cards_from_store<S>(
-        &self,
-        query: ToolCapabilityGraphStoreQuery<'_, S>,
-    ) -> WorkspaceResult<Vec<ProjectRuntimeToolCapabilityCard>>
-    where
-        S: OrgSourceStore,
-    {
-        let ToolCapabilityGraphStoreQuery {
-            receipt_id,
-            request,
-            store,
-            candidates,
-        } = query;
-        let roots = discover_project_roots(store, candidates)
-            .map_err(|error| WorkspaceError::Backend(error.message))?;
-        let documents = roots
-            .iter()
-            .map(|root| OrgDocument::new(root.document.clone(), root.body.clone()))
-            .collect::<Vec<_>>();
-        self.load_documents_with_discovered_contracts(&documents)?;
-        self.query_tool_capability_cards(receipt_id, request)
-    }
-
-    /// Discover topology roots from a store and run a compact graph query.
-    pub fn query_topology_graph_from_store<S>(
-        &self,
-        query: TopologyGraphStoreQuery<'_, S>,
-    ) -> WorkspaceResult<GraphQueryResponse>
-    where
-        S: OrgSourceStore,
-    {
-        let TopologyGraphStoreQuery {
-            receipt_id,
-            request,
-            store,
-            candidates,
-        } = query;
-        let roots = discover_project_roots(store, candidates)
-            .map_err(|error| WorkspaceError::Backend(error.message))?;
-        let documents = roots
-            .iter()
-            .map(|root| OrgDocument::new(root.document.clone(), root.body.clone()))
-            .collect::<Vec<_>>();
-        self.load_documents_with_discovered_contracts(&documents)?;
-        self.query_topology_graph(receipt_id, request)
     }
 }
 
@@ -608,7 +354,7 @@ impl MemoryOrgWorkspace {
         self.read_nodes()?
             .get(&id)
             .cloned()
-            .ok_or_else(|| WorkspaceError::NodeNotFound(id.as_str().to_string()))
+            .ok_or(WorkspaceError::NodeNotFound(id))
     }
 
     /// Render a view of the current Org nodes and selected contract facts.

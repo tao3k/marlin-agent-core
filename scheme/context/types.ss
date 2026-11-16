@@ -4,11 +4,12 @@
 
 ;;; Contract for Marlin's Context publication.
 
-(import (only-in :clan/poo/object .cc)
+(import (only-in :marlin-agent-core/interface LabContext)
+        (only-in :clan/poo/object .get .cc)
+
         (only-in :clan/poo/mop Fun Object Type.)
         (only-in :clan/poo/type Record String Exactly Or)
-        (only-in :gerbil-ascent/temporal/lens temporal-answer?)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/types AiAgenticContextAdmissionType))
+        (only-in :gerbil-ascent/temporal/lens temporal-answer?))
 
 (export MarlinContextModuleContract ContextCausalContract)
 
@@ -40,7 +41,7 @@
           encode-scopes: [(Fun ContextProjectionBytes <- ContextProjectionRows)]))
 
 (def MarlinContextModuleContract
-  (.cc (Record admit-scope: [AiAgenticContextAdmissionType] bridge: [ContextBridgeContract]
+  (.cc (Record admit-scope: [(.get LabContext admission-type)] bridge: [ContextBridgeContract]
                org-contract-source: [(Fun ContextOrgContractSource <- ContextOrgContractRequest)]
                org-source-graph: [(Fun ContextOrgSourceGraph <- String)])
        identity: 'marlin/context))

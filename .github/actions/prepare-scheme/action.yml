@@ -26,21 +26,9 @@ runs:
         GERBIL_PATH: ${{ github.workspace }}/scheme/.gerbil
         TRACE_DEPENDENCY_CRASH: ${{ inputs.trace-dependency-crash }}
       run: |
-        # Orgize's Builder imports bridge tools. Build them from Cargo's
-        # selected source before Gerbil installs the Lab dependency graph.
-        metadata=$(cargo metadata --locked --format-version 1)
-        bridge_manifest=$(jq -er '.packages[] | select(.name == "gerbil-scheme-build") | .manifest_path' <<< "$metadata")
-        (cd "${bridge_manifest%/crates/gerbil-scheme-build/Cargo.toml}" && gerbil build)
-
         # The pinned SDK checks out the requested revision before fetching it.
-        # Fetch the same Orgize Git object Cargo selected before Gerbil installs it.
+        # Orgize belongs to Lab's Scheme dependency graph, never Cargo's graph.
         orgize_repo=github.com/tao3k/orgize
-        orgize_revision=$(jq -er --arg repo "$orgize_repo" '
-          [.packages[] | select(.name == "orgize") | .source
-            | select(startswith("git+https://" + $repo + "?")) | split("#")[1]
-            | select(test("^[0-9a-f]{40}$"))]
-          | if length == 1 then .[0] else error("expected one locked Orgize revision") end
-        ' <<< "$metadata")
         orgize_checkout="$GERBIL_PATH/pkg/$orgize_repo"
         lab_repo=github.com/tao3k/agentic-ai-lab
         lab_revision=$(sed -nE 's/.*"github\.com\/tao3k\/agentic-ai-lab@([0-9a-f]{40})".*/\1/p' scheme/gerbil.pkg)
@@ -60,6 +48,9 @@ runs:
           )
         }
         seed_revision "$lab_repo" "$lab_revision"
+        orgize_revision=$(git -C "$GERBIL_PATH/pkg/$lab_repo" show "$lab_revision:gerbil.pkg" |
+          sed -nE 's/.*"github\.com\/tao3k\/orgize@([0-9a-f]{40})".*/\1/p')
+        [[ "$orgize_revision" =~ ^[0-9a-f]{40}$ ]]
         seed_revision "$orgize_repo" "$orgize_revision"
         if [[ "$TRACE_DEPENDENCY_CRASH" == true && "$RUNNER_OS" == Linux ]]; then
           command -v gdb >/dev/null || sudo apt-get install -y gdb
