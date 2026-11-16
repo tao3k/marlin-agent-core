@@ -1,13 +1,18 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+use marlin_agent_core::context::org::store::FileSystemReleaseStatusStore;
 use marlin_agent_core::gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 use marlin_agent_core::{
-    AgentHarnessEvidenceKind, FileSystemReleaseStatusStore, ReleaseGateCommandOutput,
-    ReleaseGateCommandRunner, ReleaseGateExecutionStatus, ReleaseGateRecordRequest,
-    ReleaseGateRunOptions, ReleaseGateState, ReleaseLandingReport,
-    commit_release_gate_execution_receipts, execute_and_record_release_gate_with_runner,
-    execute_release_gate_with_runner, gerbil_release_status_commit_from_execution_receipts,
-    record_release_gate_execution_receipt, release_gate_execution_receipt,
-    release_gate_execution_receipt_from_output, release_gate_state_from_execution,
-    release_gate_status_receipt, release_gate_visibility_evidence,
+    AgentHarnessEvidenceKind, ReleaseGateCommandOutput, ReleaseGateCommandRunner,
+    ReleaseGateExecutionStatus, ReleaseGateRecordRequest, ReleaseGateRunOptions, ReleaseGateState,
+    ReleaseLandingReport, commit_release_gate_execution_receipts,
+    execute_and_record_release_gate_with_runner, execute_release_gate_with_runner,
+    gerbil_release_status_commit_from_execution_receipts, record_release_gate_execution_receipt,
+    release_gate_execution_receipt, release_gate_execution_receipt_from_output,
+    release_gate_state_from_execution, release_gate_status_receipt,
+    release_gate_visibility_evidence,
 };
 use tempfile::{TempDir, tempdir};
 
@@ -18,7 +23,7 @@ fn core_facade_exposes_release_visibility_contract() {
         crate_name: "marlin-gerbil-scheme".to_owned(),
         publish_enabled: false,
         asset_audit_command: "cargo package -p marlin-gerbil-scheme --list".to_owned(),
-        package_assets: vec!["README.md".to_owned()],
+        package_assets: vec!["README.org".to_owned()],
         runtime_dependency_chain: vec!["marlin-gerbil-ir".to_owned()],
         workflow_dependency_chain: vec!["marlin-org-workflow".to_owned()],
         gates: vec![ReleaseGateSpec {
@@ -63,7 +68,7 @@ fn core_release_bridge_marks_expected_local_gerbil_gate() {
         crate_name: "marlin-gerbil-scheme".to_owned(),
         publish_enabled: false,
         asset_audit_command: "cargo package -p marlin-gerbil-scheme --list".to_owned(),
-        package_assets: vec!["README.md".to_owned()],
+        package_assets: vec!["README.org".to_owned()],
         runtime_dependency_chain: vec!["marlin-gerbil-ir".to_owned()],
         workflow_dependency_chain: vec!["marlin-org-workflow".to_owned()],
         gates: vec![ReleaseGateSpec {

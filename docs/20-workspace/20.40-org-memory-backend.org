@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #+TITLE: 20.40 Org Memory Backend
 #+FILETAGS: :marlin:workspace:org:memory:
 
@@ -8,39 +12,29 @@
 :STATUS: active
 :END:
 
-=marlin-org-memory= is the first-party in-memory =AgentWorkspace=
-implementation. It consumes structured =OrgNode= records directly and may load
-raw Org documents through =marlin-org-workspace= when tests or local agents need
-a parser-backed fixture path.
+=marlin-agent-context::org::MemoryOrgWorkspace= is the in-memory typed fact
+cache and query/view projection. It accepts structured =OrgNode= records and
+already produced contract facts through =apply_projection=. It preserves
+producer outcomes, including failed validation, without evaluating contracts.
 
-The crate owns query, patch, view rendering, validation, and status behavior for
-ephemeral agent workspaces. It is intentionally separate from
-=marlin-org-workspace= so the Org parser adapter can remain a pure document
-projection crate.
-
-When a patch touches parser-projected nodes, the memory backend copies their
-typed =source_span= into the patch receipt. This keeps patch validation tied to
-the same Org document provenance used by compact rendered views.
+Raw documents are opened through the [[file:20.30-org-workspace-backend.org][Scheme Org boundary]]. The cache has no
+raw-text loader or implicit store-to-parser path. Source interpretation and
+contract semantics remain in Scheme; Rust supplies host storage, correlation,
+query/view records and release-status handoff.
 
 ** Project Memory Query Boundary
 
-=marlin-org-memory= may load explicit Org documents for tests and local debug
-fixtures, but production project-memory recall should receive a typed query
-context and recall terms rather than a caller-supplied shard list. Store-backed
-discovery belongs in =marlin-org-store=; this crate should consume the resulting
-typed =OrgNode= records and build a compact graph read model.
+Project-memory recall consumes typed query context and recall terms over
+explicitly projected records. It retains source spans where supplied and
+builds bounded graph/context results. Store discovery and Scheme projection
+must be composed explicitly by the owner; loading every stored document is
+not an implicit cache operation.
 
-The first project-memory query path is hybrid recall: use contract-indexed facts
-such as =RECALL_QUERY=, tags, properties, evidence links, backlinks, and
-=source_span= to build a fast frontier with Org query and bounded =fd=/=rg=
-style search; then apply typed project/session/content relationship facts,
-visibility policy, salience, trust, retention, and validation state to rerank
-and pack results. The output is a bounded context pack with claims, evidence
-pointers, source spans, relationship reasons, and scores. It is not a raw Org
-document dump.
+The cache is a local read model. Matching identities or cached contract facts
+do not prove source authenticity, current-use admission or disclosure policy.
 
 ** Boundary
-- Implements =AgentWorkspace=
-- Depends on =marlin-org-workspace= only for raw Org document loading
-- Does not expose parser internals as memory protocol state
-- Does not become a dependency of =marlin-agent-core=
+- Consumes typed records; does not parse Org or evaluate contracts.
+- Preserves source provenance supplied by the producer.
+- Does not grant execution authority when facts are inserted.
+- Does not replace Lab's Context/Session lifecycle or a durable turn journal.

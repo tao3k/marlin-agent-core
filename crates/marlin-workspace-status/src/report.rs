@@ -1,10 +1,14 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Status report structures derived from workspace records.
 
-use marlin_gerbil_ir::ReleaseTopologySpec;
-use marlin_org_model::{
+use marlin_context_org_model::{
     OrgContractDiagnostic, OrgContractRegistry, OrgContractResolution, OrgContractTemplate,
     OrgContractValidationReport, OrgNodeId,
 };
+use marlin_gerbil_ir::ReleaseTopologySpec;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -56,7 +60,6 @@ pub struct WorkspaceStatusReport {
     pub checklist: Option<ChecklistStatus>,
     pub evidence: Option<EvidenceStatus>,
     pub contracts: Option<ContractStatus>,
-    pub patch: Option<PatchStatus>,
     #[serde(default)]
     pub release: Option<ReleaseStatus>,
     pub metrics: Vec<MetricTrace>,
@@ -140,23 +143,6 @@ pub struct ContractStatus {
     #[serde(default)]
     pub contract_expectation_summaries: Vec<String>,
     pub rendered_summary: Vec<String>,
-}
-
-/// Latest workspace patch receipt summary.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct PatchStatus {
-    pub latest_patch_id: String,
-    pub execution_mode: PatchExecutionMode,
-    pub policy_accepted: bool,
-    pub policy_reason: Option<String>,
-    pub affected_nodes: usize,
-    pub affected_sources: usize,
-    pub affected_source_documents: Vec<String>,
-    pub validation_accepted: bool,
-    pub validation_diagnostics: usize,
-    pub memory_dispatches: usize,
-    pub memory_dispatch_accepted: usize,
-    pub memory_dispatch_failed: usize,
 }
 
 /// Release topology status derived from a `Gerbil` release artifact.
@@ -693,14 +679,6 @@ pub struct ReleaseVisibilityStatus {
     /// Whether matching release visibility evidence has been observed.
     #[serde(default)]
     pub observed: bool,
-}
-
-/// Execution boundary proven by the latest patch receipt.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub enum PatchExecutionMode {
-    #[default]
-    DryRun,
-    Commit,
 }
 
 /// Metric trace latest value and target.

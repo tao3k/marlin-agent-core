@@ -1,0 +1,267 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin linked Release launch observation, 2026-11-13
+#+language: en
+
+* Scope
+
+This is a diagnostic observation, not an accepted startup benchmark. Other
+sessions changed the shared worktree during =just tui-aot-build=, so the output
+cannot be assigned an exact source tree. The completed arm64 Mach-O binary is
+identified by SHA-256 =707fd328722349910919fc59eafa6c4bcd90e185b79d1db198518ab5a28df98e=
+and measures 104,120,192 bytes. The build finished in 7m 58s. Its embedded
+ad hoc linker signature covers 25,223 page hashes. The staged AOT manifest
+contains 896 modules; this count does not say which modules execute at startup.
+
+* Observations
+
+| Operation | First | Second | Scope |
+|-----------+-------+--------+-------|
+| Same Release binary, no terminal, early exit | 7.41 s | 0.00 s | Process launch through terminal check |
+| Fresh copied Release binary, no terminal, early exit | 4.44 s | 0.01 s | New file identity, same machine |
+| Fresh copied =/usr/bin/true= | 2.04 s | 0.00 s | Small executable control |
+| Rust =launch= diagnostic on the same Release hash | 2.566959542 s | 65.83175 ms | Copied Marlin binary, pre-UI early exit |
+| Rust =launch= control | 895.592459 ms | 6.933625 ms | Copied =/usr/bin/true= |
+
+Both Marlin early-exit runs reported approximately zero user and system CPU
+time from =/usr/bin/time -p=. They exited before configuration and Scheme VM
+initialization. The small executable control also had a first-copy delay;
+therefore the observations do not attribute the full Marlin delay to its size,
+code signature, dyld, storage, or any single OS mechanism. =strip -x= reduced a
+copy by only 16 bytes and is not a viable size optimization for this binary.
+An attempted =DYLD_PRINT_STATISTICS= launch produced no dyld counters on this
+host while the fresh-copy early exit still took 3.57 s; it is not an
+attribution trace.
+
+The existing source-free linked Release PTY test passed once with the
+workbench visible after 208.250833 ms in a warm run. The first run inside the
+paired PTY benchmark reported an internal first frame at 199.18075 ms after
+application entry. Both attempts to complete that benchmark failed when its
+second =openpty= returned =ENXIO=, including one unsandboxed attempt. No cold
+and warm PTY pair, percentile, or release startup acceptance is claimed.
+The ignored Rust =launch= diagnostic is now part of =tui-performance-bench=;
+its one observed run passed and identifies the same Release binary hash.
+
+* ABI and first-copy follow-up
+
+The linked UI already exports Scheme procedures with =c-define= and calls
+them through the SDK's rooted object ABI. Replacing the spelling with
+=c-lambda= does not remove the observed wait before the application's
+terminal check. It could change interaction cost only if a measured
+dispatch, projection, rooting, or decoding path is reduced. The current
+Rust hot-path benchmark starts after the Scheme snapshot is projected and
+therefore cannot establish the cost of this native boundary.
+
+The Release binary has a =com.apple.provenance= extended attribute. Four
+fresh-copy early-exit launches took 2.11, 2.03, 1.91, and 1.90 seconds,
+respectively. An attempted attribute removal reported success but left the
+attribute present; =/bin/cp -X= also left it present. This is not a valid
+attribute A/B comparison and gives no causal attribution to provenance.
+The binary dynamically links Nix OpenSSL, SQLite, and libiconv libraries in
+addition to macOS libraries; no isolated dynamic-link comparison has been
+performed.
+
+* Next qualification
+
+Run the maintained paired PTY benchmark against a frozen source tree and one
+binary hash, retaining first-output, workbench and internal phase times for
+both processes. Keep the no-terminal early-exit control separate from the
+visible TUI gate. Investigate the OS pre-entry wait with a controlled launch
+trace before selecting a binary-layout or signing change.
+
+* Linked Debug interaction diagnostic, 2026-11-14
+
+The ignored Rust PTY test =minibuffer::mx_navigation_pty_latency= passed with
+the linked UI test binary SHA-256
+=bda2e51ae2fae3d88a5f489fde5701541899664aaa1bd6398bd14ede8de6332f=.
+The test drives the real terminal and Scheme projection. It measures elapsed
+time from sending input through observing a matching rendered screen; it is
+not a standalone Scheme call benchmark or a Release startup measurement.
+
+| Operation | Samples | p50 | p95 | Maximum |
+|-----------+---------+-----+-----+---------|
+| M-x arrow after menu is open | 30 | 19.37 ms | 32.37 ms | 42.07 ms |
+| M-x open plus first arrow | 30 | 62.55 ms | 137.56 ms | 190.42 ms |
+| M-x query edit and Scheme candidate projection | 30 | 12.32 ms | 17.19 ms | 74.58 ms |
+| M-x open with subsequence abbreviation | 30 | 52.61 ms | 228.90 ms | 305.10 ms |
+| C-x b open plus first Down | 30 | 116.79 ms | 330.89 ms | 338.61 ms |
+| First M-x arrow in a new process after first frame | 10 | 24.07 ms | 87.00 ms | 87.00 ms |
+
+Concurrent worktree edits changed the source difference hash during the test.
+These numbers describe this exact test binary, but cannot serve as a frozen
+source baseline or establish a cold-start target. The scoped menu benchmark
+initially failed because it assumed exactly four Buffers; Scheme now supplies
+six. After changing the assertion to check the selected row without fixing
+the candidate count, the test passed. The slow =C-x b= and abbreviation tails
+merit a frozen, phase-separated follow-up.
+
+* PTY interaction measurement correction, 2026-11-14
+
+The preceding Debug interaction numbers are retained as failed measurement
+evidence. The PTY test reconstructed its entire accumulated terminal output
+on each observation poll. This added history-dependent test cost and made its
+later percentile samples unsuitable as application latency measurements.
+The query-edit control also accepted the unchanged old screen after deletion.
+The PTY harness now updates a terminal screen only with newly received bytes;
+the query control waits for the visible query to change in both directions.
+A byte-split screen reconstruction check agrees with a full replay.
+
+The corrected linked Debug PTY test passed with test binary SHA-256
+=955de144a8c065edd95f123f5eadcc82ea606c7ca3dcbe1f2ae746cb30592384=.
+It ran in a concurrently edited checkout, so these are binary-specific
+diagnostics, not a frozen-source tail guarantee.
+
+| Operation | Samples | p50 | p95 |
+|-----------+---------+-----+-----|
+| M-x arrow in an open menu | 30 | 21.62 ms | 84.95 ms |
+| M-x open plus first arrow | 30 | 21.92 ms | 37.02 ms |
+| M-x query edit and Scheme projection | 30 | 19.61 ms | 48.33 ms |
+| M-x open with subsequence abbreviation | 30 | 18.53 ms | 36.27 ms |
+| C-x b open plus immediate Down in one write | 30 | 19.29 ms | 62.12 ms |
+| C-x b menu open, separately observed | 30 | 20.52 ms | 33.10 ms |
+| C-x b Down after open, separately observed | 30 | 19.19 ms | 28.51 ms |
+| First M-x arrow in a new process after first frame | 10 | 20.52 ms | 36.54 ms |
+
+The split samples show no persistent hundreds-of-milliseconds =C-x b=
+median after fixing the harness. The remaining p95 spread needs a frozen
+source and controlled host load before attributing it to Scheme, Rust,
+terminal scheduling, or the operating system.
+
+* Linked Release launch pair, 2026-11-14
+
+The maintained source-free PTY test passed with a Release binary of 130,025,336
+bytes, SHA-256
+=af29500d49e0f252197bda002670cc16e2a88a16884280f1803c1c2addbc4ad8=.
+It launched from a temporary directory with =GERBIL_HOME=, =GERBIL_PATH= and
+=GERBIL_LOADPATH= pointing to a nonexistent location, rendered the workbench,
+accepted the first M-x Down, and exited with terminal state restored. One
+separate warm run observed the workbench at 781.152 ms.
+
+| Paired operation | Fresh copy | Same file, second run |
+|------------------+------------+-----------------------|
+| Release PTY, first output | 3.107 s | 45.542 ms |
+| Release PTY, workbench visible | 3.538 s | 162.396 ms |
+| Release early exit before terminal/UI check | 3.736 s | 79.768 ms |
+| Copied =/usr/bin/true= early-exit control | 544.139 ms | 2.199 ms |
+
+The process's own startup trace reached the first frame 430.533 ms after
+entry on the first PTY run and 116.463 ms on the second. Scheme VM
+initialization reached 315.644 ms and 40.816 ms respectively. The previous
+trace label =Scheme tooling publication= then reached 427.997 ms and 115.895
+ms, but this temporary session did not bind a tool catalog: that interval
+contained UI session projection. The source now traces UI projection before
+tool catalog binding, so a later artifact can distinguish these phases.
+
+The 3.1-3.7 second first-copy delay occurs mainly before the application
+startup trace and was also observed in the early-exit test. The small
+executable control had its own fresh-copy delay. These observations do not
+identify a single OS cause or establish a cold-start percentile. The shared
+worktree was edited during this run; this is artifact-specific evidence, not
+a frozen-source performance acceptance.
+
+* Release-size candidate failure, 2026-11-14
+
+The maintained =just tui-size-performance-bench= entry built the selected
+Scheme staging and a =release-size= binary in 8m 21s. The binary was 96,340,608
+bytes, SHA-256
+=e8506d34fe828dfd6749e16211a2a1172354d950257795be54806da79b280e27=.
+The early-exit test passed: a newly copied file took 2.067 s, the same file's
+second launch 60.616 ms; the copied =/usr/bin/true= control took 409.835 ms
+and 2.697 ms. These are separate runs from the Release observations above,
+not a source-matched size A/B.
+
+The real PTY test did not reach a workbench. Its startup trace reached Scheme
+VM initialization at 295.034 ms and UI session construction at 97.944 ms
+after that; the native boundary then failed with =collection object failed
+with native status 3=. The test timed out without a frame. The shared Scheme
+and Rust worktree changed during this build, and another Release artifact was
+rebuilt concurrently. This record neither attributes the failure to
+=opt-level="z"= nor qualifies =release-size= for distribution. Rebuild and
+compare only after staging, source, and binary identity can be held fixed.
+
+* Projection diagnosis and second size build, 2026-11-14
+
+The native workbench decoder now retains the top-level field name on failure;
+the extra allocation occurs only when constructing an error. Its focused Rust
+projection test passed. =just tui-aot-debug= restaged Scheme and rebuilt the
+linked Debug binary; the source-free paired PTY startup test passed.
+
+A second =release-size= build completed in 4m 21s. The binary was 96,472,960
+bytes, SHA-256
+=1e2706427685d569b4bf7936342b325ae132e3011cf5b1022db06e71ff055006=.
+The shared worktree changed during the build. Before the real PTY test began,
+another staging operation rewrote =program.json= at 04:44:55, after the binary
+was written at 04:44:07. The maintained test correctly rejected this stale
+pair before launch. This build supplies no new =release-size= workbench or
+performance result; the previous native projection failure remains unresolved.
+
+After that gate rejection, a separate bounded =script= PTY diagnostic launched
+this exact binary with the example configuration and an absent Gerbil install.
+Its trace reached UI session projection at 349.221 ms, view admission,
+tool-catalog binding, and terminal alternate-screen entry without the earlier
+collection error. The diagnostic had empty stdin and was stopped after 12 s;
+it captured no complete workbench frame. This narrows the earlier failure to
+an artifact/staging-specific event but does not establish its cause or satisfy
+the maintained source-matched startup gate.
+
+A further direct launch of the same binary in an allocated PTY rendered the
+80-column workbench with the Marlin modeline and minibuffer. =Ctrl-Q= exited
+normally and restored the terminal. The internal trace reported first frame
+at 584.366 ms in this one diagnostic launch. This establishes that the second
+size-profile artifact can reach a visible frame without a Gerbil install;
+the sample is not a cold-start distribution and does not replace the maintained
+source-matched pair, which the intervening staging change still prevents.
+
+* Current UI interaction and mapping checks, 2026-11-14
+
+The TUI Rust library suite passed with 237 tests and 9 ignored when its local
+loopback fixtures were permitted. The first sandboxed run had 231 passes and
+six socket-permission failures before fixture assertions. Gerbil's native
+=gerbil test -v 4 t/ui-native-test.ss t/ui-workbench-test.ss= returned
+=MODULE-OK= for both selected files and =SUITE-OK Marlin UI workbench=.
+The real PTY first-M-x-arrow acceptance test also passed.
+
+The current linked Debug PTY interaction test passed with test-binary SHA-256
+=a4faf8acfc22f573a7115c8fa1f9ffe8a5b013ec2f35c8ab10ff74f3d18c11a8=.
+Its =CARGO_BIN_EXE_marlin-tui= application SHA-256 was
+=e54f272923faf033919b6c706213c1064c6e56c92f6d5da3985eb3d69e3983b5=.
+It reported 30-sample M-x open-plus-first-arrow p50/p95 of 20.258/34.093 ms,
+query-edit p50/p95 of 19.817/34.614 ms, and C-x b open-plus-first-Down
+p50/p95 of 19.568/89.950 ms. The latter tail is wider than the earlier
+binary's sample and cannot be assigned to one layer from this run.
+
+The Rust-only =ui_mapping= benchmark compiled without linked UI. Binary
+SHA-256 was
+=45f560a3e153690a8b9a29f9e87ae5ae64581f031af7ffa1c22fa545360a8802=.
+An initial 10-sample Criterion run compared against an unrelated saved local
+baseline and printed a regression label; that label is not a source-matched
+claim. Running this exact binary with a fresh named baseline and 30 samples
+measured 256-item lists with 10 visible rows at 18.276-33.425 us (95% CI)
+and the column variant at 23.017-33.994 us. There were 5 and 3 severe high
+outliers respectively. Concurrent checkout edits changed the source-diff hash
+during this work, so these are artifact-specific diagnostics, not a release
+tail-latency or comparative performance gate.
+
+* Release linked image check, 2026-11-14
+
+A Release artifact observed before the standard rebuild was 26,368,024 bytes
+and =otool -L= showed an absolute dependency on
+=target/release/build/.../libgerbil_scheme_build.dylib=. That build-only image
+would make the copied executable depend on the checkout. After the selected
+Scheme programme had been staged, the standard
+=cargo build --offline --locked -p marlin-agent-tui --bin marlin-tui --release=
+produced a 106,272,960-byte binary (SHA-256
+=6d4f22631f3f2bd6945818fbd545bb97064b0f1f344eb5007a7a20f14997632e=).
+=otool -L= no longer listed the SDK build image. The maintained copied-binary
+PTY startup test now rejects any Mach-O that links that image, so a smaller
+but build-tree-dependent artifact cannot be mistaken for a linked release.
+
+The same test rendered the workbench with absent Gerbil package paths and
+restored the terminal. First-copy output/workbench times were 2.484/2.648 s;
+the same file's second run was 73/320 ms. The application's internal first
+frame was 164/265 ms. These are two observations, not cold-start percentiles.
+The checkout changed concurrently with the Release build, so this binary is
+not a frozen-source performance baseline. The artifact still dynamically
+links Nix OpenSSL, SQLite and libiconv; the new check qualifies the selected
+Scheme image boundary, not a fully static or portable distribution.

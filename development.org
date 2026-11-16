@@ -1,0 +1,101 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Development
+
+Maintain project documentation in Org and use ~.org~ for repository documents.
+
+* Format, test, lint
+
+#+begin_src shell
+direnv exec . cargo fmt --all -- --check
+direnv exec . cargo test
+direnv exec . cargo clippy --all-targets --all-features -- -D warnings
+direnv exec . git diff --check
+#+end_src
+
+Rust doc comments follow Clippy's ~doc_markdown~ style. Wrap API names,
+literal identifiers, command names, and rule IDs in backticks rather than
+leaving mixed-case technical terms as prose.
+
+* Release visibility artifacts
+
+The ~real-gxi~ workflow is a manual release boundary. Run it with
+~workflow_dispatch~ and ~run_real_gxi=true~ when a runner has Gerbil available
+through ~MARLIN_GERBIL_GXI~ or Homebrew ~gerbil-scheme~.
+
+That job sets ~MARLIN_RELEASE_STATUS_ARTIFACT_DIR~ before running the ignored
+~command::real_gxi~ suite. The
+~command_compiler_real_gxi_release_topology_persists_landing_status_sidecar~
+test writes two downloadable artifacts into that directory:
+
+- ~release-status.json~: the persisted ~.marlin/release-status.json~ sidecar;
+- ~release-landing-report.json~: the compact landing report derived from the
+  sidecar.
+
+Use those artifacts as the CI evidence that the Gerbil release topology, local
+~gxi~ gate receipt, and release visibility report all crossed the real runtime
+boundary.
+
+* Crate naming boundaries
+
+~marlin-agent-core~ is a lean facade crate for stable imports and release
+bridges. It should not become the implementation home for new runtime,
+environment, hook, kernel, protocol, or harness behavior.
+
+Place new behavior in the focused crates that own the boundary:
+
+- ~marlin-agent-protocol~: shared protocol data and trace/event contracts;
+- ~marlin-agent-runtime~: runtime traits, context, streams, and observability;
+- ~marlin-agent-kernel~: graph-loop execution and node adapters;
+- ~marlin-agent-hooks~: hook registration and dispatch;
+- ~marlin-agent-environment~: custom home, config layers, and sub-agent
+  environment resolution;
+- ~marlin-agent-harness~: agent-system scenario, evidence, release visibility,
+  and performance harnessing.
+
+In this workspace, "harness" means the agent-system verification and evidence
+surface. Do not use ~marlin-agent-harness~ APIs as a synonym for Rust's test
+harness or ~cargo test~ mechanics.
+
+* Self-applied policy
+
+Run ~just rust-dev-gate~ to apply the ASP Rust policy to each workspace
+member. The command runs a Cargo example in the Marlin development tool.
+Cargo metadata supplies membership, and the example loads the package policy
+through development dependencies. Ordinary package builds only run build
+scripts that produce build artifacts.
+The development test targets emit ASP Rust findings. The explicit workspace
+gate fails on warnings and errors.
+
+When adding tests, keep behavior coverage under ~tests/unit~ and include it from
+~tests/unit_test.rs~ unless a new root target is intentionally part of the
+policy surface.
+Root Cargo test targets should stay as thin aggregates with external module
+mounts only. Put test functions and helpers in suite files under ~tests/unit~
+or another documented suite directory.
+Root-target module mounts should always be explicit ~#[path = "suite/file.rs"]~
+attributes rather than bare Rust ~mod helper;~ declarations.
+The TUI intentionally mounts ~tests/unit/harness.rs~ from ~src/lib.rs~ under
+~cfg(test)~, so ~cargo test -p marlin-agent-tui --lib~ exercises production
+modules once. Its test files stay under ~tests/unit~; do not mount the same
+production sources again from a second integration-test crate.
+Root ~build.rs~, when present, is scanned by the project harness and should stay
+a thin Cargo build-script entrypoint.
+
+Rust test targets use explicit Cargo paths under ~tests/unit~ or
+~tests/integration~. ASP Rust reads the owning Cargo workspace graph.
+
+* Policy closure
+
+~just rust-dev-gate~ mounts ASP Rust's workspace Dev Gate through the thin
+Build Support policy. Member crates mount package-local gates through
+~dev-dependencies~ and explicit Cargo test targets. The native gate fails on
+configured blocking findings and on unaddressed agent repair advice.
+
+* Renderer snapshots
+
+Compact text and JSON renderer contracts are locked by repo-local snapshot files
+under ~tests/unit/snapshots~. Update them only when the LLM-facing text shape or
+structured JSON contract intentionally changes.

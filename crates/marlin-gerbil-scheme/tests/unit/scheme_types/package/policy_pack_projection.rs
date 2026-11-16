@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_gerbil_scheme::{
     GERBIL_POLICY_PACK_PROJECTION_CHAIN_PACKAGE_ID, GERBIL_POLICY_PACK_PROJECTION_CHAIN_SCHEMA_ID,
     GERBIL_POLICY_PACK_PROJECTION_CHAIN_TYPE_ID, GERBIL_RESOLVED_LOOP_POLICY_PACK_PACKAGE_ID,
@@ -21,8 +25,8 @@ fn policy_pack_projection_chain_package_manifest_declares_typed_receipt_contract
     assert_eq!(receipt.type_count, 1);
     assert_eq!(receipt.field_count, 16);
     assert_eq!(receipt.projection_contract_count, 1);
-    assert_eq!(receipt.native_abi_version, None);
-    assert_eq!(receipt.native_symbol_count, 0);
+    assert_eq!(receipt.c_abi_version, None);
+    assert_eq!(receipt.abi_symbol_count, 0);
 
     let projection_type = manifest
         .type_manifest
@@ -56,8 +60,8 @@ fn resolved_loop_policy_pack_package_manifest_declares_hot_audit_projection_cont
     assert_eq!(receipt.type_count, 1);
     assert_eq!(receipt.field_count, 5);
     assert_eq!(receipt.projection_contract_count, 1);
-    assert_eq!(receipt.native_abi_version, None);
-    assert_eq!(receipt.native_symbol_count, 0);
+    assert_eq!(receipt.c_abi_version, None);
+    assert_eq!(receipt.abi_symbol_count, 0);
 
     let projection_type = manifest
         .type_manifest

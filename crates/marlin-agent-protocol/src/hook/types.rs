@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Core hook protocol types.
 
 use serde::{Deserialize, Serialize};
@@ -385,6 +389,7 @@ pub enum HookSelectionSkipReason {
     Disabled,
     AgentScopeMismatch,
     EventMismatch,
+    PathFilterMismatch,
 }
 
 /// Selection receipt for one hook registration candidate.

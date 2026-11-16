@@ -1,5 +1,15 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #+TITLE: 40.20 RFC: Org Source Persistence Boundary
 #+FILETAGS: :marlin:rfc:workspace:org:persistence:
+
+#+begin_quote
+Historical design: the Workspace patch mutation, source patch planner and
+patch-based commit workflow described here have been retired. See
+[[file:../40-rfcs/40.181-context-org-ownership.org][Context-owned Org architecture]] for the current boundary and remaining work.
+#+end_quote
 
 * 40.20 RFC: Org Source Persistence Boundary
 :PROPERTIES:
@@ -9,7 +19,7 @@
 :END:
 
 This RFC defines the persistence boundary that may turn validated Org text edit
-plans into durable file changes. It follows [[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]]
+plans into durable file changes. It follows [[file:40.10-org-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]]
 and keeps filesystem writes outside =marlin-org-patch=.
 
 ** Motivation

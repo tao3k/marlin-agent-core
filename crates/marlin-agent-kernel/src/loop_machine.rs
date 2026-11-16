@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Provider-neutral `LoopProgram` state machine for kernel runtime handoff.
 
 use marlin_agent_protocol::{

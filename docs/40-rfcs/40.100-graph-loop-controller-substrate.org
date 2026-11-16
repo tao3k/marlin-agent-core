@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 * 40.100 Graph Loop Controller Substrate
 :PROPERTIES:
 :status: Active
@@ -156,7 +160,7 @@ can be inspected and replayed without a provider call.
   actions without Scheme-owned JSON or Rust handler construction; it also
   declares the native projection package manifest, request, readiness plan, and
   ABI symbol contract.
-- =crates/marlin-gerbil-scheme/gerbil/src/marlin/graph-loop-continuation-native-projection.ss=
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/graph-loop-continuation-abi-projection.ss=
   provides the Gerbil POO projection module for
   =marlin_graph_loop_continuation_next_action=, including the
   =defmarlin-graph-loop-continuation-profile= user macro and typed action

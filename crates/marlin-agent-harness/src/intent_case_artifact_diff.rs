@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Diff artifact rendering for intent-case bundles.
 
 use crate::intent_case_artifact_receipt_header::render_patch_artifact_receipt_header;

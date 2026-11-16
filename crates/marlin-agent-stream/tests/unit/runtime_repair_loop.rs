@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use std::{
     env, fs,
     path::PathBuf,
@@ -32,10 +36,9 @@ use marlin_agent_protocol::{
     ModelGatewayRequest, system_gateway_message, user_gateway_message,
 };
 use marlin_agent_runtime::{RuntimeEdgeModelGateway, RuntimeEdgePolicy, TokioAgentRuntime};
-use marlin_agent_stream::LiteLlmStreamGateway;
 use marlin_gerbil_scheme::{
-    GerbilLoopCaseDriverProjectedLoopProgram, GerbilLoopCaseDriverProjectedLoopProgramRequest,
-    load_gerbil_loop_case_driver_projected_loop_program,
+    GerbilLoopCaseDriverVerticalTraceReceipt, project_gerbil_loop_case_driver_loop_program,
+    verify_gerbil_loop_case_driver_vertical_trace,
 };
 
 const LIVE_LLM_GATE_ENV: &str = "MARLIN_LIVE_LLM_GATE";
@@ -643,25 +646,50 @@ impl LoopProgramRuntimeHandoffExecutor for RuntimeRepairNoLiveHandoffExecutor {
     }
 }
 
-fn scheme_projected_real_repair_loop_case() -> GerbilLoopCaseDriverProjectedLoopProgram {
-    static PROJECTED_CASE: OnceLock<GerbilLoopCaseDriverProjectedLoopProgram> = OnceLock::new();
+struct RecordedRepairCase {
+    receipt: GerbilLoopCaseDriverVerticalTraceReceipt,
+    loop_program: marlin_agent_protocol::LoopProgram,
+}
 
-    PROJECTED_CASE
-        .get_or_init(|| {
-            let request = GerbilLoopCaseDriverProjectedLoopProgramRequest::new(
-                SCHEME_REAL_REPAIR_CASE_ID,
-                SCHEME_REAL_REPAIR_PROGRAM_ID,
-            )
-            .with_expected_vertical_trace_count(7)
-            .with_profile_ref(SCHEME_REAL_REPAIR_PROFILE_REF)
-            .with_live_llm_required(true)
-            .with_required_capability("+tool-repair")
-            .with_required_capability("+verification");
+impl RecordedRepairCase {
+    fn receipt(&self) -> &GerbilLoopCaseDriverVerticalTraceReceipt {
+        &self.receipt
+    }
 
-            load_gerbil_loop_case_driver_projected_loop_program(&request)
-                .expect("real-repair-001 should load as a Scheme-projected LoopProgram")
-        })
-        .clone()
+    fn loop_program(&self) -> &marlin_agent_protocol::LoopProgram {
+        &self.loop_program
+    }
+}
+
+fn scheme_projected_real_repair_loop_case() -> &'static RecordedRepairCase {
+    static PROJECTED_CASE: OnceLock<RecordedRepairCase> = OnceLock::new();
+
+    PROJECTED_CASE.get_or_init(|| {
+        let trace = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scheme/t/fixtures/loop-case-trace.v1"
+        ));
+        let receipt = verify_gerbil_loop_case_driver_vertical_trace(trace, 7)
+            .expect("recorded Scheme trace verifies")
+            .into_iter()
+            .find(|receipt| receipt.case_id().as_str() == SCHEME_REAL_REPAIR_CASE_ID)
+            .expect("recorded repair case");
+        assert_eq!(
+            receipt.profile_ref().as_str(),
+            SCHEME_REAL_REPAIR_PROFILE_REF
+        );
+        assert_eq!(
+            receipt.loop_program_id().as_str(),
+            SCHEME_REAL_REPAIR_PROGRAM_ID
+        );
+        assert!(receipt.live_llm_required());
+        let loop_program = project_gerbil_loop_case_driver_loop_program(&receipt)
+            .expect("recorded repair trace projects to a LoopProgram");
+        RecordedRepairCase {
+            receipt,
+            loop_program,
+        }
+    })
 }
 
 fn unique_temp_repair_workspace() -> PathBuf {

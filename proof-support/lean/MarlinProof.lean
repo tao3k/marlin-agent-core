@@ -1,1 +1,0 @@
-import MarlinProof.Storage.ArtifactPointer

@@ -1,4 +1,9 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 [package]
+license.workspace = true
 name = "marlin-agent-sessions"
 edition.workspace = true
 version.workspace = true
@@ -6,12 +11,10 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+marlin-agent-protocol.workspace = true
 marlin-agent-storage.workspace = true
 serde.workspace = true
-
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
-marlin-rust-project-harness-policy.workspace = true
 tokio.workspace = true

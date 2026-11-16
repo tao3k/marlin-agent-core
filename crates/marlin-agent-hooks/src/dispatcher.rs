@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Dispatches registered `HookRuntime` handlers and returns protocol-owned hook receipts.
 
 use std::{collections::BTreeMap, sync::Arc};
@@ -8,9 +12,10 @@ use marlin_agent_protocol::{
     HookDispatchPolicyReceiptInput, HookDispatchSelectionInput, HookDispatchSelectionReceipt,
     HookEventName, HookExecutionMode, HookHandlerType, HookMatcherStrategy, HookMatcherToken,
     HookPolicyDecision, HookPolicyDecisionReason, HookPolicyDecisionReceipt,
-    HookPolicyDynamicActionApplicationReceipt, HookPolicyExtension, HookPolicyMode,
-    HookRegistryUpdateKind, HookRegistryUpdateReceipt, HookRunId, HookRunStatus, HookRunSummary,
-    HookScope, HookSelectedCandidateInput, HookSelectionCandidateReceipt, HookSelectionSkipReason,
+    HookPolicyDynamicAction, HookPolicyDynamicActionApplicationReceipt,
+    HookPolicyDynamicActionKind, HookPolicyExtension, HookPolicyMode, HookRegistryUpdateKind,
+    HookRegistryUpdateReceipt, HookRunId, HookRunStatus, HookRunSummary, HookScope,
+    HookSelectedCandidateInput, HookSelectionCandidateReceipt, HookSelectionSkipReason,
     HookSkippedCandidateInput, HookSource, HookSourcePath, HookTrustStatus,
 };
 use marlin_agent_runtime::{HookRuntime, RuntimeContext, TokioAgentRuntime, observability};
@@ -18,15 +23,16 @@ use tracing::Instrument;
 
 use crate::dynamic_actions::{
     HookRegistrationCatalog, HookRegistryActionTarget, apply_dynamic_policy_actions,
-    apply_dynamic_registry_actions, attach_dynamic_actions,
+    apply_dynamic_registry_actions,
 };
+use crate::{HookPathFilter, HookTargetPath};
 
 /// Runtime shape accepted by hook registrations.
 pub type RegisteredHookRuntime =
     dyn HookRuntime<Request = HookInvocation, Output = HookRunSummary> + Send + Sync + 'static;
 
-/// Runtime-independent finalizer for extension-owned hook policy decisions.
-pub type RegisteredHookPolicyFinalizer = dyn HookDispatchPolicyFinalizer + Send + Sync + 'static;
+/// Runtime-independent source of typed extension proposals.
+pub type RegisteredHookActionProvider = dyn HookActionProvider + Send + Sync + 'static;
 
 /// Runtime catalog that resolves extension-requested hook registrations.
 pub type RegisteredHookRegistrationCatalog =
@@ -55,6 +61,7 @@ pub struct HookInvocation {
     pub agent_scope: HookAgentScope,
     pub decision_context: HookDecisionContext,
     pub message: Option<String>,
+    target_paths: Vec<HookTargetPath>,
 }
 
 impl HookInvocation {
@@ -65,6 +72,7 @@ impl HookInvocation {
             agent_scope: HookAgentScope::Any,
             decision_context: HookDecisionContext::default(),
             message: None,
+            target_paths: Vec::new(),
         }
     }
 
@@ -108,18 +116,27 @@ impl HookInvocation {
         self.message = Some(message.into());
         self
     }
+
+    pub fn with_target_paths(mut self, paths: Vec<HookTargetPath>) -> Self {
+        self.target_paths = paths;
+        self
+    }
+
+    pub fn target_paths(&self) -> &[HookTargetPath] {
+        &self.target_paths
+    }
 }
 
-/// Input passed to a hook policy finalizer after Rust policy evaluation.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HookDispatchPolicyFinalizerInput {
-    pub invocation: HookInvocation,
-    pub policy_receipt: HookDispatchPolicyReceipt,
+/// Read-only input supplied after Rust selects registrations and evaluates trust.
+#[derive(Clone, Copy, Debug)]
+pub struct HookActionContext<'a> {
+    pub invocation: &'a HookInvocation,
+    pub policy_receipt: &'a HookDispatchPolicyReceipt,
 }
 
-/// Extension boundary that can finalize hook policy receipts.
-pub trait HookDispatchPolicyFinalizer {
-    fn finalize(&self, input: HookDispatchPolicyFinalizerInput) -> HookDispatchPolicyReceipt;
+/// Extensions propose actions. Rust applies them and owns the final receipt.
+pub trait HookActionProvider {
+    fn propose_actions(&self, input: HookActionContext<'_>) -> Vec<HookPolicyDynamicAction>;
 }
 
 /// Registered hook handler and its ordering metadata.
@@ -137,6 +154,7 @@ pub struct HookRegistration {
     pub enabled: bool,
     pub display_order: i64,
     handler: Arc<RegisteredHookRuntime>,
+    path_filter: Option<Arc<HookPathFilter>>,
 }
 
 impl HookRegistration {
@@ -164,7 +182,13 @@ impl HookRegistration {
             enabled: true,
             display_order: 0,
             handler,
+            path_filter: None,
         }
+    }
+
+    pub fn with_path_filter(mut self, filter: Arc<HookPathFilter>) -> Self {
+        self.path_filter = Some(filter);
+        self
     }
 
     /// Sets the hook execution mode.
@@ -488,6 +512,18 @@ fn hook_selection_candidate(
             invocation_agent_scope: invocation.agent_scope.clone(),
             skip_reason: HookSelectionSkipReason::AgentScopeMismatch,
         })
+    } else if registration
+        .path_filter
+        .as_ref()
+        .is_some_and(|filter| !filter.matches(invocation.target_paths()))
+    {
+        HookSelectionCandidateReceipt::skipped(HookSkippedCandidateInput {
+            hook_id: registration.id.clone().into(),
+            event_name: registration.event_name.clone(),
+            registration_agent_scope: registration.agent_scope.clone(),
+            invocation_agent_scope: invocation.agent_scope.clone(),
+            skip_reason: HookSelectionSkipReason::PathFilterMismatch,
+        })
     } else {
         HookSelectionCandidateReceipt::selected(HookSelectedCandidateInput {
             hook_id: registration.id.clone().into(),
@@ -670,7 +706,7 @@ impl Default for HookDispatchPolicy {
 pub struct HookDispatcher {
     registry: HookRegistry,
     policy: HookDispatchPolicy,
-    policy_finalizer: Option<Arc<RegisteredHookPolicyFinalizer>>,
+    action_provider: Option<Arc<RegisteredHookActionProvider>>,
     registration_catalog: Option<Arc<RegisteredHookRegistrationCatalog>>,
 }
 
@@ -680,7 +716,7 @@ impl HookDispatcher {
         Self {
             registry,
             policy: HookDispatchPolicy::default(),
-            policy_finalizer: None,
+            action_provider: None,
             registration_catalog: None,
         }
     }
@@ -695,9 +731,9 @@ impl HookDispatcher {
         &self.policy
     }
 
-    /// Returns the optional extension-owned policy finalizer.
-    pub fn policy_finalizer(&self) -> Option<&RegisteredHookPolicyFinalizer> {
-        self.policy_finalizer.as_deref()
+    /// Returns the optional extension action provider.
+    pub fn action_provider(&self) -> Option<&RegisteredHookActionProvider> {
+        self.action_provider.as_deref()
     }
 
     /// Returns the optional runtime registration catalog.
@@ -711,13 +747,12 @@ impl HookDispatcher {
         self
     }
 
-    /// Returns a dispatcher with an extension-owned policy finalizer.
-    pub fn with_policy_finalizer<F>(mut self, finalizer: Arc<F>) -> Self
+    /// Returns a dispatcher with an extension action provider.
+    pub fn with_action_provider<F>(mut self, provider: Arc<F>) -> Self
     where
-        F: HookDispatchPolicyFinalizer + Send + Sync + 'static,
+        F: HookActionProvider + Send + Sync + 'static,
     {
-        let finalizer: Arc<RegisteredHookPolicyFinalizer> = finalizer;
-        self.policy_finalizer = Some(finalizer);
+        self.action_provider = Some(provider);
         self
     }
 
@@ -769,27 +804,36 @@ impl HookDispatcher {
     }
 
     fn prepare_dispatch(&self, invocation: HookInvocation) -> PreparedHookDispatch {
-        let mut dispatch_registry = self.registry.clone();
-        let (registrations, _) = dispatch_registry.matching(&invocation);
-        let policy = self.policy.evaluate(&invocation, &registrations);
-        let finalized_policy = self.finalize_policy(&invocation, policy);
-        let actions = finalized_policy.actions.clone();
-        let registry_application = apply_dynamic_registry_actions(
-            &mut dispatch_registry,
-            &actions,
-            self.registration_catalog.as_deref(),
-        );
-        let mut applied_actions = registry_application.receipts;
-        let (registrations, selection, policy) = if registry_application.changed {
-            let (registrations, selection) = dispatch_registry.matching(&invocation);
-            let policy =
-                attach_dynamic_actions(self.policy.evaluate(&invocation, &registrations), actions);
-            (registrations, selection, policy)
-        } else {
-            let (registrations, selection) = dispatch_registry.matching(&invocation);
-            (registrations, selection, finalized_policy)
-        };
-        let policy_application = apply_dynamic_policy_actions(invocation.message.clone(), policy);
+        let (mut registrations, mut selection) = self.registry.matching(&invocation);
+        let mut policy = self.policy.evaluate(&invocation, &registrations);
+        if let Some(provider) = &self.action_provider {
+            policy.actions = provider.propose_actions(HookActionContext {
+                invocation: &invocation,
+                policy_receipt: &policy,
+            });
+        }
+        let mut applied_actions = Vec::new();
+        if policy.actions.iter().any(|action| {
+            matches!(
+                action.kind,
+                HookPolicyDynamicActionKind::Register | HookPolicyDynamicActionKind::Unregister
+            )
+        }) {
+            let mut dispatch_registry = self.registry.clone();
+            let application = apply_dynamic_registry_actions(
+                &mut dispatch_registry,
+                &policy.actions,
+                self.registration_catalog.as_deref(),
+            );
+            applied_actions = application.receipts;
+            if application.changed {
+                (registrations, selection) = dispatch_registry.matching(&invocation);
+                let mut rechecked = self.policy.evaluate(&invocation, &registrations);
+                rechecked.actions = policy.actions;
+                policy = rechecked;
+            }
+        }
+        let policy_application = apply_dynamic_policy_actions(invocation.message, policy);
         let invocation = HookInvocation {
             message: policy_application.message,
             ..invocation
@@ -806,21 +850,6 @@ impl HookDispatcher {
             applied_actions,
             registrations,
         }
-    }
-
-    fn finalize_policy(
-        &self,
-        invocation: &HookInvocation,
-        policy_receipt: HookDispatchPolicyReceipt,
-    ) -> HookDispatchPolicyReceipt {
-        self.policy_finalizer
-            .as_ref()
-            .map_or(policy_receipt.clone(), |finalizer| {
-                finalizer.finalize(HookDispatchPolicyFinalizerInput {
-                    invocation: invocation.clone(),
-                    policy_receipt,
-                })
-            })
     }
 }
 

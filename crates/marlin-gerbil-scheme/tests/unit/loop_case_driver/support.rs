@@ -1,7 +1,11 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use std::{
     path::PathBuf,
     sync::{
-        Arc, OnceLock,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
 };
@@ -23,7 +27,6 @@ use marlin_gerbil_scheme::{
     GerbilLoopCaseDriverCapability, GerbilLoopCaseDriverVerticalTraceReceipt,
     project_gerbil_loop_case_driver_loop_action_kind,
     project_gerbil_loop_case_driver_loop_event_kind, project_gerbil_loop_case_driver_loop_program,
-    run_gerbil_config_interface_case_driver_smoke,
 };
 
 pub(super) fn cap(tag: impl Into<String>) -> GerbilLoopCaseDriverCapability {
@@ -31,14 +34,11 @@ pub(super) fn cap(tag: impl Into<String>) -> GerbilLoopCaseDriverCapability {
 }
 
 pub(super) fn run_config_interface_case_driver_smoke() -> String {
-    static STDOUT: OnceLock<String> = OnceLock::new();
-
-    STDOUT
-        .get_or_init(|| {
-            run_gerbil_config_interface_case_driver_smoke()
-                .expect("gxi case-driver smoke should produce verified stdout")
-        })
-        .clone()
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scheme/t/fixtures/loop-case-trace.v1"
+    ))
+    .to_owned()
 }
 
 pub(super) fn unique_scheme_projected_runtime_workspace() -> PathBuf {

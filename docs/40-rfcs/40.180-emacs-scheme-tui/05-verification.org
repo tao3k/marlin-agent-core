@@ -1,0 +1,145 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin TUI — Verification and acceptance
+
+[[file:../40.180-emacs-scheme-tui.org][RFC entry]] · [[file:03-native-mapping.org][Mapping contract]] · [[file:04-runtime-performance.org][Performance]]
+
+* Test ownership
+
+| Layer | Unique responsibility |
+|-------+-----------------------|
+| Scheme unit/property tests | Catalogs, ranking, keymaps, preview/cancel, folding, layout and package semantics |
+| Scheme test window | Package assertions against actual mapped rows, cursor and hit regions |
+| Rust unit/property tests | Typed admission, conversion, bounds, generic mapping and cache mechanics |
+| Linked ABI tests | Rooted values, compiled closure, successor admission and native lifecycle |
+| PTY | First input, mouse/wheel delivery, streaming, resize, suspension and restoration |
+| Performance gates | Fixed workload latency, tails, retention and source-free linked launch |
+
+Do not duplicate labels, command lists, theme values or fold symbols in Rust
+when Scheme already owns those assertions. Preserve native rejection and PTY
+coverage that observes a different boundary. No dead-code allowance is an
+acceptable substitute for removing a retired path.
+
+* Requirements and models
+
+| Requirement | Qualification responsibility |
+|-------------+------------------------------|
+| MAR-TUI-R01 | Event admission, backpressure and bounded retained state |
+| MAR-TUI-R02 | Incremental viewport rendering, invalidation and frame cadence |
+| MAR-TUI-R03 | Typed authority, operational Messages and runtime evidence |
+| MAR-TUI-R04 | Session replay, cursor identity and duplicate prevention |
+| MAR-TUI-R05 | Source-matched debug/release startup and interaction measurements |
+| MAR-TUI-R06 | Unicode, paste, cursor and resize invariants |
+| MAR-TUI-R07 | Suspend, foreground handoff and terminal restoration |
+
+The [[file:../../../dev/sysml/tui-architecture.sysml][architecture]], [[file:../../../dev/sysml/tui-declarative-engine.sysml][engine]] and [[file:../../../dev/sysml/tui-lifecycle.sysml][lifecycle]] models own structural requirements.
+Executable behavior/property tests own their implementation checks. Existing
+Quint and Runtime models retain their declared scope; a UI snapshot does not
+prove concurrency or external effect atomicity.
+
+* Standard acceptance sequence
+
+Use the project environment, default Rust target and native package manager.
+=GERBIL_BUILD_CORES= defaults in the project environment; tests retain their
+existing heap, action, idle and aggregate limits.
+
+1. Rebuild linked development dependencies through standard Gerbil pkg tools.
+2. For Yuanxu resolution changes, run its windows, role-context, effect-support,
+   publication and testing-source-admission suites serially.
+3. Run Core =just test-build-input-context-mutations <artifact-dir>=. All four
+   faults must be rejected by the intended assertions, with normal controls
+   passing before/after and source digests unchanged. Compiler failures and
+   timeouts do not count as rejected mutations.
+4. Run Lab's =build-qualification-library= prerequisite and
+   =t/yanxu/modules/services/opentofu/deployment-test.ss= with its original
+   budgets. Projection must construct zero business scopes.
+5. Run =just scheme-build=, =just scheme-package-gate= and
+   =just scheme-ui-package-gate= in Marlin.
+6. Run Yuanxu's =t/program-activation-test.ss= through its standard test entry.
+   It executes a linked program with no fixture library on the load path and
+   checks nested startup dependencies, delayed activation, once-only execution
+   and stable refusal. Build the default debug executable with
+   =just tui-aot-debug=, which consumes the compiled =ui-tui= Module through
+   its Interface. Run the real PTY tests, including the independent package,
+   first-arrow regression and normal process exit.
+7. Run =just tui-ui-mapping-bench= and =just tui-performance-bench= on the fixed
+   source cohort, including release without the Gerbil package tree.
+
+Require natural completion and the expected harness markers. Gerbil can exit
+zero after =ERROR CASE= or =ERROR HARNESS=; those are failures. Raw logs stay in
+local/CI artifacts, not version control. A failed gate blocks its acceptance
+claim while independent work can continue.
+
+* Independent package criterion
+
+The [[file:../../../crates/marlin-agent-tui/tests/fixtures/ui-extension/fixture.ss][ui-extension fixture]] declares a notes Buffer, open-notes command and M-z key.
+Its Scheme scenario checks publication isolation, painting, resize and hit
+bounds. Rust supplies the existing production mapper; it has no handler for
+those identities. The configured package must also open through its key in a
+real PTY and restore the terminal on quit.
+
+A package build alone is insufficient. Dynamic VM loading and the distribution
+linked closure require separate evidence; static distribution may require
+relinking, without requiring changes to Rust source.
+
+* Earlier development evidence — 2026-11-16
+
+The current cohort uses development links for Lab, Yuanxu and POO. Results
+below describe this local cohort, not a remotely reproducible pinned release.
+
+| Gate | Observed result |
+|------+-----------------|
+| Linked POO build | Passed after temporary diagnostic tracing was removed |
+| Linked Yuanxu clean/build | Passed after responsibility-based identifier migration |
+| Full Module windows suite | Passed, including stale-initializer refusal, source mutation and a compiled public facade using the Yuanxu prelude |
+| Role-context, reader effects, publication, source admission and retention census | Passed on the earlier linked cohort; the latest source-owner changes are separately covered by full windows and mutation controls |
+| Core input-context mutations | All four intended refusals and before/after normal controls passed; source digests unchanged |
+| Lab qualification prerequisite | Passed after correcting shared-output prerequisite ownership |
+| Lab public init build | Passed through standard Gerbil build; the earlier extra compile heap cap failed and is not a test result |
+| Marlin =scheme-build= | Passed with the canonical source-owner snapshot and inert SSI admission |
+| Rust TUI unit tests | Earlier cohort: 253 passed, 10 ignored |
+| Strict TUI/UI Clippy | Passed with warnings denied |
+| Scheme official package/property suites | Passed through =gerbil test=: all-test and ui-native-test |
+| Scheme UI C ABI | Passed through =scheme-ui-abi-gate=, including fresh method factories and isolation from the default session |
+| Independent Scheme package test window | Passed through the production mapper before the latest POO rebuild; current-cohort repeat remains pending |
+| Scheme-only Org native VM | Passed source preservation, UTF-8 spans, cross-source refusal, field limits and contract cuts after removing Rust Orgize |
+| Context host suites | 37 passed; typed fact cache, query, store and workflow checks |
+| Core, Harness and Storage suites | 115 passed, one ignored |
+| SDK host module admission | 22 tests and strict Clippy passed; explicit nonzero host limit, default 1,024 retained |
+| Lab deployment consumer | Failed the original first-read idle budget; no later pass |
+| Workspace ASP policy | Failed with 238 structural warnings; strict Clippy does not replace this gate |
+| Linked debug TUI build | Passed at the default =target/debug/marlin-tui= path |
+| First M-x arrow PTY | Failed before input: no initial Modeline within the original ten-second limit |
+| Independent Scheme package PTY | Failed before package interaction: no initial input row within its original fifteen-second limit |
+| Remaining PTY and performance acceptance | Pending; startup qualification is not complete |
+
+The stale-read defect involved transient generic reads escaping native SSI
+initialization into nested publication dependencies. The fix gives Yuanxu's
+exact private evaluator adapters native provenance and isolates authenticated
+native initialization. Failed imports, unknown callbacks and source observers
+retain their full traces; POO's stale-read contract is unchanged.
+
+Selected Module helpers are resolved through the existing package/source
+identity mechanism before native metadata import. Further source routes must
+obey the same selection and currentness contracts. Historical failing logs
+remain in local artifacts; a later pass must name its changed source cohort.
+
+* Role-bound frame qualification — 2026-11-16
+
+This development cohort uses Yuanxu =7bae6b5a=, POO =ccdb3db= and the
+linked Lab checkout. The standard Scheme build and workbench suite passed.
+The Rust library suites passed 253 tests with ten ignored. The default
+linked PTY suite passed 17 tests with 37 ignored.
+
+The independently built package declares its own Buffer, command, key,
+element tree, row values and method bundle. The Scheme window tested the
+rendered output at two dimensions and dispatched the actual hit row. In a
+separate terminal test, M-z opened the Buffer; clicking its first row moved
+focus through the package's method, and Return opened M-x. Both terminal
+tests restored terminal state on normal exit. The Debug example configuration
+reached its first frame in 282 ms on this host.
+
+The 30 two-frame debug window samples measured 23.6 ms at the median and
+87.9 ms at P95, including Scheme assertions and excluding scenario creation.
+These samples are not a fresh executable launch measurement.

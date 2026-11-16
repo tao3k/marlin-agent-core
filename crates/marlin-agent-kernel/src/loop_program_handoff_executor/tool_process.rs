@@ -1,11 +1,15 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Tool-process projection and spawn receipts for `LoopProgram` handoffs.
 
 use std::{io, process::Stdio};
 
 use marlin_agent_protocol::LoopProgramId;
 use marlin_agent_runtime::{
-    RuntimeContext,
-    observability::{
+    RuntimeContext, RuntimeProcessContainmentRequirement,
+    process::{
         AsyncManagedChildProcess, ManagedChildProcessSpec, RuntimeCommandObservation,
         RuntimeProcessKind, RuntimeProcessOutput,
     },
@@ -62,6 +66,7 @@ pub struct LoopProgramToolProcessSpawnRequest {
     pub args: Box<[String]>,
     pub started_at_ms: u64,
     pub observed_at_ms: u64,
+    pub containment: RuntimeProcessContainmentRequirement,
 }
 
 impl LoopProgramToolProcessSpawnRequest {
@@ -75,11 +80,17 @@ impl LoopProgramToolProcessSpawnRequest {
             args: Box::new([]),
             started_at_ms: 0,
             observed_at_ms: 0,
+            containment: RuntimeProcessContainmentRequirement::default(),
         }
     }
 
     pub fn with_args(mut self, args: impl Into<Box<[String]>>) -> Self {
         self.args = args.into();
+        self
+    }
+
+    pub fn with_containment(mut self, containment: RuntimeProcessContainmentRequirement) -> Self {
+        self.containment = containment;
         self
     }
 
@@ -122,6 +133,7 @@ pub async fn spawn_loop_program_tool_process(
         context,
         command,
         ManagedChildProcessSpec::new(RuntimeProcessKind::Tool, owner_reference)
+            .with_containment(request.containment)
             .with_command(request.projection.command.clone())
             .with_started_at_ms(request.started_at_ms),
     )

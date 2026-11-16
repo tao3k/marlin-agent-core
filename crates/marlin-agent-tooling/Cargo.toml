@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+[package]
+license.workspace = true
+name = "marlin-agent-tooling"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+gerbil-scheme.workspace = true
+marlin-agent-runtime.workspace = true
+marlin-agent-protocol.workspace = true
+
+[dev-dependencies]
+marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
+
+[[test]]
+name = "unit_test"
+path = "tests/unit_test.rs"

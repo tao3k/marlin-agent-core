@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_harness_types::AgentHarnessEvidenceKind;
 use marlin_agent_test_support::{
     assert_complex_gerbil_hook_policy_receipt, assert_custom_hook_policy_receipt,

@@ -1,6 +1,12 @@
-#+title: Marlin Agent Core
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-Marlin Agent Core is a Rust workspace for an Org-native, typed agent runtime substrate: graph-loop execution, workspace/query/patch/view protocols, project memory, sandbox and process runtime visibility, Gerbil Scheme policy integration, and harness/dev/debug command surfaces.
+#+title: Marlin Agent CORE
+
+[[file:project.sysml][Project SysML]] · [[file:dev/sysml/README.org][Architecture model map]]
+
+Marlin Agent CORE is a Rust workspace for an Org-native, typed agent runtime substrate: graph-loop execution, workspace/query/patch/view protocols, project memory, sandbox and process runtime visibility, Gerbil Scheme policy integration, and harness/dev/debug command surfaces.
 
 This repository is not a terminal-user product shell. The =marlin= command and the crate APIs are implementation, harness, development, and debugging surfaces for building and validating the agent runtime layers.
 
@@ -93,7 +99,8 @@ This is why Marlin is not a duplicate product agent. It targets the layer that p
 - =crates/marlin-agent-runtime=: runtime context, process, stream, and observability boundaries.
 - =crates/marlin-agent-environment=: agent environment and project import support.
 - =crates/marlin-agent-harness=: agent-system scenario, evidence, and release visibility harnessing.
-- =crates/marlin-gerbil-scheme=: Gerbil Scheme native integration and policy extension plane.
+- [[file:scheme/README.org][scheme/]] owns the Scheme package and Yuanxu policy modules.
+- =crates/marlin-gerbil-scheme= owns Rust's typed Scheme C ABI projections.
 - =build-support/=: build-time policy and native Gerbil build support.
 
 * Quick Start
@@ -113,7 +120,7 @@ direnv exec . cargo test -p marlin-agent-kernel --locked
 direnv exec . cargo bench -p marlin-agent-kernel --bench loop_program_execution_shape --locked
 #+end_src
 
-Development formatting and policy details live in [[file:development.md][development.md]].
+Development formatting and policy details live in [[file:development.org][development.org]].
 
 * Documentation
 
@@ -129,20 +136,29 @@ The durable project documentation is kept under =docs/= using Johnny Decimal Org
 Focused design references:
 
 - [[file:docs/40-rfcs/40.70-codex-engineering-baseline.org][docs/40-rfcs/40.70-codex-engineering-baseline.org]]
-- [[file:docs/20-workspace/20.10-org-native-agent-workspace.org][docs/20-workspace/20.10-org-native-agent-workspace.org]]
+- [[file:docs/20-workspace/20.10-org-agent-workspace.org][docs/20-workspace/20.10-org-agent-workspace.org]]
 - [[file:docs/20-workspace/20.20-query-patch-view-protocol.org][docs/20-workspace/20.20-query-patch-view-protocol.org]]
 - [[file:docs/10-architecture/10.20-kernel-boundary.org][docs/10-architecture/10.20-kernel-boundary.org]]
 - [[file:docs/10-architecture/10.30-agent-harness-boundary.org][docs/10-architecture/10.30-agent-harness-boundary.org]]
 - [[file:docs/30-gerbil/30.30-gerbil-typed-runtime-boundary.org][docs/30-gerbil/30.30-gerbil-typed-runtime-boundary.org]]
 - [[file:docs/30-gerbil/gerbil-poo-modules-system-desgin.org][docs/30-gerbil/gerbil-poo-modules-system-desgin.org]]
-- [[file:docs/30-gerbil/30.80-native-aot-link-unit.org][docs/30-gerbil/30.80-native-aot-link-unit.org]]
+- [[file:docs/30-gerbil/30.80-aot-link-unit.org][docs/30-gerbil/30.80-aot-link-unit.org]]
 - [[file:docs/40-rfcs/40.100-graph-loop-controller-substrate.org][docs/40-rfcs/40.100-graph-loop-controller-substrate.org]]
 - [[file:docs/40-rfcs/40.130-sandbox-backend-capability-protocol.org][docs/40-rfcs/40.130-sandbox-backend-capability-protocol.org]]
 - [[file:docs/40-rfcs/40.140-pi-agent-core-loop-parity.org][docs/40-rfcs/40.140-pi-agent-core-loop-parity.org]]
 - [[file:docs/40-rfcs/40.160-agent-graph-topology-protocol.org][docs/40-rfcs/40.160-agent-graph-topology-protocol.org]]
-- [[file:crates/marlin-agent-harness/README.md][crates/marlin-agent-harness/README.md]]
-- [[file:crates/marlin-gerbil-scheme/README.md][crates/marlin-gerbil-scheme/README.md]]
+- [[file:crates/marlin-agent-harness/README.org][crates/marlin-agent-harness/README.org]]
+- [[file:crates/marlin-gerbil-scheme/README.org][crates/marlin-gerbil-scheme/README.org]]
 
 * Project Rules
 
 Repository-specific agent and protocol-evolution rules live in [[file:AGENTS.md][AGENTS.md]]. In short: Rust owns typed protocols, receipts, runtime boundaries, and outer serialization; Gerbil Scheme owns complex policy logic and extension behavior behind the native ABI boundary.
+
+* License
+
+Marlin's original work is licensed under =Apache-2.0 AND LGPL-2.1-or-later=,
+matching AI Agentic Lab. Both licenses apply; =AND= is intentional.
+See [[file:LICENSE][LICENSE]] and the full texts in [[file:LICENSES/][LICENSES]].
+Every source file declares this expression in its SPDX header. Files whose
+formats cannot carry comments use adjacent =.license= files. Ratatui attribution
+remains in its third-party notices. Run =reuse lint= to check coverage.

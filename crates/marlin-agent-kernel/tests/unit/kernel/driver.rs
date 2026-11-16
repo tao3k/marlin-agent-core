@@ -1,10 +1,14 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_kernel::{
     GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionResult,
-    GraphLoopExecutionStatus, GraphLoopKernel, GraphLoopStrategy, GraphPolicyProposal,
-    GraphPolicyProposalStatus, LoopEdgeSpec, LoopGraph, LoopNodeSpec, TokioGraphLoopKernel,
-    compile_graph_policy_proposal,
+    GraphLoopExecutionStatus, GraphLoopKernel, GraphLoopStrategy, GraphLoopStrategyRuntime,
+    GraphPolicyProposal, GraphPolicyProposalStatus, LoopEdgeSpec, LoopGraph, LoopNodeSpec,
+    TokioGraphLoopKernel, compile_static_graph_policy_proposal,
 };
-use marlin_agent_protocol::GraphNativeAbiRequirement;
+use marlin_agent_protocol::GraphCAbiRequirement;
 use marlin_agent_runtime::TokioAgentRuntime;
 use tokio_stream::StreamExt;
 
@@ -57,14 +61,17 @@ async fn compiles_accepted_policy_proposal_into_execution_request() {
         edges: Vec::new(),
     };
     let proposal = GraphPolicyProposal::new(
-        GraphLoopStrategy::native_scheme("scheme-loop-ranker", "v1"),
+        GraphLoopStrategy::new(
+            "static-loop-ranker",
+            "v1",
+            GraphLoopStrategyRuntime::StaticPolicy,
+        ),
         graph,
         "sha256:input",
         "sha256:output",
-    )
-    .with_native_abi_requirement(native_policy_abi_requirement());
+    );
 
-    let compilation = compile_graph_policy_proposal("run", &proposal);
+    let compilation = compile_static_graph_policy_proposal("run", &proposal);
 
     assert!(compilation.is_accepted());
     assert_eq!(
@@ -88,7 +95,7 @@ async fn compiles_accepted_policy_proposal_into_execution_request() {
 #[test]
 fn rejects_invalid_policy_proposal_before_execution_request() {
     let proposal = GraphPolicyProposal::new(
-        GraphLoopStrategy::native_scheme("scheme-loop-ranker", "v1"),
+        GraphLoopStrategy::scheme_c_abi("scheme-loop-ranker", "v1"),
         LoopGraph {
             graph_id: "graph".to_owned(),
             nodes: Vec::new(),
@@ -97,9 +104,9 @@ fn rejects_invalid_policy_proposal_before_execution_request() {
         "sha256:input",
         "sha256:output",
     )
-    .with_native_abi_requirement(native_policy_abi_requirement());
+    .with_c_abi_requirement(policy_c_abi_requirement());
 
-    let compilation = compile_graph_policy_proposal("run", &proposal);
+    let compilation = compile_static_graph_policy_proposal("run", &proposal);
 
     assert!(!compilation.is_accepted());
     assert_eq!(
@@ -268,7 +275,7 @@ fn edge(from: &str, to: &str) -> LoopEdgeSpec {
     }
 }
 
-fn native_policy_abi_requirement() -> GraphNativeAbiRequirement {
-    GraphNativeAbiRequirement::new("marlin.graph-loop.native", 1)
+fn policy_c_abi_requirement() -> GraphCAbiRequirement {
+    GraphCAbiRequirement::new("marlin.graph-loop.native", 1)
         .with_required_symbols(["marlin_graph_loop_rank", "marlin_graph_loop_select"])
 }

@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / ui-hydra - Hydra command groups
+#+language: en
+
+* Responsibility
+
+Defines declarative command groups, key bindings and their presentation. Groups are
+accessible through M-x.
+
+* Interface and contracts
+
+=interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
+and scope assembly. UiHydraScope and its configuration and rules.
+Consumers access selected exports through =marlin-agent-core.init.exports=.
+
+* Build and verification
+
+[[file:../init.ss][init.ss]] selects this module. Its Build role, if present,
+contributes to the package's =std-make-spec=. See the
+[[file:../README.org][Scheme package README]] for the shared build and test commands.

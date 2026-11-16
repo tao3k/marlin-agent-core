@@ -1,9 +1,13 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 #![cfg(feature = "turso")]
 
 use marlin_agent_sessions::{
     AgentSessionContext, ContextNamespace, ContextVisibility, SessionId as RuntimeSessionId,
     SessionIsolationPolicy, SessionKind,
 };
+use marlin_agent_storage::SessionEventStore;
 use marlin_agent_storage::{
     AgentId, AgentStorage, EventId, ProjectId, SessionEventRecord, SessionId as StorageSessionId,
     StorageResult, TurnId, TursoAgentStorage, TursoAgentStorageConfig, VisibilityReceipt,

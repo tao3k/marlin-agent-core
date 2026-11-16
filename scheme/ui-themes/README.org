@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / ui-themes - Themes and Profiles
+#+language: en
+
+* Responsibility
+
+Maintains palettes, Profile catalogs and runtime selection, including Doom One. Commands
+and rendering use the same theme source.
+
+* Interface and contracts
+
+=interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
+and scope assembly. UiThemesScope: profiles, default-profile and select.
+Consumers access selected exports through =marlin-agent-core.init.exports=.
+
+* Build and verification
+
+[[file:../init.ss][init.ss]] selects this module. Its Build role, if present,
+contributes to the package's =std-make-spec=. See the
+[[file:../README.org][Scheme package README]] for the shared build and test commands.

@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+TITLE: Scheme C ABI and AOT Link Units
+#+FILETAGS: :marlin:scheme:rust:aot:
+
+* Deck Actor program
+
+The =marlin-deck-runtime= crate enables =actor-runtime= to link the actual
+single-VM Scheme program. =scheme/c-abi/deck-runtime.ss= exports rooted open,
+evaluate and close entries. =build-support/marlin-gerbil-aot-link/src/deck_actor.rs=
+uses gerbil-scheme-rust's program staging and archive Builder. The Scheme SDK
+comes from the same Cargo-pinned source as Rust's ABI. The upstream SDK owns
+the manifest, dependency graph and generated Gambit linker unit.
+
+The program owns one process-global VM with one active processor. Its Rust
+owner keeps every Scheme root thread-local. Context messages cross through
+existing typed mappings; the Lab Scope result becomes an ordered fixed-width
+Rust digest. See [[file:../40-rfcs/40.166-plugin-contract.org::#single-vm-actor-runtime][the complete ownership, batching and retirement contract]].
+
+The old command-route selector, its static header and linked-selector feature
+in =marlin-deck-runtime= are removed. Earlier measurements of that selector do
+not qualify the Actor runtime. Historical source and evidence remain in
+[[https://github.com/tao3k/marlin-agent-core/blob/74731c34be0771c01c68c3a67234e33e9b0fb200/docs/30-gerbil/30.80-aot-link-unit.org][the published predecessor revision]]; they do not describe the current executable
+entry point.
+
+* Graph policy projection
+
+=marlin-agent-policy-routing-abi= retains its separate typed graph-edge
+selection contract. It uses =agent-policy-routing-abi~0.scm= and its generated
+binding unit. The build helper compiles and audits the required symbols before
+publishing a static archive. Upper graph execution APIs still require the
+Rust-owned C ABI readiness gate. Typed policy and per-node execution receipts
+remain the replay boundary.
+
+The graph crate's =linked-selector= and =allocation_shape= benches qualify
+that graph policy component. They are separate from Context Actor execution.
+
+* Verification commands
+
+#+begin_src sh
+cargo test -p marlin-deck-runtime --features actor-runtime
+cargo bench -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 1 1024
+cargo bench -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 64 1024
+cargo test -p marlin-agent-policy-routing-abi --features linked-selector
+cargo bench -p marlin-agent-policy-routing-abi --features linked-selector --bench allocation_shape
+#+end_src
+
+Use the paired Gerbil/Gambit toolchain and the installed Scheme dependency
+prefix. The maintained setup action and Lab dependency tooling own dependency
+preparation in CI. Scheme's selected INIT declaration and standard Builder own
+the Marlin library closure. Local execution, measured performance and remote
+CI must each retain their own evidence and limits.

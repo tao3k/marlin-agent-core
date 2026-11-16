@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Applies protocol-owned dynamic hook actions without owning dispatcher state.
 
 use marlin_agent_protocol::{
@@ -34,21 +38,6 @@ pub(crate) struct DynamicPolicyActionApplication {
     pub(crate) message: Option<String>,
     pub(crate) policy: HookDispatchPolicyReceipt,
     pub(crate) receipts: Vec<HookPolicyDynamicActionApplicationReceipt>,
-}
-
-pub(crate) fn attach_dynamic_actions(
-    policy: HookDispatchPolicyReceipt,
-    actions: Vec<HookPolicyDynamicAction>,
-) -> HookDispatchPolicyReceipt {
-    HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
-        event_name: policy.event_name,
-        invocation_agent_scope: policy.invocation_agent_scope,
-        decision_context: policy.decision_context,
-        mode: policy.mode,
-        extension: policy.extension,
-        actions,
-        decisions: policy.decisions,
-    })
 }
 
 pub(crate) fn apply_dynamic_registry_actions<Registration>(
@@ -188,9 +177,15 @@ pub(crate) fn apply_dynamic_policy_actions(
     mut message: Option<String>,
     mut policy: HookDispatchPolicyReceipt,
 ) -> DynamicPolicyActionApplication {
+    if policy.actions.is_empty() {
+        return DynamicPolicyActionApplication {
+            message,
+            policy,
+            receipts: Vec::new(),
+        };
+    }
     let receipts = policy
         .actions
-        .clone()
         .iter()
         .filter_map(|action| match &action.kind {
             HookPolicyDynamicActionKind::Deny => Some(apply_dynamic_decision_action(

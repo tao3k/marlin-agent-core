@@ -1,5 +1,15 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #+TITLE: 20.50 Org Patch Planning
 #+FILETAGS: :marlin:workspace:org:patch:
+
+#+begin_quote
+Historical design: the Workspace patch mutation, source patch planner and
+patch-based commit workflow described here have been retired. See
+[[file:../40-rfcs/40.181-context-org-ownership.org][Context-owned Org architecture]] for the current boundary and remaining work.
+#+end_quote
 
 * 20.50 Org Patch Planning
 :PROPERTIES:

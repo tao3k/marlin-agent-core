@@ -1,4 +1,0 @@
-[submodule "org"]
-	path = org
-	url = https://github.com/tao3k/org.git
-	branch = main

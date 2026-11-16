@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 [package]
 name = "marlin-gerbil-scheme"
 edition.workspace = true
@@ -5,40 +9,30 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 description = "Gerbil Scheme runtime bindings for typed Marlin artifacts."
-license = "Apache-2.0"
-readme = "README.md"
+license.workspace = true
+readme = "README.org"
 publish = false
 
-[[bench]]
-name = "deck_runtime_native"
-harness = false
 
 [dependencies]
 marlin-agent-harness-types.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-graph.workspace = true
 marlin-gerbil-ir.workspace = true
-marlin-org-model.workspace = true
-marlin-workspace-protocol.workspace = true
+marlin-agent-gitops.workspace = true
 object.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 gerbil-scheme.workspace = true
 
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
-
 [dev-dependencies]
+marlin-agent-environment.workspace = true
 criterion.workspace = true
 futures-executor.workspace = true
 marlin-agent-kernel.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-agent-storage = { workspace = true, features = ["turso"] }
-marlin-git-utils.workspace = true
-marlin-org-memory.workspace = true
-marlin-org-store.workspace = true
-marlin-org-workflow.workspace = true
-marlin-workspace-patch.workspace = true
+marlin-agent-context = { workspace = true, features = ["org-memory", "org-workflow"] }
 marlin-workspace-status.workspace = true
 marlin-workspace-view.workspace = true
 memoffset.workspace = true
@@ -46,4 +40,3 @@ static_assertions.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 toml.workspace = true
-marlin-rust-project-harness-policy.workspace = true

@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin TUI — Interaction
+
+[[file:../40.180-emacs-scheme-tui.org][RFC entry]] · [[file:02-packages.org][Scheme packages]] · [[file:03-native-mapping.org][Native mapping]]
+
+* Buffer, Window and Frame
+
+A Buffer owns content and semantic state. A Window displays a Buffer and owns
+its viewport. A Frame contains Windows and their arrangement. Switching a
+Buffer changes the Window's displayed content; it does not create a new Frame.
+Multiple Windows can eventually display one Buffer with separate viewports.
+These meanings must remain distinct in APIs and tests; complete Emacs window
+management is not implied by the existing single-terminal host.
+
+The conversation is one Buffer. Messages, help, runtime processes and
+package-defined content are other Buffers. A Buffer contribution is data and
+behavior declared in Scheme, not a Rust enum variant per package.
+
+* Main area, Modeline and Minibuffer
+
+The normal vertical order is main Window, Modeline, then Minibuffer. There is
+no duplicate top status strip or permanent Guide sidebar. The Modeline owns
+compact persistent state: fish identity, model, activity, connection and
+selected Buffer. Scheme determines the segments, visibility and theme.
+
+The Minibuffer is one interaction surface with chat, command, selection and
+echo modes. The chat input and M-x prompt use the same layout vocabulary.
+M-x is immediately followed by its editable query and cursor. Completion rows
+follow it directly, without a surrounding input box or a permanent shortcut
+notice. Candidate names, annotations, match highlights and selected-row faces
+have distinct roles; the whole list must not use one accent color.
+
+A collapsed chat Minibuffer can display transient information omitted from
+the Modeline. Hover/focus expansion follows Scheme policy and available
+terminal mouse events. It must not discard a draft, move transcript position
+or unexpectedly take keyboard ownership. Terminals without motion reporting
+still need a complete keyboard path.
+
+* Completion and preview
+
+M-x is the command discovery entry. Commands can open a second Minibuffer
+selection for Buffers, themes, models or sessions. Retired slash commands and
+per-profile native event variants must not reappear as parallel catalogs.
+
+Completion uses a bounded visible count and a stable allocated height during
+one selection interaction. Catalog growth does not increase height without
+bound. Filtering or moving selection scrolls the candidate viewport; choosing
+a candidate must not make the Window jump between arbitrary sizes. Resizing
+the terminal recomputes geometry while keeping the selection valid.
+
+History-based ranking is Scheme policy. Selection is retained by identity
+when possible. First Up/Down immediately after M-x must navigate, including
+when both input events arrive before the next painted frame.
+
+Switch-buffer browsing previews the selected Buffer in the main Window.
+Confirmation commits it; cancellation restores the prior Buffer and viewport.
+Theme preview follows the same transaction principle. Preview cannot submit a
+chat draft or execute an unrelated command.
+
+* Messages and agent output
+
+Operational events and diagnostics go to the Messages Buffer through the event
+boundary. The echo area may show a concise summary. Detailed errors and native
+backtraces do not become assistant messages in the conversation. Switching to
+Messages exposes retained entries without changing their provenance.
+
+Conversation presentation distinguishes user text, assistant text, thinking,
+tool execution, tool results and approval requests. Scheme controls folding,
+summary text and available actions. Avoid redundant role headings and nested
+boxes when typography and spacing already identify the content. Expanding a
+section preserves its identity and scroll anchor. Tool approval menus retain
+the typed request identity; presentation is not permission to execute.
+
+* Mouse and scrolling
+
+Wheel input targets the painted region under the pointer. A transcript scroll,
+a Messages scroll and a completion-list scroll affect their respective
+viewports. No Tab-focus ritual is required before touchpad scrolling.
+Scheme declares destinations, bounds and wheel steps. Rust reports terminal
+coordinates and maps admitted geometry; it does not infer Buffer behavior from
+hard-coded region names. Keyboard navigation remains available independently.

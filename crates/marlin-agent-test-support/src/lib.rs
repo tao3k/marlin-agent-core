@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Shared test support for Marlin agent runtime and stream contracts.
 
 mod agent_graph_readiness;
@@ -24,8 +28,8 @@ pub use graph_policy::{
     assert_accepted_gerbil_ir_graph_policy_proposal_fixture,
     assert_accepted_graph_policy_proposal_fixture, assert_budgeted_graph_policy_execution_request,
     assert_rejected_graph_policy_proposal_fixture, budgeted_graph_policy_execution_request_fixture,
-    complex_gerbil_graph_policy_replay_fixture, graph_native_abi_readiness_receipt_fixture,
-    graph_native_abi_requirement_fixture, rejected_graph_policy_proposal_fixture,
+    complex_gerbil_graph_policy_replay_fixture, graph_c_abi_readiness_receipt_fixture,
+    graph_c_abi_requirement_fixture, rejected_graph_policy_proposal_fixture,
 };
 pub use hook::{
     assert_complex_gerbil_hook_policy_receipt, assert_custom_hook_policy_receipt,
@@ -64,14 +68,13 @@ pub use stream::{
     ScriptedStreamReceipt, no_live_llm_gateway_denial_evidence, scripted_stream_gate_evidence,
 };
 pub use sub_agent_scenario::{
-    DeterministicRoutedSubAgentExecutionReceipt, DeterministicSubAgentScenarioFixture,
+    DeterministicSubAgentExecutionReceipt, DeterministicSubAgentScenarioFixture,
     assert_deterministic_reviewer_applied_environment_activation_receipt,
     assert_deterministic_reviewer_environment_activation_receipt,
-    assert_deterministic_routed_sub_agent_execution, assert_deterministic_routed_sub_agent_session,
-    assert_deterministic_sub_agent_gateway_request, assert_deterministic_sub_agent_route_decision,
-    assert_deterministic_sub_agent_scenario_fixture,
+    assert_deterministic_sub_agent_execution, assert_deterministic_sub_agent_gateway_request,
+    assert_deterministic_sub_agent_scenario_fixture, assert_deterministic_sub_agent_session,
     deterministic_reviewer_applied_environment_activation_receipt_fixture,
-    deterministic_reviewer_routed_receipt_family_evidence,
+    deterministic_reviewer_session_receipt_evidence,
     deterministic_reviewer_sub_agent_scenario_fixture,
     deterministic_reviewer_sub_agent_spawn_config,
 };

@@ -1,17 +1,25 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 name: CI
 
 on:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
 
 jobs:
   format:
@@ -19,295 +27,103 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          submodules: recursive
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      - run: cargo fmt --all -- --check
 
-      - name: Check Rust formatting
-        run: cargo fmt --all -- --check
-
-  check:
-    name: Rust / check / ubuntu-latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      CARGO_INCREMENTAL: "0"
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: recursive
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: marlin-agent-core-check-${{ runner.os }}
-          cache-on-failure: true
-
-      - name: Fetch workspace dependencies
-        run: cargo fetch --locked
-
-      - name: Check Rust workspace
-        run: cargo check --workspace --all-targets --locked
-
-  lint:
-    name: Rust / lint / ubuntu-latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      CARGO_INCREMENTAL: "0"
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: recursive
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: marlin-agent-core-lint-${{ runner.os }}
-          cache-on-failure: true
-
-      - name: Fetch workspace dependencies
-        run: cargo fetch --locked
-
-      - name: Run Rust lint
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-
-  test:
-    name: Rust / test / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+  platform:
+    name: Build and test / ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-    env:
-      CARGO_INCREMENTAL: "0"
+        os: [ubuntu-latest, macos-latest]
+    uses: ./.github/workflows/platform.yaml
+    with:
+      os: ${{ matrix.os }}
+
+  app-server:
+    name: App Server / gRPC / ubuntu-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          submodules: recursive
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: marlin-agent-core-test-${{ runner.os }}
-          cache-on-failure: true
-
-      - name: Fetch workspace dependencies
-        run: cargo fetch --locked
-
-      - name: Run Rust tests
-        run: >-
-          cargo test --workspace --locked
-          --exclude marlin-agent-harness --exclude marlin-gerbil-scheme --
-          --skip storage_artifact_pointer_cas_lean_proof_builds
-          --skip runtime_live_repair_no_live_gate_denial_runs_typed_loop_receipt
-
-  gerbil:
-    name: Gerbil / gate / ${{ matrix.os }} / ${{ matrix.mode }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            mode: native
-            gerbil-source-ref: add922481cec81d05431db014bcb91b30485cf21
-            gerbil-source-version: v0.18.2-4-gadd92248
-    env:
-      CARGO_INCREMENTAL: "0"
-      MARLIN_REQUIRE_REAL_GXI: "1"
-      MARLIN_GERBIL_SOURCE_REMOTE: https://git.cons.io/mighty-gerbils/gerbil
-      MARLIN_GERBIL_SOURCE_REF: ${{ matrix.gerbil-source-ref }}
-      MARLIN_GERBIL_SOURCE_VERSION: ${{ matrix.gerbil-source-version }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: recursive
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: marlin-agent-core-gerbil-${{ runner.os }}
-          cache-on-failure: true
-
-      - name: Cache Gerbil source build
-        id: gerbil-source-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.local/opt/gerbil
-          key: marlin-gerbil-source-${{ runner.os }}-${{ runner.arch }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}-v2
-
-      - name: Cache Gerbil package dependencies
-        id: gerbil-package-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.gerbil
-            crates/marlin-gerbil-scheme/gerbil/.gerbil
-          key: marlin-gerbil-package-deps-${{ runner.os }}-${{ runner.arch }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}-${{ hashFiles('crates/marlin-gerbil-scheme/gerbil/gerbil.pkg') }}-v2
-
-      - name: Configure C compiler cache
-        uses: hendrikmuhs/ccache-action@v1.2.23
-        with:
-          key: marlin-gerbil-ccache-${{ matrix.os }}-${{ matrix.mode }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}
-          restore-keys: |
-            marlin-gerbil-ccache-${{ matrix.os }}-${{ matrix.mode }}-
-          max-size: 2G
-          variant: ccache
-          create-symlink: true
-          install: yes
-          update-package-index: true
-          job-summary: Gerbil ccache statistics
-
-      - name: Fetch workspace dependencies
-        run: cargo fetch --locked
-
-      - name: Install Gerbil from source
+          key: app-server-grpc
+      - name: Install Protobuf compiler
+        run: sudo apt-get install -y protobuf-compiler
+      - name: Test the isolated Rust UI client
+        shell: bash
         run: |
-          set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            ca-certificates \
-            git \
-            jq \
-            libsqlite3-dev \
-            libssl-dev \
-            openssl \
-            pkg-config \
-            sqlite3 \
-            zlib1g-dev
+          cargo test --locked -p marlin-agent-ui --no-default-features --features grpc --test grpc_client
+      - name: Test the generated Rust client from outside the workspace
+        shell: bash
+        run: |
+          consumer=$(mktemp -d "$RUNNER_TEMP/marlin-grpc-consumer.XXXXXX")
+          mkdir "$consumer/src"
+          cp crates/marlin-agent-ui/tests/integration/grpc_client.rs "$consumer/src/lib.rs"
+          cp Cargo.lock "$consumer/Cargo.lock"
+          cat > "$consumer/Cargo.toml" <<EOF
+          [package]
+          name = "marlin-grpc-consumer"
+          version = "0.0.0"
+          edition = "2024"
 
-          build_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
-          gerbil_install_base="$HOME/.local/opt/gerbil"
-          gerbil_source_root="$HOME/.cache/marlin/gerbil-source/$MARLIN_GERBIL_SOURCE_REF"
-          gerbil_toolchain_ready() {
-            test -x "$gerbil_install_base/bin/gxi" \
-              && test -x "$gerbil_install_base/bin/gxc" \
-              && test -x "$gerbil_install_base/bin/gxpkg" \
-              && test -x "$gerbil_install_base/bin/gsc"
-          }
-          # ccache-action shadows cc/c++ in /usr/local/bin. Gerbil/Gambit
-          # bootstrap must use the real system compiler; restored ccache objects
-          # can leave bootstrap install artifacts such as gsi/gsc unavailable.
-          export CC="/usr/bin/cc"
-          export CXX="/usr/bin/c++"
-          ccache --zero-stats || true
-          if ! gerbil_toolchain_ready; then
-            rm -rf "$gerbil_source_root" "$gerbil_install_base"
-            mkdir -p "$gerbil_source_root"
-            git -C "$gerbil_source_root" init
-            git -C "$gerbil_source_root" remote add origin "$MARLIN_GERBIL_SOURCE_REMOTE"
-            git -C "$gerbil_source_root" fetch --depth 1 origin "$MARLIN_GERBIL_SOURCE_REF"
-            git -C "$gerbil_source_root" checkout --detach FETCH_HEAD
-            cd "$gerbil_source_root"
-            ./configure --prefix="$gerbil_install_base" --version-string="$MARLIN_GERBIL_SOURCE_VERSION"
-            make -j"$build_jobs"
-            make install
+          [dependencies]
+          marlin-agent-ui = { path = "$GITHUB_WORKSPACE/crates/marlin-agent-ui", default-features = false, features = ["grpc"] }
+          EOF
+          # Cargo narrows the copied lock to the downstream graph using the
+          # crates already downloaded by the locked workspace test.
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target"
+          cargo test --offline --manifest-path "$consumer/Cargo.toml" --message-format=json |
+            tee "$RUNNER_TEMP/marlin-grpc-client-build.jsonl" | awk '!/^\{"reason":/'
+          dependencies=$(cargo tree --offline --locked --manifest-path "$consumer/Cargo.toml" -e normal,build --prefix none --format '{p}')
+          forbidden=$(awk '$1 ~ /^gerbil-scheme/ || ($1 ~ /^marlin-agent-/ && $1 != "marlin-agent-ui" && $1 != "marlin-agent-app-server")' <<< "$dependencies")
+          if [[ -n "$forbidden" ]]; then
+            printf '%s\n' "$forbidden"
+            exit 1
           fi
-          gerbil_toolchain_ready
+      - name: Test App Server over HTTP/2
+        shell: bash
+        run: |
+          cargo test --locked -p marlin-agent-app-server --features grpc --message-format=json |
+            tee "$RUNNER_TEMP/marlin-grpc-host-build.jsonl" | awk '!/^\{"reason":/'
+      - name: Compare the generated client and host Protobuf descriptors
+        shell: bash
+        run: |
+          descriptor() {
+            jq -nRer '
+              [inputs | fromjson? | select(.reason == "build-script-executed"
+                and (.package_id | contains("/marlin-agent-app-server#"))) | .out_dir]
+              | unique
+              | if length == 1 then .[0] + "/marlin-app-v1.bin"
+                else error("expected one generated App Server descriptor") end
+            ' "$RUNNER_TEMP/marlin-grpc-$1-build.jsonl"
+          }
+          client=$(descriptor client)
+          host=$(descriptor host)
+          cmp -- "$client" "$host"
+          sha256sum -- "$host"
 
-          echo "$gerbil_install_base/bin" >> "$GITHUB_PATH"
-          echo "MARLIN_GERBIL_GXI=$gerbil_install_base/bin/gxi" >> "$GITHUB_ENV"
-          echo "MARLIN_GERBIL_GXPKG=$gerbil_install_base/bin/gxpkg" >> "$GITHUB_ENV"
-          echo "MARLIN_GERBIL_GXC=$gerbil_install_base/bin/gxc" >> "$GITHUB_ENV"
-          echo "GERBIL_BUILD_CORES=$build_jobs" >> "$GITHUB_ENV"
-          echo "CARGO_BUILD_JOBS=$build_jobs" >> "$GITHUB_ENV"
-          echo "CC=cc" >> "$GITHUB_ENV"
-          echo "CXX=c++" >> "$GITHUB_ENV"
-          ccache --show-stats || true
-
-      - name: Save Gerbil source build
-        if: steps.gerbil-source-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+  model:
+    name: Quint / protocol models
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v6
         with:
-          path: |
-            ~/.local/opt/gerbil
-          key: ${{ steps.gerbil-source-cache.outputs.cache-primary-key }}
-
-      - name: Verify Gerbil toolchain
-        run: |
-          set -euxo pipefail
-          command -v gsc
-          gxi --version
-          gxpkg help >/dev/null
-          gxc --help >/dev/null
-          gxi -e '(begin (display "gerbil-ready") (newline))'
-          gxpkg list || true
-
-      - name: Install Gerbil package dependencies
-        if: steps.gerbil-package-cache.outputs.cache-hit != 'true'
-        working-directory: crates/marlin-gerbil-scheme/gerbil
-        run: |
-          set -euxo pipefail
-          mkdir -p "$HOME/.gerbil/pkg" "$PWD/.gerbil"
-          gxpkg dir --add git.cons.io/mighty-gerbils/gerbil-directory || true
-          gxpkg deps --install
-
-      - name: Save Gerbil package dependencies
-        if: steps.gerbil-package-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+          node-version: '24'
+          package-manager-cache: false
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
         with:
-          path: |
-            ~/.gerbil
-            crates/marlin-gerbil-scheme/gerbil/.gerbil
-          key: ${{ steps.gerbil-package-cache.outputs.cache-primary-key }}
-
-      - name: Build Gerbil package assets
-        working-directory: crates/marlin-gerbil-scheme/gerbil
-        run: gxpkg env ./build.ss compile
-
-      - name: Run Gerbil package tests
-        working-directory: crates/marlin-gerbil-scheme/gerbil
-        run: |
-          GERBIL_LOADPATH="$PWD/src:$PWD/.gerbil/lib" gxpkg env gxi t/all-test.ss
-
-      - name: Run Rust-driven Gerbil bridge smoke
-        run: |
-          cargo test --locked -p marlin-gerbil-scheme --test unit_test \
-            command::real_gxi::examples::build_script::command_compiler_real_gxi_build_script_runs_scheme_to_rust_bridge_smoke \
-            -- --ignored --exact --nocapture
-
-      - name: Audit Gerbil package assets
-        run: |
-          cargo package -p marlin-gerbil-scheme --list --allow-dirty | tee gerbil-package-files.txt
-          git -C crates/marlin-gerbil-scheme ls-files \
-            Cargo.toml \
-            README.md \
-            benches \
-            build.rs \
-            examples \
-            gerbil \
-            include \
-            src \
-            tests \
-            | sort > gerbil-package-required-assets.txt
-          while IFS= read -r asset; do
-            if ! grep -Fx "$asset" gerbil-package-files.txt >/dev/null; then
-              echo "::error::marlin-gerbil-scheme package is missing tracked asset: $asset"
-              exit 1
-            fi
-          done < gerbil-package-required-assets.txt
+          tool: just@1.56.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: quint-npm-${{ runner.os }}-${{ runner.arch }}-0.33.0
+      - name: Install Quint
+        run: npm install --global --no-audit --no-fund @informalsystems/quint@0.33.0
+      - name: Run the maintained model gates
+        run: just property-model-gate

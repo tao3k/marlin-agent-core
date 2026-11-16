@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Multi-iteration graph-loop controller contracts.
 
 use serde::{Deserialize, Serialize};
@@ -416,7 +420,7 @@ pub enum HumanDecision {
 }
 
 /// Typed receipt emitted when a graph loop must stop for human review.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct HumanGateReceipt {
     pub gate_id: HumanGateId,
     pub run_id: RunId,

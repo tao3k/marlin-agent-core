@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Typed Rust projection for Gerbil policy-pack receipt chains.
 
 use marlin_agent_protocol::{
@@ -159,7 +163,7 @@ pub struct GerbilPolicyPackProjectionChainReceipt {
     #[serde(rename = "policy-projection-receipt")]
     pub policy_projection_receipt: GerbilPolicyPackReceiptSummary,
     #[serde(rename = "native-projection-payload")]
-    pub native_projection_payload: GerbilPolicyPackReceiptSummary,
+    pub abi_projection_payload: GerbilPolicyPackReceiptSummary,
     #[serde(rename = "budget-receipt")]
     pub budget_receipt: GerbilPolicyPackReceiptSummary,
     #[serde(rename = "catalog-resolution-receipt")]
@@ -169,7 +173,7 @@ pub struct GerbilPolicyPackProjectionChainReceipt {
     #[serde(rename = "policy-projection-receipt-owner")]
     pub policy_projection_receipt_owner: String,
     #[serde(rename = "native-projection-payload-owner")]
-    pub native_projection_payload_owner: String,
+    pub abi_projection_payload_owner: String,
     #[serde(rename = "budget-receipt-owner")]
     pub budget_receipt_owner: String,
     #[serde(rename = "catalog-resolution-receipt-owner")]
@@ -283,8 +287,8 @@ impl GerbilPolicyPackProjectionChainReceipt {
         )?;
         self.ensure_owner_matches(
             "native-projection-payload-owner",
-            &self.native_projection_payload_owner,
-            &self.native_projection_payload,
+            &self.abi_projection_payload_owner,
+            &self.abi_projection_payload,
         )?;
         self.ensure_owner_matches(
             "budget-receipt-owner",

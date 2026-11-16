@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin TUI — Reference sources
+
+[[file:../40.180-emacs-scheme-tui.org][RFC entry]] · [[file:01-interaction.org][Interaction]] · [[file:02-packages.org][Packages]]
+
+* Emacs ecosystem
+
+Read the actual package implementation before adapting its behavior. Local
+checkouts are study inputs, never runtime dependencies or proof of parity.
+
+| Source | Observed revision | What Marlin learns |
+|--------+-------------------+--------------------|
+| Vertico, local straight repository | =93f1587= | Bounded candidates, preselection, viewport and resize policy |
+| Hydra, =.data/hydra= | =59a2a45= | One macro declaration projects command heads, keymaps and transient lifetime |
+| Doom Modeline and Doom themes | Local Emacs ecosystem | Semantic segments, restrained faces and consistent active/inactive state |
+| Emacs Buffer/Window/Minibuffer and keymaps | Native interaction model | Content/window separation, echo Messages, nested completion and command discovery |
+
+In inspected =vertico.el=, =vertico-count= defaults to ten. =vertico-resize=
+distinguishes fixed, shrink/grow and grow-only behavior. Marlin adapts bounded
+and stable Minibuffer geometry to its terminal; it does not increase candidate
+height in proportion to catalog size. =vertico--exhibit= coordinates the display.
+
+In inspected =hydra.el=, =defhydra= defines the declaration machinery and
+=defhydra+= extends declarations. Marlin's Scheme macros should project ordinary
+POO/functional values while retaining explicit head/exit semantics. This is
+not permission to copy Elisp implementation code without license review.
+
+* Agent terminal references
+
+| Source | Observed revision | Limited reference role |
+|--------+-------------------+------------------------|
+| oh-my-pi, =.data/oh-my-pi= | =cfd8d04= | Compact status, thinking/tool summaries, folding and approval presentation |
+| Codewhale, =.data/Codewhale= | =b8643a7= | Incremental transcript preparation, frame scheduling and event-queue lessons |
+
+Agent-specific presentation must fit Marlin's Buffer/Modeline/Minibuffer
+architecture. Avoid copying a CLI-first command surface, duplicate role labels,
+permanent key notices or another product's whole screen arrangement.
+
+Upstream issue observations motivate explicit invariants and negative tests;
+they are not evidence that Marlin has fixed the same failure. Record mechanisms
+and applicable conditions in the owning design module, rather than append a
+chronological issue diary to the RFC entry.

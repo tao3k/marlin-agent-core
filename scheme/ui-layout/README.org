@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / ui-layout - Layout policy
+#+language: en
+
+* Responsibility
+
+Defines the main window, Modeline and Minibuffer layout. Geometry, scrolling and hit
+regions share one projection.
+
+* Interface and contracts
+
+=interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
+and scope assembly. UiLayoutScope and its layout constructors and bounds.
+Consumers access selected exports through =marlin-agent-core.init.exports=.
+
+* Build and verification
+
+[[file:../init.ss][init.ss]] selects this module. Its Build role, if present,
+contributes to the package's =std-make-spec=. See the
+[[file:../README.org][Scheme package README]] for the shared build and test commands.

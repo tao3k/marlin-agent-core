@@ -1,103 +1,39 @@
-#+title: 20.60 Org Contracts And Templates
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-* 20.60 Org Contracts And Templates
+#+title: Org Contracts and Host Projections
 
-Org contracts are parser-owned template and validation facts. They are authored
-as ordinary Org subtrees and parsed by =tao3k/orgize= through its
-=CONTRACT_ORG= contract mechanism.
+* Semantic owner
 
-** Contract Shape
+Scheme Orgize owns Org Contract declarations, queries and evaluation. Lab
+Context composes the selected profile and exposes source cuts. Marlin Rust
+consumes typed results through its existing Scheme VM; it does not depend on
+the Orgize Rust crate or maintain an AST evaluator.
 
-The first supported shape mirrors orgize contracts:
+See [[file:../40-rfcs/40.181-context-org-ownership.org][Context-owned Org architecture]] for the public boundary and limits.
 
-- contract headings carry =CONTRACT_ID=, =CONTRACT_SCOPE=, and =CONTRACT_KIND=;
+* Host projections
 
-- assertion headings carry =ASSERT_ID= and =SEVERITY=;
+Rust's =RenderedContractFacts= and workspace status retain producer-supplied
+registry, reference, diagnostic, template and validation records as data.
+=MemoryOrgWorkspace::apply_projection= accumulates those records with typed
+nodes for local query/view use. It preserves producer outcomes, including
+failed and skipped receipts. It does not execute contract assertions.
 
-- =org-elements-query= source blocks select required document facts;
+Parser-defined fields and source semantics remain behind =ContextOrgModule=.
+Source IDs, generation, parser identity, digests and byte spans cross as typed
+values. Rendered summary text is a display projection, not a receipt parser or
+an authority source.
 
-- =org-elements-expect= source blocks describe expected counts or existence;
+* API migration
 
-- =jinja2 :name message= and future fix blocks provide template-facing text.
+The former =OrgDocumentLoader=, Rust contract discovery and evaluation adapter,
+automatic raw-document store queries and Rust built-in standard-contract
+library have been removed. Consumers must use the selected Scheme package.
+The old Workspace patch packages and mutation receipts are also retired;
+there is no source-mutation fallback here.
 
-** Native Projection
-
-=marlin-org-workspace= exposes =OrgDocumentLoader::load_workspace=. It returns
-both the projected =OrgNode= list and an =OrgContractRegistry= projected from
-orgize contract facts.
-=OrgDocumentLoader::load_workspace_with_contracts= accepts explicit Org
-contract documents and merges their contracts into the registry before
-reference resolution.
-
-=marlin-org-model= owns the stable protocol DTOs. It keeps contract scope, kind,
-severity, element category, element kind, and relative scope behind typed wrapper
-boundaries. Expectation is projected as a structured enum (=Exists=,
-=NotExists=, =Count { op, expected }=, or =Unsupported { label }=) so validation
-does not depend on orgize debug strings.
-
-** Reference Resolution
-
-The workspace loader also projects =CONTRACT_ORG= references into
-=OrgContractResolutionReport=. Document-level keyword references and subtree
-property references are parsed with orgize =parse_contract_reference= and
-resolved against the local =OrgContractRegistry= by contract id or alias.
-
-Unresolved or empty references produce =ORG044= warning diagnostics with the
-parser-owned source span for the reference.
-
-** Template Boundary
-
-Contracts are template inputs, not direct mutations. =marlin-org-workspace=
-projects assertion =message= and =fix= blocks into =OrgContractTemplate=
-records with role, engine label, and body text. A template engine or Gerbil
-control plane may consume those records to choose document scaffolds, messages,
-and fix intent. Durable mutation still goes through =WorkspacePatch=,
-=marlin-org-patch=, and =marlin-org-workflow=.
-
-** Validation Receipts
-
-=OrgContractValidationReport= is the runtime-independent validation result
-container. It carries assertion receipts and diagnostics as data.
-=marlin-org-workspace= executes a narrow parser-owned first pass while loading
-a document: resolved =CONTRACT_ORG= references produce receipts for orgize
-=Exists=, =NotExists=, and =Count(op, n)= assertions over projected node
-summaries, properties, element category, and element kind. Unsupported
-expectations remain explicit skipped receipts rather than invoking an external
-runtime, and those skipped receipts carry typed skip reasons. Supported
-assertion receipts include matched node ids so downstream agents can inspect
-the evidence without re-running the query.
-
-** View And Status
-
-=marlin-workspace-view= exposes =ContractFacts= as a selectable compact view
-field and carries the typed =OrgContractRegistry= beside rendered contract
-summary lines. Rendered lines include assertion counts, structured expectation
-summaries, matched-node counts, matched node ids for supported validation
-receipts, and skip-reason summaries for skipped validation receipts.
-=marlin-workspace-status= has a =ContractStatus= summary for resolved
-references, unresolved references, diagnostics, templates, validation receipts,
-validation outcomes, assertions, matched nodes, and rendered summary lines. It
-also carries the typed contract registry, reference resolutions, diagnostic
-records, template records, skip-reason summaries, and the full
-=OrgContractValidationReport= so agents do not need to parse rendered text.
-
-** Standard Agent Contracts
-The standard agent contract library ships independent Org files for
-=agent.plan.v1=, =agent.task.v1=, =agent.loop.v1=, =agent.memory.v1=, and
-=agent.topology.v1=. =agent.topology.v1= is the coarse project/session/content
-navigation layer: it validates topology roots and source anchors while leaving
-detailed content in memory, session, and source-span contracts.
-** Current Limits
-
-The first projection preserves orgize query, expectation, message, fix,
-template facts, source block spans, local reference resolution, explicit
-external contract documents, and runtime-independent validation receipts for
-the parser-owned count/existence subset. =MemoryOrgWorkspace= can load a batch
-of documents with =load_documents_with_discovered_contracts=, discover contract
-registry documents from that batch, and expose unresolved references as typed
-status diagnostics. =OrgDocumentLoader::discover_contract_documents= can filter
-a caller-provided candidate document set down to documents that contain
-contract registries. It does not discover registry files from the filesystem
-implicitly and does not execute template engines inside Marlin. Richer
-assertion execution remains an upstream orgize lint concern until Marlin
-expands the receipt protocol beyond the current parser-owned summary path.
+A Contract source cut is not a durable commit or an authorization to act.
+Runtime effects still require the host's current-use admission and typed
+execution receipts. The remaining file store performs individual replacements;
+a transactional Org turn journal remains separate integration work.

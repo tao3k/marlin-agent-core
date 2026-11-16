@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use super::{
     decode_gerbil_resolved_loop_policy_pack, resolved_loop_policy_pack_envelope,
     resolved_loop_policy_pack_fixture, resolved_loop_policy_pack_registry,

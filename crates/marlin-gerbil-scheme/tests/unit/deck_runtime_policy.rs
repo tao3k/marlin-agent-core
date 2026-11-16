@@ -1,8 +1,9 @@
-use marlin_agent_protocol::{ModelRouteAgentScope, ModelRouteRequest};
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_gerbil_scheme::{
-    GERBIL_DECK_RUNTIME_MODEL_ROUTE_SELECTION_SCHEMA_ID,
-    GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID,
-    GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
+    GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID, GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_VERSION,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID,
     GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL,
@@ -10,85 +11,24 @@ use marlin_gerbil_scheme::{
     GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL,
     GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID, GERBIL_LOOP_POLICY_PROJECTION_MODULE_TYPE_ID,
     GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID, GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID,
-    GerbilDeckRuntimeContextMode, GerbilDeckRuntimeIsolationMode,
-    GerbilDeckRuntimeModelRoutePolicy, GerbilDeckRuntimeModelRoutePolicyRequest,
-    GerbilDeckRuntimeModelRouteSelectedPolicy, GerbilDeckRuntimeModelRouteSelectionReceipt,
-    GerbilDeckRuntimeNativeBridgeBoundary, GerbilDeckRuntimeNativeBridgeReceipt,
-    GerbilDeckRuntimeSelectedPolicyKind, GerbilDeckRuntimeSerializationBoundary,
-    gerbil_deck_runtime_native_projection_readiness_plan,
+    gerbil_deck_route_abi_projection_readiness_plan,
     gerbil_deck_runtime_poo_policy_projection_request,
-    gerbil_deck_runtime_resolved_loop_policy_pack_projection_request, gerbil_runtime_asset,
+    gerbil_deck_runtime_resolved_loop_policy_pack_projection_request,
 };
-
-#[test]
-fn gerbil_deck_runtime_policy_request_uses_typed_agent_scope() {
-    let policy =
-        GerbilDeckRuntimeModelRoutePolicy::new("cheap-test-runner", "openai", "gpt-5-mini")
-            .with_command_prefix("cargo test")
-            .with_agent_scope("sub-agent");
-    let request = ModelRouteRequest::command(["cargo", "test"])
-        .with_agent_scope(ModelRouteAgentScope::SubAgent)
-        .with_sub_agent_role("tester");
-
-    let scheme_request =
-        GerbilDeckRuntimeModelRoutePolicyRequest::from_model_route_request([policy], &request);
-
-    assert_eq!(scheme_request.command, "cargo test");
-    assert_eq!(scheme_request.agent_scope, "sub-agent");
-    assert_eq!(scheme_request.policies[0].provider, "openai");
-    assert_eq!(scheme_request.policies[0].model, "gpt-5-mini");
-}
-
-#[test]
-fn gerbil_deck_runtime_policy_receipt_preserves_provider_model_identity() {
-    let receipt = GerbilDeckRuntimeModelRouteSelectionReceipt {
-        schema_id: GERBIL_DECK_RUNTIME_MODEL_ROUTE_SELECTION_SCHEMA_ID.to_string(),
-        command: "cargo test".to_string(),
-        agent_scope: "sub-agent".to_string(),
-        matched: true,
-        native_bridge: GerbilDeckRuntimeNativeBridgeReceipt::ready("marlin.deck-runtime.native", 1),
-        policy: Some(GerbilDeckRuntimeModelRouteSelectedPolicy {
-            kind: GerbilDeckRuntimeSelectedPolicyKind::new(
-                "marlin-deck-runtime.model-route-policy.v1",
-            ),
-            name: "cheap-test-runner".to_string(),
-            provider: "openai".to_string(),
-            model: "gpt-5-mini".to_string(),
-            command_prefixes: vec!["cargo test".to_string()],
-            agent_scopes: vec!["sub-agent".to_string()],
-            context_mode: GerbilDeckRuntimeContextMode::new("forked-context"),
-            isolation_mode: GerbilDeckRuntimeIsolationMode::new("workspace-isolated"),
-        }),
-    };
-
-    let policy = receipt.selected_policy().expect("selected policy");
-    assert!(receipt.matched);
-    assert_eq!(policy.provider, "openai");
-    assert_eq!(policy.model, "gpt-5-mini");
-    assert_eq!(policy.context_mode.as_str(), "forked-context");
-    assert_eq!(
-        receipt.native_bridge.bridge_boundary,
-        GerbilDeckRuntimeNativeBridgeBoundary::SchemeTypesToRustTypes
-    );
-    assert_eq!(
-        receipt.native_bridge.serialization_boundary,
-        GerbilDeckRuntimeSerializationBoundary::RustOwnedCliTraceCrossProcess
-    );
-}
 
 #[test]
 fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contract() {
     let request = gerbil_deck_runtime_poo_policy_projection_request();
     let resolved_request = gerbil_deck_runtime_resolved_loop_policy_pack_projection_request();
-    let readiness_plan = gerbil_deck_runtime_native_projection_readiness_plan();
+    let readiness_plan = gerbil_deck_route_abi_projection_readiness_plan();
 
     assert_eq!(
         request.abi_id.as_str(),
-        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID
+        GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID
     );
     assert_eq!(
         request.abi_version,
-        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION
+        GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_VERSION
     );
     assert_eq!(
         request.symbol.as_str(),
@@ -140,12 +80,12 @@ fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contr
         ]
     );
 
-    let native_projection_source =
-        gerbil_runtime_asset("src/marlin/deck-runtime-native-projection.ss")
-            .expect("generated manifest includes native projection source")
-            .source;
+    let abi_projection_source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scheme/policy/projection/deck/policy.ss"
+    ));
     for expected in [
-        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID,
+        GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID,
         GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL,
         GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL,
         GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL,
@@ -157,7 +97,7 @@ fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contr
         GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID,
     ] {
         assert!(
-            native_projection_source.contains(expected),
+            abi_projection_source.contains(expected),
             "native projection Scheme source should contain {expected}"
         );
     }

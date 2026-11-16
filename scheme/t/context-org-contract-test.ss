@@ -1,0 +1,30 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+;;; The published Context operation delegates real source admission to Lab.
+(import (only-in :clan/poo/object .get .o)
+        (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
+
+(def admit (.get marlin-agent-core.init.exports Marlin context org-contract-source))
+(def source-graph (.get marlin-agent-core.init.exports Marlin context org-source-graph))
+(def raw "#+title: Evidence\n:PROPERTIES:\n:ID: root\n:CONTRACT_ID: example.v1\n:CONTRACT_REVISION: 1\n:END:\n* TODO Work\n:PROPERTIES:\n:ID: work\n:END:\nOriginal 中文 content.\n")
+(def cut (admit (.o identity: "source-a" generation: 1 source: raw)))
+(unless (and (eq? (.get cut kind) 'context.org-source.v1)
+             (equal? (.get cut source) raw)
+             (equal? (.get cut contract-identity) "example.v1")
+             (= (length (.get cut nodes)) 2))
+  (error "Lab Org Contract source projection did not preserve its source and nodes"))
+(def (rejected? thunk) (with-catch (lambda (_) #t) (lambda () (thunk) #f)))
+(unless (and (rejected? (lambda () (admit (.o identity: "source-a" generation: 0 source: raw))))
+             (rejected? (lambda () (admit (.o identity: "source-a" generation: 1 source: "* no contract\n")))))
+  (error "invalid Org Contract source was accepted"))
+(def ordinary "* TODO Open\n正文 中文\n* DONE Closed\n#+begin_src text\n* TODO not a headline\n#+end_src\n")
+(let* ((projected (source-graph ordinary))
+       (records (.get (.get projected graph) records))
+       (headlines (filter (lambda (record) (equal? (.get record kind) "headline")) records)))
+  (unless (and (equal? (.get projected source) ordinary) (= (length headlines) 2))
+    (error "Org graph lost source or confused source-block content with headlines")))
+(unless (rejected? (lambda () (source-graph (make-string 1048577 #\x))))
+  (error "oversized Org source was silently admitted"))
+(displayln "CONTEXT-ORG-CONTRACT-OK")

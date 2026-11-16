@@ -1,20 +1,11 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Runtime observability interface.
 
-pub mod process;
 mod spans;
-mod subscriber;
 
-pub use process::{
-    AsyncManagedChildProcess, ManagedChildProcessSpec, RuntimeCommandCleanupEntry,
-    RuntimeCommandCleanupOutcome, RuntimeCommandCleanupReceipt, RuntimeCommandKind,
-    RuntimeCommandObservation, RuntimeProcessCleanupController, RuntimeProcessCleanupFailure,
-    RuntimeProcessCleanupPolicy, RuntimeProcessCleanupSweep, RuntimeProcessExitStatus,
-    RuntimeProcessHandle, RuntimeProcessKind, RuntimeProcessKindCounts, RuntimeProcessLiveness,
-    RuntimeProcessObservation, RuntimeProcessObservationTimestampMs, RuntimeProcessOutput,
-    RuntimeProcessRegistrationError, RuntimeProcessRegistry, RuntimeProcessRegistryHandle,
-    RuntimeProcessRegistrySnapshot, RuntimeProcessStatus, RuntimeProcessStatusCounts,
-    RuntimeProcessTerminator, SysinfoRuntimeProcessController,
-};
 pub use spans::{
     FIELD_AGENT_REFERENCE, FIELD_CHILD_RUN_ID, FIELD_CLEANUP_ATTEMPTS,
     FIELD_CLEANUP_CANDIDATE_COUNT, FIELD_CLEANUP_OUTCOME, FIELD_DIAGNOSTIC_COUNT,
@@ -35,9 +26,9 @@ pub use spans::{
     SPAN_AGENT_TOOL, SPAN_HARNESS_EXECUTION, SPAN_HARNESS_RESULT, SPAN_HOOK_DISPATCH,
     SPAN_HOOK_RUN, SPAN_RUNTIME_HOOK, SPAN_RUNTIME_PROVIDER, SPAN_RUNTIME_SUB_AGENT,
     SPAN_RUNTIME_TASK, SPAN_RUNTIME_TOOL, SUB_AGENT_SOURCE_KERNEL_NODE,
-    SUB_AGENT_SOURCE_UNSPECIFIED, TARGET_RUNTIME_PROCESS, TOPIC_KERNEL_EXECUTION,
-    TOPIC_KERNEL_HOOK, TOPIC_KERNEL_NODE, TOPIC_KERNEL_SUB_AGENT, agent_provider_span,
-    agent_provider_span_name, agent_sub_agent_span, agent_sub_agent_span_name,
+    SUB_AGENT_SOURCE_UNSPECIFIED, TARGET_RUNTIME_PROCESS, TARGET_RUNTIME_SPAN,
+    TOPIC_KERNEL_EXECUTION, TOPIC_KERNEL_HOOK, TOPIC_KERNEL_NODE, TOPIC_KERNEL_SUB_AGENT,
+    agent_provider_span, agent_provider_span_name, agent_sub_agent_span, agent_sub_agent_span_name,
     agent_sub_agent_span_with_source, agent_tool_span, agent_tool_span_name,
     harness_execution_span_name, harness_result_span_name, hook_dispatch_span,
     hook_dispatch_span_name, hook_run_span, hook_run_span_name, kernel_execution_event,
@@ -46,8 +37,4 @@ pub use spans::{
     runtime_hook_span, runtime_hook_span_name, runtime_provider_span, runtime_provider_span_name,
     runtime_sub_agent_span, runtime_sub_agent_span_name, runtime_task_span, runtime_task_span_name,
     runtime_tool_span, runtime_tool_span_name,
-};
-pub use subscriber::{
-    RuntimeTracingSubscriberConfig, RuntimeTracingSubscriberConfigError,
-    RuntimeTracingSubscriberFormat, RuntimeTracingSubscriberReceipt, RuntimeTracingSubscriberScope,
 };

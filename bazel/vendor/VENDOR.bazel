@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 ###############################################################################
 # This file is used to configure how external repositories are handled in vendor mode.
 # ONLY the two following functions can be used:

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     env, fs,
@@ -10,6 +14,7 @@ use std::{
     time::Instant,
 };
 
+use asp_rust::{RustScenarioBenchmarkStatus, validate_rust_scenario_benchmark};
 use marlin_agent_kernel::{
     LoopProgramEventMapper, LoopProgramExecutionDriver, LoopProgramExecutionRequest,
     LoopProgramExecutionStatus, LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffRouter,
@@ -21,10 +26,8 @@ use marlin_agent_protocol::{
     LoopProgramEventKind, LoopProgramId, LoopProgramInput, LoopProgramStateId,
     LoopProgramTransition, LoopProgramTransitionId,
 };
-use marlin_rust_project_harness_policy::{
-    RustScenarioBenchmarkStatus, render_rust_scenario_benchmark_snapshot,
-    validate_rust_scenario_benchmark,
-};
+#[path = "../../../dev/verification/scenario_snapshot.rs"]
+mod scenario_snapshot;
 use tempfile::TempDir;
 
 #[global_allocator]
@@ -127,7 +130,7 @@ fn main() {
     let scenario_root = observed_scenario_benchmark_root(&rows, observed_total_ms);
     let receipt = validate_rust_scenario_benchmark(scenario_root.path())
         .expect("loop program execution shape scenario benchmark should validate");
-    let snapshot = render_rust_scenario_benchmark_snapshot(&receipt);
+    let snapshot = scenario_snapshot::render_rust_scenario_benchmark_snapshot(&receipt);
     let snapshot_path = write_scenario_benchmark_snapshot(&snapshot);
     println!("{snapshot}");
     assert_eq!(

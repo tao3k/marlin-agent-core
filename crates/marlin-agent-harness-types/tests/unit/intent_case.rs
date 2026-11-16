@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_harness_types::{
     INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID, INTENT_CASE_RUN_RECEIPT_SCHEMA_ID,
     IntentCaseArtifactCompletenessReceipt, IntentCaseArtifactCompletenessStatus,

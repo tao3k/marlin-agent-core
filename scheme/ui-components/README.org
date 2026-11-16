@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / ui-components - UI components and commands
+#+language: en
+
+* Responsibility
+
+Defines Buffers, command catalogs, keymaps, component prototypes and bounds. Terminal
+I/O belongs to the host.
+
+* Interface and contracts
+
+=interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
+and scope assembly. UiComponentsScope and its Buffer, Command, Keymap and component
+constructors.
+Consumers access selected exports through =marlin-agent-core.init.exports=.
+
+* Build and verification
+
+[[file:../init.ss][init.ss]] selects this module. Its Build role, if present,
+contributes to the package's =std-make-spec=. See the
+[[file:../README.org][Scheme package README]] for the shared build and test commands.

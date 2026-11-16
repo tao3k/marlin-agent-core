@@ -1,0 +1,100 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Context-owned Org architecture
+#+property: STATUS in-progress
+
+* Ownership
+
+Org is the durable representation intended for agent context. Lab's Context
+and Session modules own semantic projection and lifecycle. Marlin's Scheme
+modules compose those capabilities. Rust owns typed requests, VM boundaries,
+current-use effect admission and host I/O. The TUI consumes these interfaces.
+There is no context-compression subsystem.
+
+Orgize is exclusively a Scheme dependency reached through Lab's declared
+package graph. Its revision is determined by the selected Lab =gerbil.pkg=,
+not Cargo. Rust must not link another Orgize library or initialize an
+independent Org parser runtime. The existing Gerbil VM owns Scheme values and
+module loading.
+
+* Implemented boundary
+
+The [[file:../../scheme/interface.ss][dependency interface]] retains the selected Lab objects. The
+[[file:../../scheme/context/objects.ss][Context scope]] exposes scope admission, Contract source cuts and a
+source-backed Element graph through [[file:../../scheme/c-abi/context.ss][typed Scheme ABI procedures]].
+The [[file:../../crates/marlin-agent-context/src/gerbil_org.rs][Rust Org boundary]] accepts an explicit owning VM and preserves rooted
+source values; runtime-internal values never cross as Scheme-authored text
+serialization.
+
+| Operation | Owner and result |
+|-----------+------------------|
+| Open Org source | Scheme parses and retains the original source and graph |
+| Project graph | Typed Element IDs, parent relationships and UTF-8 byte spans |
+| Query fields | Bounded batches of parser-defined fields |
+| Open Contract source | Lab source identity, generation, parser, digests and anchors |
+| Admit scope | Lab scope digest correlated with the typed Rust request |
+
+Element IDs are tied to one opened source instance. Equal numeric ordinals
+from different sources are not interchangeable. Rust validates types, source
+ownership, uniqueness, bounds and UTF-8 positions. It does not duplicate Org
+parsing, contract queries or assertion evaluation.
+
+Current limits include one MiB per source, 4,096 Elements, 64 field requests
+per batch and 32 Contract anchors. Unsupported or oversized inputs fail;
+source bytes are not silently truncated. Arbitrary chunking cannot preserve
+semantics across blocks, properties, links and contracts.
+
+* Removed Rust pipeline
+
+The former Rust Orgize AST document loader, contract registry discovery,
+reference resolution, evaluator adapter, built-in contract documents and
+exclusive =initialize_org_runtime= API are retired. Their automatic raw-text
+loading and store-query entry points are removed with them. No alternate
+parser or compatibility fallback replaces them.
+
+Callers open and query sources through =ContextOrgModule=. Already projected
+host records may be applied to =MemoryOrgWorkspace::apply_projection=.
+The remaining Rust store, typed fact cache, query correlation and view/status
+projection are host facilities. Applying well-typed facts does not certify
+source authenticity or turn them into an execution authorization receipt.
+Parser and contract semantics are tested in Scheme; Rust retains value-boundary,
+source-ownership, storage and typed host-projection checks.
+
+* Remaining integration
+
+The current TUI journal is not a complete Org-backed turn journal. A complete
+migration must retain user/assistant content, thinking, continuation data and
+the references needed to reconstruct turns, then prove replay and disclosure
+behavior under the actual Context scope. Storing a source does not imply
+sending every stored byte to a model.
+
+Lab's session host and durable owner must be connected through the selected VM
+and typed host receipts. A scope digest or Contract cut alone does not prove
+authentication, disclosure permission, durable commit or enrollment in Session.
+The file adapter currently replaces individual files; it supplies neither a
+multi-document transaction nor cross-process compare-and-swap. The in-memory
+store's exact-content comparison applies only within its process.
+
+The shared Org record types remain a Context-owned leaf under =parts/org-model=
+because Workspace contracts and Context currently depend on each other through
+that leaf. Removing it requires dependency inversion and a single type owner;
+copying records into both packages would produce incompatible identities.
+This remaining type-layout issue does not justify retaining a Rust parser.
+
+* Verification
+
+Use the official Gerbil test entry for Scheme semantics and the production VM
+boundary for integration. [[file:../../crates/marlin-agent-context/tests/org_scheme_vm.rs][The native Org suite]] checks source preservation,
+Unicode spans, field bounds, cross-source ID refusal and upstream size
+rejection. The host cache tests consume typed facts directly and preserve
+producer validation outcomes rather than evaluating assertions again.
+
+The Scheme-only native Org test passed on the linked development cohort on
+2026-11-16 after removing the Cargo Orgize dependency. Context's 37 host tests
+also passed. These results cover the typed VM boundary and host facilities;
+they do not qualify the unfinished durable turn journal.
+
+The [[file:40.180-emacs-scheme-tui/05-verification.org][TUI verification matrix]] separately records package, mapping, PTY and
+performance qualification. A parser limit test does not measure peak memory;
+a package build does not establish startup latency or durable turn replay.

@@ -1,0 +1,307 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+use marlin_agent_ui::{UiComponentId, UiEvent, UiIntent, UiLayoutPolicy, UiRegion, UiWorkbench};
+
+fn test_layout() -> UiLayoutPolicy {
+    UiLayoutPolicy {
+        message_frame: marlin_agent_ui::UiFrameSpec {
+            min_transcript_rows: 2,
+            fixed_editor_rows: 0,
+            footer_rows: 1,
+            extensions: true,
+            prompt: " Message ".into(),
+        },
+        command_frame: marlin_agent_ui::UiFrameSpec {
+            min_transcript_rows: 0,
+            fixed_editor_rows: 1,
+            footer_rows: 0,
+            extensions: false,
+            prompt: " M-x ".into(),
+        },
+        max_chatbox_rows: 10,
+        max_command_rows: 32,
+        regions: marlin_agent_ui::UiFrameRegions::new(
+            marlin_agent_ui::UiFrameRole::ALL
+                .map(|role| marlin_agent_ui::UiComponentId::new(role.as_str()).unwrap()),
+        )
+        .unwrap(),
+        frame_tree: marlin_agent_ui::UiElement::Rows(
+            [
+                "transcript",
+                "extensions",
+                "modeline",
+                "editor",
+                "candidates",
+                "minibuffer",
+            ]
+            .into_iter()
+            .map(|name| marlin_agent_ui::UiElement::Region {
+                id: UiComponentId::new(name).unwrap(),
+                scroll_target: matches!(name, "transcript" | "candidates")
+                    .then(|| marlin_agent_ui::UiScrollTarget::new(name, 3).unwrap()),
+                child: Box::new(marlin_agent_ui::UiElement::Text(vec![])),
+            })
+            .collect(),
+        ),
+        transcript_policy: marlin_agent_ui::UiTranscriptPolicy {
+            default_collapsed: true,
+            user_prefix: "u: ".into(),
+            assistant_role: String::new(),
+            thinking_collapsed_role: "closed".into(),
+            thinking_expanded_role: "open".into(),
+        },
+    }
+}
+
+fn test_frame() -> marlin_agent_ui::UiFrame {
+    use marlin_agent_ui::{UiBufferId, UiFrame, UiWindow};
+    let id = |name| UiComponentId::new(name).unwrap();
+    let buffer = |name| UiBufferId::new(name).unwrap();
+    UiFrame {
+        id: id("main"),
+        windows: vec![UiWindow {
+            id: id("main"),
+            buffer: buffer("conversation"),
+        }],
+        selected_window: id("main"),
+        minibuffer: id("minibuffer"),
+        buffers: vec![buffer("conversation"), buffer("messages")],
+    }
+}
+
+fn id(value: &str) -> UiComponentId {
+    UiComponentId::new(value).unwrap()
+}
+
+fn workbench(focus: &str) -> UiWorkbench {
+    UiWorkbench {
+        layout: test_layout(),
+        theme: marlin_agent_ui::UiTheme::default(),
+        model_label: "provider/model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Extension {
+                id: id("guide"),
+                label: "Guide".into(),
+                focusable: true,
+                content: marlin_agent_ui::UiElement::Rows(vec![]),
+            },
+        ],
+        focus: id(focus),
+        frame: test_frame(),
+        keymap: Vec::new(),
+        transients: Vec::new(),
+    }
+}
+
+#[test]
+fn shared_ui_admission_rejects_effect_and_snapshot_substitution() {
+    let composer = workbench("composer");
+    let guide = workbench("guide");
+    let focus = UiIntent::Focus(id("guide"));
+    assert!(
+        composer
+            .admit_successor(&guide, UiEvent::NextFocus, &focus)
+            .is_ok()
+    );
+    assert!(
+        composer
+            .admit_successor(&guide, UiEvent::Submit, &focus)
+            .is_err()
+    );
+
+    let mut altered = guide.clone();
+    altered.regions[2] = UiRegion::Transcript;
+    assert!(
+        composer
+            .admit_successor(&altered, UiEvent::NextFocus, &focus)
+            .is_err()
+    );
+    let mut changed_layout = guide.clone();
+    changed_layout.layout.max_chatbox_rows = 5;
+    assert!(
+        composer
+            .admit_successor(&changed_layout, UiEvent::NextFocus, &focus)
+            .is_err()
+    );
+    assert!(
+        guide
+            .admit_successor(&composer, UiEvent::Submit, &UiIntent::Focus(id("composer")))
+            .is_ok()
+    );
+}
+
+#[test]
+fn command_history_admits_only_catalog_names_without_changing_the_view() {
+    use marlin_agent_ui::{UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName};
+    let mut view = workbench("composer");
+    let name = UiCommandName::new("clear").unwrap();
+    view.regions.push(UiRegion::Commands(vec![UiCommand {
+        name: name.clone(),
+        description: "Clear".into(),
+        arguments: UiCommandArguments::None,
+        capability: UiCommandCapability::Clear,
+        value: None,
+    }]));
+    let intent = UiIntent::Focus(id("composer"));
+    assert!(
+        view.admit_successor(&view, UiEvent::RecordCommand(name), &intent)
+            .is_ok()
+    );
+    assert!(
+        view.admit_successor(
+            &view,
+            UiEvent::RecordCommand(UiCommandName::new("unknown").unwrap()),
+            &intent
+        )
+        .is_err()
+    );
+    let mut changed = view.clone();
+    changed.layout.max_command_rows += 1;
+    assert!(
+        view.admit_successor(
+            &changed,
+            UiEvent::RecordCommand(UiCommandName::new("clear").unwrap()),
+            &intent
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn profile_admission_allows_template_style_but_not_binding_changes() {
+    use marlin_agent_ui::{
+        UiBackground, UiElement, UiProfileName, UiTemplateSpan, UiTemplateValue, UiTone,
+    };
+    let mut previous = workbench("composer");
+    previous.layout.frame_tree = UiElement::Template {
+        background: UiBackground::None,
+        spans: vec![UiTemplateSpan {
+            value: UiTemplateValue::Binding(id("role-text")),
+            tone: UiTone::Info,
+            bold: true,
+        }],
+    };
+    let event = UiEvent::SelectProfile(UiProfileName::new("pi").unwrap());
+    let intent = UiIntent::Focus(id("composer"));
+    let mut next = previous.clone();
+    let UiElement::Template { spans, .. } = &mut next.layout.frame_tree else {
+        unreachable!()
+    };
+    spans[0].tone = UiTone::Accent;
+    spans[0].bold = false;
+    assert!(
+        previous
+            .admit_successor(&next, event.clone(), &intent)
+            .is_ok()
+    );
+    let UiElement::Template { spans, .. } = &mut next.layout.frame_tree else {
+        unreachable!()
+    };
+    spans[0].value = UiTemplateValue::Binding(id("body-text"));
+    assert!(previous.admit_successor(&next, event, &intent).is_err());
+}
+
+#[test]
+fn profile_admission_preserves_status_ownership_while_allowing_modeline_order() {
+    use marlin_agent_ui::{UiProfileName, UiStatusItem, UiStatusTone};
+    let modeline = |identity: &str, label: &str, keep_priority| UiStatusItem {
+        id: id(identity),
+        label: label.into(),
+        compact_label: label.into(),
+        tone: UiStatusTone::Info,
+        active_tone: UiStatusTone::Info,
+        min_width: 0,
+        compact_below: 0,
+        keep_priority,
+    };
+    let mut previous = workbench("composer");
+    if let marlin_agent_ui::UiElement::Rows(regions) = &mut previous.layout.frame_tree
+        && let marlin_agent_ui::UiElement::Region { child, .. } = &mut regions[2]
+    {
+        **child = marlin_agent_ui::UiElement::Bar {
+            background: marlin_agent_ui::UiBackground::Bar,
+            right_divisor: 3,
+            segments: vec![],
+        };
+    }
+    previous.regions.push(UiRegion::Status(vec![
+        modeline("modeline/a", "A", 0),
+        modeline("modeline/b", "B", 3),
+        modeline("modeline/c", "C", 1),
+        UiStatusItem::host(id("host/status"), "host fact"),
+    ]));
+    let event = UiEvent::SelectProfile(UiProfileName::new("pi").unwrap());
+    let focus = UiIntent::Focus(id("composer"));
+    let mut reordered = previous.clone();
+    if let marlin_agent_ui::UiElement::Rows(regions) = &mut reordered.layout.frame_tree
+        && let marlin_agent_ui::UiElement::Region { child, .. } = &mut regions[2]
+        && let marlin_agent_ui::UiElement::Bar { right_divisor, .. } = child.as_mut()
+    {
+        *right_divisor = 2;
+    }
+    reordered.layout.transcript_policy.thinking_collapsed_role = "⋯".into();
+    if let UiRegion::Status(items) = &mut reordered.regions[3] {
+        items.swap(1, 2);
+        items[0].label = "new A".into();
+        items[1].keep_priority = 1;
+        items[2].keep_priority = 3;
+    }
+    assert!(
+        previous
+            .admit_successor(&reordered, event.clone(), &focus)
+            .is_ok()
+    );
+
+    let mut changed_geometry = reordered.clone();
+    changed_geometry.layout.max_command_rows += 1;
+    assert!(
+        previous
+            .admit_successor(&changed_geometry, event.clone(), &focus)
+            .is_err()
+    );
+
+    let mut changed_region = reordered.clone();
+    if let marlin_agent_ui::UiElement::Rows(regions) = &mut changed_region.layout.frame_tree
+        && let marlin_agent_ui::UiElement::Region { id: region_id, .. } = &mut regions[2]
+    {
+        *region_id = id("different-region");
+    }
+    assert!(
+        previous
+            .admit_successor(&changed_region, event.clone(), &focus)
+            .is_err()
+    );
+
+    let mut changed_host = reordered.clone();
+    if let UiRegion::Status(items) = &mut changed_host.regions[3] {
+        items[3].label = "forged".into();
+    }
+    assert!(
+        previous
+            .admit_successor(&changed_host, event.clone(), &focus)
+            .is_err()
+    );
+    let mut duplicate_role = reordered.clone();
+    if let UiRegion::Status(items) = &mut duplicate_role.regions[3] {
+        items[2].id = items[1].id.clone();
+    }
+    assert!(
+        previous
+            .admit_successor(&duplicate_role, event.clone(), &focus)
+            .is_err()
+    );
+    let mut missing_role = reordered;
+    if let UiRegion::Status(items) = &mut missing_role.regions[3] {
+        items[0].id = id("modeline/d");
+    }
+    assert!(
+        previous
+            .admit_successor(&missing_role, event, &focus)
+            .is_err()
+    );
+}

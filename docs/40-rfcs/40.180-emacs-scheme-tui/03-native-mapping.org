@@ -1,0 +1,87 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin TUI — Native mapping contract
+
+[[file:../40.180-emacs-scheme-tui.org][RFC entry]] · [[file:02-packages.org][Packages]] · [[file:04-runtime-performance.org][Runtime]]
+
+* One semantic source
+
+Scheme composes a typed workbench and element tree from host facts. Rust admits
+the projection and interprets general elements as Ratatui widgets. Adding a
+Buffer, theme, command or binding must not require another Rust match branch.
+The boundary is a framework for existing capabilities, not a claim that every
+Ratatui widget or arbitrary native callback is already exposed.
+
+| Crossing | Producer | Consumer |
+|----------+----------+----------|
+| Immutable host facts | Rust | Scheme workbench functions |
+| Elements and layout constraints | Scheme | Typed decoder and mapper |
+| Terminal keys, pointer and dimensions | Rust | Scheme keymaps and dispatch |
+| Hit-region and scroll policy | Scheme layout | General geometry mapping |
+| Intent and successor state | Scheme dispatch | Rust intent admission/effect owner |
+| Native result and operational Message | Rust effect owner | Scheme presentation |
+
+Rust owns domain identifiers, bounded native input, rooted-value lifetimes,
+thread/VM ownership and error conversion. Scheme does not serialize native
+protocols into text. Outer TOML, external transport and trace encodings remain
+Rust-owned. No ad hoc string event bus or native hook DSL is introduced.
+
+* Mapping and geometry
+
+The shared model is in [[file:../../../crates/marlin-agent-ui/src/element.rs][element.rs]] and its typed projection in
+[[file:../../../crates/marlin-agent-ui/src/projection.rs][projection.rs]]. The Ratatui interpreter lives under
+[[file:../../../crates/marlin-agent-tui/src/ui_elements/mod.rs][ui_elements]]. It maps element structure, styles, clipping, cell widths, lists,
+input and content bindings. Host-side data sources provide application facts;
+they do not determine Minibuffer policy or command catalogs.
+
+Scheme binds each interaction role to a region identity. The terminal
+requires the roles it implements, but does not require a region to use the
+same name as its role. A list likewise declares its data source separately
+from its identity. A source can be an explicit host capability or bounded
+Scheme rows and named bindings.
+
+Mouse input uses hit regions collected by the draw pass, including the
+element tree of a selected package Buffer. Resize invalidates that geometry.
+Clipping and Unicode display width apply consistently to painting, cursor
+placement and hit bounds.
+
+Cached transcript preparation may remain native where measurements justify it.
+Cache identity includes the relevant content, width, presentation and viewport
+revision. Theme, fold, resize and Buffer changes must invalidate the affected
+result. Deep scrolling must retain its indexing benefit after migration.
+
+* Dispatch and effects
+
+A terminal event enters the Scheme-owned command/dispatch protocol. Rust checks
+that the returned intent and successor agree with that event before invoking
+a host effect. A presentation package cannot manufacture native handlers or
+execution permission. Request, session, turn and approval identities remain
+bound to the typed Runtime protocols.
+
+The Event Bus transports operational Messages as events with provenance and
+retention policy. Scheme selects how to display them in Messages and the echo
+area. Reliable lifecycle events and replaceable display updates have distinct
+admission/retention requirements; a folded tool result is still the same event.
+
+C ABI module identity is descriptive metadata, not readiness evidence. ABI
+entry procedures demand selected scopes through =init.exports=. They must not
+keep a second mirror of business scopes as a substitute for that authority.
+Native readiness gates remain owned by Rust.
+
+* Scheme test window
+
+[[file:../../../crates/marlin-agent-tui/src/test_window.rs][test_window]] executes a compiled Scheme scenario against the production frame
+snapshot and Ratatui mapper. The first input is void. A scenario then returns
+=#(width height workbench pointer-probes)= or =#f= on success, and raises on
+failed assertions. Probes are zero-based terminal cell pairs. The response
+=#(rows hit-regions cursor pointer-hits)= includes the innermost painted
+region, scroll destination, list and row for each probe. A scenario can pass
+the list and row to =select-list-row= and check the Scheme intent. The
+terminal uses the same hit routines and event; row selection can propose
+focus within the admitted workbench.
+
+The driver bounds scenarios to 256 frames and dimensions to 512 cells per axis.
+It owns conversion and terminal mechanics. Scheme owns package assertions and
+state transitions. These snapshots are deterministic mapper observations;
+actual keyboard delivery and terminal restoration require separate PTY tests.

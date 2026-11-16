@@ -1,5 +1,9 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 #![cfg(feature = "turso")]
 
+use marlin_agent_storage::SessionEventStore;
 use marlin_agent_storage::{
     AgentId, AgentStorage, ArtifactHash, ArtifactRecord, EventId, ProjectId, SessionEventRecord,
     SessionId, StorageResult, TurnId, TursoAgentStorage, TursoAgentStorageConfig,
@@ -38,7 +42,7 @@ fn projection_body() -> Vec<u8> {
         "compiler_receipt=policy-pack-compiler-receipt",
         "slot_merge_receipt=policy-pack-slot-merge-receipt",
         "failure_combination_receipt=policy-pack-failure-combination-receipt",
-        "native_abi=json-free-scheme-types-to-rust-types",
+        "c_abi=json-free-scheme-types-to-rust-types",
     ]
     .join("\n")
     .into_bytes()

@@ -1,0 +1,16 @@
+{"version": "1.2.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"url": "https://github.com/tao3k/lean-poo.git",
+   "type": "git",
+   "subDir": null,
+   "scope": "",
+   "rev": "1c12d39eb5e2a8220b48f5884cb5039741e2b536",
+   "name": "LeanPoo",
+   "manifestFile": "lake-manifest.json",
+   "inputRev": "1c12d39eb5e2a8220b48f5884cb5039741e2b536",
+   "inherited": false,
+   "configFile": "lakefile.toml"}],
+ "name": "«marlin-proof»",
+ "lakeDir": ".lake",
+ "fixedToolchain": false}

@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / deck-runtime - Deck runtime
+#+language: en
+
+* Responsibility
+
+Declares session Actor operations, timers and message routing. Rust owns threads,
+processes and external I/O.
+
+* Interface and contracts
+
+=interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
+and scope assembly. Runtime scope operations for opening, submitting, receiving,
+activation, timers and shutdown.
+Consumers access selected exports through =marlin-agent-core.init.exports=.
+
+* Build and verification
+
+[[file:../init.ss][init.ss]] selects this module. Its Build role, if present,
+contributes to the package's =std-make-spec=. See the
+[[file:../README.org][Scheme package README]] for the shared build and test commands.

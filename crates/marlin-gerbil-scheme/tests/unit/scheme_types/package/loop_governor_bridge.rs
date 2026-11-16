@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_gerbil_scheme::{
     GerbilSchemeFieldName, GerbilSchemePackageId, GerbilSchemePackageManifest,
     GerbilSchemeProjectionContract, GerbilSchemeSchemaId, GerbilSchemeTypeFieldSpec,
@@ -11,9 +15,10 @@ const POO_FLOW_LOOP_GOVERNOR_MARLIN_REQUEST_SCHEMA: &str =
 const POO_FLOW_LOOP_GOVERNOR_RUNTIME_MANIFEST_SCHEMA: &str =
     "poo-flow.loop-governor.marlin-runtime-manifest.v1";
 const POO_FLOW_LOOP_ENGINE_DISCOVERY_SCHEMA: &str = "poo-flow.loop-engine.marlin-discovery.v1";
-const MARLIN_GERBIL_PACKAGE_MANIFEST: &str = include_str!("../../../../gerbil/gerbil.pkg");
-const POO_FLOW_PACKAGE_PIN: &str =
-    "github.com/tao3k/poo-flow@1367aff9865bcabc6cddf04cd41e157b25c7979a";
+const MARLIN_GERBIL_PACKAGE_MANIFEST: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../scheme/gerbil.pkg"
+));
 
 #[test]
 fn loop_governor_bridge_package_manifest_declares_marlin_consumer_shape() {
@@ -27,17 +32,17 @@ fn loop_governor_bridge_package_manifest_declares_marlin_consumer_shape() {
         GerbilSchemePackageId::new("marlin.deck-runtime.loop-governor-bridge")
     );
     assert!(
-        MARLIN_GERBIL_PACKAGE_MANIFEST.contains("package: marlin-deck-runtime"),
+        MARLIN_GERBIL_PACKAGE_MANIFEST.contains("package: marlin-agent-core"),
         "Marlin's Gerbil package owns the consumer package boundary"
     );
     assert!(
-        MARLIN_GERBIL_PACKAGE_MANIFEST.contains(POO_FLOW_PACKAGE_PIN),
-        "Marlin must consume poo-flow through gerbil.pkg instead of treating poo-flow as the ABI owner"
+        MARLIN_GERBIL_PACKAGE_MANIFEST.contains("github.com/tao3k/agentic-ai-lab@"),
+        "Marlin's package consumes the Lab module contract"
     );
     assert_eq!(receipt.type_count, 4);
     assert_eq!(receipt.projection_contract_count, 1);
-    assert_eq!(receipt.native_abi_version, None);
-    assert_eq!(receipt.native_symbol_count, 0);
+    assert_eq!(receipt.c_abi_version, None);
+    assert_eq!(receipt.abi_symbol_count, 0);
 
     let runtime_manifest = manifest
         .type_manifest

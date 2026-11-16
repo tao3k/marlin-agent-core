@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 * 40.00 RFC Index
 RFC documents define proposed or active protocol contracts before they become accepted decisions or crate-level implementation details.
 ** Documents
 | RFC | Status | Owner Crates | Implementation Evidence | Next Gap |
-[[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]]
+[[file:40.10-org-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]]
 [[file:40.20-org-source-persistence-boundary.org][40.20 Org Source Persistence Boundary]]
 [[file:40.30-org-contract-template-protocol.org][40.30 Org Contract Template Protocol]]
 [[file:40.40-agent-system-harness-protocol.org][40.40 Agent System Harness Protocol]]
@@ -23,6 +27,7 @@ RFC documents define proposed or active protocol contracts before they become ac
 [[file:40.160-agent-graph-topology-protocol.org][40.160 Agent Graph Topology Protocol]]
 [[file:40.164-poo-flow-agent-flow-loop-substrate.org][40.164 POO Flow Agent-Flow Loop Substrate]]
 [[file:40.165-loop-policy-ir-performance-boundary.org][40.165 LoopPolicyIR Performance Boundary]]
+[[file:40.166-plugin-contract.org][40.166 Plugin Contract]]
 ** Acceleration Lanes
 | Lane | RFCs | Goal | Immediate Gate |
 ** Progress Rules

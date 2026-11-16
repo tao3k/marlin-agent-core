@@ -1,10 +1,14 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Storage projection adapters for runtime session events.
 
 use std::fmt::{self, Display, Formatter};
 
 use marlin_agent_storage::{
-    AgentId as StorageAgentId, AgentStorage, EventId as StorageEventId,
-    ProjectId as StorageProjectId, SessionEventRecord, SessionId as StorageSessionId, StorageError,
+    AgentId as StorageAgentId, EventId as StorageEventId, ProjectId as StorageProjectId,
+    SessionEventRecord, SessionEventStore, SessionId as StorageSessionId, StorageError,
     StorageResult, TurnId as StorageTurnId,
 };
 
@@ -115,7 +119,7 @@ impl SessionStorageEventBuilder {
     }
 }
 
-/// Adapter that projects session contexts into an `AgentStorage` implementation.
+/// Adapter that projects session contexts into a `SessionEventStore` implementation.
 #[derive(Clone, Debug)]
 pub struct SessionStorageAdapter<S> {
     storage: S,
@@ -135,7 +139,7 @@ impl<S> SessionStorageAdapter<S> {
 
 impl<S> SessionStorageAdapter<S>
 where
-    S: AgentStorage,
+    S: SessionEventStore,
 {
     pub async fn append_context_event(
         &self,

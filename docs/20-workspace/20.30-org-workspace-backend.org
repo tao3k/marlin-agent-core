@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #+TITLE: 20.30 Org Workspace Backend
 #+FILETAGS: :marlin:workspace:org:backend:
 
@@ -8,19 +12,19 @@
 :STATUS: active
 :END:
 
-=marlin-org-workspace= is the first-party Org document adapter for native
-workspace backends.
+Org source interpretation belongs to Scheme. Marlin's =scheme/context= uses
+Lab's selected Context and Orgize modules through the existing Gerbil VM.
+There is no separate Rust Org workspace/parser package.
 
-Raw Org text is parsed through =tao3k/orgize=. The projection consumes orgize
-headline, section, property drawer, list item, and link traversal surfaces before
-building structured =OrgNode= records. Each projected heading carries a typed
-=source_span= with document id, byte range, and line range from the orgize syntax
-tree.
+=marlin-agent-context::gerbil_org::ContextOrgModule= supplies the typed host
+boundary: open a rooted source, project Elements and query bounded fields.
+The graph preserves original text, parent relationships and UTF-8 byte spans.
+Element identities belong to the source instance that produced them.
 
 ** Boundary
-- Does not implement =AgentWorkspace=
-- Owns raw Org document loading and AST projection
-- Loads raw Org text through =tao3k/orgize=
-- Does not become a dependency of =marlin-agent-core=
-- Does not own memory algorithms, query execution, patch execution, view
-  rendering, or external stores
+- Scheme owns Org parsing, field semantics and contract evaluation.
+- Rust checks typed values, source ownership, bounds and byte positions.
+- The host store and fact cache consume explicit source/projection results.
+- An Element graph does not establish durable commit or execution authority.
+
+See [[file:../40-rfcs/40.181-context-org-ownership.org][Context-owned Org architecture]] for limits and the unfinished durable journal.

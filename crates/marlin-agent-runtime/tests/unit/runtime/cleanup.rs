@@ -1,12 +1,15 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use std::collections::BTreeSet;
 
-use marlin_agent_runtime::{TokioAgentRuntime, observability};
+use marlin_agent_runtime::{TokioAgentRuntime, process};
 
 #[test]
 fn runtime_context_carries_process_cleanup_policy_to_children() {
     let (runtime, _events) = TokioAgentRuntime::new(4);
-    let runtime =
-        runtime.with_process_cleanup_policy(observability::RuntimeProcessCleanupPolicy::new(3));
+    let runtime = runtime.with_process_cleanup_policy(process::RuntimeProcessCleanupPolicy::new(3));
 
     assert_eq!(
         runtime
@@ -41,14 +44,13 @@ fn runtime_context_carries_process_cleanup_policy_to_children() {
 #[test]
 fn runtime_process_cleanup_driver_uses_runtime_policy() {
     let (runtime, _events) = TokioAgentRuntime::new(4);
-    let runtime =
-        runtime.with_process_cleanup_policy(observability::RuntimeProcessCleanupPolicy::new(2));
+    let runtime = runtime.with_process_cleanup_policy(process::RuntimeProcessCleanupPolicy::new(2));
     let context = runtime.context();
     let registry = context.process_registry();
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             2200,
-            observability::RuntimeProcessKind::Tool,
+            process::RuntimeProcessKind::Tool,
             "tool:cleanup-policy",
         )
         .with_started_at_ms(1),
@@ -104,13 +106,13 @@ impl FakeCleanupController {
     }
 }
 
-impl observability::RuntimeProcessLiveness for FakeCleanupController {
+impl process::RuntimeProcessLiveness for FakeCleanupController {
     fn is_process_alive(&mut self, pid: u32) -> bool {
         self.alive.contains(&pid)
     }
 }
 
-impl observability::RuntimeProcessTerminator for FakeCleanupController {
+impl process::RuntimeProcessTerminator for FakeCleanupController {
     fn request_termination(&mut self, pid: u32) -> Result<bool, String> {
         if self.fail_termination.contains(&pid) {
             return Err(format!("pid {pid} refused termination"));

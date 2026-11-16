@@ -1,0 +1,184 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+//! Native ABI requirements for graph-loop strategy planes.
+
+use std::collections::BTreeSet;
+
+use serde::{Deserialize, Serialize};
+
+/// Stable identifier for a native ABI required by a graph-loop strategy plane.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct GraphCAbiId(String);
+
+impl GraphCAbiId {
+    /// Creates a native ABI identifier.
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// Returns the native ABI identifier as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<String> for GraphCAbiId {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for GraphCAbiId {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+/// Stable native symbol required by a graph-loop strategy plane.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct GraphAbiSymbol(String);
+
+impl GraphAbiSymbol {
+    /// Creates a native symbol identifier.
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// Returns the native symbol as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<String> for GraphAbiSymbol {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for GraphAbiSymbol {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+/// Native ABI requirement attached to a graph-loop strategy proposal.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GraphCAbiRequirement {
+    pub abi_id: GraphCAbiId,
+    pub version: u32,
+    pub required_symbols: Vec<GraphAbiSymbol>,
+}
+
+impl GraphCAbiRequirement {
+    /// Creates a native ABI requirement with no required symbols yet.
+    pub fn new(abi_id: impl Into<GraphCAbiId>, version: u32) -> Self {
+        Self {
+            abi_id: abi_id.into(),
+            version,
+            required_symbols: Vec::new(),
+        }
+    }
+
+    /// Adds required native symbols to the ABI requirement.
+    pub fn with_required_symbols<I, S>(mut self, symbols: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<GraphAbiSymbol>,
+    {
+        self.required_symbols
+            .extend(symbols.into_iter().map(Into::into));
+        self
+    }
+}
+
+/// Runtime status for native ABI readiness checks.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum GraphCAbiReadinessStatus {
+    Ready,
+    MissingSymbols,
+}
+
+/// Receipt recording native ABI symbol coverage at a runtime or CI boundary.
+/// Callers must establish the provenance of the reported symbols separately.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GraphCAbiReadinessReceipt {
+    pub abi_id: GraphCAbiId,
+    pub version: u32,
+    /// Exact requirement evaluated to produce this receipt.
+    pub required_symbols: Vec<GraphAbiSymbol>,
+    pub required_symbol_count: usize,
+    pub available_symbol_count: usize,
+    pub matched_symbol_count: usize,
+    pub missing_symbols: Vec<GraphAbiSymbol>,
+    pub status: GraphCAbiReadinessStatus,
+}
+
+impl GraphCAbiReadinessReceipt {
+    pub fn evaluate<I, S>(requirement: &GraphCAbiRequirement, available_symbols: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<GraphAbiSymbol>,
+    {
+        let available_symbols = available_symbols
+            .into_iter()
+            .map(Into::into)
+            .collect::<BTreeSet<_>>();
+        let missing_symbols = requirement
+            .required_symbols
+            .iter()
+            .filter(|symbol| !available_symbols.contains(*symbol))
+            .cloned()
+            .collect::<Vec<_>>();
+        let matched_symbol_count = requirement.required_symbols.len() - missing_symbols.len();
+        let status = if missing_symbols.is_empty() {
+            GraphCAbiReadinessStatus::Ready
+        } else {
+            GraphCAbiReadinessStatus::MissingSymbols
+        };
+
+        Self {
+            abi_id: requirement.abi_id.clone(),
+            version: requirement.version,
+            required_symbols: requirement.required_symbols.clone(),
+            required_symbol_count: requirement.required_symbols.len(),
+            available_symbol_count: available_symbols.len(),
+            matched_symbol_count,
+            missing_symbols,
+            status,
+        }
+    }
+}
+
+pub(super) fn validate_graph_c_abi_requirement(
+    c_abi: &GraphCAbiRequirement,
+    diagnostics: &mut Vec<String>,
+) {
+    if c_abi.abi_id.as_str().trim().is_empty() {
+        diagnostics.push("graph_policy_proposal.c_abi_id_empty".to_string());
+    }
+    if c_abi.version == 0 {
+        diagnostics.push("graph_policy_proposal.c_abi_version_zero".to_string());
+    }
+    if c_abi.required_symbols.is_empty() {
+        diagnostics.push("graph_policy_proposal.c_abi_symbols_empty".to_string());
+    }
+
+    let mut symbols = BTreeSet::new();
+    for symbol in &c_abi.required_symbols {
+        let symbol = symbol.as_str().trim();
+        if symbol.is_empty() {
+            diagnostics.push("graph_policy_proposal.c_abi_symbol_empty".to_string());
+            continue;
+        }
+        if !symbols.insert(symbol.to_string()) {
+            diagnostics.push(format!(
+                "graph_policy_proposal.c_abi_symbol_duplicate:{symbol}"
+            ));
+        }
+    }
+}

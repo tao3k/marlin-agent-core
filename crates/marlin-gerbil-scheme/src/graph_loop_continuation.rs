@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Gerbil `POO` graph-loop continuation projection into Rust controller actions.
 
 use marlin_agent_protocol::{
@@ -6,31 +10,31 @@ use marlin_agent_protocol::{
 };
 
 use crate::{
-    GerbilSchemeFieldName, GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiId,
-    GerbilSchemeNativeAbiReadinessPlan, GerbilSchemeNativeProjectionReceipt,
-    GerbilSchemeNativeProjectionRequest, GerbilSchemeNativeSymbol, GerbilSchemePackageId,
-    GerbilSchemePackageManifest, GerbilSchemeProjectionContract, GerbilSchemeSchemaId,
-    GerbilSchemeTypeDecodeError, GerbilSchemeTypeFieldSpec, GerbilSchemeTypeId,
-    GerbilSchemeTypeManifest, GerbilSchemeTypeRegistry, GerbilSchemeTypeSpec,
-    GerbilSchemeTypedProjection, GerbilSchemeTypedValue, decode_gerbil_scheme_native_projection,
+    GerbilSchemeAbiProjectionReceipt, GerbilSchemeAbiProjectionRequest, GerbilSchemeAbiSymbol,
+    GerbilSchemeCAbiContract, GerbilSchemeCAbiId, GerbilSchemeCAbiReadinessPlan,
+    GerbilSchemeFieldName, GerbilSchemePackageId, GerbilSchemePackageManifest,
+    GerbilSchemeProjectionContract, GerbilSchemeSchemaId, GerbilSchemeTypeDecodeError,
+    GerbilSchemeTypeFieldSpec, GerbilSchemeTypeId, GerbilSchemeTypeManifest,
+    GerbilSchemeTypeRegistry, GerbilSchemeTypeSpec, GerbilSchemeTypedProjection,
+    GerbilSchemeTypedValue, decode_gerbil_scheme_abi_projection,
 };
 
 /// Native ABI id for graph-loop continuation typed projections.
-pub const GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_ID: &str =
+pub const GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_ID: &str =
     "marlin.agent.gerbil-loop-continuation.native-projection";
 
 /// Package id for the graph-loop continuation typed projection ABI manifest.
-pub const GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_PACKAGE_ID: &str =
+pub const GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_PACKAGE_ID: &str =
     "marlin.agent.gerbil-loop-continuation.native-projection";
 
 /// Native ABI version for graph-loop continuation typed projections.
-pub const GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_VERSION: u32 = 1;
+pub const GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_VERSION: u32 = 1;
 
 /// Scheme type identifier expected for graph-loop continuation decisions.
 pub const GERBIL_LOOP_GRAPH_CONTINUATION_TYPE_ID: &str = "marlin.agent.gerbil-loop-continuation";
 
 /// Native symbol expected to project a Gerbil/POO continuation decision.
-pub const GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_SYMBOL: &str =
+pub const GERBIL_LOOP_GRAPH_CONTINUATION_ABI_SYMBOL: &str =
     "marlin_graph_loop_continuation_next_action";
 
 /// Projection contract for a Gerbil/POO graph-loop continuation decision.
@@ -68,49 +72,47 @@ pub fn gerbil_loop_graph_continuation_type_manifest() -> GerbilSchemeTypeManifes
 }
 
 /// Native ABI projection request for the Gerbil/POO continuation projection.
-pub fn gerbil_loop_graph_continuation_native_projection_request()
--> GerbilSchemeNativeProjectionRequest {
-    GerbilSchemeNativeProjectionRequest::new(
-        GerbilSchemeNativeAbiId::new(GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_ID),
-        GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_VERSION,
-        GerbilSchemeNativeSymbol::new(GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_SYMBOL),
+pub fn gerbil_loop_graph_continuation_abi_projection_request() -> GerbilSchemeAbiProjectionRequest {
+    GerbilSchemeAbiProjectionRequest::new(
+        GerbilSchemeCAbiId::new(GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_ID),
+        GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_VERSION,
+        GerbilSchemeAbiSymbol::new(GERBIL_LOOP_GRAPH_CONTINUATION_ABI_SYMBOL),
         gerbil_loop_graph_continuation_projection_contract(),
     )
 }
 
 /// Native ABI contract declared by the graph-loop continuation projection package.
-pub fn gerbil_loop_graph_continuation_native_projection_abi_contract()
--> GerbilSchemeNativeAbiContract {
-    GerbilSchemeNativeAbiContract::new(
-        GerbilSchemeNativeAbiId::new(GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_ID),
-        GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_VERSION,
+pub fn gerbil_loop_graph_continuation_abi_projection_abi_contract() -> GerbilSchemeCAbiContract {
+    GerbilSchemeCAbiContract::new(
+        GerbilSchemeCAbiId::new(GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_ID),
+        GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_VERSION,
     )
-    .with_exported_symbols([GerbilSchemeNativeSymbol::new(
-        GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_SYMBOL,
+    .with_exported_symbols([GerbilSchemeAbiSymbol::new(
+        GERBIL_LOOP_GRAPH_CONTINUATION_ABI_SYMBOL,
     )])
 }
 
 /// Readiness plan expected before calling the continuation native projection ABI.
-pub fn gerbil_loop_graph_continuation_native_projection_readiness_plan()
--> GerbilSchemeNativeAbiReadinessPlan {
-    GerbilSchemeNativeAbiReadinessPlan::new(
-        GerbilSchemeNativeAbiId::new(GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_ID),
-        GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_VERSION,
+pub fn gerbil_loop_graph_continuation_abi_projection_readiness_plan()
+-> GerbilSchemeCAbiReadinessPlan {
+    GerbilSchemeCAbiReadinessPlan::new(
+        GerbilSchemeCAbiId::new(GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_ID),
+        GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_VERSION,
     )
-    .with_exported_symbols([GerbilSchemeNativeSymbol::new(
-        GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_SYMBOL,
+    .with_exported_symbols([GerbilSchemeAbiSymbol::new(
+        GERBIL_LOOP_GRAPH_CONTINUATION_ABI_SYMBOL,
     )])
 }
 
 /// Package manifest for the graph-loop continuation typed projection ABI.
-pub fn gerbil_loop_graph_continuation_native_projection_package_manifest()
+pub fn gerbil_loop_graph_continuation_abi_projection_package_manifest()
 -> GerbilSchemePackageManifest {
     GerbilSchemePackageManifest::new(
-        GerbilSchemePackageId::new(GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_PACKAGE_ID),
+        GerbilSchemePackageId::new(GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_PACKAGE_ID),
         gerbil_loop_graph_continuation_type_manifest(),
     )
     .with_projection_contracts([gerbil_loop_graph_continuation_projection_contract()])
-    .with_native_abi(gerbil_loop_graph_continuation_native_projection_abi_contract())
+    .with_c_abi(gerbil_loop_graph_continuation_abi_projection_abi_contract())
 }
 
 /// Decode the typed Gerbil continuation projection without compiling the graph action.
@@ -122,20 +124,20 @@ pub fn decode_gerbil_loop_graph_continuation_projection(
 }
 
 /// Decode a Gerbil/POO continuation projection returned by the native ABI.
-pub fn decode_gerbil_loop_graph_continuation_native_projection(
+pub fn decode_gerbil_loop_graph_continuation_abi_projection(
     registry: &GerbilSchemeTypeRegistry,
     typed_value: &GerbilSchemeTypedValue,
 ) -> Result<
     (
-        GerbilSchemeNativeProjectionReceipt,
+        GerbilSchemeAbiProjectionReceipt,
         GerbilLoopGraphContinuationRequest,
     ),
     GerbilSchemeTypeDecodeError,
 > {
-    decode_gerbil_scheme_native_projection(
+    decode_gerbil_scheme_abi_projection(
         registry,
-        &gerbil_loop_graph_continuation_native_projection_readiness_plan(),
-        &gerbil_loop_graph_continuation_native_projection_request(),
+        &gerbil_loop_graph_continuation_abi_projection_readiness_plan(),
+        &gerbil_loop_graph_continuation_abi_projection_request(),
         typed_value,
     )
 }
@@ -154,13 +156,12 @@ pub fn project_gerbil_loop_graph_continuation_action(
 }
 
 /// Project a native ABI Gerbil continuation value into the controller next-action protocol.
-pub fn project_gerbil_loop_graph_continuation_native_action(
+pub fn project_gerbil_loop_graph_continuation_abi_action(
     registry: &GerbilSchemeTypeRegistry,
     typed_value: &GerbilSchemeTypedValue,
-) -> Result<(GerbilSchemeNativeProjectionReceipt, GraphLoopNextAction), GerbilSchemeTypeDecodeError>
-{
+) -> Result<(GerbilSchemeAbiProjectionReceipt, GraphLoopNextAction), GerbilSchemeTypeDecodeError> {
     let (receipt, request) =
-        decode_gerbil_loop_graph_continuation_native_projection(registry, typed_value)?;
+        decode_gerbil_loop_graph_continuation_abi_projection(registry, typed_value)?;
     let next_action = compile_gerbil_loop_graph_continuation(request).map_err(|error| {
         GerbilSchemeTypeDecodeError::RustProjection {
             message: format!("Gerbil continuation graph failed Rust compilation: {error:?}"),

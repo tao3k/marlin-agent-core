@@ -1,13 +1,17 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_hooks::{
-    HookDispatchPolicy, HookDispatchPolicyFinalizer, HookDispatchPolicyFinalizerInput,
-    HookDispatcher, HookInvocation, HookRegistry,
+    HookActionContext, HookActionProvider, HookDispatchPolicy, HookDispatcher, HookInvocation,
+    HookRegistry,
 };
 use marlin_agent_protocol::{
-    HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput, HookEventName,
-    HookHandlerType, HookPolicyDecision, HookPolicyDecisionReason, HookPolicyDynamicAction,
-    HookPolicyDynamicActionApplicationEffect, HookPolicyDynamicActionApplicationStatus,
-    HookPolicyDynamicActionKind, HookPolicyDynamicActionReplacement, HookPolicyDynamicActionTarget,
-    HookPolicyExtension, HookTrustStatus,
+    HookAgentScope, HookEventName, HookHandlerType, HookPolicyDecision, HookPolicyDecisionReason,
+    HookPolicyDynamicAction, HookPolicyDynamicActionApplicationEffect,
+    HookPolicyDynamicActionApplicationStatus, HookPolicyDynamicActionKind,
+    HookPolicyDynamicActionReplacement, HookPolicyDynamicActionTarget, HookPolicyExtension,
+    HookTrustStatus,
 };
 use marlin_agent_runtime::TokioAgentRuntime;
 use std::sync::Arc;
@@ -103,35 +107,21 @@ async fn dispatcher_enforce_trusted_policy_rejects_untrusted_hooks_before_execut
 }
 
 #[derive(Clone, Debug)]
-struct RejectingPolicyFinalizer;
+struct DenyingActionProvider;
 
-impl HookDispatchPolicyFinalizer for RejectingPolicyFinalizer {
-    fn finalize(&self, input: HookDispatchPolicyFinalizerInput) -> HookDispatchPolicyReceipt {
-        let decisions = input
-            .policy_receipt
-            .decisions
-            .into_iter()
-            .map(|mut decision| {
-                decision.decision = HookPolicyDecision::Rejected;
-                decision.reason = HookPolicyDecisionReason::ExtensionRejected;
-                decision
-            })
-            .collect();
-
-        HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
-            event_name: input.invocation.event_name,
-            invocation_agent_scope: input.invocation.agent_scope,
-            decision_context: input.invocation.decision_context.clone(),
-            mode: input.policy_receipt.mode,
-            extension: input.policy_receipt.extension,
-            actions: Vec::new(),
-            decisions,
-        })
+impl HookActionProvider for DenyingActionProvider {
+    fn propose_actions(&self, _: HookActionContext<'_>) -> Vec<HookPolicyDynamicAction> {
+        vec![HookPolicyDynamicAction {
+            kind: HookPolicyDynamicActionKind::Deny,
+            target: Some(HookPolicyDynamicActionTarget::from("scheme-owned")),
+            replacement: None,
+            reason: None,
+        }]
     }
 }
 
 #[tokio::test]
-async fn dispatcher_policy_finalizer_can_reject_after_rust_policy_allows() {
+async fn dispatcher_action_provider_can_reject_after_rust_policy_allows() {
     let registry = HookRegistry::new().with_registration(summary_hook_registration(
         "scheme-owned",
         HookEventName::PreToolUse,
@@ -144,7 +134,7 @@ async fn dispatcher_policy_finalizer_can_reject_after_rust_policy_allows() {
         .with_policy(HookDispatchPolicy::observe_only().with_extension(
             HookPolicyExtension::gerbil_scheme("marlin/hooks/policy", "decide-hook-policy"),
         ))
-        .with_policy_finalizer(Arc::new(RejectingPolicyFinalizer))
+        .with_action_provider(Arc::new(DenyingActionProvider))
         .dispatch(
             &runtime,
             HookInvocation::new(HookEventName::PreToolUse)
@@ -172,27 +162,19 @@ async fn dispatcher_policy_finalizer_can_reject_after_rust_policy_allows() {
 }
 
 #[derive(Clone, Debug)]
-struct DynamicActionPolicyFinalizer {
+struct DynamicActionProvider {
     actions: Vec<HookPolicyDynamicAction>,
 }
 
-impl DynamicActionPolicyFinalizer {
+impl DynamicActionProvider {
     fn new(actions: Vec<HookPolicyDynamicAction>) -> Self {
         Self { actions }
     }
 }
 
-impl HookDispatchPolicyFinalizer for DynamicActionPolicyFinalizer {
-    fn finalize(&self, input: HookDispatchPolicyFinalizerInput) -> HookDispatchPolicyReceipt {
-        HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
-            event_name: input.invocation.event_name,
-            invocation_agent_scope: input.invocation.agent_scope,
-            decision_context: input.invocation.decision_context.clone(),
-            mode: input.policy_receipt.mode,
-            extension: input.policy_receipt.extension,
-            actions: self.actions.clone(),
-            decisions: input.policy_receipt.decisions,
-        })
+impl HookActionProvider for DynamicActionProvider {
+    fn propose_actions(&self, _: HookActionContext<'_>) -> Vec<HookPolicyDynamicAction> {
+        self.actions.clone()
     }
 }
 
@@ -221,7 +203,7 @@ async fn dispatcher_dynamic_deny_action_blocks_target_registration() {
 
     let report = HookDispatcher::new(registry)
         .with_policy(HookDispatchPolicy::enforce_trusted())
-        .with_policy_finalizer(Arc::new(DynamicActionPolicyFinalizer::new(vec![
+        .with_action_provider(Arc::new(DynamicActionProvider::new(vec![
             HookPolicyDynamicAction {
                 kind: HookPolicyDynamicActionKind::Deny,
                 target: Some(HookPolicyDynamicActionTarget::from("blocked")),
@@ -281,7 +263,7 @@ async fn dispatcher_dynamic_defer_action_suppresses_current_dispatch() {
 
     let report = HookDispatcher::new(registry)
         .with_policy(HookDispatchPolicy::enforce_trusted())
-        .with_policy_finalizer(Arc::new(DynamicActionPolicyFinalizer::new(vec![
+        .with_action_provider(Arc::new(DynamicActionProvider::new(vec![
             HookPolicyDynamicAction {
                 kind: HookPolicyDynamicActionKind::Defer,
                 target: None,
@@ -324,7 +306,7 @@ async fn dispatcher_dynamic_rewrite_action_updates_hook_invocation_message() {
 
     let report = HookDispatcher::new(registry)
         .with_policy(HookDispatchPolicy::enforce_trusted())
-        .with_policy_finalizer(Arc::new(DynamicActionPolicyFinalizer::new(vec![
+        .with_action_provider(Arc::new(DynamicActionProvider::new(vec![
             HookPolicyDynamicAction {
                 kind: HookPolicyDynamicActionKind::Rewrite,
                 target: Some(HookPolicyDynamicActionTarget::from("message")),

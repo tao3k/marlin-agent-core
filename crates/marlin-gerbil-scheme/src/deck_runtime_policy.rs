@@ -1,4 +1,8 @@
-//! Rust binding for the Deck runtime Scheme model-route policy selector.
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+//! Typed Rust projections for Scheme graph policy objects.
 
 use crate::policy_pack_projection::{
     GerbilLoopPolicyProjectionModule, decode_gerbil_loop_policy_projection_module,
@@ -7,29 +11,25 @@ use crate::policy_pack_projection::{
     gerbil_resolved_loop_policy_pack_type_manifest,
 };
 use crate::scheme_types::{
-    GerbilSchemeFieldName, GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiId,
-    GerbilSchemeNativeAbiReadinessPlan, GerbilSchemeNativeProjectionReceipt,
-    GerbilSchemeNativeProjectionRequest, GerbilSchemeNativeSymbol, GerbilSchemePackageId,
-    GerbilSchemePackageManifest, GerbilSchemeProjectionContract, GerbilSchemeSchemaId,
-    GerbilSchemeTypeDecodeError, GerbilSchemeTypeFieldSpec, GerbilSchemeTypeId,
-    GerbilSchemeTypeManifest, GerbilSchemeTypeRegistry, GerbilSchemeTypeSpec,
-    GerbilSchemeTypedProjection, GerbilSchemeTypedValue, decode_gerbil_scheme_native_projection,
-    validate_gerbil_scheme_native_projection,
+    GerbilSchemeAbiProjectionReceipt, GerbilSchemeAbiProjectionRequest, GerbilSchemeAbiSymbol,
+    GerbilSchemeCAbiContract, GerbilSchemeCAbiId, GerbilSchemeCAbiReadinessPlan,
+    GerbilSchemeFieldName, GerbilSchemePackageId, GerbilSchemePackageManifest,
+    GerbilSchemeProjectionContract, GerbilSchemeSchemaId, GerbilSchemeTypeDecodeError,
+    GerbilSchemeTypeFieldSpec, GerbilSchemeTypeId, GerbilSchemeTypeManifest,
+    GerbilSchemeTypeRegistry, GerbilSchemeTypeSpec, GerbilSchemeTypedProjection,
+    GerbilSchemeTypedValue, decode_gerbil_scheme_abi_projection,
+    validate_gerbil_scheme_abi_projection,
 };
-use marlin_agent_protocol::{
-    ModelRouteAgentScope, ModelRouteRequest, RESOLVED_LOOP_POLICY_PACK_SCHEMA_VERSION,
-    ResolvedLoopPolicyPack,
-};
+use marlin_agent_protocol::{RESOLVED_LOOP_POLICY_PACK_SCHEMA_VERSION, ResolvedLoopPolicyPack};
 use serde::{Deserialize, Serialize};
 
 /// Native ABI id for Deck runtime typed projections.
-pub const GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID: &str =
-    "marlin.deck-runtime.native-projection";
+pub const GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID: &str = "marlin.deck-runtime.native-projection";
 /// Package id for the Deck runtime typed projection ABI manifest.
-pub const GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_PACKAGE_ID: &str =
+pub const GERBIL_DECK_ROUTE_ABI_PROJECTION_PACKAGE_ID: &str =
     "marlin.deck-runtime.native-projection";
 /// Native ABI version for Deck runtime typed projections.
-pub const GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION: u32 = 1;
+pub const GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_VERSION: u32 = 1;
 /// Native ABI symbol that projects a Gerbil POO policy object into a typed Rust envelope.
 pub const GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL: &str =
     "marlin_deck_runtime_project_poo_policy";
@@ -45,271 +45,6 @@ pub const GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID: &str =
 /// Schema id returned by the Gerbil POO policy projection.
 pub const GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID: &str =
     "marlin.deck-runtime.poo-policy-projection.v1";
-/// Schema id returned by the Deck runtime native model-route selector.
-pub const GERBIL_DECK_RUNTIME_MODEL_ROUTE_SELECTION_SCHEMA_ID: &str =
-    "marlin-deck-runtime.model-route-selection.v1";
-/// Schema id for the Rust-owned native bridge receipt.
-pub const GERBIL_DECK_RUNTIME_NATIVE_TYPED_BRIDGE_RECEIPT_SCHEMA_ID: &str =
-    "marlin-deck-runtime.native-typed-bridge.v1";
-
-/// Context policy mode returned by the Scheme Deck runtime selector.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct GerbilDeckRuntimeContextMode(String);
-
-impl GerbilDeckRuntimeContextMode {
-    pub fn new(mode: impl Into<String>) -> Self {
-        Self(mode.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Default for GerbilDeckRuntimeContextMode {
-    fn default() -> Self {
-        Self::new("forked-context")
-    }
-}
-
-impl From<&str> for GerbilDeckRuntimeContextMode {
-    fn from(mode: &str) -> Self {
-        Self::new(mode)
-    }
-}
-
-impl From<String> for GerbilDeckRuntimeContextMode {
-    fn from(mode: String) -> Self {
-        Self::new(mode)
-    }
-}
-
-/// Isolation policy mode returned by the Scheme Deck runtime selector.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct GerbilDeckRuntimeIsolationMode(String);
-
-impl GerbilDeckRuntimeIsolationMode {
-    pub fn new(mode: impl Into<String>) -> Self {
-        Self(mode.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Default for GerbilDeckRuntimeIsolationMode {
-    fn default() -> Self {
-        Self::new("workspace-isolated")
-    }
-}
-
-impl From<&str> for GerbilDeckRuntimeIsolationMode {
-    fn from(mode: &str) -> Self {
-        Self::new(mode)
-    }
-}
-
-impl From<String> for GerbilDeckRuntimeIsolationMode {
-    fn from(mode: String) -> Self {
-        Self::new(mode)
-    }
-}
-
-/// Selected policy kind returned by the Scheme Deck runtime selector.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct GerbilDeckRuntimeSelectedPolicyKind(String);
-
-impl GerbilDeckRuntimeSelectedPolicyKind {
-    pub fn new(kind: impl Into<String>) -> Self {
-        Self(kind.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<&str> for GerbilDeckRuntimeSelectedPolicyKind {
-    fn from(kind: &str) -> Self {
-        Self::new(kind)
-    }
-}
-
-impl From<String> for GerbilDeckRuntimeSelectedPolicyKind {
-    fn from(kind: String) -> Self {
-        Self::new(kind)
-    }
-}
-
-/// Scheme-side model route policy input.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GerbilDeckRuntimeModelRoutePolicy {
-    pub name: String,
-    pub provider: String,
-    pub model: String,
-    pub command_prefixes: Vec<String>,
-    pub agent_scopes: Vec<String>,
-    pub context_mode: GerbilDeckRuntimeContextMode,
-    pub isolation_mode: GerbilDeckRuntimeIsolationMode,
-}
-
-impl GerbilDeckRuntimeModelRoutePolicy {
-    pub fn new(
-        name: impl Into<String>,
-        provider: impl Into<String>,
-        model: impl Into<String>,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            provider: provider.into(),
-            model: model.into(),
-            command_prefixes: Vec::new(),
-            agent_scopes: Vec::new(),
-            context_mode: GerbilDeckRuntimeContextMode::default(),
-            isolation_mode: GerbilDeckRuntimeIsolationMode::default(),
-        }
-    }
-
-    pub fn with_command_prefix(mut self, prefix: impl Into<String>) -> Self {
-        self.command_prefixes.push(prefix.into());
-        self
-    }
-
-    pub fn with_agent_scope(mut self, scope: impl Into<String>) -> Self {
-        self.agent_scopes.push(scope.into());
-        self
-    }
-
-    pub fn with_context_mode(mut self, mode: impl Into<GerbilDeckRuntimeContextMode>) -> Self {
-        self.context_mode = mode.into();
-        self
-    }
-
-    pub fn with_isolation_mode(mut self, mode: impl Into<GerbilDeckRuntimeIsolationMode>) -> Self {
-        self.isolation_mode = mode.into();
-        self
-    }
-}
-
-/// Request sent to the Scheme Deck runtime policy selector.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GerbilDeckRuntimeModelRoutePolicyRequest {
-    pub policies: Vec<GerbilDeckRuntimeModelRoutePolicy>,
-    pub command: String,
-    pub agent_scope: String,
-}
-
-impl GerbilDeckRuntimeModelRoutePolicyRequest {
-    pub fn new(command: impl Into<String>, agent_scope: impl Into<String>) -> Self {
-        Self {
-            policies: Vec::new(),
-            command: command.into(),
-            agent_scope: agent_scope.into(),
-        }
-    }
-
-    pub fn from_model_route_request(
-        policies: impl IntoIterator<Item = GerbilDeckRuntimeModelRoutePolicy>,
-        request: &ModelRouteRequest,
-    ) -> Self {
-        Self {
-            policies: policies.into_iter().collect(),
-            command: request.command_line(),
-            agent_scope: request
-                .agent_scope
-                .as_ref()
-                .map(model_route_agent_scope_label)
-                .or_else(|| request.sub_agent_role.clone())
-                .unwrap_or_else(|| "any".to_string()),
-        }
-    }
-
-    pub fn with_policy(mut self, policy: GerbilDeckRuntimeModelRoutePolicy) -> Self {
-        self.policies.push(policy);
-        self
-    }
-}
-
-/// Selected policy fields returned by the Scheme selector.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GerbilDeckRuntimeModelRouteSelectedPolicy {
-    pub kind: GerbilDeckRuntimeSelectedPolicyKind,
-    pub name: String,
-    pub provider: String,
-    pub model: String,
-    pub command_prefixes: Vec<String>,
-    pub agent_scopes: Vec<String>,
-    pub context_mode: GerbilDeckRuntimeContextMode,
-    pub isolation_mode: GerbilDeckRuntimeIsolationMode,
-}
-
-/// Internal native bridge boundary used by the Deck runtime selector.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum GerbilDeckRuntimeNativeBridgeBoundary {
-    SchemeTypesToRustTypes,
-}
-
-/// Serialization boundary owned by Rust for outer traces and CLI surfaces.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum GerbilDeckRuntimeSerializationBoundary {
-    RustOwnedCliTraceCrossProcess,
-}
-
-/// Native typed bridge status.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum GerbilDeckRuntimeNativeBridgeStatus {
-    Ready,
-}
-
-/// Rust-owned receipt that proves the Scheme call crossed a typed native bridge.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GerbilDeckRuntimeNativeBridgeReceipt {
-    pub schema_id: String,
-    pub abi_id: String,
-    pub abi_version: u32,
-    pub status: GerbilDeckRuntimeNativeBridgeStatus,
-    pub bridge_boundary: GerbilDeckRuntimeNativeBridgeBoundary,
-    pub serialization_boundary: GerbilDeckRuntimeSerializationBoundary,
-}
-
-impl GerbilDeckRuntimeNativeBridgeReceipt {
-    pub fn ready(abi_id: impl Into<String>, abi_version: u32) -> Self {
-        Self {
-            schema_id: GERBIL_DECK_RUNTIME_NATIVE_TYPED_BRIDGE_RECEIPT_SCHEMA_ID.to_owned(),
-            abi_id: abi_id.into(),
-            abi_version,
-            status: GerbilDeckRuntimeNativeBridgeStatus::Ready,
-            bridge_boundary: GerbilDeckRuntimeNativeBridgeBoundary::SchemeTypesToRustTypes,
-            serialization_boundary:
-                GerbilDeckRuntimeSerializationBoundary::RustOwnedCliTraceCrossProcess,
-        }
-    }
-}
-
-/// Receipt returned by the Scheme Deck runtime policy selector.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GerbilDeckRuntimeModelRouteSelectionReceipt {
-    pub schema_id: String,
-    pub command: String,
-    pub agent_scope: String,
-    pub matched: bool,
-    pub native_bridge: GerbilDeckRuntimeNativeBridgeReceipt,
-    pub policy: Option<GerbilDeckRuntimeModelRouteSelectedPolicy>,
-}
-
-impl GerbilDeckRuntimeModelRouteSelectionReceipt {
-    pub fn selected_policy(&self) -> Option<&GerbilDeckRuntimeModelRouteSelectedPolicy> {
-        self.policy.as_ref()
-    }
-}
-
 /// Rust projection for a Gerbil-built POO policy object.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GerbilDeckRuntimePooPolicyProjection {
@@ -362,7 +97,7 @@ pub fn gerbil_deck_runtime_poo_policy_projection_type_manifest() -> GerbilScheme
 }
 
 /// Scheme type manifest for all Deck runtime native projections.
-pub fn gerbil_deck_runtime_native_projection_type_manifest() -> GerbilSchemeTypeManifest {
+pub fn gerbil_deck_route_abi_projection_type_manifest() -> GerbilSchemeTypeManifest {
     let mut manifest = gerbil_deck_runtime_poo_policy_projection_type_manifest();
     manifest
         .types
@@ -374,33 +109,33 @@ pub fn gerbil_deck_runtime_native_projection_type_manifest() -> GerbilSchemeType
 }
 
 /// Native ABI projection request for the Gerbil POO policy projection.
-pub fn gerbil_deck_runtime_poo_policy_projection_request() -> GerbilSchemeNativeProjectionRequest {
-    GerbilSchemeNativeProjectionRequest::new(
-        GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID),
-        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
-        GerbilSchemeNativeSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL),
+pub fn gerbil_deck_runtime_poo_policy_projection_request() -> GerbilSchemeAbiProjectionRequest {
+    GerbilSchemeAbiProjectionRequest::new(
+        GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID),
+        GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_VERSION,
+        GerbilSchemeAbiSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL),
         gerbil_deck_runtime_poo_policy_projection_contract(),
     )
 }
 
 /// Native ABI projection request for a Gerbil-resolved loop policy pack.
 pub fn gerbil_deck_runtime_resolved_loop_policy_pack_projection_request()
--> GerbilSchemeNativeProjectionRequest {
-    GerbilSchemeNativeProjectionRequest::new(
-        GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID),
-        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
-        GerbilSchemeNativeSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL),
+-> GerbilSchemeAbiProjectionRequest {
+    GerbilSchemeAbiProjectionRequest::new(
+        GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID),
+        GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_VERSION,
+        GerbilSchemeAbiSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL),
         gerbil_resolved_loop_policy_pack_contract(),
     )
 }
 
 /// Native ABI projection request for a Gerbil config-interface loop policy module.
 pub fn gerbil_deck_runtime_loop_policy_projection_module_request()
--> GerbilSchemeNativeProjectionRequest {
-    GerbilSchemeNativeProjectionRequest::new(
-        GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID),
-        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
-        GerbilSchemeNativeSymbol::new(
+-> GerbilSchemeAbiProjectionRequest {
+    GerbilSchemeAbiProjectionRequest::new(
+        GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID),
+        GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_VERSION,
+        GerbilSchemeAbiSymbol::new(
             GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL,
         ),
         gerbil_loop_policy_projection_module_contract(),
@@ -408,48 +143,47 @@ pub fn gerbil_deck_runtime_loop_policy_projection_module_request()
 }
 
 /// Native ABI contract declared by the Deck runtime projection package.
-pub fn gerbil_deck_runtime_native_projection_abi_contract() -> GerbilSchemeNativeAbiContract {
-    GerbilSchemeNativeAbiContract::new(
-        GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID),
-        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
+pub fn gerbil_deck_route_abi_projection_abi_contract() -> GerbilSchemeCAbiContract {
+    GerbilSchemeCAbiContract::new(
+        GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID),
+        GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_VERSION,
     )
     .with_exported_symbols([
-        GerbilSchemeNativeSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL),
-        GerbilSchemeNativeSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL),
-        GerbilSchemeNativeSymbol::new(
+        GerbilSchemeAbiSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL),
+        GerbilSchemeAbiSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL),
+        GerbilSchemeAbiSymbol::new(
             GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL,
         ),
     ])
 }
 
 /// Readiness plan expected before calling the Deck runtime native projection ABI.
-pub fn gerbil_deck_runtime_native_projection_readiness_plan() -> GerbilSchemeNativeAbiReadinessPlan
-{
-    GerbilSchemeNativeAbiReadinessPlan::new(
-        GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID),
-        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
+pub fn gerbil_deck_route_abi_projection_readiness_plan() -> GerbilSchemeCAbiReadinessPlan {
+    GerbilSchemeCAbiReadinessPlan::new(
+        GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID),
+        GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_VERSION,
     )
     .with_exported_symbols([
-        GerbilSchemeNativeSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL),
-        GerbilSchemeNativeSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL),
-        GerbilSchemeNativeSymbol::new(
+        GerbilSchemeAbiSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL),
+        GerbilSchemeAbiSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL),
+        GerbilSchemeAbiSymbol::new(
             GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL,
         ),
     ])
 }
 
 /// Package manifest for the Deck runtime typed projection ABI.
-pub fn gerbil_deck_runtime_native_projection_package_manifest() -> GerbilSchemePackageManifest {
+pub fn gerbil_deck_route_abi_projection_package_manifest() -> GerbilSchemePackageManifest {
     GerbilSchemePackageManifest::new(
-        GerbilSchemePackageId::new(GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_PACKAGE_ID),
-        gerbil_deck_runtime_native_projection_type_manifest(),
+        GerbilSchemePackageId::new(GERBIL_DECK_ROUTE_ABI_PROJECTION_PACKAGE_ID),
+        gerbil_deck_route_abi_projection_type_manifest(),
     )
     .with_projection_contracts([
         gerbil_deck_runtime_poo_policy_projection_contract(),
         gerbil_resolved_loop_policy_pack_contract(),
         gerbil_loop_policy_projection_module_contract(),
     ])
-    .with_native_abi(gerbil_deck_runtime_native_projection_abi_contract())
+    .with_c_abi(gerbil_deck_route_abi_projection_abi_contract())
 }
 
 /// Decode a Gerbil POO policy projection returned by the native ABI.
@@ -458,14 +192,14 @@ pub fn decode_gerbil_deck_runtime_poo_policy_projection(
     typed_value: &GerbilSchemeTypedValue,
 ) -> Result<
     (
-        GerbilSchemeNativeProjectionReceipt,
+        GerbilSchemeAbiProjectionReceipt,
         GerbilDeckRuntimePooPolicyProjection,
     ),
     GerbilSchemeTypeDecodeError,
 > {
-    decode_gerbil_scheme_native_projection(
+    decode_gerbil_scheme_abi_projection(
         registry,
-        &gerbil_deck_runtime_native_projection_readiness_plan(),
+        &gerbil_deck_route_abi_projection_readiness_plan(),
         &gerbil_deck_runtime_poo_policy_projection_request(),
         typed_value,
     )
@@ -475,14 +209,12 @@ pub fn decode_gerbil_deck_runtime_poo_policy_projection(
 pub fn decode_gerbil_deck_runtime_resolved_loop_policy_pack_projection(
     registry: &GerbilSchemeTypeRegistry,
     typed_value: &GerbilSchemeTypedValue,
-) -> Result<
-    (GerbilSchemeNativeProjectionReceipt, ResolvedLoopPolicyPack),
-    GerbilSchemeTypeDecodeError,
-> {
-    let (receipt, projection): (GerbilSchemeNativeProjectionReceipt, ResolvedLoopPolicyPack) =
-        decode_gerbil_scheme_native_projection(
+) -> Result<(GerbilSchemeAbiProjectionReceipt, ResolvedLoopPolicyPack), GerbilSchemeTypeDecodeError>
+{
+    let (receipt, projection): (GerbilSchemeAbiProjectionReceipt, ResolvedLoopPolicyPack) =
+        decode_gerbil_scheme_abi_projection(
             registry,
-            &gerbil_deck_runtime_native_projection_readiness_plan(),
+            &gerbil_deck_route_abi_projection_readiness_plan(),
             &gerbil_deck_runtime_resolved_loop_policy_pack_projection_request(),
             typed_value,
         )?;
@@ -505,13 +237,13 @@ pub fn decode_gerbil_deck_runtime_loop_policy_projection_module(
     typed_value: &GerbilSchemeTypedValue,
 ) -> Result<
     (
-        GerbilSchemeNativeProjectionReceipt,
+        GerbilSchemeAbiProjectionReceipt,
         GerbilLoopPolicyProjectionModule,
     ),
     GerbilSchemeTypeDecodeError,
 > {
-    let receipt = validate_gerbil_scheme_native_projection(
-        &gerbil_deck_runtime_native_projection_readiness_plan(),
+    let receipt = validate_gerbil_scheme_abi_projection(
+        &gerbil_deck_route_abi_projection_readiness_plan(),
         &gerbil_deck_runtime_loop_policy_projection_module_request(),
         typed_value,
     )?;
@@ -527,18 +259,4 @@ fn required_projection_string_field(name: &str) -> GerbilSchemeTypeFieldSpec {
         required: true,
         description: None,
     }
-}
-
-fn model_route_agent_scope_label(scope: &ModelRouteAgentScope) -> String {
-    match scope {
-        ModelRouteAgentScope::Any => "any",
-        ModelRouteAgentScope::RootAgent => "root-agent",
-        ModelRouteAgentScope::SubAgent => "sub-agent",
-        ModelRouteAgentScope::CustomAgent => "custom-agent",
-        ModelRouteAgentScope::CustomerAgent => "customer-agent",
-        ModelRouteAgentScope::ForkedAgent => "forked-agent",
-        ModelRouteAgentScope::IsolatedAgent => "isolated-agent",
-        ModelRouteAgentScope::PersistentAgent => "persistent-agent",
-    }
-    .to_string()
 }

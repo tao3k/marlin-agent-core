@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use std::sync::Arc;
 
 pub(super) use marlin_agent_kernel::{
@@ -17,14 +21,13 @@ pub(super) use marlin_gerbil_scheme::{
     GERBIL_POO_LOOP_PROGRAM_COMPILER_SCHEMA_ID, GERBIL_POO_LOOP_PROGRAM_COMPILER_TYPE_ID,
     GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID, GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID,
     GerbilPooLoopProgramCompilerBoundary, GerbilPooLoopProgramCompilerOwner,
-    GerbilPooLoopProgramCompilerSerializationBoundary, GerbilSchemeNativeSymbol,
-    GerbilSchemeSchemaId, GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue,
-    GerbilSchemeValue, decode_gerbil_loop_policy_projection_module,
-    decode_gerbil_policy_mixin_stack_compiler_receipt,
+    GerbilPooLoopProgramCompilerSerializationBoundary, GerbilSchemeAbiSymbol, GerbilSchemeSchemaId,
+    GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue, GerbilSchemeValue,
+    decode_gerbil_loop_policy_projection_module, decode_gerbil_policy_mixin_stack_compiler_receipt,
     decode_gerbil_policy_pack_projection_chain_receipt,
     decode_gerbil_poo_loop_program_compiler_receipt, decode_gerbil_resolved_loop_policy_pack,
+    gerbil_deck_route_abi_projection_readiness_plan,
     gerbil_deck_runtime_loop_policy_projection_module_request,
-    gerbil_deck_runtime_native_projection_readiness_plan,
     gerbil_loop_policy_projection_module_type_manifest,
     gerbil_policy_mixin_stack_compiler_type_manifest,
     gerbil_policy_pack_projection_chain_type_manifest,

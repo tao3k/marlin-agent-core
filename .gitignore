@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 /target/
 /bazel-*
 .devenv
 .pre-commit-config.yaml
-
+/_apalache-out/
 
 # prj-spec directories (numtide/prj-spec)
 # See: https://github.com/numtide/prj-spec
@@ -14,7 +18,6 @@
 .bin/
 **/.gerbil/
 
-crates/marlin-gerbil-scheme/marline-config-interface/custom/marline-kernel/policies/loops/cases/*.loop.json
-
-
 .env
+
+scheme/manifest.ss

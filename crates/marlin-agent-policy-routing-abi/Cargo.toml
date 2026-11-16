@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+[package]
+license.workspace = true
+name = "marlin-agent-policy-routing-abi"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+linked-selector = []
+
+[[bench]]
+name = "linked_selector"
+harness = false
+
+[[bench]]
+name = "allocation_shape"
+harness = false
+
+[dependencies]
+marlin-gerbil-scheme.workspace = true
+
+[dev-dependencies]
+asp-rust.workspace = true
+criterion.workspace = true
+marlin-agent-graph.workspace = true
+tempfile.workspace = true
+
+[build-dependencies]
+marlin-gerbil-aot-link.workspace = true

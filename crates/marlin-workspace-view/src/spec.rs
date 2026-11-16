@@ -1,6 +1,10 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! View specification model for task-scoped workspace read-outs.
 
-use marlin_org_model::OrgNodeId;
+use marlin_context_org_model::OrgNodeId;
 use serde::{Deserialize, Serialize};
 
 /// Request describing how workspace nodes should be rendered.

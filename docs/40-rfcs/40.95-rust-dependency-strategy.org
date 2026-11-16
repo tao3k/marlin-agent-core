@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 * 40.95 RFC: Rust Dependency Strategy
 
 Status: active
@@ -16,13 +20,12 @@ observability, or performance problem.
 Rust project quality is an engineering harness concern. It is not a Marlin
 agent graph, loop, or CLI protocol concern.
 
-=rust-lang-project-harness= is an upstream Rust engineering library. In this
-workspace it must be hidden behind =marlin-rust-project-harness-policy=, which
-owns the Marlin-specific build policy, quality findings, verification
-obligations, improvement queue, and evidence artifacts. Downstream crates must
-depend on =marlin-rust-project-harness-policy= from their build-dependency plane
-and call its wrapper from =build.rs=; they must not depend on
-=rust-lang-project-harness= directly.
+ASP Rust supplies the Rust analysis and verification APIs. The
+=marlin-rust-project-harness-policy= Build Support crate owns only the shared
+policy and Cargo test macros. ASP Rust owns package analysis, findings,
+verification obligations and the workspace graph. Member crates depend on
+Build Support only in =dev-dependencies=; =just rust-dev-gate= runs ASP Rust's
+native workspace Dev Gate.
 
 The =marlin= debug CLI may consume generated receipts as external evidence when
 an agent is repairing this repository, but it must not add command surface such

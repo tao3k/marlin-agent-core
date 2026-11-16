@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Harness-owned evidence graph projections for scenario and runtime reports.
 
 use marlin_agent_protocol::{
@@ -226,11 +230,11 @@ impl AgentHarnessEvidenceGraph {
             .unwrap_or("none");
         let status = graph_policy_proposal_status_label(&receipt.status);
         let detail = format!(
-            "schema_id={} status={} selected_graph_id={} native_abi={} diagnostic_count={}",
+            "schema_id={} status={} selected_graph_id={} c_abi={} diagnostic_count={}",
             receipt.schema_id,
             status,
             selected_graph_id,
-            receipt.native_abi.is_some(),
+            receipt.c_abi.is_some(),
             receipt.diagnostics.len(),
         );
 

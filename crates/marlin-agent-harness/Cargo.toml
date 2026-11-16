@@ -1,9 +1,15 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 [package]
+license.workspace = true
 name = "marlin-agent-harness"
 edition.workspace = true
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
+readme = "README.org"
 
 [dependencies]
 marlin-agent-kernel.workspace = true
@@ -16,15 +22,11 @@ serde.workspace = true
 tokio-stream.workspace = true
 tracing.workspace = true
 
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
-
 [dev-dependencies]
 marlin-agent-hooks.workspace = true
 marlin-agent-sessions.workspace = true
 marlin-agent-test-support.workspace = true
-marlin-org-memory.workspace = true
-marlin-org-model.workspace = true
+marlin-agent-context = { workspace = true, features = ["org-memory"] }
+marlin-context-org-model.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
-marlin-rust-project-harness-policy.workspace = true

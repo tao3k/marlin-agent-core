@@ -1,8 +1,13 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Tokio runtime handle and spawn helpers.
 
 use std::{collections::VecDeque, future::Future, sync::Arc, time::Duration};
 
 use crate::observability;
+use marlin_agent_protocol::ProcessMemorySampler;
 use tokio::sync::{oneshot, watch};
 use tokio::task::{JoinError, JoinSet};
 use tracing::Instrument;
@@ -10,11 +15,12 @@ use tracing::Instrument;
 use super::{
     AgentSessionContext, CancellationToken, ContextVisibility, HookRuntime, ProviderRuntime,
     RuntimeContext, RuntimeEnvironment, RuntimeEventSink, RuntimeEventStream,
-    RuntimeExecutionIdentity, RuntimeTask, RuntimeTaskOutcome, RuntimeTaskShutdownReceipt,
-    RuntimeTaskShutdownRequest, RuntimeTaskTracker, RuntimeTaskTrackerPolicy, SessionId,
-    SessionIsolationReceipt, SessionKind, SessionRuntimeSnapshot, SubAgentRuntime,
-    SubAgentSpawnConfig, SubAgentSpawnReceipt, TokioRuntimePolicy, TokioRuntimePolicyReceipt,
-    ToolRuntime, WorkingCopyIsolationReceipt,
+    RuntimeExecutionIdentity, RuntimeOperationId, RuntimeProcessBudget, RuntimeTask,
+    RuntimeTaskOutcome, RuntimeTaskShutdownReceipt, RuntimeTaskShutdownRequest, RuntimeTaskTracker,
+    RuntimeTaskTrackerPolicy, SessionId, SessionIsolationReceipt, SessionKind,
+    SessionRuntimeSnapshot, SubAgentRuntime, SubAgentSpawnConfig, SubAgentSpawnReceipt,
+    TokioRuntimePolicy, TokioRuntimePolicyReceipt, ToolRuntime, WorkingCopyIsolationReceipt,
+    WorkingCopySubAgentFanoutItem,
 };
 use crate::tokio_runtime::context::context_visibility_from_sub_agent_policy;
 use crate::tokio_runtime::receipt::{
@@ -31,16 +37,44 @@ pub struct TokioAgentRuntime {
     execution: Option<RuntimeExecutionIdentity>,
     session: AgentSessionContext,
     graph_loop_runs: crate::GraphLoopRunRegistryHandle,
-    process_registry: observability::RuntimeProcessRegistryHandle,
-    process_cleanup_policy: observability::RuntimeProcessCleanupPolicy,
+    process_registry: crate::process::RuntimeProcessRegistryHandle,
+    process_quota: Option<Arc<tokio::sync::Semaphore>>,
+    process_cleanup_policy: crate::process::RuntimeProcessCleanupPolicy,
     task_tracker: RuntimeTaskTracker,
     runtime_snapshot: SessionRuntimeSnapshot,
+}
+
+/// Isolated cancellation and retirement accounting for Tokio tasks.
+#[derive(Clone, Debug)]
+pub struct RuntimeTaskScope(TokioAgentRuntime);
+
+impl RuntimeTaskScope {
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.0.cancellation_token()
+    }
+
+    pub fn spawn<F>(&self, future: F) -> RuntimeTask<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.0.spawn(future)
+    }
+
+    pub async fn shutdown_tasks(
+        &self,
+        policy: &RuntimeTaskTrackerPolicy,
+    ) -> RuntimeTaskShutdownReceipt {
+        self.0.shutdown_tasks(policy).await
+    }
 }
 
 /// Named request for constructing a Tokio-backed agent runtime.
 #[derive(Clone, Debug)]
 pub struct TokioAgentRuntimeBuildRequest {
     event_buffer: usize,
+    process_limit: Option<std::num::NonZeroUsize>,
+    process_budget: Option<(RuntimeProcessBudget, Arc<dyn ProcessMemorySampler>)>,
     cancellation: CancellationToken,
     environment: RuntimeEnvironment,
     session: AgentSessionContext,
@@ -56,11 +90,32 @@ impl TokioAgentRuntimeBuildRequest {
         );
         Self {
             event_buffer,
+            process_limit: None,
+            process_budget: None,
             cancellation: CancellationToken::new(),
             environment: RuntimeEnvironment::default(),
             session,
             runtime_snapshot,
         }
+    }
+
+    /// Limits managed child admissions shared across all child contexts.
+    /// On Unix, a permit remains held until the group is observed absent.
+    /// Descendants that escape the group and externally owned pipes are excluded.
+    pub fn with_process_limit(mut self, limit: std::num::NonZeroUsize) -> Self {
+        self.process_limit = Some(limit);
+        self
+    }
+
+    /// Apply a shared budget across every managed process in this Runtime.
+    pub fn with_process_budget(
+        mut self,
+        budget: RuntimeProcessBudget,
+        sampler: Arc<dyn ProcessMemorySampler>,
+    ) -> Self {
+        self.process_limit = Some(budget.concurrent);
+        self.process_budget = Some((budget, sampler));
+        self
     }
 
     pub fn with_cancellation(mut self, cancellation: CancellationToken) -> Self {
@@ -96,44 +151,6 @@ fn runtime_snapshot_for_session(
     .with_task_tracker(snapshot.task_tracker().clone())
     .with_fanout_join(snapshot.fanout_join().clone())
     .with_blocking_bridge(snapshot.blocking_bridge().clone())
-}
-
-/// One working-copy-bound sub-agent spawn in a runtime fanout.
-#[derive(Clone, Debug)]
-pub struct WorkingCopySubAgentFanoutItem<I> {
-    input: I,
-    environment: RuntimeEnvironment,
-    working_copy_receipt: WorkingCopyIsolationReceipt,
-}
-
-impl<I> WorkingCopySubAgentFanoutItem<I> {
-    pub fn new(
-        input: I,
-        environment: RuntimeEnvironment,
-        working_copy_receipt: WorkingCopyIsolationReceipt,
-    ) -> Self {
-        Self {
-            input,
-            environment,
-            working_copy_receipt,
-        }
-    }
-
-    pub fn input(&self) -> &I {
-        &self.input
-    }
-
-    pub fn environment(&self) -> &RuntimeEnvironment {
-        &self.environment
-    }
-
-    pub fn working_copy_receipt(&self) -> &WorkingCopyIsolationReceipt {
-        &self.working_copy_receipt
-    }
-
-    pub fn into_parts(self) -> (I, RuntimeEnvironment, WorkingCopyIsolationReceipt) {
-        (self.input, self.environment, self.working_copy_receipt)
-    }
 }
 
 impl TokioAgentRuntime {
@@ -189,9 +206,12 @@ impl TokioAgentRuntime {
                 execution: None,
                 session: request.session,
                 graph_loop_runs: crate::GraphLoopRunRegistryHandle::new(),
-                process_registry: observability::RuntimeProcessRegistryHandle::new(),
-                process_cleanup_policy: observability::RuntimeProcessCleanupPolicy::default(),
-                task_tracker: RuntimeTaskTracker::new(),
+                process_registry: crate::process::RuntimeProcessRegistryHandle::new(),
+                process_quota: request
+                    .process_limit
+                    .map(|limit| Arc::new(tokio::sync::Semaphore::new(limit.get()))),
+                process_cleanup_policy: crate::process::RuntimeProcessCleanupPolicy::default(),
+                task_tracker: RuntimeTaskTracker::with_process_budget(request.process_budget),
                 runtime_snapshot: request.runtime_snapshot,
             },
             stream,
@@ -209,7 +229,9 @@ impl TokioAgentRuntime {
             working_copy_receipts: Vec::new(),
             graph_loop_runs: self.graph_loop_runs.clone(),
             process_registry: self.process_registry.clone(),
+            process_quota: self.process_quota.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
+            task_tracker: self.task_tracker.clone(),
         }
     }
 
@@ -219,7 +241,7 @@ impl TokioAgentRuntime {
 
     pub fn with_process_cleanup_policy(
         mut self,
-        process_cleanup_policy: observability::RuntimeProcessCleanupPolicy,
+        process_cleanup_policy: crate::process::RuntimeProcessCleanupPolicy,
     ) -> Self {
         self.process_cleanup_policy = process_cleanup_policy;
         self
@@ -253,11 +275,11 @@ impl TokioAgentRuntime {
         self.events.clone()
     }
 
-    pub fn process_registry(&self) -> observability::RuntimeProcessRegistryHandle {
+    pub fn process_registry(&self) -> crate::process::RuntimeProcessRegistryHandle {
         self.process_registry.clone()
     }
 
-    pub fn process_cleanup_policy(&self) -> &observability::RuntimeProcessCleanupPolicy {
+    pub fn process_cleanup_policy(&self) -> &crate::process::RuntimeProcessCleanupPolicy {
         &self.process_cleanup_policy
     }
 
@@ -270,6 +292,7 @@ impl TokioAgentRuntime {
             session: self.session.clone(),
             graph_loop_runs: self.graph_loop_runs.clone(),
             process_registry: self.process_registry.clone(),
+            process_quota: self.process_quota.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
             task_tracker: self.task_tracker.clone(),
             runtime_snapshot: self.runtime_snapshot.clone(),
@@ -290,12 +313,20 @@ impl TokioAgentRuntime {
                 session: self.session.clone(),
                 graph_loop_runs: self.graph_loop_runs.clone(),
                 process_registry: self.process_registry.clone(),
+                process_quota: self.process_quota.clone(),
                 process_cleanup_policy: self.process_cleanup_policy.clone(),
                 task_tracker: self.task_tracker.clone(),
                 runtime_snapshot: self.runtime_snapshot.clone(),
             },
             stream,
         )
+    }
+
+    /// A child cancellation domain with its own task retirement accounting.
+    pub fn child_task_scope(&self) -> RuntimeTaskScope {
+        let mut child = self.child_runtime();
+        child.task_tracker = RuntimeTaskTracker::new();
+        RuntimeTaskScope(child)
     }
 
     pub fn child_runtime_with_environment(&self, environment: RuntimeEnvironment) -> Self {
@@ -307,6 +338,7 @@ impl TokioAgentRuntime {
             session: self.session.clone(),
             graph_loop_runs: self.graph_loop_runs.clone(),
             process_registry: self.process_registry.clone(),
+            process_quota: self.process_quota.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
             task_tracker: self.task_tracker.clone(),
             runtime_snapshot: self.runtime_snapshot.clone(),
@@ -337,6 +369,7 @@ impl TokioAgentRuntime {
                 session,
                 graph_loop_runs: self.graph_loop_runs.clone(),
                 process_registry: self.process_registry.clone(),
+                process_quota: self.process_quota.clone(),
                 process_cleanup_policy: self.process_cleanup_policy.clone(),
                 task_tracker: self.task_tracker.clone(),
                 runtime_snapshot,
@@ -354,6 +387,20 @@ impl TokioAgentRuntime {
             future,
             observability::runtime_task_span(observability::RUNTIME_KIND_GENERIC),
         )
+    }
+
+    /// Spawn tracked work from a synchronous owner using its Tokio runtime.
+    pub fn spawn_on<F>(
+        &self,
+        runtime: &tokio::runtime::Runtime,
+        future: F,
+    ) -> RuntimeTask<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        let _entered = runtime.enter();
+        self.spawn(future)
     }
 
     pub fn spawn_cancellable<F>(&self, future: F) -> RuntimeTask<RuntimeTaskOutcome<F::Output>>
@@ -385,17 +432,27 @@ impl TokioAgentRuntime {
         T: Send + 'static,
     {
         let span = observability::runtime_task_span(observability::RUNTIME_KIND_BLOCKING);
-        let task_guard = self.task_tracker.track_task();
-        RuntimeTask::new(tokio::task::spawn_blocking(move || {
-            let _task_guard = task_guard;
-            span.in_scope(operation)
-        }))
+        let task_guard = match self.task_tracker.admit(
+            self.session.session_id(),
+            RuntimeOperationId::new("task.blocking"),
+        ) {
+            Ok(guard) => guard,
+            Err(error) => return RuntimeTask::rejected(error),
+        };
+        RuntimeTask::new(
+            task_guard.id().clone(),
+            tokio::task::spawn_blocking(move || {
+                let _task_guard = task_guard;
+                span.in_scope(operation)
+            }),
+        )
     }
 
     pub async fn shutdown_tasks(
         &self,
         policy: &RuntimeTaskTrackerPolicy,
     ) -> RuntimeTaskShutdownReceipt {
+        let count = self.task_tracker.close_admission();
         let request = if policy.cancel_on_shutdown_enabled() {
             self.cancellation.cancel();
             RuntimeTaskShutdownRequest::CancelTasksAndWait
@@ -403,20 +460,13 @@ impl TokioAgentRuntime {
             RuntimeTaskShutdownRequest::WaitForTasks
         };
         self.task_tracker
-            .close_and_wait(policy.shutdown_timeout_duration(), request)
+            .wait_for_shutdown(policy.shutdown_timeout_duration(), request, count)
             .await
     }
 
     pub async fn shutdown_session_tasks(&self) -> RuntimeTaskShutdownReceipt {
         self.shutdown_tasks(self.runtime_snapshot.task_tracker())
             .await
-    }
-
-    pub fn join_set<T>(&self) -> JoinSet<T>
-    where
-        T: Send + 'static,
-    {
-        JoinSet::new()
     }
 
     pub fn oneshot_channel<T>(&self) -> (oneshot::Sender<T>, oneshot::Receiver<T>) {
@@ -447,7 +497,10 @@ impl TokioAgentRuntime {
         P: ProviderRuntime,
     {
         let context = self.context();
-        self.spawn_with_span(
+        let session = context.session().session_id().clone();
+        self.spawn_scoped(
+            &session,
+            RuntimeOperationId::new("provider"),
             async move { provider.run_provider(request, context).await },
             observability::runtime_provider_span(),
         )
@@ -468,8 +521,11 @@ impl TokioAgentRuntime {
             child_session_id,
             requested_visibility,
         );
+        let session = context.session().session_id().clone();
         (
-            self.spawn_with_span(
+            self.spawn_scoped(
+                &session,
+                RuntimeOperationId::new("provider"),
                 async move { provider.run_provider(request, context).await },
                 observability::runtime_provider_span(),
             ),
@@ -482,7 +538,10 @@ impl TokioAgentRuntime {
         T: ToolRuntime,
     {
         let context = self.context();
-        self.spawn_with_span(
+        let session = context.session().session_id().clone();
+        self.spawn_scoped(
+            &session,
+            RuntimeOperationId::new("tool"),
             async move { tool.run_tool(invocation, context).await },
             observability::runtime_tool_span(),
         )
@@ -503,8 +562,11 @@ impl TokioAgentRuntime {
             child_session_id,
             requested_visibility,
         );
+        let session = context.session().session_id().clone();
         (
-            self.spawn_with_span(
+            self.spawn_scoped(
+                &session,
+                RuntimeOperationId::new("tool"),
                 async move { tool.run_tool(invocation, context).await },
                 observability::runtime_tool_span(),
             ),
@@ -517,7 +579,10 @@ impl TokioAgentRuntime {
         A: SubAgentRuntime,
     {
         let context = self.context();
-        self.spawn_with_span(
+        let session = context.session().session_id().clone();
+        self.spawn_scoped(
+            &session,
+            RuntimeOperationId::new("subagent"),
             async move { sub_agent.run_sub_agent(input, context).await },
             observability::runtime_sub_agent_span(),
         )
@@ -538,8 +603,11 @@ impl TokioAgentRuntime {
             child_session_id,
             requested_visibility,
         );
+        let session = context.session().session_id().clone();
         (
-            self.spawn_with_span(
+            self.spawn_scoped(
+                &session,
+                RuntimeOperationId::new("subagent"),
                 async move { sub_agent.run_sub_agent(input, context).await },
                 observability::runtime_sub_agent_span(),
             ),
@@ -577,7 +645,10 @@ impl TokioAgentRuntime {
         A: SubAgentRuntime,
     {
         let context = self.context().child_context_with_environment(environment);
-        self.spawn_with_span(
+        let session = context.session().session_id().clone();
+        self.spawn_scoped(
+            &session,
+            RuntimeOperationId::new("subagent"),
             async move { sub_agent.run_sub_agent(input, context).await },
             observability::runtime_sub_agent_span(),
         )
@@ -597,7 +668,10 @@ impl TokioAgentRuntime {
             .context()
             .child_context_with_environment(environment)
             .with_working_copy_receipt(working_copy_receipt);
-        self.spawn_with_span(
+        let session = context.session().session_id().clone();
+        self.spawn_scoped(
+            &session,
+            RuntimeOperationId::new("subagent"),
             async move { sub_agent.run_sub_agent(input, context).await },
             observability::runtime_sub_agent_span(),
         )
@@ -631,7 +705,9 @@ impl TokioAgentRuntime {
         let runtime = self.clone();
         let fanout = fanout.into_iter().collect::<Vec<_>>();
 
-        self.spawn_with_span(
+        self.spawn_scoped(
+            self.session.session_id(),
+            RuntimeOperationId::new("subagent.fanout"),
             Self::run_sub_agent_fanout_with_policy(runtime, sub_agent, fanout, policy),
             observability::runtime_sub_agent_span(),
         )
@@ -666,7 +742,10 @@ impl TokioAgentRuntime {
         H: HookRuntime,
     {
         let context = self.context();
-        self.spawn_with_span(
+        let session = context.session().session_id().clone();
+        self.spawn_scoped(
+            &session,
+            RuntimeOperationId::new("hook"),
             async move { hook.run_hook(request, context).await },
             observability::runtime_hook_span(),
         )
@@ -687,8 +766,11 @@ impl TokioAgentRuntime {
             child_session_id,
             requested_visibility,
         );
+        let session = context.session().session_id().clone();
         (
-            self.spawn_with_span(
+            self.spawn_scoped(
+                &session,
+                RuntimeOperationId::new("hook"),
                 async move { hook.run_hook(request, context).await },
                 observability::runtime_hook_span(),
             ),
@@ -701,11 +783,57 @@ impl TokioAgentRuntime {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        let task_guard = self.task_tracker.track_task();
-        RuntimeTask::new(tokio::spawn(async move {
-            let _task_guard = task_guard;
-            future.instrument(span).await
-        }))
+        self.spawn_scoped(
+            self.session.session_id(),
+            RuntimeOperationId::new("task"),
+            future,
+            span,
+        )
+    }
+
+    /// Spawn tracked work for an explicit session and operation.
+    pub fn spawn_in_session_on<F>(
+        &self,
+        runtime: &tokio::runtime::Runtime,
+        session: &SessionId,
+        operation: RuntimeOperationId,
+        future: F,
+    ) -> RuntimeTask<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        let _entered = runtime.enter();
+        self.spawn_scoped(
+            session,
+            operation,
+            future,
+            observability::runtime_task_span(observability::RUNTIME_KIND_GENERIC),
+        )
+    }
+
+    fn spawn_scoped<F>(
+        &self,
+        session: &SessionId,
+        operation: RuntimeOperationId,
+        future: F,
+        span: tracing::Span,
+    ) -> RuntimeTask<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        let guard = match self.task_tracker.admit(session, operation) {
+            Ok(guard) => guard,
+            Err(error) => return RuntimeTask::rejected(error),
+        };
+        RuntimeTask::new(
+            guard.id().clone(),
+            tokio::spawn(async move {
+                let _guard = guard;
+                future.instrument(span).await
+            }),
+        )
     }
 }
 
@@ -768,15 +896,27 @@ where
             let Some((index, item)) = self.pending.pop_front() else {
                 break;
             };
+            let (input, environment, working_copy_receipt) = item.into_parts();
             let sub_agent = Arc::clone(&self.sub_agent);
             let context = self
                 .runtime
                 .context()
-                .child_context_with_environment(item.environment)
-                .with_working_copy_receipt(item.working_copy_receipt);
+                .child_context_with_environment(environment)
+                .with_working_copy_receipt(working_copy_receipt);
+            let Ok(guard) = self.runtime.task_tracker.admit(
+                context.session().session_id(),
+                RuntimeOperationId::new("subagent.fanout.item"),
+            ) else {
+                self.receipt
+                    .push_task_receipt(RuntimeFanoutTaskReceipt::cancelled_before_start(index));
+                continue;
+            };
             self.tasks.spawn(
-                async move { (index, sub_agent.run_sub_agent(item.input, context).await) }
-                    .instrument(observability::runtime_sub_agent_span()),
+                async move {
+                    let _guard = guard;
+                    (index, sub_agent.run_sub_agent(input, context).await)
+                }
+                .instrument(observability::runtime_sub_agent_span()),
             );
         }
     }

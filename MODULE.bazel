@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 module(
     name = "marlin_agent_core",
     version = "0.1.0",
@@ -19,8 +23,8 @@ crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
 crate.annotation(
     crate = "io-uring",
     patch_args = ["-p1"],
-    patches = ["//bazel/patches:io-uring-0.7.13-linux-only.patch"],
-    version = "0.7.13",
+    patches = ["//bazel/patches:io-uring-0.7.15-linux-only.patch"],
+    version = "0.7.15",
 )
 crate.annotation(
     build_script_env = {
@@ -30,7 +34,7 @@ crate.annotation(
         "NUM_JOBS": "8",
     },
     crate = "aws-lc-sys",
-    version = "0.41.0",
+    version = "0.47.0",
 )
 crate.from_cargo(
     name = "marlin_crates",

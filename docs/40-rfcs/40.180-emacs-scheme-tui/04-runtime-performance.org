@@ -1,0 +1,86 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin TUI — Runtime and performance
+
+[[file:../40.180-emacs-scheme-tui.org][RFC entry]] · [[file:03-native-mapping.org][Mapping contract]] · [[file:05-verification.org][Verification]]
+
+* Startup and native compilation
+
+Separate package preparation, Scheme/C compilation, static linking, process
+launch, VM initialization, first frame and first interaction. Build time is not
+a startup sample. A hot second launch does not establish cold-start acceptance.
+The intended default developer command remains:
+
+#+begin_src sh
+target/debug/marlin-tui crates/marlin-agent-tui/example.toml
+#+end_src
+
+The default linked debug build and release use the selected compiled Gerbil
+closure. A release must work without a source package tree. Runtime expansion
+of a source module is not an acceptable hidden prerequisite for a linked
+binary. Scheme executes in its VM; a restricted Scheme-to-Rust backend is not
+assumed to handle macros, CLOS or dynamic generic dispatch.
+
+Darwin native compilation can avoid source expansion at launch. It does not
+justify claiming zero VM startup cost. Measure the actual generated executable
+and its first-copy launch. Reuse Gerbil/Yuanxu Build and Scheme Rust staging;
+do not introduce a parallel loader, artifact scanner or cache hierarchy.
+
+The current linked debug first-M-x gate fails before input: no initial
+Modeline appears within its original ten-second limit. A bounded startup
+sample, resolved with a link map whose text-section digest matches the sampled
+executable, reaches VM initialization, Yuanxu linking, POO execution and GC.
+This is evidence about work performed before the first frame, not a completed
+startup optimization. The compiled closure's availability and its bootstrap
+initialization need separate qualification through the owning compiler/runtime
+interfaces. Deferred activation must retain source, binding and Contract checks.
+
+* Event scheduling
+
+Drain events with a bound, coalesce replaceable display updates and paint at a
+bounded cadence. Preserve reliable lifecycle, cancellation and approval events.
+A large streaming response must not starve keyboard input, resize or Stop.
+Idle redraws require observable invalidation; elapsed wall time alone is not a
+reason to rebuild an unchanged Scheme projection.
+
+Wheel coalescing preserves destination, direction and the relevant frame.
+Selection navigation can process multiple events before paint, but the first
+M-x arrow must be applied to the newly opened selection state. Treat input
+latency, projection latency and terminal paint as distinct observations.
+
+* Rendering and retention
+
+Prepare changed content incrementally. Render the visible viewport, retain
+bounded indexes for long transcripts and preserve anchors across folding and
+resize. Avoid whole-history wrapping on each frame or native/Scheme round trips
+for each terminal cell. Batch typed facts and projections at frame boundaries.
+
+Retained Messages, transcript events, tool output and completion history need
+explicit bounds or durable owners. Dropping display detail must not drop an
+unacknowledged Runtime receipt. A cache hit still requires current evidence;
+source identity, viewport and display revision are not interchangeable.
+
+* Terminal ownership
+
+Rust owns raw mode, mouse reporting, cursor, alternate screen, suspension,
+foreground handoff and restoration on exit or failure. Scheme declares UI
+state and intent. A native failure must not leave the terminal corrupted or
+write a backtrace into conversation history.
+
+Provider configuration, retries and uncertain remote outcomes belong to Weaver
+and the Runtime. The UI can present those facts and actions; it cannot infer
+that an uncertain remote request never executed or silently resend it.
+
+* Measurement contract
+
+Use fixed source cohorts and workloads. Report debug/release separately, with
+sample counts and tails. Include normal and deep scroll, resize, folding,
+first M-x navigation, event bursts and package-extension overhead. Compare the
+same content, terminal size and cache state. Do not mix builds or concurrent
+compilers into latency samples.
+
+The thirty two-frame Scheme test-window samples include Scheme assertions and
+debug mapping. They are a diagnostic workload, not a release startup benchmark.
+A failed budget remains failed evidence. Do not increase watchdogs, prewarm
+business scopes or selectively repeat until a convenient sample passes.

@@ -1,13 +1,15 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Agent-system harness for scenario execution, replay fixtures, and evidence assertions.
 //!
 //! This crate belongs to the agent harness boundary. It validates agent loop
 //! behavior, sub-agent/session isolation, hook replay, runtime visibility,
 //! graph-policy receipts, and no-LLM deterministic scenario execution.
 //!
-//! It is intentionally separate from the Rust project harness in
-//! `build-support/marlin-rust-project-harness-policy`, which owns package
-//! engineering quality gates, build-script receipts, CI evidence, and Rust
-//! project evidence graphs.
+//! ASP Rust owns package engineering checks. Marlin's Build Support crate
+//! only mounts that policy from Cargo development targets.
 
 mod assertion;
 mod evidence;
@@ -85,7 +87,7 @@ pub use marlin_agent_harness_types::{
 };
 pub use release_visibility::{
     ReleaseGateExecutionReceipt, ReleaseGateExecutionStatus,
-    native_abi_readiness_release_gate_execution_receipt, release_gate_execution_receipt,
+    c_abi_readiness_release_gate_execution_receipt, release_gate_execution_receipt,
     release_gate_visibility_evidence, release_topology_execution_receipts,
     release_topology_visibility_evidence, release_visibility_evidence,
 };

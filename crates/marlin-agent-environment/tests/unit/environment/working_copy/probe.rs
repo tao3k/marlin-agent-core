@@ -1,7 +1,11 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_environment::{
     ProcessWorkingCopyCommandRunner, WorkingCopyProviderExecutableStatus,
 };
-use marlin_workspace_protocol::WorkingCopyCommandProgram;
+use marlin_agent_gitops::working_copy::WorkingCopyCommandProgram;
 
 #[tokio::test]
 async fn process_runner_can_probe_git_executable_without_mutating_workspace() {

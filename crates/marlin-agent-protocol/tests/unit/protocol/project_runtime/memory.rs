@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_protocol::{
     GraphQueryContext, GraphQueryFamily, GraphQueryMatch, GraphQueryMatchRelationship,
     GraphQueryRelationshipFact, ProjectMemoryContextFact, ProjectMemoryContextPack,
@@ -67,7 +71,7 @@ fn project_memory_context_pack_preserves_compact_facts_not_shards() {
         "Org is the core reference substrate for project memory recall.",
     )
     .with_source_span(
-        "docs/superpowers/specs/2026-06-15-org-first-project-memory-runtime-design.md:8-23",
+        "docs/superpowers/specs/2026-06-15-org-first-project-memory-runtime-design.org:8-23",
     )
     .with_evidence("evidence:org-first-runtime-design");
 
@@ -83,7 +87,7 @@ fn project_memory_context_pack_preserves_compact_facts_not_shards() {
     );
     assert_eq!(
         value["facts"][0]["source_span"],
-        "docs/superpowers/specs/2026-06-15-org-first-project-memory-runtime-design.md:8-23"
+        "docs/superpowers/specs/2026-06-15-org-first-project-memory-runtime-design.org:8-23"
     );
     assert_eq!(
         value["facts"][0]["evidence_ids"][0],

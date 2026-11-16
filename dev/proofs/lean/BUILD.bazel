@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+filegroup(
+    name = "storage_artifact_pointer_cas_runtime",
+    srcs = [
+        "MarlinProof.lean",
+        "MarlinProof/Storage/ArtifactPointer.lean",
+        "Scenarios/storage-artifact-pointer-cas.org",
+        "Scenarios/storage-artifact-pointer-cas.toml",
+        "lake-manifest.json",
+        "lakefile.lean",
+        "lean-toolchain",
+    ],
+    visibility = ["//visibility:public"],
+)
