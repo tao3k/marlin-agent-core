@@ -1,5 +1,5 @@
 {
-  "checksum": "41e2616439daeef05263cb7265504eb025e9d0d01a3f05a1278aa55e5f5cb8ca",
+  "checksum": "00605f90a3bafde124d7bcd4e83dc3ba96f813c61e796e2d9bf0d5c4c52db9a4",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -702,6 +702,10 @@
               "target": "anstyle_query"
             },
             {
+              "id": "anstyle-wincon 3.0.11",
+              "target": "anstyle_wincon"
+            },
+            {
               "id": "colorchoice 1.0.5",
               "target": "colorchoice"
             },
@@ -714,14 +718,7 @@
               "target": "utf8parse"
             }
           ],
-          "selects": {
-            "x86_64-pc-windows-msvc": [
-              {
-                "id": "anstyle-wincon 3.0.11",
-                "target": "anstyle_wincon"
-              }
-            ]
-          }
+          "selects": {}
         },
         "edition": "2021",
         "version": "1.0.0"
@@ -4437,23 +4434,27 @@
         "deps": {
           "common": [
             {
-              "id": "iana-time-zone 0.1.65",
-              "target": "iana_time_zone"
-            },
-            {
               "id": "num-traits 0.2.19",
               "target": "num_traits"
             },
             {
               "id": "serde 1.0.229",
               "target": "serde"
-            },
-            {
-              "id": "windows-link 0.2.1",
-              "target": "windows_link"
             }
           ],
           "selects": {
+            "aarch64-apple-darwin": [
+              {
+                "id": "iana-time-zone 0.1.65",
+                "target": "iana_time_zone"
+              }
+            ],
+            "aarch64-unknown-linux-gnu": [
+              {
+                "id": "iana-time-zone 0.1.65",
+                "target": "iana_time_zone"
+              }
+            ],
             "wasm32-unknown-unknown": [
               {
                 "id": "js-sys 0.3.105",
@@ -4462,6 +4463,24 @@
               {
                 "id": "wasm-bindgen 0.2.128",
                 "target": "wasm_bindgen"
+              }
+            ],
+            "x86_64-pc-windows-msvc": [
+              {
+                "id": "windows-link 0.2.1",
+                "target": "windows_link"
+              }
+            ],
+            "x86_64-unknown-linux-gnu": [
+              {
+                "id": "iana-time-zone 0.1.65",
+                "target": "iana_time_zone"
+              }
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              {
+                "id": "iana-time-zone 0.1.65",
+                "target": "iana_time_zone"
               }
             ]
           }
@@ -9360,116 +9379,6 @@
       ],
       "license_file": "LICENSE"
     },
-    "gerbil-parser-artifact 0.1.0": {
-      "name": "gerbil-parser-artifact",
-      "version": "0.1.0",
-      "package_url": "https://github.com/tao3k/gerbil-parser",
-      "repository": {
-        "Git": {
-          "remote": "https://github.com/tao3k/gerbil-parser",
-          "commitish": {
-            "Rev": "725fd55fc82dc9dc2bd743d97fd5a5449bfd288e"
-          },
-          "strip_prefix": "rust/gerbil-parser-artifact"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "gerbil_parser_artifact",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "gerbil_parser_artifact",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "serde_json 1.0.154",
-              "target": "serde_json"
-            },
-            {
-              "id": "sha2 0.10.9",
-              "target": "sha2"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.1.0"
-      },
-      "license": "Apache-2.0 AND LGPL-2.1-or-later",
-      "license_ids": [
-        "Apache-2.0",
-        "LGPL-2.1"
-      ],
-      "license_file": null
-    },
-    "gerbil-parser-runtime 0.1.0": {
-      "name": "gerbil-parser-runtime",
-      "version": "0.1.0",
-      "package_url": "https://github.com/tao3k/gerbil-parser",
-      "repository": {
-        "Git": {
-          "remote": "https://github.com/tao3k/gerbil-parser",
-          "commitish": {
-            "Rev": "725fd55fc82dc9dc2bd743d97fd5a5449bfd288e"
-          },
-          "strip_prefix": "rust/gerbil-parser-runtime"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "gerbil_parser_runtime",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "gerbil_parser_runtime",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "gerbil-parser-artifact 0.1.0",
-              "target": "gerbil_parser_artifact"
-            },
-            {
-              "id": "sha2 0.10.9",
-              "target": "sha2"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.1.0"
-      },
-      "license": "Apache-2.0 AND LGPL-2.1-or-later",
-      "license_ids": [
-        "Apache-2.0",
-        "LGPL-2.1"
-      ],
-      "license_file": null
-    },
     "gerbil-scheme 0.1.0": {
       "name": "gerbil-scheme",
       "version": "0.1.0",
@@ -9478,7 +9387,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "0d92f7bee8c23b373ccd116be6f17701c4c4aac6"
+            "Rev": "7c4dd3d8e3b6321113d1a752599ee7f40045c48a"
           },
           "strip_prefix": "crates/gerbil-scheme"
         }
@@ -9575,7 +9484,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "0d92f7bee8c23b373ccd116be6f17701c4c4aac6"
+            "Rev": "7c4dd3d8e3b6321113d1a752599ee7f40045c48a"
           },
           "strip_prefix": "build-support/gerbil-scheme-aot-build"
         }
@@ -9686,7 +9595,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "dfe8b62b5dc64de88f8d70a77059a1741218ef80"
+            "Rev": "7c4dd3d8e3b6321113d1a752599ee7f40045c48a"
           },
           "strip_prefix": "crates/gerbil-scheme-build"
         }
@@ -9737,7 +9646,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "0d92f7bee8c23b373ccd116be6f17701c4c4aac6"
+            "Rev": "7c4dd3d8e3b6321113d1a752599ee7f40045c48a"
           },
           "strip_prefix": "build-support/gerbil-scheme-rust-project-harness"
         }
@@ -9834,7 +9743,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "0d92f7bee8c23b373ccd116be6f17701c4c4aac6"
+            "Rev": "7c4dd3d8e3b6321113d1a752599ee7f40045c48a"
           },
           "strip_prefix": "build-support/gerbil-scheme-rust-project-harness-policy"
         }
@@ -9921,7 +9830,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "0d92f7bee8c23b373ccd116be6f17701c4c4aac6"
+            "Rev": "7c4dd3d8e3b6321113d1a752599ee7f40045c48a"
           },
           "strip_prefix": "crates/gerbil-scheme-sys"
         }
@@ -11619,21 +11528,35 @@
           "common": [
             "client",
             "client-legacy",
-            "client-proxy",
             "default",
             "http1",
             "http2",
             "server",
             "tokio"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "client-proxy"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "client-proxy"
+            ],
+            "wasm32-wasip1": [
+              "client-proxy"
+            ],
+            "x86_64-pc-windows-msvc": [
+              "client-proxy"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "client-proxy"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "client-proxy"
+            ]
+          }
         },
         "deps": {
           "common": [
-            {
-              "id": "base64 0.23.1",
-              "target": "base64"
-            },
             {
               "id": "bytes 1.12.1",
               "target": "bytes"
@@ -11663,16 +11586,8 @@
               "target": "hyper"
             },
             {
-              "id": "ipnet 2.12.2",
-              "target": "ipnet"
-            },
-            {
               "id": "libc 0.2.191",
               "target": "libc"
-            },
-            {
-              "id": "percent-encoding 2.3.2",
-              "target": "percent_encoding"
             },
             {
               "id": "pin-project-lite 0.2.17",
@@ -11695,7 +11610,92 @@
               "target": "tracing"
             }
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              {
+                "id": "base64 0.23.1",
+                "target": "base64"
+              },
+              {
+                "id": "ipnet 2.12.2",
+                "target": "ipnet"
+              },
+              {
+                "id": "percent-encoding 2.3.2",
+                "target": "percent_encoding"
+              }
+            ],
+            "aarch64-unknown-linux-gnu": [
+              {
+                "id": "base64 0.23.1",
+                "target": "base64"
+              },
+              {
+                "id": "ipnet 2.12.2",
+                "target": "ipnet"
+              },
+              {
+                "id": "percent-encoding 2.3.2",
+                "target": "percent_encoding"
+              }
+            ],
+            "wasm32-wasip1": [
+              {
+                "id": "base64 0.23.1",
+                "target": "base64"
+              },
+              {
+                "id": "ipnet 2.12.2",
+                "target": "ipnet"
+              },
+              {
+                "id": "percent-encoding 2.3.2",
+                "target": "percent_encoding"
+              }
+            ],
+            "x86_64-pc-windows-msvc": [
+              {
+                "id": "base64 0.23.1",
+                "target": "base64"
+              },
+              {
+                "id": "ipnet 2.12.2",
+                "target": "ipnet"
+              },
+              {
+                "id": "percent-encoding 2.3.2",
+                "target": "percent_encoding"
+              }
+            ],
+            "x86_64-unknown-linux-gnu": [
+              {
+                "id": "base64 0.23.1",
+                "target": "base64"
+              },
+              {
+                "id": "ipnet 2.12.2",
+                "target": "ipnet"
+              },
+              {
+                "id": "percent-encoding 2.3.2",
+                "target": "percent_encoding"
+              }
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              {
+                "id": "base64 0.23.1",
+                "target": "base64"
+              },
+              {
+                "id": "ipnet 2.12.2",
+                "target": "ipnet"
+              },
+              {
+                "id": "percent-encoding 2.3.2",
+                "target": "percent_encoding"
+              }
+            ]
+          }
         },
         "edition": "2024",
         "version": "0.1.21"
@@ -13029,85 +13029,6 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "ignore 0.4.33": {
-      "name": "ignore",
-      "version": "0.4.33",
-      "package_url": "https://github.com/BurntSushi/ripgrep/tree/master/crates/ignore",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/ignore/0.4.33/download",
-          "sha256": "00b69833ed729dc5aa7d19541d96d6cf8e9137194207a04916d658e43168402f"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "ignore",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "ignore",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "crossbeam-deque 0.8.8",
-              "target": "crossbeam_deque"
-            },
-            {
-              "id": "globset 0.4.21",
-              "target": "globset"
-            },
-            {
-              "id": "log 0.4.35",
-              "target": "log"
-            },
-            {
-              "id": "memchr 2.8.3",
-              "target": "memchr"
-            },
-            {
-              "id": "regex-automata 0.4.18",
-              "target": "regex_automata"
-            },
-            {
-              "id": "same-file 1.0.6",
-              "target": "same_file"
-            },
-            {
-              "id": "walkdir 2.5.0",
-              "target": "walkdir"
-            }
-          ],
-          "selects": {
-            "cfg(windows)": [
-              {
-                "id": "winapi-util 0.1.11",
-                "target": "winapi_util"
-              }
-            ]
-          }
-        },
-        "edition": "2024",
-        "version": "0.4.33"
-      },
-      "license": "Unlicense OR MIT",
-      "license_ids": [
-        "MIT",
-        "Unlicense"
-      ],
-      "license_file": "LICENSE-MIT"
-    },
     "indexmap 2.14.2": {
       "name": "indexmap",
       "version": "2.14.2",
@@ -13854,77 +13775,6 @@
         ],
         "edition": "2021",
         "version": "1.0.19"
-      },
-      "license": "MIT OR Apache-2.0",
-      "license_ids": [
-        "Apache-2.0",
-        "MIT"
-      ],
-      "license_file": "LICENSE-APACHE"
-    },
-    "jetscii 0.5.3": {
-      "name": "jetscii",
-      "version": "0.5.3",
-      "package_url": "https://github.com/shepmaster/jetscii",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/jetscii/0.5.3/download",
-          "sha256": "47f142fe24a9c9944451e8349de0a56af5f3e7226dc46f3ed4d4ecc0b85af75e"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "jetscii",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        },
-        {
-          "BuildScript": {
-            "crate_name": "build_script_build",
-            "crate_root": "build.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "jetscii",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "jetscii 0.5.3",
-              "target": "build_script_build"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2015",
-        "version": "0.5.3"
-      },
-      "build_script_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "compile_data_glob_excludes": [
-          "**/*.rs"
-        ],
-        "data_glob": [
-          "**"
-        ]
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -15587,17 +15437,12 @@
           "common": [
             "org-memory",
             "org-source",
-            "org-workflow",
-            "org-workspace"
+            "org-workflow"
           ],
           "selects": {}
         },
         "deps": {
           "common": [
-            {
-              "id": "orgize 0.10.0-alpha.10",
-              "target": "orgize"
-            },
             {
               "id": "parking_lot 0.12.5",
               "target": "parking_lot"
@@ -17294,6 +17139,10 @@
             {
               "id": "object 0.39.1",
               "target": "object"
+            },
+            {
+              "id": "serde_json 1.0.154",
+              "target": "serde_json"
             }
           ],
           "selects": {}
@@ -19654,29 +19503,14 @@
         ],
         "crate_features": {
           "common": [
+            "default",
             "fs",
             "poll",
             "process",
-            "signal"
+            "signal",
+            "term"
           ],
-          "selects": {
-            "aarch64-apple-darwin": [
-              "default",
-              "term"
-            ],
-            "aarch64-unknown-linux-gnu": [
-              "default",
-              "term"
-            ],
-            "x86_64-unknown-linux-gnu": [
-              "default",
-              "term"
-            ],
-            "x86_64-unknown-nixos-gnu": [
-              "default",
-              "term"
-            ]
-          }
+          "selects": {}
         },
         "deps": {
           "common": [
@@ -21504,203 +21338,6 @@
       ],
       "license_file": null
     },
-    "orgize 0.10.0-alpha.10": {
-      "name": "orgize",
-      "version": "0.10.0-alpha.10",
-      "package_url": "https://github.com/tao3k/orgize",
-      "repository": {
-        "Git": {
-          "remote": "https://github.com/tao3k/orgize",
-          "commitish": {
-            "Rev": "7d98b5355b866bfba9ce7d16f6d401d9addb50c4"
-          }
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "orgize",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        },
-        {
-          "BuildScript": {
-            "crate_name": "build_script_build",
-            "crate_root": "build.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "orgize",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "crate_features": {
-          "common": [
-            "default",
-            "runtime-rust"
-          ],
-          "selects": {}
-        },
-        "deps": {
-          "common": [
-            {
-              "id": "blake3 1.8.7",
-              "target": "blake3"
-            },
-            {
-              "id": "gerbil-parser-runtime 0.1.0",
-              "target": "gerbil_parser_runtime"
-            },
-            {
-              "id": "gerbil-scheme 0.1.0",
-              "target": "gerbil_scheme"
-            },
-            {
-              "id": "gerbil-scheme-sys 0.1.0",
-              "target": "gerbil_scheme_sys"
-            },
-            {
-              "id": "ignore 0.4.33",
-              "target": "ignore"
-            },
-            {
-              "id": "jetscii 0.5.3",
-              "target": "jetscii"
-            },
-            {
-              "id": "memchr 2.8.3",
-              "target": "memchr"
-            },
-            {
-              "id": "orgize 0.10.0-alpha.10",
-              "target": "build_script_build"
-            },
-            {
-              "id": "serde_json 1.0.154",
-              "target": "serde_json"
-            },
-            {
-              "id": "sha2 0.10.9",
-              "target": "sha2"
-            }
-          ],
-          "selects": {
-            "cfg(unix)": [
-              {
-                "id": "libc 0.2.191",
-                "target": "libc"
-              }
-            ]
-          }
-        },
-        "edition": "2024",
-        "version": "0.10.0-alpha.10"
-      },
-      "build_script_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "compile_data_glob_excludes": [
-          "**/*.rs"
-        ],
-        "data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "orgize-build-support 0.1.0",
-              "target": "orgize_build_support"
-            }
-          ],
-          "selects": {}
-        }
-      },
-      "license": "MIT",
-      "license_ids": [
-        "MIT"
-      ],
-      "license_file": "LICENSE"
-    },
-    "orgize-build-support 0.1.0": {
-      "name": "orgize-build-support",
-      "version": "0.1.0",
-      "package_url": null,
-      "repository": {
-        "Git": {
-          "remote": "https://github.com/tao3k/orgize",
-          "commitish": {
-            "Rev": "7d98b5355b866bfba9ce7d16f6d401d9addb50c4"
-          },
-          "strip_prefix": "build-support"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "orgize_build_support",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "orgize_build_support",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "gerbil-scheme-aot-build 0.1.0",
-              "target": "gerbil_scheme_aot_build"
-            },
-            {
-              "id": "serde 1.0.229",
-              "target": "serde"
-            },
-            {
-              "id": "serde_json 1.0.154",
-              "target": "serde_json"
-            },
-            {
-              "id": "sha2 0.10.9",
-              "target": "sha2"
-            },
-            {
-              "id": "toml 0.9.12+spec-1.1.0",
-              "target": "toml"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.1.0"
-      },
-      "license": "MIT",
-      "license_ids": [
-        "MIT"
-      ],
-      "license_file": null
-    },
     "owo-colors 3.5.0": {
       "name": "owo-colors",
       "version": "3.5.0",
@@ -23276,23 +22913,46 @@
               "target": "indexmap"
             },
             {
-              "id": "nix 0.31.3",
-              "target": "nix"
-            },
-            {
               "id": "tokio 1.53.1",
               "target": "tokio"
             },
             {
               "id": "tracing 0.1.44",
               "target": "tracing"
-            },
-            {
-              "id": "windows 0.62.2",
-              "target": "windows"
             }
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              {
+                "id": "nix 0.31.3",
+                "target": "nix"
+              }
+            ],
+            "aarch64-unknown-linux-gnu": [
+              {
+                "id": "nix 0.31.3",
+                "target": "nix"
+              }
+            ],
+            "x86_64-pc-windows-msvc": [
+              {
+                "id": "windows 0.62.2",
+                "target": "windows"
+              }
+            ],
+            "x86_64-unknown-linux-gnu": [
+              {
+                "id": "nix 0.31.3",
+                "target": "nix"
+              }
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              {
+                "id": "nix 0.31.3",
+                "target": "nix"
+              }
+            ]
+          }
         },
         "edition": "2024",
         "version": "9.1.1"
@@ -25923,22 +25583,6 @@
               "target": "http"
             },
             {
-              "id": "hyper-rustls 0.27.10",
-              "target": "hyper_rustls"
-            },
-            {
-              "id": "rustls 0.23.46",
-              "target": "rustls"
-            },
-            {
-              "id": "rustls-pki-types 1.15.1",
-              "target": "rustls_pki_types"
-            },
-            {
-              "id": "rustls-platform-verifier 0.7.1",
-              "target": "rustls_platform_verifier"
-            },
-            {
               "id": "serde 1.0.229",
               "target": "serde"
             },
@@ -25951,10 +25595,6 @@
               "target": "sync_wrapper"
             },
             {
-              "id": "tokio-rustls 0.26.6",
-              "target": "tokio_rustls"
-            },
-            {
               "id": "url 2.5.8",
               "target": "url"
             }
@@ -25964,12 +25604,52 @@
               {
                 "id": "h2 0.4.20",
                 "target": "h2"
+              },
+              {
+                "id": "hyper-rustls 0.27.10",
+                "target": "hyper_rustls"
+              },
+              {
+                "id": "rustls 0.23.46",
+                "target": "rustls"
+              },
+              {
+                "id": "rustls-pki-types 1.15.1",
+                "target": "rustls_pki_types"
+              },
+              {
+                "id": "rustls-platform-verifier 0.7.1",
+                "target": "rustls_platform_verifier"
+              },
+              {
+                "id": "tokio-rustls 0.26.6",
+                "target": "tokio_rustls"
               }
             ],
             "aarch64-unknown-linux-gnu": [
               {
                 "id": "h2 0.4.20",
                 "target": "h2"
+              },
+              {
+                "id": "hyper-rustls 0.27.10",
+                "target": "hyper_rustls"
+              },
+              {
+                "id": "rustls 0.23.46",
+                "target": "rustls"
+              },
+              {
+                "id": "rustls-pki-types 1.15.1",
+                "target": "rustls_pki_types"
+              },
+              {
+                "id": "rustls-platform-verifier 0.7.1",
+                "target": "rustls_platform_verifier"
+              },
+              {
+                "id": "tokio-rustls 0.26.6",
+                "target": "tokio_rustls"
               }
             ],
             "cfg(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\")))": [
@@ -26040,24 +25720,104 @@
               {
                 "id": "h2 0.4.20",
                 "target": "h2"
+              },
+              {
+                "id": "hyper-rustls 0.27.10",
+                "target": "hyper_rustls"
+              },
+              {
+                "id": "rustls 0.23.46",
+                "target": "rustls"
+              },
+              {
+                "id": "rustls-pki-types 1.15.1",
+                "target": "rustls_pki_types"
+              },
+              {
+                "id": "rustls-platform-verifier 0.7.1",
+                "target": "rustls_platform_verifier"
+              },
+              {
+                "id": "tokio-rustls 0.26.6",
+                "target": "tokio_rustls"
               }
             ],
             "x86_64-pc-windows-msvc": [
               {
                 "id": "h2 0.4.20",
                 "target": "h2"
+              },
+              {
+                "id": "hyper-rustls 0.27.10",
+                "target": "hyper_rustls"
+              },
+              {
+                "id": "rustls 0.23.46",
+                "target": "rustls"
+              },
+              {
+                "id": "rustls-pki-types 1.15.1",
+                "target": "rustls_pki_types"
+              },
+              {
+                "id": "rustls-platform-verifier 0.7.1",
+                "target": "rustls_platform_verifier"
+              },
+              {
+                "id": "tokio-rustls 0.26.6",
+                "target": "tokio_rustls"
               }
             ],
             "x86_64-unknown-linux-gnu": [
               {
                 "id": "h2 0.4.20",
                 "target": "h2"
+              },
+              {
+                "id": "hyper-rustls 0.27.10",
+                "target": "hyper_rustls"
+              },
+              {
+                "id": "rustls 0.23.46",
+                "target": "rustls"
+              },
+              {
+                "id": "rustls-pki-types 1.15.1",
+                "target": "rustls_pki_types"
+              },
+              {
+                "id": "rustls-platform-verifier 0.7.1",
+                "target": "rustls_platform_verifier"
+              },
+              {
+                "id": "tokio-rustls 0.26.6",
+                "target": "tokio_rustls"
               }
             ],
             "x86_64-unknown-nixos-gnu": [
               {
                 "id": "h2 0.4.20",
                 "target": "h2"
+              },
+              {
+                "id": "hyper-rustls 0.27.10",
+                "target": "hyper_rustls"
+              },
+              {
+                "id": "rustls 0.23.46",
+                "target": "rustls"
+              },
+              {
+                "id": "rustls-pki-types 1.15.1",
+                "target": "rustls_pki_types"
+              },
+              {
+                "id": "rustls-platform-verifier 0.7.1",
+                "target": "rustls_platform_verifier"
+              },
+              {
+                "id": "tokio-rustls 0.26.6",
+                "target": "tokio_rustls"
               }
             ]
           }
@@ -26712,28 +26472,49 @@
           "common": [
             "alloc",
             "default",
-            "event",
             "fs",
-            "io_uring",
-            "net",
-            "pipe",
-            "process",
-            "std",
-            "thread",
-            "time"
+            "std"
           ],
           "selects": {
             "aarch64-apple-darwin": [
-              "termios"
+              "event",
+              "io_uring",
+              "net",
+              "pipe",
+              "process",
+              "termios",
+              "thread",
+              "time"
             ],
             "aarch64-unknown-linux-gnu": [
-              "termios"
+              "event",
+              "io_uring",
+              "net",
+              "pipe",
+              "process",
+              "termios",
+              "thread",
+              "time"
             ],
             "x86_64-unknown-linux-gnu": [
-              "termios"
+              "event",
+              "io_uring",
+              "net",
+              "pipe",
+              "process",
+              "termios",
+              "thread",
+              "time"
             ],
             "x86_64-unknown-nixos-gnu": [
-              "termios"
+              "event",
+              "io_uring",
+              "net",
+              "pipe",
+              "process",
+              "termios",
+              "thread",
+              "time"
             ]
           }
         },
@@ -30360,15 +30141,34 @@
             "default",
             "derive",
             "extra-traits",
-            "fold",
             "full",
             "parsing",
             "printing",
             "proc-macro",
-            "visit",
-            "visit-mut"
+            "visit"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "fold",
+              "visit-mut"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "fold",
+              "visit-mut"
+            ],
+            "x86_64-pc-windows-msvc": [
+              "fold",
+              "visit-mut"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "fold",
+              "visit-mut"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "fold",
+              "visit-mut"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -30620,33 +30420,37 @@
             {
               "id": "memchr 2.8.3",
               "target": "memchr"
-            },
-            {
-              "id": "ntapi 0.4.3",
-              "target": "ntapi"
-            },
-            {
-              "id": "objc2-core-foundation 0.3.2",
-              "target": "objc2_core_foundation"
-            },
-            {
-              "id": "objc2-io-kit 0.3.2",
-              "target": "objc2_io_kit"
-            },
-            {
-              "id": "objc2-open-directory 0.3.2",
-              "target": "objc2_open_directory"
-            },
-            {
-              "id": "windows 0.62.2",
-              "target": "windows"
             }
           ],
           "selects": {
+            "aarch64-apple-darwin": [
+              {
+                "id": "objc2-core-foundation 0.3.2",
+                "target": "objc2_core_foundation"
+              },
+              {
+                "id": "objc2-io-kit 0.3.2",
+                "target": "objc2_io_kit"
+              },
+              {
+                "id": "objc2-open-directory 0.3.2",
+                "target": "objc2_open_directory"
+              }
+            ],
             "cfg(not(any(target_os = \"unknown\", target_arch = \"wasm32\")))": [
               {
                 "id": "libc 0.2.191",
                 "target": "libc"
+              }
+            ],
+            "x86_64-pc-windows-msvc": [
+              {
+                "id": "ntapi 0.4.3",
+                "target": "ntapi"
+              },
+              {
+                "id": "windows 0.62.2",
+                "target": "windows"
               }
             ]
           }
@@ -31549,10 +31353,13 @@
             "socket2",
             "sync",
             "time",
-            "tokio-macros",
-            "windows-sys"
+            "tokio-macros"
           ],
-          "selects": {}
+          "selects": {
+            "x86_64-pc-windows-msvc": [
+              "windows-sys"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -31752,25 +31559,37 @@
         ],
         "crate_features": {
           "common": [
-            "aws-lc-rs",
-            "aws_lc_rs",
             "logging",
             "tls12"
           ],
           "selects": {
             "aarch64-apple-darwin": [
+              "aws-lc-rs",
+              "aws_lc_rs",
               "ring"
             ],
             "aarch64-unknown-linux-gnu": [
+              "aws-lc-rs",
+              "aws_lc_rs",
               "ring"
             ],
+            "wasm32-wasip1": [
+              "aws-lc-rs",
+              "aws_lc_rs"
+            ],
             "x86_64-pc-windows-msvc": [
+              "aws-lc-rs",
+              "aws_lc_rs",
               "ring"
             ],
             "x86_64-unknown-linux-gnu": [
+              "aws-lc-rs",
+              "aws_lc_rs",
               "ring"
             ],
             "x86_64-unknown-nixos-gnu": [
+              "aws-lc-rs",
+              "aws_lc_rs",
               "ring"
             ]
           }
@@ -31920,10 +31739,6 @@
               "target": "futures_util"
             },
             {
-              "id": "libc 0.2.191",
-              "target": "libc"
-            },
-            {
               "id": "pin-project-lite 0.2.17",
               "target": "pin_project_lite"
             },
@@ -31932,7 +31747,32 @@
               "target": "tokio"
             }
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              }
+            ],
+            "aarch64-unknown-linux-gnu": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              }
+            ],
+            "x86_64-unknown-linux-gnu": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              }
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              }
+            ]
+          }
         },
         "edition": "2021",
         "version": "0.7.20"
@@ -32041,28 +31881,7 @@
             "serde",
             "std"
           ],
-          "selects": {
-            "aarch64-apple-darwin": [
-              "default",
-              "display"
-            ],
-            "aarch64-unknown-linux-gnu": [
-              "default",
-              "display"
-            ],
-            "x86_64-pc-windows-msvc": [
-              "default",
-              "display"
-            ],
-            "x86_64-unknown-linux-gnu": [
-              "default",
-              "display"
-            ],
-            "x86_64-unknown-nixos-gnu": [
-              "default",
-              "display"
-            ]
-          }
+          "selects": {}
         },
         "deps": {
           "common": [
@@ -32087,38 +31906,7 @@
               "target": "winnow"
             }
           ],
-          "selects": {
-            "aarch64-apple-darwin": [
-              {
-                "id": "toml_writer 1.2.0+spec-1.1.0",
-                "target": "toml_writer"
-              }
-            ],
-            "aarch64-unknown-linux-gnu": [
-              {
-                "id": "toml_writer 1.2.0+spec-1.1.0",
-                "target": "toml_writer"
-              }
-            ],
-            "x86_64-pc-windows-msvc": [
-              {
-                "id": "toml_writer 1.2.0+spec-1.1.0",
-                "target": "toml_writer"
-              }
-            ],
-            "x86_64-unknown-linux-gnu": [
-              {
-                "id": "toml_writer 1.2.0+spec-1.1.0",
-                "target": "toml_writer"
-              }
-            ],
-            "x86_64-unknown-nixos-gnu": [
-              {
-                "id": "toml_writer 1.2.0+spec-1.1.0",
-                "target": "toml_writer"
-              }
-            ]
-          }
+          "selects": {}
         },
         "edition": "2021",
         "version": "0.9.12+spec-1.1.0"
@@ -32296,26 +32084,11 @@
         "crate_features": {
           "common": [
             "alloc",
+            "default",
             "serde",
             "std"
           ],
-          "selects": {
-            "aarch64-apple-darwin": [
-              "default"
-            ],
-            "aarch64-unknown-linux-gnu": [
-              "default"
-            ],
-            "x86_64-pc-windows-msvc": [
-              "default"
-            ],
-            "x86_64-unknown-linux-gnu": [
-              "default"
-            ],
-            "x86_64-unknown-nixos-gnu": [
-              "default"
-            ]
-          }
+          "selects": {}
         },
         "deps": {
           "common": [
@@ -32434,25 +32207,10 @@
         "crate_features": {
           "common": [
             "alloc",
+            "default",
             "std"
           ],
-          "selects": {
-            "aarch64-apple-darwin": [
-              "default"
-            ],
-            "aarch64-unknown-linux-gnu": [
-              "default"
-            ],
-            "x86_64-pc-windows-msvc": [
-              "default"
-            ],
-            "x86_64-unknown-linux-gnu": [
-              "default"
-            ],
-            "x86_64-unknown-nixos-gnu": [
-              "default"
-            ]
-          }
+          "selects": {}
         },
         "deps": {
           "common": [
@@ -32720,7 +32478,6 @@
             "limit",
             "load-shed",
             "pin-project-lite",
-            "retry",
             "sync_wrapper",
             "timeout",
             "tokio",
@@ -32728,7 +32485,26 @@
             "tracing",
             "util"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "retry"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "retry"
+            ],
+            "wasm32-wasip1": [
+              "retry"
+            ],
+            "x86_64-pc-windows-msvc": [
+              "retry"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "retry"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "retry"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -33777,10 +33553,6 @@
               "target": "intrusive_collections"
             },
             {
-              "id": "io-uring 0.7.15",
-              "target": "io_uring"
-            },
-            {
               "id": "libm 0.2.16",
               "target": "libm"
             },
@@ -33837,10 +33609,6 @@
               "target": "simdutf8"
             },
             {
-              "id": "simsimd 6.5.16",
-              "target": "simsimd"
-            },
-            {
               "id": "smallvec 1.16.5",
               "target": "smallvec"
             },
@@ -33890,6 +33658,22 @@
             }
           ],
           "selects": {
+            "aarch64-apple-darwin": [
+              {
+                "id": "simsimd 6.5.16",
+                "target": "simsimd"
+              }
+            ],
+            "aarch64-unknown-linux-gnu": [
+              {
+                "id": "io-uring 0.7.15",
+                "target": "io_uring"
+              },
+              {
+                "id": "simsimd 6.5.16",
+                "target": "simsimd"
+              }
+            ],
             "cfg(all(target_arch = \"wasm32\", target_os = \"unknown\"))": [
               {
                 "id": "getrandom 0.2.17",
@@ -33966,6 +33750,32 @@
               {
                 "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
+              }
+            ],
+            "x86_64-pc-windows-msvc": [
+              {
+                "id": "simsimd 6.5.16",
+                "target": "simsimd"
+              }
+            ],
+            "x86_64-unknown-linux-gnu": [
+              {
+                "id": "io-uring 0.7.15",
+                "target": "io_uring"
+              },
+              {
+                "id": "simsimd 6.5.16",
+                "target": "simsimd"
+              }
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              {
+                "id": "io-uring 0.7.15",
+                "target": "io_uring"
+              },
+              {
+                "id": "simsimd 6.5.16",
+                "target": "simsimd"
               }
             ]
           }
@@ -35567,19 +35377,51 @@
         "deps": {
           "common": [
             {
-              "id": "getrandom 0.4.3",
-              "target": "getrandom"
-            },
-            {
               "id": "sha1_smol 1.0.1",
               "target": "sha1_smol"
             }
           ],
           "selects": {
+            "aarch64-apple-darwin": [
+              {
+                "id": "getrandom 0.4.3",
+                "target": "getrandom"
+              }
+            ],
+            "aarch64-unknown-linux-gnu": [
+              {
+                "id": "getrandom 0.4.3",
+                "target": "getrandom"
+              }
+            ],
             "wasm32-unknown-unknown": [
               {
                 "id": "wasm-bindgen 0.2.128",
                 "target": "wasm_bindgen"
+              }
+            ],
+            "wasm32-wasip1": [
+              {
+                "id": "getrandom 0.4.3",
+                "target": "getrandom"
+              }
+            ],
+            "x86_64-pc-windows-msvc": [
+              {
+                "id": "getrandom 0.4.3",
+                "target": "getrandom"
+              }
+            ],
+            "x86_64-unknown-linux-gnu": [
+              {
+                "id": "getrandom 0.4.3",
+                "target": "getrandom"
+              }
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              {
+                "id": "getrandom 0.4.3",
+                "target": "getrandom"
               }
             ]
           }
@@ -38532,49 +38374,15 @@
           "**"
         ],
         "crate_features": {
-          "common": [],
-          "selects": {
-            "aarch64-apple-darwin": [
-              "alloc",
-              "ascii",
-              "binary",
-              "default",
-              "parser",
-              "std"
-            ],
-            "aarch64-unknown-linux-gnu": [
-              "alloc",
-              "ascii",
-              "binary",
-              "default",
-              "parser",
-              "std"
-            ],
-            "x86_64-pc-windows-msvc": [
-              "alloc",
-              "ascii",
-              "binary",
-              "default",
-              "parser",
-              "std"
-            ],
-            "x86_64-unknown-linux-gnu": [
-              "alloc",
-              "ascii",
-              "binary",
-              "default",
-              "parser",
-              "std"
-            ],
-            "x86_64-unknown-nixos-gnu": [
-              "alloc",
-              "ascii",
-              "binary",
-              "default",
-              "parser",
-              "std"
-            ]
-          }
+          "common": [
+            "alloc",
+            "ascii",
+            "binary",
+            "default",
+            "parser",
+            "std"
+          ],
+          "selects": {}
         },
         "edition": "2021",
         "version": "1.0.5"
@@ -40042,7 +39850,6 @@
     "opentelemetry 0.31.0",
     "opentelemetry-otlp 0.31.0",
     "opentelemetry_sdk 0.31.0",
-    "orgize 0.10.0-alpha.10",
     "parking_lot 0.12.5",
     "process-wrap 9.1.1",
     "ratatui 0.30.2",
