@@ -436,7 +436,7 @@ fn render_inner<'tree>(
         UiElement::Input { .. } => slots.renderer.input(frame, area, element, inputs),
         UiElement::Bar { .. } => {
             if skip == 0 {
-                super::widgets::render_bar(frame, area, element, inputs);
+                super::widgets::render_bar(frame, area, element, regions, inputs);
             }
         }
         UiElement::Slot(id) => {

@@ -371,6 +371,7 @@ fn terminal_checks_bar_segment_children_before_admission() {
             priority: 0,
             min_width: 0,
             condition: None,
+            command: None,
             child: Box::new(UiElement::Slot(
                 marlin_agent_ui::UiSlotSource::TransientHint,
             )),

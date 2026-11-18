@@ -4,6 +4,7 @@
 
 ;;; Scheme owns presentation choices; the native host clips them to cells.
 (import (only-in :clan/poo/object .def .mix .o .ref seal-object!)
+        (only-in "../ui-centaur-tabs/config.ss" UiCentaurTabsScope)
         (only-in "../ui-elements/objects.ss"
                  ui-text ui-rows ui-columns ui-region ui-scroll-target ui-template ui-choice ui-sized-with
                  ui-size-cells ui-size-flex ui-size-binding ui-size-bounded ui-size-choice
@@ -203,11 +204,16 @@
   region-bindings: (list->vector (map (lambda (binding) (vector (car binding) (cdr binding))) frame-regions))
   max-chatbox-rows: 10
   max-command-rows: 10)
-(def (marlin-ui-layout-policy-for modeline-value transcript-value)
+(def (marlin-ui-layout-policy-for modeline-value transcript-value buffer-identities
+                                  (tab-bar (.ref UiCentaurTabsScope 'bar-for)))
   (let (region (lambda (slot) (frame-region modeline-value transcript-value slot)))
     (seal-object!
       (.mix (.o frame-tree: (ui-rows
-              (list (ui-rows (map region '((transcript transcript 3) (extensions #f 0))))
+              (list (ui-sized-with
+                      (ui-size-min (ui-size-cells 1)
+                                   (ui-size-subtract terminal-height (ui-size-cells 7)))
+                      (tab-bar buffer-identities))
+                    (ui-rows (map region '((transcript transcript 3) (extensions #f 0))))
                     (region '(modeline #f 0))
                     (ui-region (frame-region-id 'minibuffer-hover) #f
                       (ui-rows (map region '((editor #f 0) (candidates candidates 1)

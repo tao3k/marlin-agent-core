@@ -70,6 +70,11 @@
                                          (string=? (car entry) "switch-themes"))
                                        command-entries)))
                      "Theme: ")
+             (equal? (command-form "centaur-tabs-themes-switch")
+                     (command-form "switch-themes"))
+             (equal? ((.get ui command-candidates) command-entries "theme-"
+                       '("centaur-tabs-themes-switch"))
+                     '("theme-pi" "theme-doom-one"))
              (equal? (command-form "history") '(none history "newest"))
              (equal? (command-form "history-older") '(none history "older"))
              (equal? (command-form "hydra-history") '(none enter-transient "history"))

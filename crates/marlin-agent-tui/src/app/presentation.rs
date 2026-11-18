@@ -17,6 +17,16 @@ pub(crate) enum BufferView {
     Named(UiBufferId),
 }
 
+impl BufferView {
+    pub(crate) fn as_str(&self) -> &str {
+        match self {
+            Self::Conversation => "conversation",
+            Self::Messages => "messages",
+            Self::Named(id) => id.as_str(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MessageSource {
     Ui,

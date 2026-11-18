@@ -6,6 +6,14 @@ SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 # marlin-agent-core Agent Rules
 
+## Scheme Coding Style
+
+- Use functional composition as the primary abstraction across Scheme modules. Express transformations, projections and state transitions as readable functions with explicit inputs and results.
+- Use POO declarations to group related values, contracts and callable slots. Let consumers compose those operations through module interfaces. Use the existing generic and method forms when behavior genuinely needs multiple dispatch.
+- Keep state changes and I/O at their owning boundaries. Compose pure operations over values and return the next state when the caller owns the transition.
+- Reuse Gerbil `:std` and SRFI procedures for standard operations. Prefer a direct, named function when it explains the behavior clearly.
+- Keep application behavior and presentation policy in Scheme where they fit the existing host capabilities. Use the Rust boundary for typed admission, native effects and reusable mappings.
+
 ## Protocol Evolution
 
 - Do not keep compatibility shims when they preserve ambiguous behavior or duplicate protocol meaning.

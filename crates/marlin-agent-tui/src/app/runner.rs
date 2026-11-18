@@ -25,9 +25,7 @@ use std::{
 
 use super::runtime_probe::RuntimeProbe;
 use super::tool_review::{open_tool_review, poll_tool_review, submit_tool_review};
-use super::ui_events::{
-    apply_ui_request, browse_menu, command_menu_active, select_clicked_list_row,
-};
+use super::ui_events::{apply_ui_request, browse_menu, command_menu_active, route_frame_click};
 use termion::input::TermReadEventsAndRaw;
 
 pub(crate) fn process_replies(
@@ -672,7 +670,10 @@ fn run(
                 app.disarm_exit();
             }
             if let Ok(Ok(TerminalInput::MouseClick(column, row))) = &received {
-                select_clicked_list_row(&mut app, &mut ui, *column, *row);
+                if route_frame_click(&mut app, &mut ui, &painted_regions, *column, *row) {
+                    app.submit(&gateway, &runtime, &reply_tx);
+                    apply_ui_request(&mut app, &mut ui);
+                }
                 continue;
             }
             if let Some(search) = app.history_search.as_mut() {
@@ -876,16 +877,10 @@ fn run(
                         continue;
                     }
                     Ok(UiKeyAction::InvokeCommand(name)) => {
-                        if app.command_draft.is_none() {
-                            app.toggle_command();
+                        if app.prepare_bound_command(&name) {
+                            app.submit(&gateway, &runtime, &reply_tx);
+                            apply_ui_request(&mut app, &mut ui);
                         }
-                        app.command_menu = None;
-                        app.composer.take();
-                        app.composer.insert_text(name.as_str());
-                        app.command_selection = None;
-                        app.command_selection_locked = false;
-                        app.submit(&gateway, &runtime, &reply_tx);
-                        apply_ui_request(&mut app, &mut ui);
                         continue;
                     }
                     Ok(UiKeyAction::Submit) => {

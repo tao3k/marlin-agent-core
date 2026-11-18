@@ -65,9 +65,10 @@
                        ("envrc-reload" "Reload the current worktree environment" none envrc "reload")
                        ("envrc-deny" "Deny the current worktree .envrc" none envrc "deny")
                        ("envrc-cancel" "Cancel the current environment load" none envrc "cancel")
-                       ("envrc-status" "Show the current worktree environment status" none envrc "status")
-                       ("switch-themes" "Theme: " none open-menu "theme-")
-                       ("switch-buffer" "Switch to: " none open-menu "buffer-"))
+                       ("envrc-status" "Show the current worktree environment status" none envrc "status"))
+                     (map (lambda (name) (list name "Theme: " 'none 'open-menu "theme-"))
+                          '("switch-themes" "centaur-tabs-themes-switch"))
+                     '(("switch-buffer" "Switch to: " none open-menu "buffer-"))
                      (marlin-ui-buffer-command-entries)
                      '(("toggle-thinking" "Expand or fold thinking (N from newest)"
                         optional toggle-thinking #f)
@@ -206,9 +207,19 @@
                          index))))
           (hash-put! ranks name rank)
           (loop (cdr rest) (+ index 1)))))
-    (let* ((names (filter-map (lambda (entry)
+    (let* ((namespace
+             (foldl
+               (lambda (entry current)
+                 (let (prefix (list-ref entry 4))
+                   (if (and (eq? (cadddr entry) 'open-menu)
+                            prefix (string-prefix? prefix query)
+                            (or (not current) (> (string-length prefix) (string-length current))))
+                     prefix current)))
+               #f entries))
+           (names (filter-map (lambda (entry)
                                 (let (name (car entry))
-                                  (and (command-subsequence? query name) name)))
+                                  (and (or (not namespace) (string-prefix? namespace name))
+                                       (command-subsequence? query name) name)))
                               entries))
            (ordered
              (list-sort

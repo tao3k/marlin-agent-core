@@ -25,6 +25,7 @@ receipt and verifies replay against the caller's exact exchange.
 | [[file:context-system/README.org][Context System]] | Adapt Lab's Context library to Marlin's runtime boundary. |
 | [[file:ui-components/README.org][ui-components]] | Publish component prototypes, buffers, keymaps and the POO command catalog. |
 | =ui-layout/= | Publish bounded presentation geometry for native hosts; the terminal clips to actual cells. |
+| =ui-centaur-tabs/= | Compose grouped, clickable tabs from the selected Buffer catalog. |
 | =ui-themes/= | Publish the selected semantic color palette; Doom One is the initial theme. |
 | =ui/= | Compose the selected component scope into a workbench; own generic event dispatch and typed native projection. |
 | [[file:ui-tui/README.org][ui-tui]] | Publish the terminal program entry and start from the admitted UI scope. |

@@ -5,6 +5,8 @@
 ;;; A contributed component and method bundle selected from the real UI scope.
 (import (only-in :clan/poo/object .get .o)
         (only-in :marlin-agent-core/ui/config UiScope)
+        (only-in :marlin-agent-core/ui-centaur-tabs/objects marlin-ui-buffer-tabs)
+        (only-in :marlin-agent-core/ui-layout/config marlin-ui-layout-with-tab-bar)
         (only-in :clan/poo/mop .defgeneric .defmethod .defmethod-bundle)
         (only-in :marlin-agent-core/ui-elements/objects
                  ui-rows ui-columns ui-region ui-sized ui-text ui-list ui-size-cells ui-template)
@@ -45,6 +47,9 @@
                      #f))
         commands: '(("open-notes" "Open package notes" none select-buffer "notes"))
         keymap: '((global (M-z) open-notes "Package notes"))
+        layout: (marlin-ui-layout-with-tab-bar
+                  (lambda (buffers)
+                    (marlin-ui-buffer-tabs buffers '((notes "Lab Notes" packages)))))
         method-factories: (vector make-package-methods))))
 
 ;;; A bounded frame dialogue: assertions stay in this independently compiled
@@ -72,10 +77,15 @@
          (set! state (vector-ref (marlin-ui-session-dispatch
                                   (vector state 'select-buffer 'notes)) 0))
          (set! step 1)
-         (vector 60 20 (marlin-ui-session-project state) #(#(2 1) #(2 3))))
+         (vector 60 20 (marlin-ui-session-project state) #(#(2 2) #(2 4))))
         ((1)
          (unless (and (ormap (lambda (row) (string-contains row "Scheme package window"))
                              (vector->list (vector-ref screen 0)))
+                      (string-contains (vector-ref (vector-ref screen 0) 0) "Lab Notes")
+                      (ormap (lambda (hit)
+                               (and (eq? (vector-ref hit 0) 'buffer-notes)
+                                    (= (vector-ref hit 2) 0)))
+                             (vector->list (vector-ref screen 1)))
                       (ormap (lambda (hit) (eq? (vector-ref hit 0) 'notes-body))
                              (vector->list (vector-ref screen 1)))
                       (eq? (vector-ref (vector-ref (vector-ref screen 3) 0) 0) 'notes-body)
@@ -90,6 +100,7 @@
          (vector 32 10 (marlin-ui-session-project state) #()))
         ((2)
          (unless (and (= (vector-length (vector-ref screen 0)) 10)
+                      (string-contains (vector-ref (vector-ref screen 0) 0) "Lab Notes")
                       (ormap (lambda (row) (string-contains row "Scheme package window"))
                              (vector->list (vector-ref screen 0)))
                       (ormap (lambda (row)

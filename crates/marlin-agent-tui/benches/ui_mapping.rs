@@ -705,6 +705,7 @@ fn mapping(c: &mut Criterion) {
                 priority: if index == 0 { 0 } else { 2 },
                 min_width: 0,
                 condition: None,
+                command: None,
                 child: Box::new(template.clone()),
             })
             .collect(),

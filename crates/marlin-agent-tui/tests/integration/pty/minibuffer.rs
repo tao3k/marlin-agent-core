@@ -374,6 +374,45 @@ fn mx_abbreviation_opens_the_scheme_declared_buffer_menu() {
 
 #[cfg(feature = "linked-ui")]
 #[test]
+fn painted_buffer_tabs_switch_the_window_and_preserve_the_draft() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = directory.path().join("config.toml");
+    fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
+    let mut terminal = Terminal::start(&config);
+    terminal.wait_for(Duration::from_secs(10), "Buffer tabs", |output| {
+        screen_lines(output)[0].contains(" Messages ")
+    });
+    terminal.send(b"draft kept by the window");
+    terminal.wait_for(Duration::from_secs(5), "message draft", |output| {
+        screen_lines(output)
+            .iter()
+            .any(|line| line.contains("draft kept by the window"))
+    });
+    let click = |terminal: &mut Terminal, label: &str| {
+        let rows = screen_lines(&terminal.output);
+        let offset = rows[0].find(label).expect("visible Buffer tab");
+        let column = unicode_width::UnicodeWidthStr::width(&rows[0][..offset]) + 1;
+        terminal.send(format!("\x1b[<0;{column};1M").as_bytes());
+    };
+    click(&mut terminal, "Messages");
+    terminal.wait_for(Duration::from_secs(5), "Messages selected", |output| {
+        screen_lines(output)[29].contains("*Messages*")
+    });
+    click(&mut terminal, "Chat");
+    terminal.wait_for(Duration::from_secs(5), "draft remains in Chat", |output| {
+        let rows = screen_lines(output);
+        !rows[29].contains("*Messages*")
+            && rows
+                .iter()
+                .any(|line| line.contains("draft kept by the window"))
+    });
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+}
+
+#[cfg(feature = "linked-ui")]
+#[test]
 fn invalid_mx_command_uses_messages_buffer_without_changing_conversation() {
     let directory = tempfile::tempdir().unwrap();
     let config = directory.path().join("config.toml");
@@ -668,7 +707,7 @@ fn mx_profile_switch_uses_the_selected_scheme_modeline() {
     terminal.wait_for(Duration::from_secs(10), "Doom Modeline", |output| {
         screen_lines(output)[28].contains("MARLIN")
     });
-    terminal.send(b"\x1bxswitch-themes\r");
+    terminal.send(b"\x1bxcentaur-tabs-themes-switch\r");
     terminal.wait_for(Duration::from_secs(5), "Scheme theme menu", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| line.contains("Theme: "))

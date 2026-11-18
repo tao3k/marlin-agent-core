@@ -14,7 +14,7 @@ pub use core::{
     render_with_facts, render_with_regions, render_with_scroll, render_with_slots, resolve_choice,
 };
 pub use geometry::{
-    Extent, HitRegion, RegionExtents, hit_test, hit_test_scroll, layout_regions,
+    Extent, HitRegion, RegionExtents, hit_test, hit_test_command, hit_test_scroll, layout_regions,
     layout_regions_with_facts, layout_regions_with_scroll, region_extent, resolve_size,
 };
 pub use widgets::{

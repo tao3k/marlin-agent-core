@@ -15,6 +15,7 @@
   (brief-to-draft)
   (ui-components)
   (ui-elements)
+  (ui-centaur-tabs)
   (ui-hydra)
   (ui-modeline)
   (ui-transcript)

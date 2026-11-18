@@ -61,7 +61,8 @@
         (error "duplicate UI contribution identity"))
       (.o (:: @ (.ref types 'workbench)) identity: 'workbench kind: 'workbench
           model: owned-model session: owned-session
-          geometry-policy: (layout-for (modeline-bar-for modeline-values) transcript-value)
+          geometry-policy: (layout-for (modeline-bar-for modeline-values)
+                                       transcript-value buffer-identities)
           transcript-policy: transcript-value
           theme-palette: (theme-for profile)
           focus-order: (append '(transcript composer commands) extension-focus)

@@ -9,7 +9,8 @@
         (only-in "./keymap.ss" marlin-ui-keymap-help))
 (export marlin-ui-make-frame marlin-ui-select-buffer marlin-ui-project-frame
         marlin-ui-buffer-command-entries marlin-ui-buffer-alias-command-entries
-        marlin-ui-buffer-static-entries marlin-ui-buffer-identities marlin-ui-buffer-catalog)
+        marlin-ui-buffer-static-entries marlin-ui-buffer-identities marlin-ui-buffer-catalog
+        marlin-ui-buffer-command-name)
 
 (.def UiBuffer.)
 (.def UiWindow.)
@@ -45,11 +46,13 @@
        (filter (lambda (entry) (cadddr entry))
                (.get catalog entries))))
 
+(def (marlin-ui-buffer-command-name identity-value)
+  (string-append "buffer-" (symbol->string identity-value)))
+
 (def (marlin-ui-buffer-command-entries (catalog marlin-ui-buffer-catalog))
   (map (lambda (entry)
-         (let (identity-value (symbol->string (car entry)))
-           (list (string-append "buffer-" identity-value) (cadr entry)
-                 'none 'select-buffer identity-value)))
+         (list (marlin-ui-buffer-command-name (car entry)) (cadr entry)
+               'none 'select-buffer (symbol->string (car entry))))
        (.get catalog entries)))
 
 (def (marlin-ui-make-frame (catalog marlin-ui-buffer-catalog))

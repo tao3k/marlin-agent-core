@@ -138,6 +138,25 @@ fn frame_fact(
     extra_count: usize,
     name: &str,
 ) -> bool {
+    let comparison = name
+        .strip_prefix("binding-is/")
+        .map(|rest| (true, rest))
+        .or_else(|| {
+            name.strip_prefix("binding-is-not/")
+                .map(|rest| (false, rest))
+        });
+    if let Some((equal, comparison)) = comparison {
+        return comparison
+            .split_once('/')
+            .is_some_and(|(binding, expected)| {
+                let value = match binding {
+                    "active-buffer" => buffer.as_str(),
+                    "focus" => ui.focus.as_str(),
+                    _ => return false,
+                };
+                (value == expected) == equal
+            });
+    }
     match name {
         "searching" => app
             .history_search

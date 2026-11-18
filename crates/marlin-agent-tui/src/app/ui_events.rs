@@ -7,6 +7,8 @@ use super::runner::publish_error;
 use super::{
     App, MessageEvent, MessageSeverity, MessageSource, UiBrowseDirection, UiEvent, UiHost,
 };
+use crate::ui_elements::{HitRegion, hit_test_command};
+use marlin_agent_ui::UiCommandArguments;
 
 pub(super) fn command_menu_active(app: &App, ui: &UiHost<'_>) -> bool {
     app.command_draft.is_some()
@@ -38,17 +40,37 @@ pub(super) fn browse_menu(
     }
 }
 
+/// Prepare a painted command for submission, or select a list row.
+pub(super) fn route_frame_click(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    regions: &[HitRegion],
+    column: u16,
+    row: u16,
+) -> bool {
+    let Some((x, y)) = column.checked_sub(1).zip(row.checked_sub(1)) else {
+        return false;
+    };
+    if let Some(target) = hit_test_command(regions, x, y) {
+        let command = app
+            .command_descriptor(target.as_str())
+            .filter(|command| command.arguments == UiCommandArguments::None)
+            .map(|command| command.name.clone());
+        return app.tool_review_prompt.is_none()
+            && app.history_search.is_none()
+            && command.is_some_and(|name| app.prepare_bound_command(&name));
+    }
+    select_clicked_list_row(app, ui, x, y);
+    false
+}
+
 /// Select a painted list row without committing a command or review decision.
-pub(super) fn select_clicked_list_row(app: &mut App, ui: &mut UiHost<'_>, column: u16, row: u16) {
-    let clicked = column
-        .checked_sub(1)
-        .zip(row.checked_sub(1))
-        .and_then(|(x, y)| {
-            app.list_state
-                .borrow()
-                .hit(x, y)
-                .map(|hit| (hit.list.clone(), hit.key.clone(), hit.selects_command))
-        });
+fn select_clicked_list_row(app: &mut App, ui: &mut UiHost<'_>, x: u16, y: u16) {
+    let clicked = app
+        .list_state
+        .borrow()
+        .hit(x, y)
+        .map(|hit| (hit.list.clone(), hit.key.clone(), hit.selects_command));
     let Some((list, key, selects_command)) = clicked else {
         return;
     };

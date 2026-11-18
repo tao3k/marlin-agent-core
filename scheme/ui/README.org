@@ -15,6 +15,10 @@ dispatch, package contributions and workbench projection.
 and scope assembly. =UiScope= is the admitted value consumed by =session.ss=.
 An external package publishes its own scope using =make-ui-package=; it does
 not need to reconstruct the agent-wide =init.exports= publication.
+A package may supply its own =layout= using the same =UiLayoutScope= contract.
+=marlin-ui-layout-with-tab-bar= accepts a function from admitted Buffer
+identities to a bar. An interactive segment names an existing zero-argument
+command from the package catalog.
 
 * Build and verification
 

@@ -479,6 +479,22 @@ impl App {
         self.command_draft = Some(std::mem::take(&mut self.composer));
     }
 
+    /// Begin an admitted action through the ordinary command submit path.
+    pub(super) fn prepare_bound_command(&mut self, name: &UiCommandName) -> bool {
+        if self.command_draft.is_none() {
+            self.toggle_command();
+        }
+        if self.command_draft.is_none() {
+            return false;
+        }
+        self.command_menu = None;
+        self.composer.take();
+        self.composer.insert_text(name.as_str());
+        self.command_selection = None;
+        self.command_selection_locked = false;
+        true
+    }
+
     pub(super) fn show_sessions(&mut self, runtime: &tokio::runtime::Runtime, next: bool) {
         let (severity, message) = match self.session_browser.as_mut() {
             None => (

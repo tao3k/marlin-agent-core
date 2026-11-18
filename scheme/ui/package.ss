@@ -42,6 +42,7 @@
   buffers: '()
   commands: '()
   keymap: '()
+  layout: UiLayoutScope
   method-factories: #())
 
 (def (make-ui-package package-value)
@@ -85,5 +86,5 @@
                  make-frame: (lambda () (marlin-ui-make-frame catalog))
                  keymap-entries: (lambda () (marlin-ui-keymap-entries keymap)))))
       (make-ui-scope selected-components UiModelineScope UiTranscriptScope
-                     UiThemesScope UiLayoutScope
+                     UiThemesScope (.get package-value layout)
                      method-factories: (.get package-value method-factories)))))

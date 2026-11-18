@@ -376,6 +376,7 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                                 priority: 0,
                                 min_width: 0,
                                 condition: None,
+                                command: None,
                                 child: Box::new(status("ANCHOR")),
                             }],
                         }

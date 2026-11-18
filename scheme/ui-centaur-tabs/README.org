@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / ui-centaur-tabs - Buffer tabs
+#+language: en
+
+The tab strip is generated from the admitted Buffer catalog. Session,
+workspace, and package buffers appear in separate groups. The active
+buffer keeps its place on narrow terminals. Each painted tab invokes
+the same command used by the Switch Buffer Mini Buffer.
+Use =M-x centaur-tabs-themes-switch= to select the palette used by the tabs
+and the rest of the workbench.
+
+A package can provide a tab function in its =UiPackage.= declaration.
+For a buffer named =notes=, the layout slot can use a custom label and group.
+
+#+begin_src scheme
+layout: (marlin-ui-layout-with-tab-bar
+          (lambda (buffers)
+            (marlin-ui-buffer-tabs buffers '((notes "Lab Notes" packages)))))
+#+end_src
+
+The functions are exported by =:marlin-agent-core/ui-layout/config= and
+=:marlin-agent-core/ui-centaur-tabs/objects=.

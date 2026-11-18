@@ -7,7 +7,7 @@ use gerbil_scheme::{IdentifierBuffer, ObjectKind, RootedSchemeObject, SchemeScal
 use std::collections::HashSet;
 
 use crate::{
-    UiComponentId, UiProjectionError, UiScrollTarget,
+    UiCommandName, UiComponentId, UiProjectionError, UiScrollTarget,
     projection::{identifier, vector},
 };
 
@@ -118,6 +118,8 @@ pub struct UiBarSegment {
     pub min_width: u16,
     pub condition: Option<UiComponentId>,
     pub child: Box<UiElement>,
+    /// An existing command name activated by a click on the painted segment.
+    pub command: Option<UiComponentId>,
 }
 
 /// A fixed, flexible, or host-bound extent on the containing layout axis.
@@ -549,7 +551,7 @@ fn decode(
             let entries = vector(values.element(2)?, 0, 32)?;
             let mut segments = Vec::with_capacity(entries.len());
             for index in 0..entries.len() {
-                let entry = vector(entries.element(index)?, 5, 5)?;
+                let entry = vector(entries.element(index)?, 5, 6)?;
                 let side = match identifier(entry.element(0)?, names)?.as_str() {
                     "left" => UiBarSide::Left,
                     "right" => UiBarSide::Right,
@@ -576,12 +578,22 @@ fn decode(
                 if !inline_template(&child) {
                     return Err(UiProjectionError::Invalid("invalid UI bar segment"));
                 }
+                let command = if entry.len() == 6 {
+                    let id = identifier(entry.element(5)?, names)?;
+                    if !UiCommandName::is_valid_prefix(id.as_str()) {
+                        return Err(UiProjectionError::Invalid("invalid UI bar command"));
+                    }
+                    Some(id)
+                } else {
+                    None
+                };
                 segments.push(UiBarSegment {
                     side,
                     priority,
                     min_width,
                     condition,
                     child: Box::new(child),
+                    command,
                 });
             }
             Ok(UiElement::Bar {

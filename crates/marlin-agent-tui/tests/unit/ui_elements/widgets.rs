@@ -17,6 +17,7 @@ fn generic_bar_respects_priority_alignment_and_unicode_tail() {
         priority,
         min_width: 0,
         condition: None,
+        command: Some(id(if priority == 0 { "chosen" } else { "optional" })),
         child: Box::new(UiElement::Template {
             background: UiBackground::None,
             spans: vec![UiTemplateSpan {
@@ -55,21 +56,21 @@ fn generic_bar_respects_priority_alignment_and_unicode_tail() {
         bindings: &[("value", "日本/critical")],
     };
     let mut terminal = Terminal::new(TestBackend::new(10, 1)).unwrap();
+    let mut hits = Vec::new();
     terminal
         .draw(|frame| {
-            crate::ui_elements::render_with_facts(
-                frame,
-                frame.area(),
-                &tree,
-                &mut Vec::new(),
-                &inputs,
-            )
+            crate::ui_elements::render_with_facts(frame, frame.area(), &tree, &mut hits, &inputs)
         })
         .unwrap();
     let row: String = (0..10)
         .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
         .collect();
     assert_eq!(row, "L    …ical");
+    let at =
+        |column| crate::ui_elements::hit_test_command(&hits, column, 0).map(UiComponentId::as_str);
+    assert_eq!(at(0), Some("chosen"));
+    assert_eq!(at(1), None);
+    assert_eq!(at(9), Some("optional"));
 }
 
 #[test]

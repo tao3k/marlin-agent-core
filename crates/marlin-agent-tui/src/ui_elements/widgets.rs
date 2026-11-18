@@ -3,7 +3,7 @@
 
 //! Generic Ratatui input and panel mappings.
 
-use super::{UiRenderInputs, UiSlotRenderer, resolve_choice, terminal_text, tone_color};
+use super::{HitRegion, UiRenderInputs, UiSlotRenderer, resolve_choice, terminal_text, tone_color};
 use marlin_agent_ui::{UiBarSide, UiComponentId, UiContent, UiElement, UiTheme, UiTone};
 use ratatui::{
     layout::Rect,
@@ -19,6 +19,7 @@ pub(super) fn render_bar(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     element: &UiElement,
+    hits: &mut Vec<HitRegion>,
     inputs: &UiRenderInputs<'_>,
 ) {
     let UiElement::Bar {
@@ -124,12 +125,11 @@ pub(super) fn render_bar(
         };
         let visible = width.min(cap.saturating_sub(*position));
         if visible > 0 {
-            super::render_template(
-                frame,
-                Rect::new(area.x + *position as u16, area.y, visible as u16, 1),
-                child,
-                &bound,
-            );
+            let rect = Rect::new(area.x + *position as u16, area.y, visible as u16, 1);
+            super::render_template(frame, rect, child, &bound);
+            if let Some(command) = &segment.command {
+                hits.push(HitRegion::command(command, rect));
+            }
             *position += visible;
         }
     }

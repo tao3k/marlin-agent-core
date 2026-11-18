@@ -17,6 +17,7 @@ pub struct HitRegion {
     pub id: UiComponentId,
     pub area: Rect,
     scroll_target: Option<HitScrollTarget>,
+    command: bool,
 }
 
 #[derive(Debug)]
@@ -38,6 +39,14 @@ impl HitRegion {
             id: id.clone(),
             area,
             scroll_target,
+            command: false,
+        }
+    }
+
+    pub(super) fn command(id: &UiComponentId, area: Rect) -> Self {
+        Self {
+            command: true,
+            ..Self::new(id, area, None)
         }
     }
 
@@ -478,6 +487,13 @@ pub fn hit_test(regions: &[HitRegion], x: u16, y: u16) -> Option<&HitRegion> {
             && y >= region.area.y
             && y < region.area.bottom()
     })
+}
+
+/// Resolve a command only from its visible painted cells.
+pub fn hit_test_command(regions: &[HitRegion], x: u16, y: u16) -> Option<&UiComponentId> {
+    hit_test(regions, x, y)
+        .filter(|region| region.command)
+        .map(|region| &region.id)
 }
 
 /// Find the innermost scrollable ancestor at a terminal cell.
