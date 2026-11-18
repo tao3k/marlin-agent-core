@@ -5,9 +5,18 @@
 #+language: en
 
 The tab strip is generated from the admitted Buffer catalog. Session,
-workspace, and package buffers appear in separate groups. The active
-buffer keeps its place on narrow terminals. Each painted tab invokes
-the same command used by the Switch Buffer Mini Buffer.
+workspace, and package buffers appear in separate groups. Doom One uses
+a neutral selection shade and a slim mark. Pi uses its accent as the
+selection fill. The active tab has priority on narrow terminals.
+The bar fits full labels, compact labels,
+and plain compact labels to the space available for the current catalog.
+Group separators are omitted in compact modes. On short terminals the
+layout reserves rows for the workbench and Mini Buffer first.
+Each painted tab invokes the same command used by Switch Buffer.
+
+Nerd Icons are enabled by default where the bar has room. Use Nerd Font
+Mono in the terminal. A Scheme package can pass =nerd-icons?: #f= to
+=marlin-ui-buffer-tabs= for plain labels.
 Use =M-x centaur-tabs-themes-switch= to select the palette used by the tabs
 and the rest of the workbench.
 
@@ -21,4 +30,5 @@ layout: (marlin-ui-layout-with-tab-bar
 #+end_src
 
 The functions are exported by =:marlin-agent-core/ui-layout/config= and
-=:marlin-agent-core/ui-centaur-tabs/objects=.
+=:marlin-agent-core/ui-centaur-tabs/funcs=. POO style declarations are in
+=objects.ss=.

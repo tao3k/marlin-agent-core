@@ -3,7 +3,7 @@
 
 //! Generic Ratatui mapping for admitted Scheme UI elements.
 
-use super::geometry::{Extent, HitRegion, layout_scrolled_children};
+use super::geometry::{Extent, HitRegion, layout_scrolled_children, panel_areas};
 
 use marlin_agent_ui::{UiBackground, UiComponentId, UiElement, UiTemplateValue, UiTheme, UiTone};
 use ratatui::{
@@ -403,15 +403,17 @@ fn render_inner<'tree>(
             title,
             child,
         } => {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(tone_color(*border_tone, inputs.theme)));
-            let inner = block.inner(area);
-            frame.render_widget(block, area);
+            let (title_area, inner) = panel_areas(area, border_tone.is_some(), title.is_some());
+            if let Some(tone) = border_tone {
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(tone_color(*tone, inputs.theme)));
+                frame.render_widget(block, area);
+            }
             if let Some(title) = title {
                 let title = resolve_choice(title, inputs.facts);
                 if let UiElement::Template { spans, .. } = title {
-                    let available = area.width.saturating_sub(2);
+                    let available = title_area.width;
                     let width = spans
                         .iter()
                         .map(|span| {
@@ -423,7 +425,10 @@ fn render_inner<'tree>(
                         .min(usize::from(available)) as u16;
                     render_template(
                         frame,
-                        Rect::new(area.x.saturating_add(1), area.y, width, 1),
+                        Rect {
+                            width,
+                            ..title_area
+                        },
                         title,
                         inputs,
                     );

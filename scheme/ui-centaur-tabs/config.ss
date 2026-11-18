@@ -4,9 +4,10 @@
 
 (import (only-in :clan/poo/object .o)
         (only-in :clan/poo/type validate)
-        "./objects.ss" "./types.ss")
+        "./funcs.ss" "./types.ss")
 (export UiCentaurTabsScope)
 
 (def UiCentaurTabsScope
   (validate UiCentaurTabsScopeContract
-    (.o identity: 'marlin/ui-centaur-tabs bar-for: marlin-ui-buffer-tabs)))
+    (.o identity: 'marlin/ui-centaur-tabs
+        bar-for: marlin-ui-tabs-for-profile)))

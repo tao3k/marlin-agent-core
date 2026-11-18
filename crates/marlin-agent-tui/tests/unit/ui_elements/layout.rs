@@ -437,7 +437,7 @@ fn input_measurement_counts_selected_nested_borders() {
         active: UiComponentId::new("focused").unwrap(),
     };
     let tree = UiElement::Panel {
-        border_tone: UiTone::Normal,
+        border_tone: Some(UiTone::Normal),
         field_template: Box::new(UiElement::Template {
             background: marlin_agent_ui::UiBackground::None,
             spans: vec![],

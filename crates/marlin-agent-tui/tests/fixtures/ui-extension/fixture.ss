@@ -5,7 +5,7 @@
 ;;; A contributed component and method bundle selected from the real UI scope.
 (import (only-in :clan/poo/object .get .o)
         (only-in :marlin-agent-core/ui/config UiScope)
-        (only-in :marlin-agent-core/ui-centaur-tabs/objects marlin-ui-buffer-tabs)
+        (only-in :marlin-agent-core/ui-centaur-tabs/funcs marlin-ui-buffer-tabs)
         (only-in :marlin-agent-core/ui-layout/config marlin-ui-layout-with-tab-bar)
         (only-in :clan/poo/mop .defgeneric .defmethod .defmethod-bundle)
         (only-in :marlin-agent-core/ui-elements/objects

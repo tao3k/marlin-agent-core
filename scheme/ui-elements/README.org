@@ -15,6 +15,10 @@ by the Ratatui mapper.
 and scope assembly. UiElementsScope and its node, size and template constructors.
 Consumers access selected exports through =marlin-agent-core.init.exports=.
 
+The first argument to =ui-panel= is a semantic border tone or =#f=.
+A borderless panel places its optional title on the first row and gives
+the body the remaining area.
+
 * Build and verification
 
 [[file:../init.ss][init.ss]] selects this module. Its Build role, if present,

@@ -398,11 +398,48 @@ fn painted_buffer_tabs_switch_the_window_and_preserve_the_draft() {
     terminal.wait_for(Duration::from_secs(5), "Messages selected", |output| {
         screen_lines(output)[29].contains("*Messages*")
     });
+    click(&mut terminal, "Models");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "borderless Models Buffer",
+        |output| {
+            let rows = screen_lines(output);
+            let modeline = rows.iter().position(|line| line.contains("MARLIN"));
+            rows[1].starts_with(" *Models*")
+                && modeline.is_some_and(|end| {
+                    rows[1..end]
+                        .iter()
+                        .all(|line| !line.starts_with(['┌', '│', '└']))
+                })
+        },
+    );
     click(&mut terminal, "Chat");
     terminal.wait_for(Duration::from_secs(5), "draft remains in Chat", |output| {
         let rows = screen_lines(output);
         !rows[29].contains("*Messages*")
             && rows
+                .iter()
+                .any(|line| line.contains("draft kept by the window"))
+    });
+    terminal.resize(30, 32);
+    terminal.wait_for(Duration::from_secs(5), "compact Buffer tabs", |output| {
+        let rows = screen_lines(output);
+        rows[0].contains(" Chat ") && rows[0].contains(" Msgs ")
+    });
+    terminal.resize(5, 32);
+    terminal.wait_for(Duration::from_secs(5), "short terminal", |output| {
+        let rows = screen_lines(output);
+        !rows[0].contains(" Chat ")
+            && rows[..5].iter().any(|line| line.contains("MARLIN"))
+            && rows[..5]
+                .iter()
+                .any(|line| line.contains("draft kept by the window"))
+    });
+    terminal.resize(30, 100);
+    terminal.wait_for(Duration::from_secs(5), "restored terminal", |output| {
+        let rows = screen_lines(output);
+        rows[0].contains(" Messages ")
+            && rows[27..]
                 .iter()
                 .any(|line| line.contains("draft kept by the window"))
     });

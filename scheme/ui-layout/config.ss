@@ -2,18 +2,19 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-(import (only-in :clan/poo/object .o)
+(import (only-in :clan/poo/object .get .o)
         (only-in :clan/poo/type validate)
+        (only-in "../ui-centaur-tabs/config.ss" UiCentaurTabsScope)
         "./objects.ss" "./types.ss")
 (export UiLayoutScope marlin-ui-layout-with-tab-bar)
 
 (def UiLayoutScope
   (validate UiLayoutScopeContract
-            (.o identity: 'marlin/ui-layout policy-for: marlin-ui-layout-policy-for)))
+    (.o identity: 'marlin/ui-layout
+        policy-for: marlin-ui-layout-policy-for
+        tab-bar-for: (.get UiCentaurTabsScope bar-for))))
 
 (def (marlin-ui-layout-with-tab-bar tab-bar)
   (validate UiLayoutScopeContract
     (.o (:: @ UiLayoutScope)
-        policy-for:
-        (lambda (modeline transcript buffers)
-          (marlin-ui-layout-policy-for modeline transcript buffers tab-bar)))))
+        tab-bar-for: (lambda (buffers _profile) (tab-bar buffers)))))

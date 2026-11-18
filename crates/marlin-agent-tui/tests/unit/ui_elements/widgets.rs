@@ -462,7 +462,7 @@ fn template_binds_untrusted_values_as_literal_cells() {
 #[test]
 fn panel_maps_declared_tones_and_sanitizes_host_content() {
     let panel = UiElement::Panel {
-        border_tone: UiTone::Accent,
+        border_tone: Some(UiTone::Accent),
         field_template: Box::new(UiElement::Template {
             background: marlin_agent_ui::UiBackground::Bar,
             spans: vec![

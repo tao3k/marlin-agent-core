@@ -140,9 +140,10 @@ pub fn input_border(element: &UiElement, facts: &dyn Fn(&UiComponentId) -> bool)
     match element {
         UiElement::Input { bordered, .. } => Some(if *bordered { 2 } else { 0 }),
         UiElement::Choice { .. } => input_border(resolve_choice(element, facts), facts),
-        UiElement::Panel { child, .. } => {
-            input_border(child, facts).map(|size| size.saturating_add(2))
-        }
+        UiElement::Panel {
+            border_tone, child, ..
+        } => input_border(child, facts)
+            .map(|size| size.saturating_add(if border_tone.is_some() { 2 } else { 0 })),
         UiElement::Sized { child, .. } | UiElement::Region { child, .. } => {
             input_border(child, facts)
         }
@@ -460,7 +461,8 @@ pub fn render_input(
             .fg(tone_color(UiTone::Normal, inputs.theme))
     });
     let mut content = area;
-    if *bordered {
+    // A border has no interior in a terminal allocation below three cells.
+    if *bordered && area.width > 2 && area.height > 2 {
         let title = title.as_ref().map(&binding).unwrap_or("");
         let block = Block::default()
             .borders(Borders::ALL)

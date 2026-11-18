@@ -9,6 +9,7 @@ SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 ## Scheme Coding Style
 
 - Use functional composition as the primary abstraction across Scheme modules. Express transformations, projections and state transitions as readable functions with explicit inputs and results.
+- Keep module functions in `funcs.ss` and POO declarations in `objects.ss`. Let the interface publish the operations a consumer needs.
 - Use POO declarations to group related values, contracts and callable slots. Let consumers compose those operations through module interfaces. Use the existing generic and method forms when behavior genuinely needs multiple dispatch.
 - Keep state changes and I/O at their owning boundaries. Compose pure operations over values and return the next state when the caller owns the transition.
 - Reuse Gerbil `:std` and SRFI procedures for standard operations. Prefer a direct, named function when it explains the behavior clearly.

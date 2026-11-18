@@ -31,6 +31,7 @@
         (modeline-nodes-for (.ref modeline 'nodes-for))
         (modeline-bar-for (.ref modeline 'bar-for))
         (layout-for (.ref layout 'policy-for))
+        (tab-bar-for (.ref layout 'tab-bar-for))
         (transcript-for (.ref transcript 'select))
         (theme-for (.ref themes 'select)))
   (lambda (facts profile)
@@ -62,7 +63,7 @@
       (.o (:: @ (.ref types 'workbench)) identity: 'workbench kind: 'workbench
           model: owned-model session: owned-session
           geometry-policy: (layout-for (modeline-bar-for modeline-values)
-                                       transcript-value buffer-identities)
+                                       transcript-value (tab-bar-for buffer-identities profile))
           transcript-policy: transcript-value
           theme-palette: (theme-for profile)
           focus-order: (append '(transcript composer commands) extension-focus)

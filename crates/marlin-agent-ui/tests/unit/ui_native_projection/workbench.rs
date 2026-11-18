@@ -564,7 +564,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     );
     let workbench = decode_workbench(root).unwrap();
     assert!(
-        matches!(workbench.layout.frame_tree.region_child("transcript"), Some(marlin_agent_ui::UiElement::Panel { border_tone: marlin_agent_ui::UiTone::Info, child, .. }) if matches!(child.as_ref(), marlin_agent_ui::UiElement::Slot(marlin_agent_ui::UiSlotSource::SelectedBuffer)))
+        matches!(workbench.layout.frame_tree.region_child("transcript"), Some(marlin_agent_ui::UiElement::Panel { border_tone: Some(marlin_agent_ui::UiTone::Info), child, .. }) if matches!(child.as_ref(), marlin_agent_ui::UiElement::Slot(marlin_agent_ui::UiSlotSource::SelectedBuffer)))
     );
     assert!(matches!(
         workbench.layout.frame_tree.region_child("editor"),

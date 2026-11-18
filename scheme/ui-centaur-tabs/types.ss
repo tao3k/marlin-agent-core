@@ -9,5 +9,5 @@
 (def UiTabBarValue (.cc Type. '.element? vector?))
 (def UiCentaurTabsScopeContract
   (.cc (Record identity: [(Exactly 'marlin/ui-centaur-tabs)]
-               bar-for: [(Fun UiTabBarValue <- (List Symbol))])
+               bar-for: [(Fun UiTabBarValue <- (List Symbol) Symbol)])
        identity: 'marlin/ui-centaur-tabs))

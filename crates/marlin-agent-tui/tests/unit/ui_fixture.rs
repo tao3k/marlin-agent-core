@@ -235,7 +235,7 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                                     UiComponentId::new(name).unwrap(),
                                     if matches!(name, "static" | "runtime" | "extension") {
                                         UiElement::Panel {
-                                            border_tone: UiTone::Info,
+                                            border_tone: Some(UiTone::Info),
                                             field_template: Box::new(UiElement::Template {
                                                 background: marlin_agent_ui::UiBackground::None,
                                                 spans: vec![

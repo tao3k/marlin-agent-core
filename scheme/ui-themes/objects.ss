@@ -11,7 +11,7 @@
         marlin-ui-theme-profiles marlin-ui-default-profile)
 
 (.def UiThemeBase.
-  canvas: '(40 44 52)
+  canvas: '(34 36 43)
   ink: '(187 194 207)
   bar: '(28 31 36))
 (.def UiDoomOne.
@@ -20,7 +20,7 @@
   info: '(81 175 239)
   success: '(152 190 101)
   warning: '(236 190 123)
-  muted: '(115 121 126))
+  muted: '(140 146 156))
 (def marlin-ui-doom-one-theme
   (seal-object! (.mix UiDoomOne. UiThemeBase.)))
 

@@ -10,5 +10,6 @@
 (def UiBarValue (.cc Type. '.element? vector?))
 (def UiLayoutScopeContract
   (.cc (Record identity: [(Exactly 'marlin/ui-layout)]
-               policy-for: [(Fun Object <- UiBarValue Object (List Symbol))])
+               policy-for: [(Fun Object <- UiBarValue Object UiBarValue)]
+               tab-bar-for: [(Fun UiBarValue <- (List Symbol) Symbol)])
        identity: 'marlin/ui-layout))

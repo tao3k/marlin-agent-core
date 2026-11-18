@@ -19,6 +19,8 @@ A package may supply its own =layout= using the same =UiLayoutScope= contract.
 =marlin-ui-layout-with-tab-bar= accepts a function from admitted Buffer
 identities to a bar. An interactive segment names an existing zero-argument
 command from the package catalog.
+A profile-aware layout can provide =tab-bar-for= on its =UiLayoutScope=.
+This function receives the admitted Buffer identities and the active profile.
 
 * Build and verification
 

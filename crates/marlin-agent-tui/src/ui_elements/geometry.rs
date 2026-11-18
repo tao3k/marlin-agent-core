@@ -11,6 +11,28 @@ use ratatui::{
 };
 use std::cell::RefCell;
 
+/// Compute the same title and body rectangles for painting and hit testing.
+pub(super) fn panel_areas(area: Rect, bordered: bool, titled: bool) -> (Rect, Rect) {
+    if bordered {
+        let title = Rect::new(
+            area.x.saturating_add(1),
+            area.y,
+            area.width.saturating_sub(2),
+            1,
+        );
+        return (title, Block::default().borders(Borders::ALL).inner(area));
+    }
+    let title_height = u16::from(titled && area.height > 0);
+    let title = Rect::new(area.x, area.y, area.width, title_height);
+    let body = Rect::new(
+        area.x,
+        area.y.saturating_add(title_height),
+        area.width,
+        area.height.saturating_sub(title_height),
+    );
+    (title, body)
+}
+
 /// Geometry emitted by the same traversal that paints a declarative tree.
 #[derive(Debug)]
 pub struct HitRegion {
@@ -458,8 +480,13 @@ fn layout_regions_inner(
         UiElement::Sized { child, .. } => {
             layout_regions_inner(child, area, extent, regions, facts, offset, skip);
         }
-        UiElement::Panel { child, .. } => {
-            let inner = Block::default().borders(Borders::ALL).inner(area);
+        UiElement::Panel {
+            border_tone,
+            title,
+            child,
+            ..
+        } => {
+            let (_, inner) = panel_areas(area, border_tone.is_some(), title.is_some());
             layout_regions_inner(child, inner, extent, regions, facts, offset, skip);
         }
         UiElement::Rows(children) | UiElement::Columns(children) => {

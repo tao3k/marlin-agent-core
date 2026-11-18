@@ -17,9 +17,9 @@ pub enum UiElement {
     Text(Vec<UiSpan>),
     /// An opaque host-provided visual source selected by a Scheme component.
     Slot(UiSlotSource),
-    /// A bordered presentation around a host-backed visual source.
+    /// A titled presentation around a host-backed visual source.
     Panel {
-        border_tone: UiTone,
+        border_tone: Option<UiTone>,
         field_template: Box<UiElement>,
         title: Option<Box<UiElement>>,
         child: Box<UiElement>,
@@ -606,7 +606,15 @@ fn decode(
             if values.len() != 4 {
                 return Err(UiProjectionError::Invalid("invalid UI panel"));
             }
-            let border_tone = decode_tone(values.element(0)?, names)?;
+            let border_value = values.element(0)?;
+            let border_tone = if matches!(
+                border_value.as_ref().scalar(),
+                Ok(SchemeScalar::Boolean(false))
+            ) {
+                None
+            } else {
+                Some(decode_tone(border_value, names)?)
+            };
             let field_template = decode(values.element(1)?, depth + 1, budget, names)?;
             if !inline_template(&field_template) {
                 return Err(UiProjectionError::Invalid(

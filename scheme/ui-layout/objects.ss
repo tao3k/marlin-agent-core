@@ -4,7 +4,6 @@
 
 ;;; Scheme owns presentation choices; the native host clips them to cells.
 (import (only-in :clan/poo/object .def .mix .o .ref seal-object!)
-        (only-in "../ui-centaur-tabs/config.ss" UiCentaurTabsScope)
         (only-in "../ui-elements/objects.ss"
                  ui-text ui-rows ui-columns ui-region ui-scroll-target ui-template ui-choice ui-sized-with
                  ui-size-cells ui-size-flex ui-size-binding ui-size-bounded ui-size-choice
@@ -98,12 +97,11 @@
                          (binding normal #f label))))))
 ;;; The first true fact selects one bounded host-owned content source.
 (def named-panel-title
-  (ui-template 'none '((literal info #f " ") (binding info #f panel-title)
-                       (literal info #f " "))))
+  (ui-template 'none '((literal normal #f " ") (binding normal #t panel-title))))
 (def runtime-panel-title
-  (ui-template 'none '((literal info #f " Runtime policy "))))
+  (ui-template 'none '((literal normal #t " Runtime policy"))))
 (def panel-field
-  (ui-template 'none '((binding info #f label) (literal info #f ": ")
+  (ui-template 'none '((binding muted #f label) (literal muted #f ": ")
                        (binding normal #f value))))
 (def (main-view transcript-policy)
   (def row-template
@@ -117,9 +115,9 @@
     (list (list 'review (transcript-list 'review))
           (list 'workspace (transcript-list 'workspace))
           (list 'messages (transcript-list 'messages))
-          (list 'static (ui-panel 'info panel-field named-panel-title (ui-slot 'selected-buffer)))
-          (list 'runtime (ui-panel 'info panel-field runtime-panel-title (ui-slot 'runtime-policy)))
-          (list 'extension (ui-panel 'info panel-field named-panel-title (ui-slot 'focused-extension))))
+          (list 'static (ui-panel #f panel-field named-panel-title (ui-slot 'selected-buffer)))
+          (list 'runtime (ui-panel #f panel-field runtime-panel-title (ui-slot 'runtime-policy)))
+          (list 'extension (ui-panel #f panel-field named-panel-title (ui-slot 'focused-extension))))
     (transcript-list 'conversation)))
 
 ;;; Size expressions contain only named facts and host-provided cell metrics.
@@ -131,8 +129,16 @@
                (ui-size-subtract terminal-height (ui-size-cells 2))))
 (def footer-reservation
   (ui-size-max (ui-size-binding 'footer-min) (ui-size-binding 'hint-rows)))
+(def tab-size
+  (ui-size-min (ui-size-cells 1)
+    (ui-size-subtract terminal-height
+      (ui-size-add
+        (ui-size-add (ui-size-binding 'transcript-min) footer-reservation)
+        (ui-size-max (ui-size-cells 2)
+                     (ui-size-add (ui-size-binding 'fixed-editor) (ui-size-cells 1)))))))
+(def tab-rows (ui-size-binding 'region/buffer-tabs))
 (def editor-reservation
-  (ui-size-add (ui-size-add footer-reservation (ui-size-cells 1))
+  (ui-size-add (ui-size-add footer-reservation (ui-size-add tab-rows (ui-size-cells 1)))
                transcript-reservation))
 (def editor-budget
   (ui-size-min (ui-size-binding 'chatbox-limit)
@@ -159,13 +165,13 @@
     (ui-size-min footer-reservation
                  (ui-size-subtract terminal-height
                    (ui-size-add (ui-size-add transcript-reservation editor-rows)
-                                (ui-size-cells 1))))
+                                (ui-size-add tab-rows (ui-size-cells 1)))))
     (ui-size-min (ui-size-binding 'footer-min) terminal-height)))
 (def spare-rows
   (ui-size-subtract terminal-height
     (ui-size-add (ui-size-add (ui-size-binding 'region/minibuffer)
                               transcript-reservation)
-                 editor-rows)))
+                 (ui-size-add tab-rows editor-rows))))
 (def modeline-size
   (size-choice (list (list 'modeline-present (ui-size-min (ui-size-cells 1) spare-rows)))))
 (def candidate-budget
@@ -204,15 +210,11 @@
   region-bindings: (list->vector (map (lambda (binding) (vector (car binding) (cdr binding))) frame-regions))
   max-chatbox-rows: 10
   max-command-rows: 10)
-(def (marlin-ui-layout-policy-for modeline-value transcript-value buffer-identities
-                                  (tab-bar (.ref UiCentaurTabsScope 'bar-for)))
+(def (marlin-ui-layout-policy-for modeline-value transcript-value tab-bar)
   (let (region (lambda (slot) (frame-region modeline-value transcript-value slot)))
     (seal-object!
       (.mix (.o frame-tree: (ui-rows
-              (list (ui-sized-with
-                      (ui-size-min (ui-size-cells 1)
-                                   (ui-size-subtract terminal-height (ui-size-cells 7)))
-                      (tab-bar buffer-identities))
+              (list (ui-sized-with tab-size (ui-region 'buffer-tabs #f tab-bar))
                     (ui-rows (map region '((transcript transcript 3) (extensions #f 0))))
                     (region '(modeline #f 0))
                     (ui-region (frame-region-id 'minibuffer-hover) #f
