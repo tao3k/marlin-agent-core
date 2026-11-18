@@ -6,10 +6,10 @@
 
 (import (only-in :marlin-agent-core/interface LabContext)
         (only-in :clan/poo/object .get .o)
-        (only-in :clan/poo/mop TypeError?)
+        (only-in :clan/poo/type TypeError?)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
 
-(let (admit (.get marlin-agent-core.init.exports Marlin context admit-scope))
+(let (admit (.get marlin-agent-core.init.exports Marlin context-system admit-scope))
   (def (admit-turn session-id turn-index)
     (admit (.o (:: @ (.get LabContext scope-prototype)) bundle: "bundle" organization: "org" epoch: 1
                project: "project" worktree: "worktree" source-cut: "cut:0"

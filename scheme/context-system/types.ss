@@ -7,11 +7,11 @@
 (import (only-in :marlin-agent-core/interface LabContext)
         (only-in :clan/poo/object .get .cc)
 
-        (only-in :clan/poo/mop Fun Object Type.)
+        (only-in :clan/poo/type Fun Object Type.)
         (only-in :clan/poo/type Record String Exactly Or)
         (only-in :gerbil-ascent/temporal/lens temporal-answer?))
 
-(export MarlinContextModuleContract ContextCausalContract)
+(export MarlinContextSystemContract ContextCausalContract)
 
 (def CausalExchange
   (Record kind: [(Exactly 'agentic-ai-lab.ascent-exchange.v1)]))
@@ -40,7 +40,7 @@
   (Record decode-batch: [(Fun ContextProjectionRows <- ContextProjectionRows)]
           encode-scopes: [(Fun ContextProjectionBytes <- ContextProjectionRows)]))
 
-(def MarlinContextModuleContract
+(def MarlinContextSystemContract
   (.cc (Record admit-scope: [(.get LabContext admission-type)] bridge: [ContextBridgeContract]
                org-contract-source: [(Fun ContextOrgContractSource <- ContextOrgContractRequest)]
                org-source-graph: [(Fun ContextOrgSourceGraph <- String)])

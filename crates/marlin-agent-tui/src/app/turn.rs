@@ -70,7 +70,7 @@ impl App {
             }
             return;
         }
-        if self.submit_process_command() {
+        if self.submit_runtime_command() {
             return;
         }
         if self.pending.is_some() {
@@ -229,8 +229,8 @@ impl App {
                 }
                 Some(Command::SelectUi(event)) => self.ui_request = Some(event),
                 Some(Command::EnterTransient(id)) => self.transient_request = Some(id),
-                Some(Command::KillProcess(_)) => {
-                    unreachable!("process command handled at admission")
+                Some(Command::KillProcess(_) | Command::Envrc(_)) => {
+                    unreachable!("runtime command handled at admission")
                 }
                 Some(Command::OpenMenu(prefix)) => {
                     self.command_draft = Some(std::mem::take(&mut self.composer));
@@ -830,7 +830,7 @@ impl App {
 }
 
 impl App {
-    fn submit_process_command(&mut self) -> bool {
+    fn submit_runtime_command(&mut self) -> bool {
         let Some(_) = self.command_draft else {
             return false;
         };
@@ -850,13 +850,14 @@ impl App {
                 self.refresh_process_content();
             }
             Some(Command::KillProcess(generation)) => self.stop_process(generation),
+            Some(Command::Envrc(command)) => self.envrc_command = Some(command),
             _ => return false,
         }
         self.command_history_request = descriptor.map(|item| item.name);
         self.composer = self
             .command_draft
             .take()
-            .expect("process command has a saved draft");
+            .expect("runtime command has a saved draft");
         self.command_menu = None;
         true
     }

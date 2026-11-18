@@ -5,7 +5,7 @@
 ;;; Contract for the callable policy scope.
 
 (import (only-in :clan/poo/object .cc .o)
-        (only-in :clan/poo/mop Type.)
+        (only-in :clan/poo/type Type.)
         (only-in :clan/poo/object-contract ObjectContract.))
 
 (export PolicyScopeContract)

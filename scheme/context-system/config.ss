@@ -4,11 +4,11 @@
 
 ;;; Validate the Context publication.
 
-(import (only-in :clan/poo/mop validate)
+(import (only-in :clan/poo/type validate)
         "./types.ss"
         "./objects.ss")
 
-(export MarlinContextScope)
+(export MarlinContextSystemScope)
 
-(def MarlinContextScope
-  (validate MarlinContextModuleContract MarlinContextOperations))
+(def MarlinContextSystemScope
+  (validate MarlinContextSystemContract MarlinContextSystemOperations))

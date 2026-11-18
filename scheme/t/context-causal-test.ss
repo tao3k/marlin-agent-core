@@ -38,7 +38,7 @@
        (instant "b-valid" "valid" 1) (instant knowledge-id "knowledge" 1)))
     'owner-source 0 'owner-clock "valid" "knowledge" 'owner-cut 0 5 4 3 #t))
 
-(let* ((context (.get marlin-agent-core.init.exports Marlin context))
+(let* ((context (.get marlin-agent-core.init.exports Marlin context-system))
        (original (make-exchange "b-known"))
        (answer-value ((.get context reason-causally) (.o exchange: original root: "A")))
        (replay (.get context replay-causal-answer)))

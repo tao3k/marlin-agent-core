@@ -8,14 +8,14 @@
         (only-in :clan/poo/object .get .o)
         (only-in :std/encoding/hex hex-decode)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
-        "../context/batch.ss")
+        "../context-system/batch.ss")
 
 (def shared #("bundle" "org" "project" "worktree" "cut:0"))
 (def batch
   (vector shared (u64vector 1 0 18446744073709551615)
           #(#("reader" "first" "provider")
             #("editor" "second" "provider" "session"))))
-(def admit (.get marlin-agent-core.init.exports Marlin context admit-scope))
+(def admit (.get marlin-agent-core.init.exports Marlin context-system admit-scope))
 (def (expected actor-id task-id session-id turn-index)
   (def scope
     (admit (.o (:: @ (.get LabContext scope-prototype)) bundle: "bundle" organization: "org" epoch: 1

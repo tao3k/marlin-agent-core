@@ -14,6 +14,7 @@ mod model_gateway;
 mod model_tool_catalog;
 mod model_tooling;
 mod process_executor;
+mod project_envrc;
 mod resilience;
 mod tokio_runtime;
 
@@ -58,6 +59,7 @@ pub use process::{
     SysinfoRuntimeProcessController,
 };
 pub use process_executor::ManagedProcessExecutor;
+pub use project_envrc::{EnvrcIntent, EnvrcPlan, EnvrcStatus, ProjectEnvrc, ProjectEnvrcDiscovery};
 pub use resilience::{
     RuntimeEdgeLayer, RuntimeEdgePolicy, RuntimeEdgePolicyError, RuntimeEdgePolicyReceipt,
     RuntimeEdgeService,

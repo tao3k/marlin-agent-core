@@ -2,7 +2,7 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-(import (only-in :clan/poo/mop element? validate)
+(import (only-in :clan/poo/type element? validate)
         (only-in "../ui-components/config.ss" UiComponentsScope)
         (only-in "../ui-modeline/config.ss" UiModelineScope)
         (only-in "../ui-transcript/config.ss" UiTranscriptScope)

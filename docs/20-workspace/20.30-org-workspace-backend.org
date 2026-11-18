@@ -12,7 +12,7 @@
 :STATUS: active
 :END:
 
-Org source interpretation belongs to Scheme. Marlin's =scheme/context= uses
+Org source interpretation belongs to Scheme. Marlin's =scheme/context-system= uses
 Lab's selected Context and Orgize modules through the existing Gerbil VM.
 There is no separate Rust Org workspace/parser package.
 

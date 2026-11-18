@@ -159,7 +159,7 @@ jobs:
           program_out=$(jq -ers '[.[] | select(.reason == "build-script-executed" and
             (.package_id | test("/marlin-agent-core#|#marlin-agent-core@"))) | .out_dir] |
             if length == 1 then .[0] else error("expected one Brief-to-Draft build receipt") end' <<< "$receipt")
-          jq -e 'any(.modules[]; .module == "marlin-agent-core/context/types" and .deferred == true) and
+          jq -e 'any(.modules[]; .module == "marlin-agent-core/context-system/types" and .deferred == true) and
             any(.modules[]; .module == "marlin-agent-core/brief-to-draft/config" and .deferred == true)' \
             "$program_out/program/program.json"
 

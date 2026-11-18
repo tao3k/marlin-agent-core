@@ -567,6 +567,7 @@ fn decode_commands(payload: RootedSchemeObject<'_>) -> Result<UiRegion, UiProjec
             "select-buffer" => UiCommandCapability::SelectBuffer,
             "enter-transient" => UiCommandCapability::EnterTransient,
             "kill-process" => UiCommandCapability::KillProcess,
+            "envrc" => UiCommandCapability::Envrc,
             "toggle-thinking" => UiCommandCapability::ToggleThinking,
             "clear" => UiCommandCapability::Clear,
             _ => return Err(UiProjectionError::Invalid("unknown command capability")),

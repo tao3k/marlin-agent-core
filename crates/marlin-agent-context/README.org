@@ -21,7 +21,7 @@ identities belong to one opened source; another source's ordinal cannot be
 substituted. Contract-source operations project Lab identities, generations,
 digests and anchors. They preserve Scheme failures and explicit bounds.
 
-The adapter lives in =scheme/context= and delegates to Lab's Context and
+The adapter lives in =scheme/context-system= and delegates to Lab's Context and
 Scheme Orgize interfaces. Rust checks types, ownership, bounds and byte spans;
 it does not parse Org text or reimplement contract evaluation.
 

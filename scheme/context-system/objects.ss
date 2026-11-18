@@ -7,14 +7,14 @@
 (import (only-in :marlin-agent-core/interface LabContext)
         (only-in :clan/poo/object .get .o)
 
-        :marlin-agent-core/context/projection
-        :marlin-agent-core/context/org-contract
-        :marlin-agent-core/context/org-source
-        :marlin-agent-core/context/evidence)
+        :marlin-agent-core/context-system/projection
+        :marlin-agent-core/context-system/org-contract
+        :marlin-agent-core/context-system/org-source
+        :marlin-agent-core/context-system/evidence)
 
-(export MarlinContextOperations EnableCausalEvidence)
+(export MarlinContextSystemOperations EnableCausalEvidence)
 
-(def MarlinContextOperations
+(def MarlinContextSystemOperations
   (.o admit-scope: (.get LabContext admit-scope)
       org-contract-source: marlin-context-org-contract-source
       org-source-graph: marlin-context-org-source-graph

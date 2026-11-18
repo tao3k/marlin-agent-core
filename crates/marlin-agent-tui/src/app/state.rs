@@ -76,6 +76,7 @@ pub(crate) struct App {
     pub(crate) ui_request: Option<UiEvent>,
     pub(crate) command_history_request: Option<UiCommandName>,
     pub(crate) transient_request: Option<super::UiTransientId>,
+    pub(super) envrc_command: Option<crate::command::EnvrcCommand>,
     pub(crate) quit_armed: bool,
     pub(crate) transcript: Transcript,
     pub(crate) transcript_policy: Option<UiTranscriptPolicy>,
@@ -155,6 +156,7 @@ impl App {
             ui_request: None,
             command_history_request: None,
             transient_request: None,
+            envrc_command: None,
             quit_armed: false,
             transcript: Transcript::new(vec![]),
             transcript_policy: None,
@@ -268,6 +270,7 @@ impl App {
                             descriptor.capability,
                             marlin_agent_ui::UiCommandCapability::ToggleThinking
                                 | marlin_agent_ui::UiCommandCapability::KillProcess
+                                | marlin_agent_ui::UiCommandCapability::Envrc
                         ) || (descriptor.capability
                             == marlin_agent_ui::UiCommandCapability::SelectBuffer
                             && descriptor.value.as_deref() == Some("processes")))

@@ -14,7 +14,7 @@
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
 
 (def published (.get marlin-agent-core.init.exports Marlin deck-runtime))
-(def admit (.get marlin-agent-core.init.exports Marlin context admit-scope))
+(def admit (.get marlin-agent-core.init.exports Marlin context-system admit-scope))
 (def (require value message) (unless value (error message)))
 (def (request turn-index)
   (.o (:: @ (.get LabContext scope-prototype)) bundle: "bundle" organization: "org" epoch: 1
@@ -40,7 +40,7 @@
         (.get admitted semantic-digest))))
 (def runtime
   ((.get published open) tracked-admit
-   (.get marlin-agent-core.init.exports Marlin context bridge encode-scopes)))
+   (.get marlin-agent-core.init.exports Marlin context-system bridge encode-scopes)))
 (require (check-deck-kernel! runtime) "Published Deck selected a different kernel")
 (require (with-catch (lambda (_) #t)
            (lambda () (check-deck-kernel! (.o (:: @ runtime) factory: (lambda _ #f))) #f))
@@ -60,7 +60,7 @@
                "Context digest transfer cardinality changed")
       (require
         (equal? (vector-ref packet 2)
-          ((.get marlin-agent-core.init.exports Marlin context bridge encode-scopes)
+          ((.get marlin-agent-core.init.exports Marlin context-system bridge encode-scopes)
            (list->vector
              (map (lambda (id) (vector-ref expected (1- id))) (u64vector->list received)))))
         "Context message changed its Scope result")

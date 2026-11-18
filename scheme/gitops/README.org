@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / GitOps
+#+language: en
+
+Marlin composes the GitOps scope, contract and Features exposed by =LabGitOps=
+in the shared [[file:../interface.ss][interface]]. Select =(gitops +worktrunk)= in [[file:../init.ss][init.ss]] to admit the
+Worktrunk provider into Marlin's policy. Extend the selected policy with
+POO refinement for Marlin-specific requirements.
+
+[[file:bridge.ss][bridge.ss]] converts the host's observed provider availability and
+preference into inputs for the selected policy. Rust owns working-copy
+requests, execution and receipts. The Cargo feature
+=marlin-agent-gitops/worktrunk= links Worktrunk's Rust library for pull
+request reference syntax. The environment applies plans through =wt=.

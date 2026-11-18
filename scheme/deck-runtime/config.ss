@@ -4,7 +4,7 @@
 
 ;;; Validate the Deck publication before exposing its operations.
 
-(import (only-in :clan/poo/mop validate)
+(import (only-in :clan/poo/type validate)
         "./objects.ss"
         "./types.ss")
 

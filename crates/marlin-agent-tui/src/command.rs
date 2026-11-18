@@ -8,6 +8,27 @@ use marlin_agent_ui::{
     UiProfileName, UiTransientId,
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EnvrcCommand {
+    Apply(marlin_agent_runtime::EnvrcIntent),
+    Cancel,
+    Status,
+}
+
+impl EnvrcCommand {
+    fn from_value(value: &str) -> Option<Self> {
+        use marlin_agent_runtime::EnvrcIntent;
+        Some(match value {
+            "allow" => Self::Apply(EnvrcIntent::Allow),
+            "reload" => Self::Apply(EnvrcIntent::Reload),
+            "deny" => Self::Apply(EnvrcIntent::Deny),
+            "cancel" => Self::Cancel,
+            "status" => Self::Status,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum Command<'a> {
     Models,
@@ -23,6 +44,7 @@ pub(crate) enum Command<'a> {
     ContextBudget,
     Runtime,
     KillProcess(std::num::NonZeroU64),
+    Envrc(EnvrcCommand),
     OpenMenu(&'a str),
     SelectUi(UiEvent),
     EnterTransient(UiTransientId),
@@ -56,6 +78,9 @@ impl<'a> Command<'a> {
                 Required,
                 None,
             ) => true,
+            (Capability::Envrc, NoArguments, Some(action)) => {
+                EnvrcCommand::from_value(action).is_some()
+            }
             (Capability::Sessions, Optional, None) => true,
             (Capability::History, NoArguments, Some("older" | "newest")) => true,
             (Capability::Workspace, NoArguments, Some("status"))
@@ -120,6 +145,7 @@ impl<'a> Command<'a> {
             Capability::ContextBudget => Self::ContextBudget,
             Capability::Runtime => Self::Runtime,
             Capability::KillProcess => Self::KillProcess(argument?.trim().parse().ok()?),
+            Capability::Envrc => Self::Envrc(EnvrcCommand::from_value(value?)?),
             Capability::OpenMenu => Self::OpenMenu(value?),
             Capability::SelectProfile => {
                 Self::SelectUi(UiEvent::SelectProfile(UiProfileName::new(value?).ok()?))

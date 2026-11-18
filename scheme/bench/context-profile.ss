@@ -6,7 +6,7 @@
 package: marlin-benchmark
 (import (only-in :marlin-agent-core/interface LabContext)
         (only-in :clan/poo/object .get .call)
-        (only-in :clan/poo/mop validate)
+        (only-in :clan/poo/type validate)
         (only-in :marlin-benchmark/compiler-roots compiler-roots-snapshot)
         (only-in :marlin-benchmark/mailbox mailbox-clock-ns)
 
@@ -21,7 +21,7 @@ static void marlin_context_set_phase(int phase) { marlin_context_profile_phase =
   (define context-profile-phase! (c-lambda (int) void "marlin_context_set_phase")))
 
 (def (run-context-profile batches)
-  (def context (.get marlin-agent-core.init.exports Marlin context))
+  (def context (.get marlin-agent-core.init.exports Marlin context-system))
   (def decode (.get context bridge decode-batch))
   (def encode (.get context bridge encode-scopes))
   (def admit (.get context admit-scope))
@@ -142,7 +142,7 @@ static void marlin_context_set_phase(int phase) { marlin_context_profile_phase =
   (def lab (.get LabContext admission-type))
   (context-profile-phase! 0)
   (snapshot)
-  (def context (.get marlin-agent-core.init.exports Marlin context))
+  (def context (.get marlin-agent-core.init.exports Marlin context-system))
   (snapshot)
   (def published (.get marlin-agent-core.init.exports Marlin deck-runtime))
   (snapshot)

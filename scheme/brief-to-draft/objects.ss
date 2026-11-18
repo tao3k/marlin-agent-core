@@ -6,7 +6,7 @@
         (only-in :std/list/list find)
         (only-in :orgize/languages/org/modules/org-elements/values
                  org-element-graph-records org-element-graph-kind-of org-element-graph-field-of)
-        (only-in :marlin-agent-core/context/org-source marlin-context-org-source-graph)
+        (only-in :marlin-agent-core/context-system/org-source marlin-context-org-source-graph)
         (only-in "./settings.ss" settings-denial))
 
 (export BriefToDraftOperations)

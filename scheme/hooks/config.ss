@@ -4,7 +4,7 @@
 
 ;;; Publish the configured Hook selector.
 
-(import (only-in :clan/poo/mop validate)
+(import (only-in :clan/poo/type validate)
         "./types.ss"
         "./objects.ss")
 

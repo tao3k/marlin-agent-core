@@ -4,7 +4,7 @@
 ;;; The host admits this finite projection before advertising a tool. Adding
 ;;; another tool is a Scheme declaration, not a Rust command dispatcher case.
 (import (only-in :clan/poo/object .o)
-        (only-in :clan/poo/mop validate)
+        (only-in :clan/poo/type validate)
         "./types.ss" "./objects.ss")
 (export ToolingScope)
 

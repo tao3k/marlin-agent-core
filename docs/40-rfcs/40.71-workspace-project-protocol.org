@@ -327,6 +327,34 @@ The =jj-vcs/jj= repository is the motivating shape: Git remains the Rust-core
 operations foundation, =jj= is represented as a Scheme-policy VCS extension,
 and GitHub remains the collaboration and operations plane.
 
+** Repository backend audit
+
+=gix= is the candidate for in-process Git reads. Its repository API exposes
+the common Git directory, worktree, index and status. Marlin's read
+contract requires bounded output, staged and unstaged changes, and
+repository identity across linked worktrees. A migration needs parity on
+those cases and separate benchmarks for discovery, status and diff.
+[[https://docs.rs/gix/latest/gix/struct.Repository.html][gix repository API]]
+
+=jj= uses Git storage through gitoxide and adds its own workspace,
+working-copy commits, bookmarks and operation log. Those semantics suit an
+explicit project capability for Jujutsu workspaces. Colocation alone does
+not establish equivalence to Git's index and working-tree observations.
+[[https://docs.jj-vcs.dev/latest/git-compatibility/][Jujutsu Git compatibility]]
+[[https://github.com/jj-vcs/jj/blob/main/docs/technical/architecture.md][Jujutsu architecture]]
+
+Keep Git and Worktrunk execution until a replacement meets the current
+worktree registration, hooks, repository identity and pull request
+checkout contracts. Lab's provider policy receives only the capabilities
+Rust can execute. A selection grants no custody or execution authority.
+
+Marlin's GitOps Module composes the scope, contract and Worktrunk Feature
+published by Agentic AI Lab. Marlin selects =(gitops +worktrunk)= through
+its =init.ss=. The bridge supplies typed host observations to that selected
+policy. The Cargo feature =marlin-agent-gitops/worktrunk= links the
+Worktrunk library for pull request reference syntax. Environment applies
+Worktrunk plans through =wt=.
+
 ** Acceptance Criteria
 
 - =marlin-agent-gitops= exports typed working-copy isolation providers,

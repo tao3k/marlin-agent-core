@@ -19,6 +19,6 @@ pub mod working_copy;
 pub use diff::{
     GitDiff, GitDiffRequest, GitDiffScope, GitRepositoryPath, InvalidGitRepositoryPath,
 };
-pub use read::{GIT_REPOSITORY_OVERRIDES, GitReadError};
+pub use read::{DISABLED_HOOKS, GIT_REPOSITORY_OVERRIDES, GitReadError};
 pub use repository::GitOperations;
 pub use status::{GitFileState, GitPath, GitStatus, GitStatusEntry, GitStatusError};

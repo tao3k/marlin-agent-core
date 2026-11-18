@@ -56,6 +56,8 @@ use marlin_agent_ui::{
 };
 use termion::event::Key;
 
+#[path = "envrc.rs"]
+mod envrc;
 #[path = "presentation.rs"]
 mod presentation;
 #[path = "restore.rs"]

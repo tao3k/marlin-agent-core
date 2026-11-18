@@ -19,7 +19,7 @@ use marlin_agent_gitops::working_copy::{
     WorkingCopyIsolationRequest, WorkingCopyParallelIsolationReceipt,
     WorkingCopyRepositoryDiscoveryPath, WorkspaceProjectGitHubRepository, WorkspaceProjectId,
 };
-use marlin_agent_gitops::{GIT_REPOSITORY_OVERRIDES, GitOperations, GitReadError};
+use marlin_agent_gitops::{DISABLED_HOOKS, GIT_REPOSITORY_OVERRIDES, GitOperations, GitReadError};
 use serde::Deserialize;
 use thiserror::Error;
 use tokio::process::Command;
@@ -305,6 +305,11 @@ impl WorkingCopyCommandRunner for ProcessWorkingCopyCommandRunner {
     ) -> Result<WorkingCopyCommandOutput, WorkingCopyIsolationDriverError> {
         let mut command =
             provider_command(invocation.program.executable(), &invocation.git_toplevel);
+        if invocation.program == WorkingCopyCommandProgram::Worktrunk {
+            // Worktrunk's --no-hooks covers its own hooks. Pass Git's override
+            // to the Git subprocesses that Worktrunk launches.
+            command.env("GIT_CONFIG_PARAMETERS", format!("'{DISABLED_HOOKS}'"));
+        }
         if let Some(repository) = &invocation.github_repository {
             Self::verify_pull_request_repository(&invocation.git_toplevel, repository).await?;
             command

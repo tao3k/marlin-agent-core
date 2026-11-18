@@ -22,7 +22,7 @@ receipt and verifies replay against the caller's exact exchange.
 
 | Role | Responsibility |
 |------+----------------|
-| =context/= | Adapt Lab's Context library to Marlin's runtime boundary. |
+| [[file:context-system/README.org][Context System]] | Adapt Lab's Context library to Marlin's runtime boundary. |
 | [[file:ui-components/README.org][ui-components]] | Publish component prototypes, buffers, keymaps and the POO command catalog. |
 | =ui-layout/= | Publish bounded presentation geometry for native hosts; the terminal clips to actual cells. |
 | =ui-themes/= | Publish the selected semantic color palette; Doom One is the initial theme. |
@@ -35,7 +35,7 @@ receipt and verifies replay against the caller's exact exchange.
 | =policy/projection/graph/= | Project routing, topology and continuation for the Rust graph runtime. |
 | =c-abi/= | Own the C entry points and their bindings. |
 | [[file:brief-to-draft/README.org][brief-to-draft]] | Publish draft validation, proposals and the program entry. |
-| [[file:working-copy/README.org][working-copy]] | Select a provider for Git working-copy operations. |
+| [[file:gitops/README.org][gitops]] | Select a provider for Git working-copy operations. |
 | =t/= | Exercise policy composition, projections, and receipt fixtures. |
 | =bench/= | Own the optional SDK-linked mailbox qualification workload. |
 

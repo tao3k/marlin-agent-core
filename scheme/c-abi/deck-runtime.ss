@@ -7,7 +7,7 @@
 ;; Root the two selected runtime roles in the linked compiler graph. Yuanxu
 ;; still owns their checked publication; its role loader reuses these builtins.
 (import (only-in :marlin-agent-core/deck-runtime/objects DeckOperations)
-        (only-in :marlin-agent-core/context/objects MarlinContextOperations)
+        (only-in :marlin-agent-core/context-system/objects MarlinContextSystemOperations)
         (only-in :marlin-agent-core/deck-runtime/runtime check-deck-kernel!)
         (only-in :marlin-agent-core/c-abi/roots marlin-rooted-call)
         (only-in :clan/poo/object .get)
@@ -26,9 +26,9 @@
   (when (zero? (string-length module-id)) (error "Deck runtime module ID is empty"))
   (def receipt (vector (string-copy module-id)
                        (u64vector (.get metadata version))))
-  (set! context-bridge (.get marlin-agent-core.init.exports Marlin context bridge))
+  (set! context-bridge (.get marlin-agent-core.init.exports Marlin context-system bridge))
   (set! deck ((.get runtime open)
-              (.get marlin-agent-core.init.exports Marlin context admit-scope)
+              (.get marlin-agent-core.init.exports Marlin context-system admit-scope)
               (.get context-bridge encode-scopes)))
   ;; The actual constructed runtime must use the linked library procedures.
   ;; Compiler manifests alone cannot certify a reader's private interpreted copy.

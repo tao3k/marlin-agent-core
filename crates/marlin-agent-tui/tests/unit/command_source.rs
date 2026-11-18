@@ -109,3 +109,32 @@ fn selected_descriptors_define_names_and_native_capability_arguments() {
         None,
     )));
 }
+
+#[test]
+fn envrc_capability_admits_only_explicit_no_argument_intents() {
+    use super::EnvrcCommand;
+    use UiCommandArguments::None as NoArguments;
+    use UiCommandCapability::Envrc;
+    use marlin_agent_runtime::EnvrcIntent;
+
+    for (value, expected) in [
+        ("allow", EnvrcCommand::Apply(EnvrcIntent::Allow)),
+        ("reload", EnvrcCommand::Apply(EnvrcIntent::Reload)),
+        ("deny", EnvrcCommand::Apply(EnvrcIntent::Deny)),
+        ("cancel", EnvrcCommand::Cancel),
+        ("status", EnvrcCommand::Status),
+    ] {
+        let declared = descriptor("worktree-env", NoArguments, Envrc, Some(value));
+        assert_eq!(
+            Command::parse(&declared, "worktree-env"),
+            Some(Command::Envrc(expected))
+        );
+        assert_eq!(Command::parse(&declared, "worktree-env ../other"), None);
+    }
+    assert!(!Command::admit(&descriptor(
+        "worktree-env",
+        NoArguments,
+        Envrc,
+        Some("activate"),
+    )));
+}

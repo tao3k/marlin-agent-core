@@ -4,6 +4,11 @@
 
 ;;; Deck owns execution of typed Context batches on Scheme actors.
 
+(import (only-in :clan/poo/object .def .o)
+        (only-in "./config.ss" DeckScope)
+        (only-in "./types.ss" DeckScopeContract))
+(export DeckRuntime)
+
 (.def DeckRuntime
   identity: 'deck-runtime
   core: (.o scope-contract: DeckScopeContract

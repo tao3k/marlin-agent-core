@@ -34,6 +34,7 @@ pub struct TokioAgentRuntime {
     cancellation: CancellationToken,
     events: RuntimeEventSink,
     environment: RuntimeEnvironment,
+    project_envrc: Option<crate::ProjectEnvrcDiscovery>,
     execution: Option<RuntimeExecutionIdentity>,
     session: AgentSessionContext,
     graph_loop_runs: crate::GraphLoopRunRegistryHandle,
@@ -77,6 +78,7 @@ pub struct TokioAgentRuntimeBuildRequest {
     process_budget: Option<(RuntimeProcessBudget, Arc<dyn ProcessMemorySampler>)>,
     cancellation: CancellationToken,
     environment: RuntimeEnvironment,
+    project_envrc: Option<crate::ProjectEnvrcDiscovery>,
     session: AgentSessionContext,
     runtime_snapshot: SessionRuntimeSnapshot,
 }
@@ -94,6 +96,7 @@ impl TokioAgentRuntimeBuildRequest {
             process_budget: None,
             cancellation: CancellationToken::new(),
             environment: RuntimeEnvironment::default(),
+            project_envrc: None,
             session,
             runtime_snapshot,
         }
@@ -115,6 +118,15 @@ impl TokioAgentRuntimeBuildRequest {
     ) -> Self {
         self.process_limit = Some(budget.concurrent);
         self.process_budget = Some((budget, sampler));
+        self
+    }
+
+    pub fn with_project_envrc(self, binding: crate::ProjectEnvrc) -> Self {
+        self.with_project_envrc_discovery(crate::ProjectEnvrcDiscovery::resolved(binding))
+    }
+
+    pub fn with_project_envrc_discovery(mut self, discovery: crate::ProjectEnvrcDiscovery) -> Self {
+        self.project_envrc = Some(discovery);
         self
     }
 
@@ -203,6 +215,7 @@ impl TokioAgentRuntime {
                 cancellation: request.cancellation,
                 events,
                 environment: request.environment,
+                project_envrc: request.project_envrc,
                 execution: None,
                 session: request.session,
                 graph_loop_runs: crate::GraphLoopRunRegistryHandle::new(),
@@ -218,11 +231,20 @@ impl TokioAgentRuntime {
         )
     }
 
+    pub fn project_envrc(&self) -> Option<crate::ProjectEnvrc> {
+        self.project_envrc.as_ref()?.binding()
+    }
+
+    pub fn project_envrc_status(&self) -> Option<crate::EnvrcStatus> {
+        self.project_envrc.as_ref()?.status()
+    }
+
     pub fn context(&self) -> RuntimeContext {
         RuntimeContext {
             cancellation: self.cancellation.clone(),
             events: self.events.clone(),
             environment: self.environment.clone(),
+            project_envrc: self.project_envrc.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
             active_working_copy: None,
@@ -288,6 +310,7 @@ impl TokioAgentRuntime {
             cancellation: self.cancellation.child_token(),
             events: self.events.clone(),
             environment: self.environment.clone(),
+            project_envrc: self.project_envrc.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
             graph_loop_runs: self.graph_loop_runs.clone(),
@@ -309,6 +332,7 @@ impl TokioAgentRuntime {
                 cancellation: self.cancellation.child_token(),
                 events,
                 environment: self.environment.clone(),
+                project_envrc: self.project_envrc.clone(),
                 execution: self.execution.clone(),
                 session: self.session.clone(),
                 graph_loop_runs: self.graph_loop_runs.clone(),
@@ -334,6 +358,7 @@ impl TokioAgentRuntime {
             cancellation: self.cancellation.child_token(),
             events: self.events.clone(),
             environment,
+            project_envrc: self.project_envrc.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
             graph_loop_runs: self.graph_loop_runs.clone(),
@@ -365,6 +390,7 @@ impl TokioAgentRuntime {
                 cancellation: self.cancellation.child_token(),
                 events: self.events.clone(),
                 environment: self.environment.clone(),
+                project_envrc: self.project_envrc.clone(),
                 execution: self.execution.clone(),
                 session,
                 graph_loop_runs: self.graph_loop_runs.clone(),

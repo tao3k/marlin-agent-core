@@ -11,11 +11,15 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+worktrunk = ["dep:worktrunk"]
+
 [dependencies]
 marlin-agent-protocol.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+worktrunk = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

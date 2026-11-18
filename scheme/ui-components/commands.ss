@@ -61,6 +61,11 @@
                         none select-buffer "processes")
                        ("kill-process" "Stop a managed process by generation"
                         required kill-process #f)
+                       ("envrc-allow" "Allow the current worktree .envrc" none envrc "allow")
+                       ("envrc-reload" "Reload the current worktree environment" none envrc "reload")
+                       ("envrc-deny" "Deny the current worktree .envrc" none envrc "deny")
+                       ("envrc-cancel" "Cancel the current environment load" none envrc "cancel")
+                       ("envrc-status" "Show the current worktree environment status" none envrc "status")
                        ("switch-themes" "Theme: " none open-menu "theme-")
                        ("switch-buffer" "Switch to: " none open-menu "buffer-"))
                      (marlin-ui-buffer-command-entries)
@@ -117,7 +122,7 @@
        (memq (cadddr entry)
              '(models model sessions session inspect history workspace context-budget
                runtime open-menu select-profile select-buffer enter-transient
-               kill-process toggle-thinking clear))
+               kill-process envrc toggle-thinking clear))
        (let (value (car (cddddr entry)))
          (or (not value) (and (string? value) (<= 1 (string-length value) 32))))))
 

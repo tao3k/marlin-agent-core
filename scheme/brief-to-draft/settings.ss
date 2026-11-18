@@ -2,7 +2,7 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-(import (only-in :clan/poo/mop Bool)
+(import (only-in :clan/poo/type Bool)
         (only-in :clan/poo/object .o .ref)
         (only-in :clan/poo/type Enum Record)
         (only-in "../interface.ss"

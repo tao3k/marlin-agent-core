@@ -5,7 +5,8 @@
 ;;; Typed workbench operations shared by linked and package consumers.
 (import (only-in :clan/poo/object .def .get .o seal-object!)
         (only-in :std/list/list find filter)
-        (only-in :clan/poo/mop element? prototype-instance?)
+        (only-in :clan/poo/mop prototype-instance?)
+        (only-in :clan/poo/type element?)
         (only-in "./types.ss" UiScopeContract)
         (only-in "../ui-components/bounds.ss" marlin-ui-max-browse-steps)
         "./projection.ss"

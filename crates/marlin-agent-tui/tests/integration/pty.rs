@@ -32,6 +32,9 @@ use std::{
 };
 use unicode_width::UnicodeWidthChar;
 
+#[path = "pty/envrc.rs"]
+#[cfg(feature = "linked-ui")]
+mod envrc;
 #[path = "pty/live_provider.rs"]
 mod live_provider;
 #[path = "pty/minibuffer.rs"]

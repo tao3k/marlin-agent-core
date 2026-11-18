@@ -11,7 +11,7 @@
   mode: explicit
   rename: Marlin
   :test-dir "./t"
-  (context +causal)
+  (context-system +causal)
   (brief-to-draft)
   (ui-components)
   (ui-elements)
@@ -25,6 +25,7 @@
   (tooling)
   (hooks)
   (policy)
-  (working-copy)
+  (gitops +worktrunk)
+  (envrc)
   (deck-runtime)
   (c-abi))

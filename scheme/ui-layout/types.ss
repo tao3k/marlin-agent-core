@@ -4,7 +4,7 @@
 
 (import (only-in :clan/poo/object .cc)
         (only-in :clan/poo/type Exactly Record)
-        (only-in :clan/poo/mop Fun Object Type.))
+        (only-in :clan/poo/type Fun Object Type.))
 (export UiLayoutScopeContract)
 
 (def UiBarValue (.cc Type. '.element? vector?))

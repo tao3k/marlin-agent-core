@@ -7,7 +7,8 @@
 (import (only-in :marlin-agent-core/c-abi/roots marlin-rooted-call)
         (only-in :marlin-agent-core/ui/config UiScope)
         :marlin-agent-core/c-abi/ui
-        :marlin-agent-core/c-abi/tooling)
+        :marlin-agent-core/c-abi/tooling
+        :marlin-agent-core/c-abi/envrc)
 (export main)
 
 (def (main . _) (void))

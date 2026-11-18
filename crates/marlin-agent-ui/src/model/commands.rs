@@ -125,6 +125,7 @@ pub enum UiCommandCapability {
     SelectBuffer,
     EnterTransient,
     KillProcess,
+    Envrc,
     ToggleThinking,
     Clear,
 }

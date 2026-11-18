@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+TITLE: Project ENVRC
+#+LANGUAGE: en
+#+FILETAGS: :marlin:scheme:envrc:
+
+The selected ENVRC Module publishes a typed plan for the active GitOps working
+copy. Rust supplies the intent and whether that verified working-copy root has
+a =.envrc=. The initial plan for a root with no =.envrc= is =absent=.
+
+| Intent | Plan when the working copy has a .envrc |
+|--------+---------------------------------------|
+| Agent startup | Export through direnv using its existing authorization |
+| Explicit allow | Run =direnv allow= for that file, then export |
+| Explicit reload | Run =direnv reload=, then export |
+| Explicit deny | Run =direnv deny= for that file and invalidate its environment |
+
+The terminal Agent startup sends the selected Scheme plan to the Rust
+Runtime. GitOps resolves the root from the startup directory in a Tokio
+task. The first terminal frame can appear while discovery and loading run.
+
+- Resolve the target from the active GitOps binding and check the worktree root
+  before dispatch. Authorize allow and deny through explicit user actions.
+  Agent startup and reload use direnv's existing approval for the file.
+- Reuse =marlin-agent-environment= for the direnv subprocess and its typed
+  receipts. Apply the resulting environment only when spawning tools for the
+  same working copy. Use an unmodified base environment when the file is
+  absent and expose a blocked state when authorization is missing.
+- Start loading in the background. Commands that require the project
+  environment wait for the snapshot or report the terminal load state.
+  Publish only the current generation. Reload replaces an unfinished load,
+  and deny clears the snapshot before a late result can publish it again.
+- Use =M-x envrc-allow=, =envrc-reload=, =envrc-deny=, =envrc-cancel= and
+  =envrc-status= for the current worktree. Reload supersedes the current load.
+  The UI remains interactive while the Runtime owns cancellation, the
+  30-second deadline and process-group cleanup on Unix.
+- With =OTEL_EXPORTER_OTLP_TRACES_ENDPOINT= set, the Runtime's =envrc.load=
+  span records the intent, elapsed milliseconds and outcome. Environment
+  values and subprocess output stay out of the span.

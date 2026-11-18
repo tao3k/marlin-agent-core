@@ -167,11 +167,16 @@ fn run(
         return Err("Scheme projection lost the Runtime budget status".into());
     }
     trace_startup("UI session projection");
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    trace_startup("Tokio runtime");
+    let directory = env::current_dir()?;
     #[cfg(feature = "linked-ui")]
     let tool_catalog = if config.session.is_some() {
         let declarations = super::super::linked_ui::tooling_declarations(&scheme_runtime)?;
         Some(Arc::new(
-            marlin_agent_tooling::catalog_from_declarations(declarations, env::current_dir()?)
+            marlin_agent_tooling::catalog_from_declarations(declarations, directory.clone())
                 .map_err(|error| format!("cannot bind Scheme tool catalog: {error:?}"))?,
         ))
     } else {
@@ -180,25 +185,23 @@ fn run(
     #[cfg(not(feature = "linked-ui"))]
     let tool_catalog: Option<Arc<marlin_agent_runtime::ModelToolCatalog>> = None;
     trace_startup("tool catalog binding");
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    trace_startup("Tokio runtime");
+    let envrc_discovery = marlin_agent_runtime::ProjectEnvrcDiscovery::pending();
+    let request = marlin_agent_runtime::TokioAgentRuntimeBuildRequest::runtime_root(64)
+        .with_project_envrc_discovery(envrc_discovery.clone());
     #[cfg(target_os = "macos")]
-    let mut app = if let Some(budget) = config.process_budget {
-        use marlin_agent_runtime::{TokioAgentRuntime, TokioAgentRuntimeBuildRequest};
-        let (owner, events) = TokioAgentRuntime::from_build_request(
-            TokioAgentRuntimeBuildRequest::runtime_root(64).with_process_budget(
-                budget,
-                Arc::new(marlin_agent_telemetry::MacOsProcessMemorySampler),
-            ),
-        );
-        App::with_runtime(endpoint, owner, events)
-    } else {
-        App::new(endpoint)
+    let request = match config.process_budget {
+        Some(budget) => request.with_process_budget(
+            budget,
+            Arc::new(marlin_agent_telemetry::MacOsProcessMemorySampler),
+        ),
+        None => request,
     };
-    #[cfg(not(target_os = "macos"))]
-    let mut app = App::new(endpoint);
+    let (owner, events) = marlin_agent_runtime::TokioAgentRuntime::from_build_request(request);
+    let mut app = App::with_runtime(endpoint, owner, events);
+    let mut worktree_probe = Some(app.runtime_owner.spawn_on(&runtime, async move {
+        super::envrc::project(&directory).await
+    }));
+    let mut envrc_status = None;
     app.transcript_policy = Some(ui.view().layout.transcript_policy.clone());
     app.tool_offer_options = tool_catalog
         .as_ref()
@@ -414,6 +417,26 @@ fn run(
             let tool_review_finished = poll_tool_review(&mut app, &gateway, &runtime, &reply_tx);
             let tool_review_opened = open_tool_review(&mut app, &ui);
             let runtime_processed = app.poll_runtime_events(RUNTIME_EVENT_BATCH_LIMIT);
+            if worktree_probe
+                .as_ref()
+                .is_some_and(|probe| probe.is_finished())
+            {
+                let probe = worktree_probe.take().expect("finished worktree discovery");
+                let binding = runtime.block_on(probe.join()).ok().flatten();
+                if let Some(binding) = &binding {
+                    let _entered = runtime.enter();
+                    super::envrc::submit(
+                        &app.runtime_owner,
+                        &scheme_runtime,
+                        binding,
+                        marlin_agent_runtime::EnvrcIntent::Activate,
+                    );
+                }
+                // Publish after setting Loading so waiting tools cannot
+                // mistake an undiscovered environment for an absent file.
+                envrc_discovery.complete(binding);
+            }
+            let envrc_changed = super::envrc::report_changes(&mut app, &mut envrc_status);
             let sessions_changed = app.poll_sessions();
             let workspace_health_changed = if let Some(report) = app.workspace.poll_health() {
                 use marlin_agent_runtime::process::ProcessHealthCondition;
@@ -470,6 +493,7 @@ fn run(
                 || tool_review_finished
                 || tool_review_opened
                 || runtime_processed > 0
+                || envrc_changed
                 || sessions_changed
                 || switched
                 || workspace_changed
@@ -922,6 +946,10 @@ fn run(
                 Ok(Err(e)) => return Err(e),
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 _ => {}
+            }
+            if let Some(command) = app.envrc_command.take() {
+                super::envrc::apply(&mut app, &runtime, &scheme_runtime, command);
+                schedule.mark_dirty();
             }
             apply_ui_request(&mut app, &mut ui);
         }

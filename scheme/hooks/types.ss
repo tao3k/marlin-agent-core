@@ -5,7 +5,7 @@
 ;;; Contract for the hook decision publication.
 
 (import (only-in :clan/poo/object .cc)
-        (only-in :clan/poo/mop Fun Object Bool)
+        (only-in :clan/poo/type Fun Object Bool)
         (only-in :clan/poo/type Record String OrFalse))
 
 (export HooksScopeContract)

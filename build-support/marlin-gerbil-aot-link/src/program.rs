@@ -54,7 +54,7 @@ pub fn project_scheme_program(
         r#"
       (import (only-in :clan/poo/object .get .call)
               (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
-      (let ((projection (.call marlin-agent-core.init.exports .project-build '("init"))))
+      (let ((projection (.call marlin-agent-core.init.exports .yuanxu-init '("init"))))
         (.call projection .project-program
           (.get marlin-agent-core.init.exports {} program-entry)
           (getenv "MARLIN_PROGRAM_DIRECTORY")

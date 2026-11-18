@@ -7,7 +7,7 @@
 (import (only-in :marlin-agent-core/interface LabContext)
         (only-in :clan/poo/object .get .cc)
 
-        (only-in :clan/poo/mop Fun Type.)
+        (only-in :clan/poo/type Fun Type.)
         (only-in :clan/poo/number UInt)
         (only-in :clan/poo/type Record String True))
 

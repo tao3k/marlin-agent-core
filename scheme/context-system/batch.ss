@@ -7,6 +7,6 @@
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
 (export marlin-context-admit-batch)
 (def (marlin-context-admit-batch input)
-  (def context (.get marlin-agent-core.init.exports Marlin context))
+  (def context (.get marlin-agent-core.init.exports Marlin context-system))
   ((.get context bridge encode-scopes)
     (vector-map (.get context admit-scope) ((.get context bridge decode-batch) input))))

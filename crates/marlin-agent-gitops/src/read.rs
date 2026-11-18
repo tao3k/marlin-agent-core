@@ -11,7 +11,8 @@ use tokio::{io::AsyncReadExt, process::Command};
 
 pub(crate) const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(10);
-pub(crate) const DISABLED_HOOKS: &str = if cfg!(windows) {
+/// Process-local Git configuration for operations that must not run repository hooks.
+pub const DISABLED_HOOKS: &str = if cfg!(windows) {
     "core.hooksPath=NUL"
 } else {
     "core.hooksPath=/dev/null"

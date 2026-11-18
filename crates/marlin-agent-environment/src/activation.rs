@@ -99,20 +99,7 @@ impl DirenvCommandRunner for ProcessDirenvCommandRunner {
         cwd: &Path,
         environment: &BTreeMap<String, String>,
     ) -> Result<String, RuntimeEnvironmentActivationError> {
-        let output = direnv_command(cwd, environment)
-            .args(["export", "json"])
-            .output()
-            .await
-            .map_err(|error| RuntimeEnvironmentActivationError::CommandIo {
-                message: error.to_string(),
-            })?;
-
-        if !output.status.success() {
-            return Err(RuntimeEnvironmentActivationError::CommandFailed {
-                status: output.status.code(),
-            });
-        }
-
+        let output = direnv_output(cwd, environment, &["export", "json"]).await?;
         String::from_utf8(output.stdout).map_err(|error| {
             RuntimeEnvironmentActivationError::CommandOutput {
                 message: error.to_string(),
@@ -121,32 +108,99 @@ impl DirenvCommandRunner for ProcessDirenvCommandRunner {
     }
 }
 
+impl ProcessDirenvCommandRunner {
+    /// Change authorization for the exact worktree file, without parent discovery.
+    pub async fn authorize_project(
+        &self,
+        cwd: &Path,
+        environment: &BTreeMap<String, String>,
+        allow: bool,
+    ) -> Result<(), RuntimeEnvironmentActivationError> {
+        let action = if allow { "allow" } else { "deny" };
+        run_direnv_command(cwd, environment, &[action, "./.envrc"]).await
+    }
+
+    /// Check that direnv selected this worktree's file and approved its contents.
+    pub async fn project_allowed(
+        &self,
+        cwd: &Path,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<bool, RuntimeEnvironmentActivationError> {
+        let output = direnv_output(cwd, environment, &["status", "--json"]).await?;
+        let status: Value = serde_json::from_slice(&output.stdout)
+            .map_err(|_| RuntimeEnvironmentActivationError::InvalidJsonShape)?;
+        let rc = &status["state"]["foundRC"];
+        Ok(rc["allowed"].as_u64() == Some(0)
+            && rc["path"].as_str().map(Path::new) == Some(cwd.join(".envrc").as_path()))
+    }
+}
+
 async fn run_direnv_command(
     cwd: &Path,
     environment: &BTreeMap<String, String>,
     args: &[&str],
 ) -> Result<(), RuntimeEnvironmentActivationError> {
-    let output = direnv_command(cwd, environment)
-        .args(args)
-        .output()
-        .await
-        .map_err(|error| RuntimeEnvironmentActivationError::CommandIo {
-            message: error.to_string(),
-        })?;
+    direnv_output(cwd, environment, args).await?;
+    Ok(())
+}
 
+async fn direnv_output(
+    cwd: &Path,
+    environment: &BTreeMap<String, String>,
+    args: &[&str],
+) -> Result<std::process::Output, RuntimeEnvironmentActivationError> {
+    use std::process::Stdio;
+
+    let mut command = Command::new("direnv");
+    command
+        .current_dir(cwd)
+        .env_clear()
+        .envs(environment)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
+    let child = command.spawn().map_err(direnv_io_error)?;
+    // Dropping an in-flight load has to stop the shell running .envrc as well
+    // as direnv itself. Keep the group guard alive while draining the output.
+    #[cfg(unix)]
+    let mut group = DirenvProcessGroup(child.id().and_then(|id| {
+        i32::try_from(id)
+            .ok()
+            .and_then(rustix::process::Pid::from_raw)
+    }));
+    let output = child.wait_with_output().await.map_err(direnv_io_error)?;
+    #[cfg(unix)]
+    {
+        group.0 = None;
+    }
     if !output.status.success() {
         return Err(RuntimeEnvironmentActivationError::CommandFailed {
             status: output.status.code(),
         });
     }
-
-    Ok(())
+    Ok(output)
 }
 
-fn direnv_command(cwd: &Path, environment: &BTreeMap<String, String>) -> Command {
-    let mut command = Command::new("direnv");
-    command.current_dir(cwd).env_clear().envs(environment);
-    command
+#[cfg(unix)]
+struct DirenvProcessGroup(Option<rustix::process::Pid>);
+
+#[cfg(unix)]
+impl Drop for DirenvProcessGroup {
+    fn drop(&mut self) {
+        if let Some(group) = self.0 {
+            let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+        }
+    }
+}
+
+fn direnv_io_error(error: std::io::Error) -> RuntimeEnvironmentActivationError {
+    RuntimeEnvironmentActivationError::CommandIo {
+        message: error.to_string(),
+    }
 }
 
 /// Applies activation policy with an injectable command runner.

@@ -125,4 +125,19 @@ package MarlinRustPackageOwnership {
     allocation selectWorkingCopyProvider allocate workingCopyBinding to packages.gerbilScheme;
     allocation projectWorkingCopyPlan allocate workingCopyBinding to packages.gitOps;
     allocation applyWorkingCopyReceipt allocate workingCopyBinding to packages.environment;
+
+    requirement <'MAR-PKG-R05'> projectEnvironment {
+        doc /* The ENVRC Module plans activation for the verified GitOps
+               working-copy root. Rust uses direnv authorization for that file
+               and passes the result only to subprocesses bound to that worktree.
+               Allow and deny require an explicit user command.
+               Tokio owns background loads, deadlines, cancellation and cleanup.
+               Reload supersedes an unfinished load. Deny invalidates the
+               current snapshot and prevents older results from being published.
+               OpenTelemetry records durations and outcomes without environment values. */
+    }
+    allocation planProjectEnvironment allocate projectEnvironment to scheme;
+    allocation applyProjectEnvironment allocate projectEnvironment to packages.environment;
+    allocation superviseProjectEnvironment allocate projectEnvironment to packages.runtime;
+    allocation observeProjectEnvironment allocate projectEnvironment to packages.telemetry;
 }

@@ -4,6 +4,11 @@
 
 ;;; Hook decisions published by Marlin.
 
+(import (only-in :clan/poo/object .def .o)
+        (only-in "./config.ss" HooksScope)
+        (only-in "./types.ss" HooksScopeContract))
+(export Hooks)
+
 (.def Hooks
   identity: 'hooks
   core: (.o scope-contract: HooksScopeContract

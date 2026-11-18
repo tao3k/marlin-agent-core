@@ -8,4 +8,5 @@
 (export select-working-copy-provider)
 
 (def (select-working-copy-provider request)
-  ((.get marlin-agent-core.init.exports Marlin working-copy select-provider) request))
+  (let (gitops (.get marlin-agent-core.init.exports Marlin gitops))
+    ((.get gitops select-host-provider) gitops request)))

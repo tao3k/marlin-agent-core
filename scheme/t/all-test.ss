@@ -8,6 +8,7 @@
 
 (import "yuanxu-policy-test"
         "brief-to-draft-options-test"
+        "envrc-test"
         "ui-workbench-test"
         "context-org-contract-test"
         "context-org-boundary-test"

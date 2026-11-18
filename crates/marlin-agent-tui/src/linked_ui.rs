@@ -25,6 +25,7 @@ unsafe extern "C" {
     fn marlin_ui_review_menu(root: i64) -> i64;
     fn marlin_ui_refresh_labels(root: i64) -> i64;
     fn marlin_tooling_project(root: i64) -> i64;
+    fn marlin_envrc_plan(root: i64) -> i64;
 }
 
 pub(crate) fn initialize() -> Result<GerbilRuntime, NativeError> {
@@ -60,6 +61,15 @@ pub(crate) fn package_publication<'a>(
     // SAFETY: this strong-root export belongs to the initialized linked VM.
     let loader = unsafe { runtime.bind_object_export(marlin_ui_package_publication) }?;
     loader.call(&request).into_result()
+}
+
+pub(crate) fn envrc_plan<'a>(
+    runtime: &'a GerbilRuntime,
+    request: &RootedSchemeObject<'_>,
+) -> Result<RootedSchemeObject<'a>, NativeError> {
+    // SAFETY: this strong-root export belongs to the initialized linked VM.
+    let export = unsafe { runtime.bind_object_export(marlin_envrc_plan) }?;
+    export.call(request).into_result()
 }
 
 pub(crate) fn tooling_declarations(
