@@ -7,6 +7,8 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 # Bound native Scheme builds to the available processors unless the caller
 # has selected a smaller budget.
 export GERBIL_BUILD_CORES := env_var_or_default("GERBIL_BUILD_CORES", num_cpus())
+gerbil_prefix := env_var_or_default("GERBIL_PATH", justfile_directory() / "scheme" / ".gerbil")
+export GERBIL_LOADPATH := env_var_or_default("GERBIL_LOADPATH", gerbil_prefix / "lib")
 
 default:
   @just --list

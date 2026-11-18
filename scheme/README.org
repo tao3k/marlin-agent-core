@@ -85,9 +85,14 @@ The package does not install the Rust SDK. Cargo resolves its ABI separately.
 The platform workflow builds the Yuanxu-selected Scheme package once per
 runner platform. Rust checks, tests, Scheme ABI checks and linked AOT jobs
 restore that run's package artifact. The Context test calls the Lab-backed
-Scheme Org interface through typed Rust values. Cargo consumes the compiled
-=ui-tui= and =brief-to-draft= entry points through the same Yuanxu Interface
-projection, then links the Cargo-selected ABI carriers into the executable.
+Scheme Org interface through typed Rust values. The C ABI Build declares
+=with-link=. After Make succeeds, the package build publishes link products
+for selected modules that export =program-entry=. The compiler retains
+deferred module initialization in each link plan. Cargo reads those plans
+from =GERBIL_LOADPATH= and links them with the pinned SDK ABI carriers.
+=just tui-aot-debug= builds and links with the default load path. For a
+direct Cargo invocation after =just scheme-build=, set
+=GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib"= from the workspace root.
 The cross-run Scheme cache stores the installed dependencies before compiling
 Marlin modules. Its key includes the runner architecture, SDK and host
 toolchain identity and dependency locks.

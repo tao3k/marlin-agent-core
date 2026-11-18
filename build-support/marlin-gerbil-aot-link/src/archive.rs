@@ -6,19 +6,119 @@
 
 use gerbil_scheme_aot_build::{
     CargoDirectiveKind, NativeStaticLinkPlan,
-    build_static_archive_from_link_plan as build_upstream_static_archive,
+    build_static_archive_from_link_plan as build_upstream_static_archive, source_workspace,
     static_archive_cargo_directives as upstream_cargo_directives,
 };
 use marlin_gerbil_scheme::{
     GerbilAotCargoDirective, GerbilAotCargoDirectiveKind, GerbilAotStaticLinkPlan,
 };
-use std::path::{Path, PathBuf};
+use serde_json::{Value, json};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 pub use gerbil_scheme_aot_build::static_archive_file_name;
 
 /// Cargo/rustc link name for the generated Deck runtime native archive.
 /// Cargo/rustc link name for the generated AgentGraph policy-routing native archive.
 pub const AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME: &str = "marlin_agent_policy_routing_abi";
+
+/// The name of a program in the compiled Marlin module selection.
+pub struct SchemeProgram<'a>(&'a str);
+
+impl<'a> SchemeProgram<'a> {
+    /// Use an existing Scheme module's published program entry.
+    pub const fn new(module: &'a str) -> Self {
+        Self(module)
+    }
+}
+
+/// Consume the compiled package through the SDK and attach Cargo's ABI carriers.
+///
+/// # Errors
+/// Returns an error when the package products, SDK carriers or link inputs are unavailable.
+pub fn scheme_link_manifest(
+    program: SchemeProgram<'_>,
+    output: &Path,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    println!("cargo:rerun-if-env-changed=GERBIL_LOADPATH");
+    let load_path = env::var_os("GERBIL_LOADPATH").ok_or("GERBIL_LOADPATH is not set")?;
+    let product = Path::new("marlin-agent-core/programs").join(program.0);
+    let (library, published) = env::split_paths(&load_path)
+        .filter(|path| !path.as_os_str().is_empty())
+        .find_map(|library| {
+            let published = library.join(&product).join("program.json");
+            published.is_file().then_some((library, published))
+        })
+        .ok_or_else(|| {
+            format!(
+                "{} was not published on GERBIL_LOADPATH; run gerbil build",
+                program.0
+            )
+        })?;
+    let library = library.canonicalize()?;
+    println!("cargo:rerun-if-changed={}", published.display());
+    fs::create_dir_all(output)?;
+    let mut plan: Value = serde_json::from_reader(fs::File::open(published)?)?;
+    let relative_stub = product.join("program__exe.scm");
+    let stub = Path::new(
+        plan["stub"]
+            .as_str()
+            .ok_or("compiler program has no stub")?,
+    );
+    let origin = stub
+        .ancestors()
+        .nth(relative_stub.components().count())
+        .filter(|_| stub.is_absolute() && stub.ends_with(&relative_stub))
+        .ok_or("compiler program stub is outside its published directory")?
+        .to_path_buf();
+    plan["stub"] = serde_json::to_value(library.join(relative_stub))?;
+    let modules = plan
+        .get_mut("modules")
+        .and_then(Value::as_array_mut)
+        .ok_or("compiler program has no module array")?;
+    // A restored package artifact can have a different prefix from its producer.
+    for module in modules.iter_mut() {
+        let source = module["scm"]
+            .as_str()
+            .ok_or("compiler module has no source")?;
+        if let Ok(relative) = Path::new(source).strip_prefix(&origin) {
+            module["scm"] = serde_json::to_value(library.join(relative))?;
+        }
+    }
+    let sdk = source_workspace();
+    let mut carriers = Vec::new();
+    // The package is SDK-independent. Bind the same SDK units as the Rust host.
+    for unit in ["utf8", "runtime"] {
+        let identity = format!("gerbil-scheme-rust/scheme/{unit}");
+        if modules.iter().any(|row| row["module"] == identity) {
+            return Err(format!("Scheme module graph imports the Rust SDK: {identity}").into());
+        }
+        let scm = sdk.join(format!("scheme/generated/{unit}.scm"));
+        if !scm.is_file() {
+            return Err(format!("Cargo SDK carrier missing: {}", scm.display()).into());
+        }
+        println!("cargo:rerun-if-changed={}", scm.display());
+        carriers.push(json!({"module": identity, "scm": scm, "system": false}));
+    }
+    let position = modules
+        .iter()
+        .position(|row| {
+            !row["module"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("gerbil/runtime/"))
+        })
+        .unwrap_or(modules.len());
+    modules.splice(position..position, carriers);
+    let manifest = output.join("linked-program.json");
+    let bytes = serde_json::to_vec(&plan)?;
+    if fs::read(&manifest).as_deref().ok() != Some(bytes.as_slice()) {
+        fs::write(&manifest, bytes)?;
+    }
+
+    Ok(manifest)
+}
 
 /// Marlin receipt emitted after the upstream substrate packages native objects.
 #[derive(Clone, Debug, Eq, PartialEq)]

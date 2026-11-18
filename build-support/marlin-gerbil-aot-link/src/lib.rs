@@ -8,17 +8,15 @@ mod archive;
 mod deck_actor;
 mod discovery;
 mod header;
-mod program;
 mod script;
 mod toolchain;
 
 pub use archive::{
-    AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME, AotArchiveLinkReceipt,
+    AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME, AotArchiveLinkReceipt, SchemeProgram,
     build_agent_policy_routing_static_archive_from_link_plan, build_static_archive_from_link_plan,
-    static_archive_cargo_directives, static_archive_file_name,
+    scheme_link_manifest, static_archive_cargo_directives, static_archive_file_name,
 };
 pub use deck_actor::emit_deck_actor_link_directives;
 pub use header::{CHeaderGenerationReceipt, write_c_header};
-pub use program::{ProgramSelection, project_scheme_program};
 pub use script::{emit_agent_policy_routing_abi_link_directives, rustc_wrapper_is_clippy};
 pub use toolchain::{CCompilerTool, discover_c_compiler};
