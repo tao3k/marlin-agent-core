@@ -3,7 +3,7 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 (import (only-in :clan/poo/object .def))
-(export BuiltinTabs. NerdTabIcons. DoomTabs. PiTabs.)
+(export BuiltinTabs. NerdTabIcons. TabStyles.)
 
 (.def BuiltinTabs.
   entries: '((conversation "Chat" session "Chat")
@@ -14,22 +14,35 @@
              (help "Help" workspace "Help")))
 
 (.def NerdTabIcons.
-  entries: '((conversation . #xf086)
-             (messages . #xf0e0)
-             (sessions . #xf017)
-             (models . #xf1b3)
-             (processes . #xf085)
-             (help . #xf059)))
+  entries: '((conversation #xf086 info)
+             (messages #xf0e0 warning)
+             (sessions #xf017 success)
+             (models #xf1b3 accent)
+             (processes #xf085 info)
+             (help #xf059 warning)))
 
-(.def DoomTabs.
+(.def BarTabs.
   selected-background: 'canvas
   selected-ink: 'normal
+  selected-icon-ink: #f
   unselected-ink: 'muted
   selected-mark: "▎"
+  selected-end: " "
   group-mark: "│")
 
-(.def (PiTabs. @ DoomTabs.)
+(.def (BoxTabs. @ BarTabs.)
+  selected-mark: "│"
+  selected-end: "│")
+
+(.def (SlantTabs. @ BarTabs.)
   selected-background: 'accent
   selected-ink: 'canvas
-  selected-mark: "◆"
+  selected-icon-ink: 'canvas
+  selected-mark: "╱"
+  selected-end: "╱"
   group-mark: "·")
+
+(.def TabStyles.
+  entries: (list (list 'tabs-bar "Slim selection mark" BarTabs.)
+                 (list 'tabs-box "Outlined selected tab" BoxTabs.)
+                 (list 'tabs-slant "Angled edges and accent fill" SlantTabs.)))

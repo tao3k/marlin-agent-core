@@ -163,8 +163,9 @@
         (with-unwind-protect
           (lambda () (check-equal? (ui-test-open input) 0))
           (lambda () (gerbil-rs-rooted-value-release! input)))))
-    (test-case "a UI child scope is not a selected publication"
-      (let (input (gerbil-rs-root-object (vector ui #("model" "session" #() #()) #())))
+    (test-case "session creation rejects a UI child scope"
+      (let* ((child (.get marlin-agent-core.init.exports Marlin ui-components))
+             (input (gerbil-rs-root-object (vector child #("model" "session" #() #()) #()))))
         (with-unwind-protect
           (lambda () (check-equal? (ui-test-open input) 0))
           (lambda () (gerbil-rs-rooted-value-release! input)))))

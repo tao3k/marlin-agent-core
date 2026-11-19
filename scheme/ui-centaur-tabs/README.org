@@ -5,28 +5,32 @@
 #+language: en
 
 The tab strip is generated from the admitted Buffer catalog. Session,
-workspace, and package buffers appear in separate groups. Doom One uses
-a neutral selection shade and a slim mark. Pi uses its accent as the
-selection fill. The active tab has priority on narrow terminals.
-The bar fits full labels, compact labels,
-and plain compact labels to the space available for the current catalog.
-Group separators are omitted in compact modes. On short terminals the
-layout reserves rows for the workbench and Mini Buffer first.
+workspace, and package buffers appear in separate groups. Bar uses a slim
+selection mark, Box outlines the selected tab, and Slant fills it with the
+workbench palette's accent color. The active tab has priority on narrow terminals.
+The bar fits full labels, compact labels, and icon buttons to the space
+available for the current catalog. The active tab chooses its own label
+when even the compact strip needs trimming. Icon buttons retain their
+Buffer command. Group separators are omitted in compact modes.
+On short terminals the layout reserves rows for the workbench and Mini
+Buffer first.
 Each painted tab invokes the same command used by Switch Buffer.
 
 Nerd Icons are enabled by default where the bar has room. Use Nerd Font
 Mono in the terminal. A Scheme package can pass =nerd-icons?: #f= to
 =marlin-ui-buffer-tabs= for plain labels.
-Use =M-x centaur-tabs-themes-switch= to select the palette used by the tabs
-and the rest of the workbench.
+Use =M-x centaur-tabs-themes-switch= to choose a tab style for the current
+session. =M-x switch-themes= selects the workbench palette and Modeline.
+The selected tab style survives changes to the workbench theme.
 
 A package can provide a tab function in its =UiPackage.= declaration.
 For a buffer named =notes=, the layout slot can use a custom label and group.
+Custom groups follow the built-in groups in the order they first appear.
 
 #+begin_src scheme
 layout: (marlin-ui-layout-with-tab-bar
-          (lambda (buffers)
-            (marlin-ui-buffer-tabs buffers '((notes "Lab Notes" packages)))))
+          (lambda (buffers style)
+            (marlin-ui-buffer-tabs buffers '((notes "Lab Notes" lab "Notes")) style)))
 #+end_src
 
 The functions are exported by =:marlin-agent-core/ui-layout/config= and

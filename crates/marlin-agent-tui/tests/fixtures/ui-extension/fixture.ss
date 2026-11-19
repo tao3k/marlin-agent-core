@@ -48,8 +48,8 @@
         commands: '(("open-notes" "Open package notes" none select-buffer "notes"))
         keymap: '((global (M-z) open-notes "Package notes"))
         layout: (marlin-ui-layout-with-tab-bar
-                  (lambda (buffers)
-                    (marlin-ui-buffer-tabs buffers '((notes "Lab Notes" packages)))))
+                  (lambda (buffers style)
+                    (marlin-ui-buffer-tabs buffers '((notes "Lab Notes" packages)) style)))
         method-factories: (vector make-package-methods))))
 
 ;;; A bounded frame dialogue: assertions stay in this independently compiled
@@ -76,12 +76,14 @@
              (error "package method escaped its session")))
          (set! state (vector-ref (marlin-ui-session-dispatch
                                   (vector state 'select-buffer 'notes)) 0))
+         (set! state (vector-ref (marlin-ui-session-dispatch
+                                  (vector state 'select-profile 'tabs-box)) 0))
          (set! step 1)
          (vector 60 20 (marlin-ui-session-project state) #(#(2 2) #(2 4))))
         ((1)
          (unless (and (ormap (lambda (row) (string-contains row "Scheme package window"))
                              (vector->list (vector-ref screen 0)))
-                      (string-contains (vector-ref (vector-ref screen 0) 0) "Lab Notes")
+                      (string-contains (vector-ref (vector-ref screen 0) 0) "Lab Notes│")
                       (ormap (lambda (hit)
                                (and (eq? (vector-ref hit 0) 'buffer-notes)
                                     (= (vector-ref hit 2) 0)))

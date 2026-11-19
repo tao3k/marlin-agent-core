@@ -31,9 +31,9 @@
                        ("envrc-deny" "Deny the current worktree .envrc" none envrc "deny")
                        ("envrc-cancel" "Cancel the current environment load" none envrc "cancel")
                        ("envrc-status" "Show the current worktree environment status" none envrc "status"))
-                     (map (lambda (name) (list name "Theme: " 'none 'open-menu "theme-"))
-                          '("switch-themes" "centaur-tabs-themes-switch"))
-                     '(("switch-buffer" "Switch to: " none open-menu "buffer-"))
+                     '(("switch-themes" "Theme: " none open-menu "theme-")
+                       ("centaur-tabs-themes-switch" "Tab style: " none open-menu "tabs-")
+                       ("switch-buffer" "Switch to: " none open-menu "buffer-"))
                      (marlin-ui-buffer-command-entries)
                      '(("toggle-thinking" "Expand or fold thinking (N from newest)"
                         optional toggle-thinking #f)

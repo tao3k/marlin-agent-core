@@ -736,7 +736,7 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
 
 #[cfg(feature = "linked-ui")]
 #[test]
-fn mx_profile_switch_uses_the_selected_scheme_modeline() {
+fn mx_switches_tab_style_and_workbench_theme_independently() {
     let directory = tempfile::tempdir().unwrap();
     let config = directory.path().join("config.toml");
     fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
@@ -745,15 +745,39 @@ fn mx_profile_switch_uses_the_selected_scheme_modeline() {
         screen_lines(output)[28].contains("MARLIN")
     });
     terminal.send(b"\x1bxcentaur-tabs-themes-switch\r");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "Centaur Tabs style menu",
+        |output| {
+            let rows = screen_lines(output);
+            rows.iter().any(|line| line.contains("Tab style: "))
+                && rows.iter().any(|line| line.contains("box"))
+        },
+    );
+    terminal.send(b"box\r");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "Box tabs with Doom Modeline",
+        |output| {
+            let rows = screen_lines(output);
+            rows[0].contains("Chat│") && rows[28].contains("MARLIN")
+        },
+    );
+    terminal.send(b"\x1bxswitch-themes\r");
     terminal.wait_for(Duration::from_secs(5), "Scheme theme menu", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| line.contains("Theme: "))
             && rows.iter().any(|line| line.contains("› pi"))
     });
     terminal.send(b"pi\r");
-    terminal.wait_for(Duration::from_secs(5), "pi Modeline", |output| {
-        screen_lines(output)[28].contains("marlin")
-    });
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "Box tabs with Pi Modeline",
+        |output| {
+            let rows = screen_lines(output);
+            rows[0].contains("Chat│") && rows[28].contains("marlin")
+        },
+    );
     terminal.send(b"\x1bxtheme-doom-one\r");
     terminal.wait_for(Duration::from_secs(5), "restored Doom Modeline", |output| {
         screen_lines(output)[28].contains("MARLIN")

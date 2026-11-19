@@ -4,6 +4,8 @@
 
 ;;; UI composition over host facts; no terminal operations or runtime effects.
 (import (only-in :clan/poo/object .o .ref)
+        (only-in "../ui-centaur-tabs/funcs.ss"
+                 marlin-ui-default-tab-style marlin-ui-tab-style-commands)
         (only-in "../ui-components/bounds.ss" marlin-ui-max-contributions marlin-ui-max-extensions
                  marlin-ui-bounded-label? marlin-ui-bounded-list? marlin-ui-required-object)
         "./dispatch.ss")
@@ -26,7 +28,8 @@
         (command-catalog
           ((.ref components 'command-catalog-with-profiles)
            ((.ref components 'command-catalog-with-extensions)
-            (.ref components 'command-catalog) ((.ref components 'command-extensions)))
+            (.ref components 'command-catalog)
+            (append (marlin-ui-tab-style-commands) ((.ref components 'command-extensions))))
            (.ref themes 'profiles)))
         (modeline-nodes-for (.ref modeline 'nodes-for))
         (modeline-bar-for (.ref modeline 'bar-for))
@@ -34,7 +37,7 @@
         (tab-bar-for (.ref layout 'tab-bar-for))
         (transcript-for (.ref transcript 'select))
         (theme-for (.ref themes 'select)))
-  (lambda (facts profile)
+  (lambda (facts profile (tab-style-value marlin-ui-default-tab-style))
     (marlin-ui-required-object facts '(model session contributions extensions))
     (let ((model-value (.ref facts 'model)) (session-value (.ref facts 'session))
         (contribution-values (.ref facts 'contributions))
@@ -63,7 +66,8 @@
       (.o (:: @ (.ref types 'workbench)) identity: 'workbench kind: 'workbench
           model: owned-model session: owned-session
           geometry-policy: (layout-for (modeline-bar-for modeline-values)
-                                       transcript-value (tab-bar-for buffer-identities profile))
+                                       transcript-value (tab-bar-for buffer-identities tab-style-value))
+          theme-profile: profile tab-style: tab-style-value
           transcript-policy: transcript-value
           theme-palette: (theme-for profile)
           focus-order: (append '(transcript composer commands) extension-focus)
