@@ -7,9 +7,10 @@
 (import (only-in :tao3k/yuanxu/prelude yuanxu!))
 
 (yuanxu!
+  :build-roots ("interface")
   :load-modules "."
   mode: explicit
-  rename: Marlin
+  mount: Marlin
   :test-dir "./t"
   (context-system +causal)
   (brief-to-draft)
