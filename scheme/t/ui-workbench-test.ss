@@ -7,7 +7,8 @@
         (only-in :gerbil/expander current-expander-context)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
         (only-in :marlin-agent-core/ui-centaur-tabs/funcs marlin-ui-buffer-tabs)
-        (only-in :marlin-agent-core/ui-hydra/objects defui-hydra marlin-ui-hydra-entries)
+        (only-in :marlin-agent-core/ui-hydra/syntax defui-hydra)
+        (only-in :marlin-agent-core/ui-hydra/funcs marlin-ui-hydra-entries)
         (only-in :marlin-agent-core/ui/projection marlin-ui-native-facts marlin-ui-apply-native
                  marlin-ui-apply-event marlin-ui-project-intent)
         (only-in :marlin-agent-core/ui/package marlin-ui-load-publication)

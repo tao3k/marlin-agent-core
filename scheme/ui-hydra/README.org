@@ -11,9 +11,12 @@ accessible through M-x.
 
 * Interface and contracts
 
-=interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
-and scope assembly. UiHydraScope and its configuration and rules.
-Consumers access selected exports through =marlin-agent-core.init.exports=.
+=interface.ss= declares the Module, and =config.ss= publishes its checked
+catalog. =syntax.ss= defines =defui-hydra= and lowers declarations to calls in
+=funcs.ss=. The functions validate heads and project the hint, keymap and
+commands carried by the prototype in =objects.ss=.
+Consumers access the selected =UiHydraScope= through
+=marlin-agent-core.init.exports=.
 
 * Build and verification
 

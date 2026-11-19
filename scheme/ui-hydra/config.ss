@@ -3,7 +3,7 @@
 
 (import (only-in :clan/poo/object .def .o seal-object!)
         (only-in :clan/poo/type validate)
-        "./objects.ss" "./types.ss")
+        "./syntax.ss" "./funcs.ss" "./types.ss")
 (export UiHydraScope)
 
 ;;; The command catalog, transient bindings and hint come from this declaration.

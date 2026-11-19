@@ -2,12 +2,11 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-(import (only-in :clan/poo/object .o)
-        (only-in :clan/poo/type validate)
-        (only-in "./types.ss" EnvrcScopeContract)
-        (only-in "./objects.ss" plan-envrc))
+(import (only-in :clan/poo/type validate)
+        (only-in "./objects.ss" EnvrcOperations)
+        (only-in "./types.ss" EnvrcScopeContract))
 
 (export EnvrcScope)
 
 (def EnvrcScope
-  (validate EnvrcScopeContract (.o plan: plan-envrc)))
+  (validate EnvrcScopeContract EnvrcOperations))

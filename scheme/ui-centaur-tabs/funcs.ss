@@ -6,7 +6,7 @@
 (import (only-in :clan/poo/object .get .o)
         (only-in :std/list/list filter filter-map)
         (only-in "../ui-components/buffers.ss" marlin-ui-buffer-command-name)
-        (only-in "../ui-elements/objects.ss" ui-bar ui-choice ui-template)
+        (only-in "../ui-elements/funcs.ss" ui-bar ui-choice ui-template)
         "./objects.ss")
 (export marlin-ui-buffer-tabs marlin-ui-tabs-for-profile)
 

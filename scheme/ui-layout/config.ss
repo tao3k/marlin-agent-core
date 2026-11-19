@@ -5,7 +5,7 @@
 (import (only-in :clan/poo/object .get .o)
         (only-in :clan/poo/type validate)
         (only-in "../ui-centaur-tabs/config.ss" UiCentaurTabsScope)
-        "./objects.ss" "./types.ss")
+        "./funcs.ss" "./types.ss")
 (export UiLayoutScope marlin-ui-layout-with-tab-bar)
 
 (def UiLayoutScope

@@ -4,7 +4,7 @@
 
 (import (only-in :clan/poo/object .o)
         (only-in :clan/poo/type validate)
-        "./objects.ss" "./types.ss")
+        "./funcs.ss" "./types.ss")
 (export UiTranscriptScope)
 
 (def UiTranscriptScope

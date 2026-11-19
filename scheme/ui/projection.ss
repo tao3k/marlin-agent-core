@@ -7,7 +7,7 @@
 (import (only-in :clan/poo/object .get .o .ref)
         (only-in :std/list/list find)
         (only-in :clan/poo/mop prototype-instance?)
-        (only-in "../ui-elements/objects.ss" ui-rows ui-text))
+        (only-in "../ui-elements/funcs.ss" ui-rows ui-text))
 (export marlin-ui-native-facts marlin-ui-project-workbench marlin-ui-apply-native
         marlin-ui-project-intent marlin-ui-apply-event)
 

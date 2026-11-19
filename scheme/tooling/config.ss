@@ -5,7 +5,7 @@
 ;;; another tool is a Scheme declaration, not a Rust command dispatcher case.
 (import (only-in :clan/poo/object .o)
         (only-in :clan/poo/type validate)
-        "./types.ss" "./objects.ss")
+        "./types.ss" "./objects.ss" "./funcs.ss")
 (export ToolingScope)
 
 (def ToolingScope

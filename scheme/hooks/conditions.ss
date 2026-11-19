@@ -107,12 +107,7 @@
 (def (condition-all-strings-member? required actual)
   (andmap (cut condition-string-member? <> actual) required))
 
-;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
-(.defgeneric evaluate-hook-condition (condition operator context))
-
-(.defmethod (evaluate-hook-condition
-             (condition (prototype HookCondition.)) (_operator (eql 'fields)) context)
+(def (match-condition-fields condition context)
   (and (condition-required-string-match?
         (.get condition required-session-id)
         (.get context session-id))
@@ -128,6 +123,13 @@
        (condition-required-string-match?
         (.get condition required-agent-class)
         (.get context agent-class))))
+
+;;; Dispatch chooses a condition operation. The field matcher consumes values.
+(.defgeneric evaluate-hook-condition (condition operator context))
+
+(.defmethod (evaluate-hook-condition
+             (condition (prototype HookCondition.)) (_operator (eql 'fields)) context)
+  (match-condition-fields condition context))
 
 (.defmethod (evaluate-hook-condition
              (condition (prototype HookCombination.)) (_operator (eql 'all)) context)

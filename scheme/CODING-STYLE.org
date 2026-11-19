@@ -1,0 +1,99 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin Functional Scheme Style
+#+language: en
+
+* Declaration, composition, and execution
+
+| Responsibility | Mechanism |
+|----------------+-----------|
+| Declare a form and bind the caller's names | Hygienic =defrules= or =defsyntax= |
+| Inherit defaults and compose a publication | POO =.def=, =.o=, =.mix= and slot refinements |
+| Validate, transform, and project values | Ordinary Scheme functions with explicit inputs and results |
+| Run a process, enter a VM boundary, or send a message | An explicit operation owned by the subsystem that performs the effect |
+
+Core's Ops Script demonstrates the whole path. A derived Script supplies
+configuration. =prepare-command= reads it and returns argv. =run= and the
+receiver convenience slot =.run= share the same execution path.
+
+#+begin_src scheme
+(.def (Build @ (.get Ops prototypes Script))
+  command: '("gxi" "-:max-heap=2G,debug=q" "build.ss")
+  directory: (.get Fixture root)
+  timeout: 60
+  check-status: #f)
+
+(def argv (.call Ops prepare-command Build '("spec")))
+;; Invoke the effect when a result is needed.
+(def result (.call Ops run Build '("spec")))
+#+end_src
+
+Use =defrules= for structural sugar that expands into value constructors or
+calls. Use =syntax-case= when expansion must inspect bindings or establish a
+private name, as in Yuanxu's Build binding. Keep expansion hygienic and pass
+ordinary values to the code that validates and projects them.
+
+* File roles
+
+| File | Responsibility |
+|------+----------------|
+| =interface.ss= | Declare the Yuanxu Module, its Feature refinements and published roles. |
+| =types.ss= | Specify contracts and their boundaries. |
+| =objects.ss= | Define POO prototypes, catalogs, and operation objects. A small factory can assemble a publication from explicit dependencies. |
+| =funcs.ss= | Implement value-level operations for a module. Use a domain name such as =projection.ss= or =dispatch.ss= when it identifies a distinct responsibility. |
+| =syntax.ss= | Own a module's declaration macros when the syntax has a separate consumer. |
+| =config.ss= | Select declarations, compose operations, and validate the scope published by the interface. |
+| =build.ss= | Declare owner-relative targets or program link options when the Module has build-specific work. |
+
+Yuanxu requires =types.ss=, =objects.ss=, and =interface.ss= for selected
+Modules. Use the other files when their responsibilities are present.
+Import through the published
+interface for Module capabilities. Keep internal imports explicit when a file
+uses only a few names. Prefer Gerbil =:std= and SRFI functions for standard
+list, string, and collection operations. Use an explicit domain function when
+it makes validation, bounds, order, or effects easier to read.
+Local mutation is appropriate for building an owned vector or index. Publish
+the result through the same value-level interface.
+
+* Inheritance and dispatch
+
+Override an inherited value in the same slot. For example, an empty Build
+specification replaces the inherited additional targets. The selected Module
+roles and their Gerbil imports still supply the base closure.
+
+#+begin_src scheme
+(.def Parent
+  defbuild-script: (.o spec: '("optional-tool")))
+
+(.def (Build @ Parent)
+  defbuild-script: (.o spec: '()))
+#+end_src
+
+Use a slot-backed generic when downstream prototypes need distinct
+implementations of a shared operation. Core's Graph applies each operation
+using its =.apply= slot. Callers use the ordinary function shape.
+
+#+begin_src scheme
+(.defgeneric (yuanxu-graph-operation-apply operation node)
+  slot: .apply)
+
+(yuanxu-graph-operation-apply operation node)
+#+end_src
+
+Use CLOS methods when multiple arguments jointly select the behavior.
+Keep the work of a method in an ordinary function when it can be expressed
+as a value transformation. Marlin's hook condition evaluator and UI event
+protocol show this boundary. The Core Ops Script uses its shared execution
+path for ordinary Script values.
+[[file:hooks/conditions.ss][Hook condition dispatch]] ·
+[[file:ui/dispatch.ss][UI event protocol]]
+
+* Verify at the owning boundary
+
+Test declarations, value transformations, presentation, and effects with the
+relevant Scheme module. Use the Scheme UI test window to exercise a rendered
+scenario. Test C ABI admission and terminal I/O using their existing host
+gates. Keep values typed across the Scheme and Rust boundary.
+[[file:README.org::*Build and test][Build and test]]

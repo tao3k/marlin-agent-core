@@ -3,7 +3,7 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 (import (only-in :clan/poo/object .o)
-        "./components.ss" "./commands.ss" "./buffers.ss" "./keymap.ss"
+        "./components.ss" "./commands.ss" "./command-catalog.ss" "./buffers.ss" "./keymap.ss"
         "./review.ss")
 (export make-ui-components-operations)
 

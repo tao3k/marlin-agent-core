@@ -4,14 +4,12 @@
 
 ;;; Names, descriptions, argument grammar and capability bindings have one
 ;;; selected Scheme owner. The native host admits the capabilities and effects.
-(import (only-in :clan/poo/object .def .o .get .ref .mix seal-object!)
+(import (only-in :clan/poo/object .o .get .ref)
         (only-in :std/list/list duplicates)
-        (only-in "../ui-elements/objects.ss" ui-template ui-choice ui-list ui-size-binding
+        (only-in "../ui-elements/funcs.ss" ui-template ui-choice ui-list ui-size-binding
                  ui-size-cells ui-size-add ui-size-subtract ui-size-min ui-size-max ui-size-choice)
-        (only-in "./bounds.ss" marlin-ui-bounded-list? marlin-ui-max-browse-steps)
-        (only-in "./buffers.ss" marlin-ui-buffer-command-entries
-                 marlin-ui-buffer-alias-command-entries))
-(export marlin-ui-command-catalog marlin-ui-command-entries
+        (only-in "./bounds.ss" marlin-ui-bounded-list? marlin-ui-max-browse-steps))
+(export marlin-ui-command-entries
         marlin-ui-candidate-templates marlin-ui-list-offset
         marlin-ui-command-history? marlin-ui-record-command-history
         marlin-ui-command-entries? marlin-ui-command-candidates
@@ -42,41 +40,6 @@
     (ui-template 'none (list '(literal accent #f "   ")
                              (list 'column 'normal #f 'name candidate-name-width)
                              '(literal normal #f "  ") '(binding muted #f description))))))
-
-(.def UiCommandCatalog.
-  entries: (append (marlin-ui-buffer-alias-command-entries)
-                   '(("models" "List configured models" none models #f)
-                     ("model" "Select a model alias" required model #f))))
-;;; Journal recovery remains a storage operation, not a Context source.
-(.def JournalCommands.
-  (entries => append '(("sessions" "Browse journal IDs; next for another page" optional sessions #f)
-                       ("session" "Recover a quoted journal ID" required session #f)
-                       ("inspect" "Read a quoted journal ID" required inspect #f))))
-(.def WorkspaceCommands.
-  (entries => append '(("status" "Show workspace status" none workspace "status")
-                       ("diff" "Show unstaged or staged changes" optional workspace "diff")
-                       ("context-budget" "Show request budget" none context-budget #f)
-                       ("runtime" "Show runtime policy" none runtime #f)
-                       ("list-processes" "List managed Runtime processes"
-                        none select-buffer "processes")
-                       ("kill-process" "Stop a managed process by generation"
-                        required kill-process #f)
-                       ("envrc-allow" "Allow the current worktree .envrc" none envrc "allow")
-                       ("envrc-reload" "Reload the current worktree environment" none envrc "reload")
-                       ("envrc-deny" "Deny the current worktree .envrc" none envrc "deny")
-                       ("envrc-cancel" "Cancel the current environment load" none envrc "cancel")
-                       ("envrc-status" "Show the current worktree environment status" none envrc "status"))
-                     (map (lambda (name) (list name "Theme: " 'none 'open-menu "theme-"))
-                          '("switch-themes" "centaur-tabs-themes-switch"))
-                     '(("switch-buffer" "Switch to: " none open-menu "buffer-"))
-                     (marlin-ui-buffer-command-entries)
-                     '(("toggle-thinking" "Expand or fold thinking (N from newest)"
-                        optional toggle-thinking #f)
-                       ("clear" "Clear displayed transcript" none clear #f))))
-;;; The inherited slot computes one ordered catalog when the selected module
-;;; reads it. No additional loader or imperative append registry is needed.
-(def marlin-ui-command-catalog
-  (seal-object! (.mix WorkspaceCommands. JournalCommands. UiCommandCatalog.)))
 
 ;;; Preserve the anchor and its tail while copying the prefix only once.
 (def (insert-before-command entries anchor additions)

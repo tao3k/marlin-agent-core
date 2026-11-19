@@ -8,7 +8,7 @@
         (only-in :marlin-agent-core/ui-centaur-tabs/funcs marlin-ui-buffer-tabs)
         (only-in :marlin-agent-core/ui-layout/config marlin-ui-layout-with-tab-bar)
         (only-in :clan/poo/mop .defgeneric .defmethod .defmethod-bundle)
-        (only-in :marlin-agent-core/ui-elements/objects
+        (only-in :marlin-agent-core/ui-elements/funcs
                  ui-rows ui-columns ui-region ui-sized ui-text ui-list ui-size-cells ui-template)
         (only-in :marlin-agent-core/ui/session UiPackage. make-ui-package
                  marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch))

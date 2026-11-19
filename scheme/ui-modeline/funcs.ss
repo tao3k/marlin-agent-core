@@ -4,7 +4,7 @@
 
 (import (only-in :clan/poo/object .get .o)
         (only-in :std/list/list find)
-        (only-in "../ui-elements/objects.ss"
+        (only-in "../ui-elements/funcs.ss"
                  ui-bar ui-template ui-choice ui-size-binding ui-size-cells ui-size-subtract)
         "./objects.ss")
 (export marlin-ui-modeline-nodes marlin-ui-modeline-nodes-for marlin-ui-modeline-bar-for)
