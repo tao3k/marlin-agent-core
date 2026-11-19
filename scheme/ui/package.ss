@@ -3,8 +3,7 @@
 
 ;;; A package extends the selected scopes using ordinary POO values. There is
 ;;; no process-global registry: each publication retains its own catalogs.
-(import :gerbil/expander
-        (only-in :gerbil/runtime/init gerbil-load-expander!)
+(import (only-in :tao3k/yuanxu/prelude yuanxu-module-export)
         (only-in :clan/poo/object .def .get .o)
         (only-in :std/list/list duplicates)
         (only-in "../ui-components/bounds.ss" marlin-ui-bounded-list?)
@@ -31,12 +30,8 @@
                (< 0 (string-length (vector-ref input 0)) 4097)
                (symbol? (vector-ref input 1)) (symbol? (vector-ref input 2)))
     (error "invalid UI package publication request"))
-  (gerbil-load-expander!)
-  (parameterize ((current-directory (path-expand (vector-ref input 0)))
-                 (current-expander-context (make-top-context)))
-    (eval-syntax '(import :gerbil/core))
-    (eval-syntax `(import (only-in ,(vector-ref input 1) ,(vector-ref input 2))))
-    (eval (vector-ref input 2))))
+  (parameterize ((current-directory (path-expand (vector-ref input 0))))
+    (yuanxu-module-export (vector-ref input 1) (vector-ref input 2))))
 
 (.def UiPackage.
   buffers: '()

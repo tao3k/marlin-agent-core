@@ -65,6 +65,20 @@ fn linked_fresh_copy_startup_pair(binary: &std::path::Path, profile: &str) {
         .find(|path| path.ends_with("/program/linked-program.json"))
         .expect("Cargo binary must depend on its linked programme plan")
         .replace('\u{1f}', " ");
+    let plan: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest).expect("read linked programme plan"))
+            .expect("parse linked programme plan");
+    let modules = plan["modules"].as_array().expect("linked modules");
+    assert!(
+        modules
+            .iter()
+            .any(|row| row["module"] == "marlin-agent-core/ui-tui/entry")
+    );
+    assert!(
+        modules
+            .iter()
+            .all(|row| row["module"] != "marlin-agent-core/init")
+    );
     let binary_time = fs::metadata(binary).unwrap().modified().unwrap();
     let manifest_time = fs::metadata(&manifest).unwrap().modified().unwrap();
     assert!(

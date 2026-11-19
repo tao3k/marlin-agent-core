@@ -4,6 +4,7 @@
 
 ;;; A contributed component and method bundle selected from the real UI scope.
 (import (only-in :clan/poo/object .get .o)
+        (only-in :tao3k/yuanxu/prelude yuanxu-autoload)
         (only-in :marlin-agent-core/ui/config UiScope)
         (only-in :marlin-agent-core/ui-centaur-tabs/funcs marlin-ui-buffer-tabs)
         (only-in :marlin-agent-core/ui-layout/config marlin-ui-layout-with-tab-bar)
@@ -20,11 +21,13 @@
 (def (make-package-methods)
   (def event-protocol (.get UiScope event-protocol))
   (def select-row (.get UiScope events select-list-row))
+  (def select-package-row
+    (yuanxu-autoload ':marlin-tui-ui-test/row-action 'select-package-row))
   (.defgeneric package-event (component event) (protocol event-protocol))
   (.defmethod-bundle PackageMethods event-protocol
     (.defmethod (package-event (list-id (eql 'package-list))
                                (event (prototype select-row)))
-      (.o kind: 'focus identity: (if (eq? (.get event row) 'first) 'commands 'composer))))
+      (select-package-row (.get event row))))
   PackageMethods)
 
 (def test-publication

@@ -13,8 +13,11 @@ open an agent session. Other UI modules own the workbench behavior.
 * Interface and contracts
 
 =interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
-and scope assembly. =UiTuiScope= publishes =program-entry=. The Build role
-includes that entry in the unified =std-make-spec=.
+and scope assembly. =UiTuiScope= publishes =program-entry= and
+=program-runtime-imports=. The entry imports the terminal's runtime
+dependencies. The additional imports retain Gerbil's expander and the UI
+session's compiler metadata for on-demand loading by independent packages.
+The Build role includes the entry in the unified =std-make-spec=.
 Consumers access selected exports through =marlin-agent-core.init.exports=.
 
 * Build and verification
@@ -22,6 +25,16 @@ Consumers access selected exports through =marlin-agent-core.init.exports=.
 [[file:../init.ss][init.ss]] selects this module. Its Build role, if present,
 contributes to the package's =std-make-spec=. See the
 [[file:../README.org][Scheme package README]] for the shared build and test commands.
+
+Yuanxu's =.make-spec-for= selects modules to compile. The terminal entry's
+ordinary imports are activated on startup. Names in =program-runtime-imports=
+make additional compiled modules available to Gerbil's loader for on-demand
+activation. An optional extension can also be built as a separate package
+and loaded through the existing UI publication interface. A package that
+publishes its keymap at startup can bind an action with
+=(yuanxu-autoload ':example/actions 'open-panel)= from the same public
+prelude as =yuanxu!=. Gerbil loads the
+compiled action module on the first call, in the package's original directory.
 
 UI package tests exercise the real Ratatui mapping through the Scheme test
 window. Terminal startup and exit are verified with PTY tests.
