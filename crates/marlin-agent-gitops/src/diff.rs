@@ -4,7 +4,7 @@
 
 //! Read-only diffs with explicit index or worktree scope.
 
-use crate::{GitOperations, GitReadError};
+use crate::{GitContext, GitOperations, GitReadError};
 use std::{
     ffi::OsString,
     path::{Component, Path},
@@ -103,6 +103,26 @@ impl GitDiff {
 }
 
 impl GitOperations {
+    /// Capture staged and unstaged tracked changes against the Context commit.
+    pub async fn context_patch(context: &GitContext) -> Result<Vec<u8>, GitReadError> {
+        let mut args = diff_arguments();
+        args.extend([
+            "--binary".into(),
+            context.commit().as_str().into(),
+            "--".into(),
+        ]);
+        let patch = crate::read::read_git_with(
+            &crate::read::LocalExecutor,
+            context.worktree().as_path(),
+            &args,
+        )
+        .await?;
+        if &Self::head_commit(context.worktree()).await? != context.commit() {
+            return Err(GitReadError::ContextCommitChanged);
+        }
+        Ok(patch)
+    }
+
     /// Read a bounded diff; external diff programs and text conversion are disabled.
     pub async fn diff(path: &Path, request: GitDiffRequest) -> Result<GitDiff, GitReadError> {
         Self::diff_with_executor(&crate::read::LocalExecutor, path, request).await
@@ -113,18 +133,7 @@ impl GitOperations {
         path: &Path,
         request: GitDiffRequest,
     ) -> Result<GitDiff, GitReadError> {
-        let mut args: Vec<OsString> = [
-            "diff",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-color",
-            "--no-renames",
-            // A worktree query always includes paths outside the launch directory.
-            "--no-relative",
-        ]
-        .into_iter()
-        .map(Into::into)
-        .collect();
+        let mut args = diff_arguments();
         if request.scope == GitDiffScope::Index {
             args.push("--cached".into());
         }
@@ -137,4 +146,19 @@ impl GitOperations {
             bytes: crate::read::read_git_with(executor, path, &args).await?,
         })
     }
+}
+
+fn diff_arguments() -> Vec<OsString> {
+    [
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-color",
+        "--no-renames",
+        // A worktree query always includes paths outside the launch directory.
+        "--no-relative",
+    ]
+    .into_iter()
+    .map(Into::into)
+    .collect()
 }

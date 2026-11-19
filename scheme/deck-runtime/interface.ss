@@ -12,5 +12,4 @@
 (.def DeckRuntime
   identity: 'deck-runtime
   core: (.o scope-contract: DeckScopeContract
-            exports: DeckScope)
-  features: (.o))
+            exports: DeckScope))

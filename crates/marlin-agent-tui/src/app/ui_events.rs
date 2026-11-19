@@ -5,16 +5,66 @@
 
 use super::publish_error;
 use super::{
-    App, MessageEvent, MessageSeverity, MessageSource, UiBrowseDirection, UiEvent, UiHost,
+    App, Key, MessageEvent, MessageSeverity, MessageSource, TerminalInput, UiBrowseDirection,
+    UiEvent, UiHost, UiKeyAction,
 };
 use crate::ui_elements::{HitRegion, hit_test_command};
-use marlin_agent_ui::UiCommandArguments;
+use marlin_agent_ui::{UiCommandArguments, UiKeyMode};
 
 pub(super) fn command_menu_active(app: &App, ui: &UiHost<'_>) -> bool {
     app.command_draft.is_some()
         && app.composer.cursor_at_end()
         && ui.accepts_text(true)
         && !app.command_candidates.is_empty()
+}
+
+pub(super) fn route_terminal_key(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    key: Key,
+) -> Result<UiKeyAction, marlin_agent_ui::UiProjectionError> {
+    let command_active = app.command_draft.is_some();
+    let action = ui.route_key(key, command_active, command_active, app.key_mode);
+    sync_key_feedback(app, ui);
+    action
+}
+
+pub(super) fn release_interrupted_key_sequence(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    input: Option<&TerminalInput>,
+) {
+    if (app.tool_review_prompt.is_some()
+        || app.history_search.is_some()
+        || matches!(
+            input,
+            Some(TerminalInput::Paste(_) | TerminalInput::MouseClick(_, _))
+        ))
+        && ui.cancel_key_sequence()
+    {
+        sync_key_feedback(app, ui);
+    }
+}
+
+fn sync_key_feedback(app: &mut App, ui: &UiHost<'_>) {
+    app.echo_key_sequence(ui.key_feedback());
+    app.set_key_hint(ui.keypad_hint(app.key_mode), ui.transient_hint());
+}
+
+pub(super) fn apply_editor_mode(app: &mut App, ui: &mut UiHost<'_>, mode: UiKeyMode) {
+    match mode {
+        UiKeyMode::Normal => {
+            if app.key_mode == UiKeyMode::Insert {
+                app.composer.normal_cursor();
+            }
+            app.key_mode = mode;
+            app.editor_keyboard_active = false;
+        }
+        UiKeyMode::Insert => match ui.focus_editor() {
+            Ok(()) => app.enter_insert_mode(false),
+            Err(error) => publish_error(app, MessageSource::Ui, "Input focus failed", &error),
+        },
+    }
 }
 
 pub(super) fn browse_menu(
@@ -144,6 +194,6 @@ pub(super) fn apply_ui_request(app: &mut App, ui: &mut UiHost<'_>) {
         if let Err(error) = ui.enter_transient(&id) {
             publish_error(app, MessageSource::Ui, "Command group failed", &error);
         }
-        app.transient_hint = ui.transient_hint().cloned();
+        app.set_key_hint(None, ui.transient_hint());
     }
 }

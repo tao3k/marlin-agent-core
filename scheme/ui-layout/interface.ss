@@ -11,5 +11,4 @@
 (.def UiLayout
   identity: 'ui-layout
   core: (.o scope-contract: UiLayoutScopeContract
-            exports: UiLayoutScope)
-  features: (.o))
+            exports: UiLayoutScope))

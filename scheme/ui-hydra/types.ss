@@ -3,7 +3,8 @@
 
 (import (only-in :clan/poo/object .cc)
         (only-in :clan/poo/type Object Fun Type.)
-        (only-in :clan/poo/type Exactly Record))
+        (only-in :clan/poo/type Exactly Record)
+        (only-in "../ui-meow/types.ss" KeyBindings))
 (export UiHydraScopeContract)
 
 (def HydraEntries (.cc Type. '.element? vector?))
@@ -11,6 +12,7 @@
 (def UiHydraScopeContract
   (.cc (Record identity: [(Exactly 'marlin/ui-hydra)]
                catalog: [Object]
+               key-bindings: [KeyBindings]
                command-entries: [(Fun HydraCommands <-)]
                entries: [(Fun HydraEntries <-)])
        identity: 'marlin/ui-hydra))

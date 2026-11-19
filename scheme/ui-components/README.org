@@ -6,7 +6,8 @@
 
 * Responsibility
 
-Defines Buffers, command catalogs, keymaps, component prototypes and bounds. Terminal
+Defines Buffers, command catalogs, component prototypes and bounds. The
+[[file:../ui-meow/README.org][Meow module]] supplies keyboard bindings. Terminal
 I/O belongs to the host.
 
 * Interface and contracts

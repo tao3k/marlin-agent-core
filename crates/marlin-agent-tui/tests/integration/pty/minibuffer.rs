@@ -12,14 +12,93 @@ fn doom_leader_uses_normal_mode_without_stealing_insert_spaces() {
     fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
     let mut terminal = Terminal::start(&config);
     terminal.wait_status("Message: Enter send");
-    terminal.send(b"a x");
+    terminal.send(b"\x1bxa x");
     terminal.wait_text("a x");
-    terminal.send(b"\x1b");
-    terminal.wait_status("NORMAL");
+    terminal.enter_normal_mode();
+    terminal.send(b"\x18");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "ordinary prefix echoes beside the draft",
+        |output| {
+            let rows = screen_lines(output);
+            rows[28].contains("NORMAL")
+                && rows[29].starts_with("a x")
+                && rows[29].trim_end().ends_with("C-x-")
+        },
+    );
+    terminal.send(b"\x07");
+    terminal.send(b" ");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "prefix echo before the dashboard",
+        |output| {
+            let rows = screen_lines(output);
+            rows[28].contains("MARLIN")
+                && rows[29].trim_start().starts_with("Keypad: SPC-")
+                && !rows.iter().any(|line| line.contains("Keymaps"))
+        },
+    );
+    terminal.wait_for(Duration::from_secs(5), "Keypad dashboard", |output| {
+        let rows = screen_lines(output);
+        rows.iter()
+            .any(|line| line.contains("Commands") && line.contains("Keymaps"))
+            && rows.iter().any(|line| line.contains("b : Buffers"))
+            && rows[29].contains("Keypad: SPC-")
+            && rows
+                .iter()
+                .any(|line| line.contains("MARLIN") && line.contains("NORMAL"))
+            && rows
+                .iter()
+                .any(|line| line.trim_start().starts_with("x   : Open commands"))
+            && rows
+                .iter()
+                .any(|line| line.trim_start().starts_with("SPC : Open commands"))
+    });
+    let wide_column = screen_lines(&terminal.output)
+        .iter()
+        .find_map(|line| line.find("Keymaps"))
+        .unwrap();
+    terminal.resize(30, 32);
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "Keypad fits narrow terminal",
+        |output| {
+            let rows = screen_lines(output);
+            rows.iter().any(|line| {
+                line.contains("Commands")
+                    && line
+                        .find("Keymaps")
+                        .is_some_and(|column| column < wide_column)
+            }) && rows.iter().any(|line| line.contains("b : Buffers"))
+        },
+    );
+    terminal.resize(11, 100);
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "dashboard drops padding on short terminals",
+        |output| {
+            let rows = screen_lines(output);
+            rows[9].contains("b : Buffers")
+                && rows[10].contains("Keypad: SPC-")
+                && rows[..11]
+                    .iter()
+                    .any(|line| line.contains("MARLIN") && line.contains("NORMAL"))
+        },
+    );
+    terminal.resize(30, 100);
+    terminal.send(b"b");
+    terminal.wait_status("Keypad: SPC b-");
+    terminal.wait_text("g : buffers group");
+    terminal.send(b"\x7f");
+    terminal.wait_status("Keypad: SPC-");
+    terminal.send(b"\x07");
+    terminal.wait_text("NORMAL");
+    terminal.send(b" Z");
+    terminal.wait_status("SPC Z is undefined");
     terminal.send(b" x");
     terminal.wait_mx_selected(1);
     terminal.send(b"\x07");
-    terminal.wait_status("NORMAL");
+    terminal.wait_text("NORMAL");
     terminal.send(b"a b");
     terminal.wait_text("a x b");
     terminal.send(b"\x11");
@@ -37,6 +116,7 @@ fn accepted_command_ranks_first_on_next_mx_and_navigation_uses_that_order() {
     terminal.wait_for(Duration::from_secs(10), "initial Modeline", |output| {
         screen_lines(output)[28].contains("MARLIN")
     });
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bxclear");
     terminal.wait_for(Duration::from_secs(5), "exact command", |output| {
         screen_lines(output)
@@ -79,6 +159,7 @@ fn filtering_preserves_a_user_selected_candidate_when_still_visible() {
     terminal.wait_for(Duration::from_secs(10), "initial Modeline", |output| {
         screen_lines(output)[28].contains("MARLIN")
     });
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bxmode\x1b[B");
     terminal.wait_for(Duration::from_secs(5), "selected models", |output| {
         let rows = screen_lines(output);
@@ -123,7 +204,10 @@ fn hydra_hint_and_foreign_key_use_the_minibuffer_without_losing_the_draft() {
     terminal.wait_for(Duration::from_secs(10), "initial Modeline", |output| {
         screen_lines(output)[28].contains("MARLIN")
     });
-    terminal.send(b"draft\x1bxhydra-history");
+    terminal.send(b"draft");
+    terminal.wait_text("draft");
+    terminal.enter_normal_mode();
+    terminal.send(b"\x1bxhydra-history");
     terminal.wait_for(Duration::from_secs(5), "M-x hydra command", |output| {
         screen_lines(output)
             .iter()
@@ -132,20 +216,23 @@ fn hydra_hint_and_foreign_key_use_the_minibuffer_without_losing_the_draft() {
     terminal.send(b"\r");
     terminal.wait_for(Duration::from_secs(5), "hydra hint", |output| {
         let rows = screen_lines(output);
-        rows.iter().any(|line| line.contains("draft"))
-            && rows.iter().any(|line| line.contains("History"))
-            && rows
-                .iter()
-                .any(|line| line.contains("p: newest  n: older  q: quit"))
+        rows.iter()
+            .position(|line| line.contains("MARLIN"))
+            .zip(
+                rows.iter()
+                    .position(|line| line.contains("p : Newest") && line.contains("q : Quit")),
+            )
+            .is_some_and(|(modeline, hint)| modeline < hint && rows[modeline + 1].trim().is_empty())
+            && rows[28].trim().is_empty()
+            && rows[29].trim().is_empty()
+            && !rows.iter().any(|line| line.starts_with("draft "))
     });
     terminal.send(b"nq");
     terminal.wait_for(Duration::from_secs(5), "hydra exit", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| line.contains("draft"))
             && !rows.iter().any(|line| line.contains("draftn"))
-            && !rows
-                .iter()
-                .any(|line| line.contains("p: newest  n: older  q: quit"))
+            && !rows.iter().any(|line| line.contains("p : Newest"))
     });
     terminal.send(b"\x1bxhydra-history");
     terminal.wait_for(
@@ -160,28 +247,20 @@ fn hydra_hint_and_foreign_key_use_the_minibuffer_without_losing_the_draft() {
     terminal.send(b"\rz");
     terminal.wait_for(Duration::from_secs(5), "foreign key replay", |output| {
         let rows = screen_lines(output);
-        rows.iter().any(|line| line.contains("draftz"))
-            && !rows
-                .iter()
-                .any(|line| line.contains("p: newest  n: older  q: quit"))
+        rows[29].starts_with("draft ") && !rows.iter().any(|line| line.contains("p : Newest"))
     });
-    terminal.send(b"\x1bxhydra-buffers");
-    terminal.wait_for(Duration::from_secs(5), "M-x buffers group", |output| {
-        screen_lines(output)
-            .iter()
-            .any(|line| line.contains("M-x hydra-buffers"))
-    });
-    terminal.send(b"\r");
+    terminal.send(b" bg");
     terminal.wait_for(Duration::from_secs(5), "buffers group hint", |output| {
         screen_lines(output)
             .iter()
-            .any(|line| line.contains("m messages"))
+            .any(|line| line.contains("m : Messages"))
     });
     terminal.send(b"m");
     terminal.wait_for(Duration::from_secs(5), "messages buffer", |output| {
         let rows = screen_lines(output);
-        rows.iter().any(|line| line.contains("*Messages*"))
-            && !rows.iter().any(|line| line.contains("m messages"))
+        rows[0].contains("▎ \u{f0e0} Messages")
+            && rows[29].starts_with("draft ")
+            && !rows.iter().any(|line| line.contains("m : Messages"))
     });
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
@@ -204,9 +283,10 @@ fn scheme_editor_keys_keep_multiline_draft_in_the_minibuffer() {
         "Scheme-routed multiline edit",
         |output| {
             let rows = screen_lines(output);
-            rows.iter().any(|line| line.contains("alpha"))
-                && rows.iter().any(|line| line.contains("<beta>"))
-                && rows.iter().any(|line| line.contains("Message: Enter send"))
+            rows[27].contains("MARLIN")
+                && rows[28].trim() == "alpha"
+                && rows[29].trim() == "<beta>"
+                && rows[27].contains("INSERT")
         },
     );
     terminal.send(b"\x11");
@@ -225,6 +305,7 @@ fn first_mx_arrow_is_not_lost_before_the_menu_frame() {
         screen_lines(output)[28].contains("MARLIN")
     });
 
+    terminal.enter_normal_mode();
     // One PTY write leaves no opportunity to wait for the first M-x frame.
     terminal.send(b"\x1bx\x1b[B");
     terminal.wait_for(Duration::from_secs(5), "immediate Down", |output| {
@@ -355,6 +436,7 @@ fn mx_abbreviation_opens_the_scheme_declared_buffer_menu() {
     terminal.wait_for(Duration::from_secs(10), "initial Modeline", |output| {
         screen_lines(output)[28].contains("MARLIN")
     });
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bxswb");
     terminal.wait_for(Duration::from_secs(5), "Scheme abbreviation", |output| {
         let rows = screen_lines(output);
@@ -396,7 +478,7 @@ fn painted_buffer_tabs_switch_the_window_and_preserve_the_draft() {
     };
     click(&mut terminal, "Messages");
     terminal.wait_for(Duration::from_secs(5), "Messages selected", |output| {
-        screen_lines(output)[29].contains("*Messages*")
+        screen_lines(output)[0].contains("▎ \u{f0e0} Messages")
     });
     click(&mut terminal, "Models");
     terminal.wait_for(
@@ -433,7 +515,7 @@ fn painted_buffer_tabs_switch_the_window_and_preserve_the_draft() {
             && rows[..5].iter().any(|line| line.contains("MARLIN"))
             && rows[..5]
                 .iter()
-                .any(|line| line.contains("draft kept by the window"))
+                .any(|line| line.contains("draft kept by the"))
     });
     terminal.resize(30, 100);
     terminal.wait_for(Duration::from_secs(5), "restored terminal", |output| {
@@ -458,6 +540,7 @@ fn invalid_mx_command_uses_messages_buffer_without_changing_conversation() {
     terminal.wait_for(Duration::from_secs(10), "initial Modeline", |output| {
         screen_lines(output)[28].contains("MARLIN")
     });
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bxno-such-command\r");
     terminal.wait_for(
         Duration::from_secs(5),
@@ -506,7 +589,8 @@ fn invalid_mx_command_uses_messages_buffer_without_changing_conversation() {
         "full Messages diagnostic",
         |output| {
             let rows = screen_lines(output);
-            rows[29].contains("*Messages*")
+            rows[0].contains("▎ \u{f0e0} Messages")
+                && rows.iter().all(|line| !line.contains("Switch to:"))
                 && rows[..28]
                     .iter()
                     .any(|line| line.contains("Use M-x to see available commands"))
@@ -515,7 +599,7 @@ fn invalid_mx_command_uses_messages_buffer_without_changing_conversation() {
     terminal.send(b"\x1b");
     terminal.wait_for(Duration::from_secs(5), "conversation restored", |output| {
         let rows = screen_lines(output);
-        rows[29].contains("Message: Enter send")
+        rows[0].contains("▎ \u{f086} Chat")
             && rows[..28]
                 .iter()
                 .all(|line| !line.contains("Unknown command"))
@@ -535,19 +619,20 @@ fn mx_help_switches_to_scheme_buffer_without_appending_conversation() {
     terminal.wait_for(Duration::from_secs(10), "initial Modeline", |output| {
         screen_lines(output)[28].contains("MARLIN")
     });
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bxhelp\r");
     terminal.wait_for(Duration::from_secs(5), "Scheme Help buffer", |output| {
         let rows = screen_lines(output);
         rows[..28]
             .iter()
             .any(|line| line.contains("C-r  Search prompts"))
-            && rows[29].contains("*Help*")
+            && rows[0].contains("▎ \u{f059} Help")
             && rows[..28].iter().all(|line| !line.contains("Help: Enter"))
     });
     terminal.send(b"\x1b");
     terminal.wait_for(Duration::from_secs(5), "conversation restored", |output| {
         let rows = screen_lines(output);
-        rows[29].contains("Message: Enter send")
+        rows[0].contains("▎ \u{f086} Chat")
             && rows[..28]
                 .iter()
                 .all(|line| !line.contains("C-r  Search prompts"))
@@ -567,6 +652,7 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
     terminal.wait_for(Duration::from_secs(10), "initial Modeline", |output| {
         screen_lines(output)[28].contains("MARLIN")
     });
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bx");
     terminal.wait_for(Duration::from_secs(5), "M-x first candidate", |output| {
         screen_lines(output).iter().any(|line| mx_selected(line, 1))
@@ -720,14 +806,15 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
         "Messages buffer selected",
         |output| {
             let rows = screen_lines(output);
-            rows[29].contains("*Messages*") && rows.iter().all(|line| !line.contains("Switch to:"))
+            rows[0].contains("▎ \u{f0e0} Messages")
+                && rows.iter().all(|line| !line.contains("Switch to:"))
         },
     );
     terminal.send(b"\x1b");
     terminal.wait_for(
         Duration::from_secs(5),
         "conversation buffer restored",
-        |output| screen_lines(output)[29].contains("Message: Enter send"),
+        |output| screen_lines(output)[0].contains("▎ \u{f086} Chat"),
     );
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
@@ -744,6 +831,7 @@ fn mx_switches_tab_style_and_workbench_theme_independently() {
     terminal.wait_for(Duration::from_secs(10), "Doom Modeline", |output| {
         screen_lines(output)[28].contains("MARLIN")
     });
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bxcentaur-tabs-themes-switch\r");
     terminal.wait_for(
         Duration::from_secs(5),
@@ -798,6 +886,7 @@ fn narrow_mx_profile_switch_changes_optional_modeline_priority() {
         let line = &screen_lines(output)[28];
         line.contains("openai/gpt-fixture") && !line.contains("temporary")
     });
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bxtheme-pi\r");
     terminal.wait_for(Duration::from_secs(5), "narrow pi Modeline", |output| {
         let line = &screen_lines(output)[28];
@@ -832,6 +921,7 @@ fn mx_navigation_pty_latency() {
     terminal.wait_for_screen(Duration::from_secs(10), "initial Modeline", |screen| {
         screen.line(28).contains("MARLIN")
     });
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bx");
     terminal.wait_for_screen(Duration::from_secs(5), "M-x", |screen| {
         screen.lines().any(|line| mx_selected(&line, 1))
@@ -1014,6 +1104,7 @@ fn mx_navigation_pty_latency() {
         terminal.wait_for_screen(Duration::from_secs(10), "initial Modeline", |screen| {
             screen.line(28).contains("MARLIN")
         });
+        terminal.enter_normal_mode();
         let started = Instant::now();
         terminal.send(match index % 3 {
             0 => b"\x1bx\x1b[B",

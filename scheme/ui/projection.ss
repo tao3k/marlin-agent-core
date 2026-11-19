@@ -79,7 +79,8 @@
                               (.get transcript assistant-role)
                               (.get transcript thinking-collapsed-role)
                               (.get transcript thinking-expanded-role)))
-                    (.get policy frame-tree) (.get policy region-bindings)))
+                    (.get policy frame-tree) (.get policy region-bindings)
+                    (.get policy echo-policy)))
           (let (palette (.get workbench theme-palette))
             (list->vector
              (map (lambda (name) (list->vector (.ref palette name)))

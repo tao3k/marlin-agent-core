@@ -2,12 +2,11 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-(import (only-in :clan/poo/object .o)
-        (only-in :clan/poo/type validate)
+(import (only-in :clan/poo/mop .new/checked)
         "./funcs.ss" "./types.ss")
 (export UiTranscriptScope)
 
 (def UiTranscriptScope
-  (validate UiTranscriptScopeContract
-            (.o identity: 'marlin/ui-transcript
-                select: marlin-ui-transcript-policy-for)))
+  (.new/checked UiTranscriptScopeContract
+    identity: 'marlin/ui-transcript
+    select: marlin-ui-transcript-policy-for))

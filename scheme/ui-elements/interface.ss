@@ -7,5 +7,4 @@
 
 (.def UiElements
   identity: 'ui-elements
-  core: (.o scope-contract: UiElementsScopeContract exports: UiElementsScope)
-  features: (.o))
+  core: (.o scope-contract: UiElementsScopeContract exports: UiElementsScope))

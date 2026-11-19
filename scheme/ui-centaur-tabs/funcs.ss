@@ -41,9 +41,15 @@
                (cons entry accepted)
                accepted))
            '() cases))
-  (ui-choice (map (lambda (entry) (list (width-fact (car entry)) (cadr entry)))
-                  (reverse reachable))
-             fallback))
+  ;; Adjacent widths with the same presentation only need the smaller bound.
+  (def distinct
+    (foldl (lambda (entry retained)
+             (let (next (if (null? retained) fallback (cadar retained)))
+               (if (equal? (cadr entry) next) retained (cons entry retained))))
+           '() reachable))
+  (if (null? distinct) fallback
+    (ui-choice (map (lambda (entry) (list (width-fact (car entry)) (cadr entry))) distinct)
+               fallback)))
 
 (def (tab-presentation layout entry active? starts-group? icon)
   (def style (.get layout style))

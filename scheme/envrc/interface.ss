@@ -10,5 +10,4 @@
 (.def Envrc
   identity: 'envrc
   core: (.o scope-contract: EnvrcScopeContract
-            exports: EnvrcScope)
-  features: (.o))
+            exports: EnvrcScope))

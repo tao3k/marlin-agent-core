@@ -594,6 +594,7 @@ fn dispatch_event_with<'runtime>(
     let name = match &event {
         UiEvent::NextFocus => "next-focus",
         UiEvent::PreviousFocus => "previous-focus",
+        UiEvent::SelectFocus(_) => "select-focus",
         UiEvent::Submit => "submit",
         UiEvent::Dismiss => "dismiss",
         UiEvent::ScrollUp => "scroll-up",
@@ -605,6 +606,9 @@ fn dispatch_event_with<'runtime>(
     };
     let symbol = runtime.intern_identifier(IdentifierKind::Symbol, name)?;
     let argument = match &event {
+        UiEvent::SelectFocus(id) => {
+            Some(runtime.intern_identifier(IdentifierKind::Symbol, id.as_str())?)
+        }
         UiEvent::SelectProfile(name) => {
             Some(runtime.intern_identifier(IdentifierKind::Symbol, name.as_str())?)
         }

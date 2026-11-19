@@ -15,6 +15,22 @@ use ratatui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+pub(crate) fn fits_width(id: &UiComponentId, width: u16) -> Option<bool> {
+    fits_dimension(id, "width-at-least-", width)
+}
+
+pub(crate) fn fits_area(id: &UiComponentId, area: Rect) -> Option<bool> {
+    fits_width(id, area.width).or_else(|| fits_dimension(id, "height-at-least-", area.height))
+}
+
+fn fits_dimension(id: &UiComponentId, prefix: &str, cells: u16) -> Option<bool> {
+    id.as_str()
+        .strip_prefix(prefix)?
+        .parse::<u16>()
+        .ok()
+        .map(|minimum| cells >= minimum)
+}
+
 pub(crate) fn tone_color(tone: UiTone, theme: &UiTheme) -> Color {
     let color = match tone {
         UiTone::Normal => theme.ink,
@@ -92,6 +108,17 @@ pub fn render_template(
     let background = background_color(*background, inputs.theme);
     let style = background.map_or(Style::default(), |color| Style::default().bg(color));
     frame.render_widget(Paragraph::new(Line::from(line)).style(style), area);
+}
+
+pub(crate) fn inline_text(element: &UiElement, inputs: &UiRenderInputs<'_>, width: u16) -> String {
+    let UiElement::Template { spans, .. } = resolve_choice(element, inputs.facts) else {
+        return String::new();
+    };
+    let mut text = String::new();
+    for span in spans {
+        text.push_str(&template_text(&span.value, inputs, width));
+    }
+    text
 }
 
 pub(super) fn template_text<'a>(
@@ -482,11 +509,12 @@ fn render_inner<'tree>(
             }
         }
         UiElement::Prompt { field, template } => {
+            let value = inputs
+                .bindings
+                .iter()
+                .find_map(|(name, value)| (*name == field.as_str()).then_some(*value))
+                .unwrap_or("");
             if skip == 0
-                && let Some(value) = inputs
-                    .bindings
-                    .iter()
-                    .find_map(|(name, value)| (*name == field.as_str()).then_some(*value))
                 && let Some(cursor) =
                     render_prompt(frame, area, template, inputs, field.as_str(), value)
             {

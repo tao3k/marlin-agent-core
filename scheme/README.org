@@ -21,6 +21,7 @@ selects Marlin's Modules and their Features through =yuanxu!=, including
 | Area | Responsibilities |
 |------+------------------|
 | [[file:context-system/README.org][Context System]] | Admit Lab Context scopes and project Org evidence and causal receipts. |
+| [[file:artifacts/README.org][Artifacts]] | Record Git-anchored artifacts and recover shared Org references. |
 | [[file:ui/README.org][UI workbench]] | Compose Buffers, commands, keymaps, layouts, themes, and event dispatch. |
 | [[file:ui-elements/README.org][UI elements]] and [[file:ui-tui/README.org][TUI entry]] | Publish the typed view tree and the terminal program. Rust maps the reusable primitives to Ratatui. |
 | [[file:hooks/README.org][Hooks]] and [[file:policy/README.org][Policy]] | Select hooks and project graph routing, topology, continuation, and Deck policy. |
@@ -47,6 +48,9 @@ this directory, =gerbil build= runs the package's =build.ss=. The entry
 passes the =std-make-spec= selected by Yuanxu to Gerbil's =defbuild-script=.
 The C ABI Module supplies its link options through the existing =with-link=
 slot. The build publishes products for the selected =program-entry= roles.
+Use =just scheme-clean= to run =gerbil clean= with the same toolchain settings
+as =just scheme-build=. It removes the package's selected compiler outputs
+and its published link products.
 
 Use =just scheme-test t/ui-workbench-test.ss= for a focused UI test.
 =just scheme-property-gate= also exercises the native UI Scheme suite.

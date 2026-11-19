@@ -45,6 +45,7 @@ fn verify_compiled_scheme_package(binary: &Path) {
     let first_frame = terminal.start.elapsed();
     assert!(first_frame < startup_limit);
     eprintln!("Scheme package cold first frame: {first_frame:?}");
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bz");
     terminal.wait_for(Duration::from_secs(5), "package buffer", |output| {
         screen_lines(output)

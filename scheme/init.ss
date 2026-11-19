@@ -13,11 +13,13 @@
   mount: Marlin
   :test-dir "./t"
   (context-system +causal)
+  (artifacts)
   (brief-to-draft)
   (ui-components)
   (ui-elements)
   (ui-centaur-tabs)
   (ui-hydra)
+  (ui-meow)
   (ui-modeline)
   (ui-transcript)
   (ui-themes)

@@ -9,6 +9,20 @@
 Defines the main window, Modeline and Minibuffer layout. Geometry, scrolling and hit
 regions share one projection.
 
+=minibuffer.ss= declares three uses of the bottom of the frame. The echo
+area presents transient key sequences and messages. The Minibuffer reads
+chat drafts, command arguments and history queries. The Modeline in
+=ui-modeline= presents persistent window state, including the editing mode.
+This follows the shared-window behavior documented in Emacs's =screen.texi=.
+
+One projected echo policy defines priorities, formatting, lifetime and
+whether the next input clears a message. The same selected text appears on
+the idle row, underneath Keypad or Hydra, or beside an active input.
+An active prompt keeps its query when a message arrives. Echo messages
+expire or clear at the next command, while details remain in =*Messages*=.
+Keypad and Hydra use the available height, with smaller margins on short
+terminals.
+
 * Interface and contracts
 
 =interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts

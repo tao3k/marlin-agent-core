@@ -4,6 +4,7 @@
 
 //! Terminal application state and transcript navigation.
 
+use super::echo_area::EchoArea;
 use super::{
     Arc, BufferView, Command, Composer, ContextBudget, ConversationTurnId, GatewayObservation,
     HistorySearch, JournalGateway, MAX_COMPLETION_HEAP_BYTES, MessageEvent, MessageSeverity,
@@ -12,6 +13,7 @@ use super::{
     SessionPageRequestError, SharedGateway, Transcript, TursoAgentStorage, UiBufferId, UiCommand,
     UiCommandName, UiContent, UiEvent, UiTranscriptPolicy, UiWorkbench, WorkspaceStatus,
 };
+use std::time::{Duration, Instant};
 
 pub(crate) const REPLY_BATCH_LIMIT: usize = 16;
 pub(crate) const REPLY_QUEUE_ITEMS: usize = 64;
@@ -47,6 +49,12 @@ pub(crate) struct CommandMenu {
     pub(crate) prompt: String,
 }
 
+pub(super) struct PendingKeyHint {
+    pub(super) view: marlin_agent_ui::UiElement,
+    pub(super) delay: Duration,
+    pub(super) show_at: Option<Instant>,
+}
+
 pub(crate) struct ToolReviewPrompt {
     pub(crate) key: marlin_agent_sessions::ConversationToolRequestKey,
     pub(crate) menu: marlin_agent_ui::UiToolReviewMenu,
@@ -60,7 +68,9 @@ pub(crate) struct App {
     pub(super) runtime_events: marlin_agent_runtime::RuntimeEventStream,
     pub(crate) composer: Composer,
     pub(crate) minibuffer_hovered: bool,
+    pub(crate) editor_keyboard_active: bool,
     pub(crate) key_mode: marlin_agent_ui::UiKeyMode,
+    pub(super) yank_register: String,
     pub(crate) gateway_observation: GatewayObservation,
     pub(super) prompt_history: PromptHistory,
     pub(crate) history_search: Option<HistorySearch>,
@@ -84,8 +94,10 @@ pub(crate) struct App {
     pub(crate) transcript_policy: Option<UiTranscriptPolicy>,
     pub(crate) messages: Transcript,
     pub(crate) buffer_view: BufferView,
-    pub(crate) minibuffer_notice: Option<String>,
+    pub(crate) echo_area: EchoArea,
     pub(crate) transient_hint: Option<marlin_agent_ui::UiElement>,
+    pub(crate) keypad_open: bool,
+    pub(super) pending_key_hint: Option<PendingKeyHint>,
     pub(crate) history: Arc<Vec<ModelGatewayMessage>>,
     pub(crate) context_budget: ContextBudget,
     pub(super) endpoint: ModelEndpoint,
@@ -142,7 +154,9 @@ impl App {
             runtime_events,
             composer: Composer::default(),
             minibuffer_hovered: false,
+            editor_keyboard_active: false,
             key_mode: marlin_agent_ui::UiKeyMode::Insert,
+            yank_register: String::new(),
             gateway_observation: GatewayObservation::Unchecked,
             prompt_history: PromptHistory::default(),
             history_search: None,
@@ -166,8 +180,10 @@ impl App {
             transcript_policy: None,
             messages: Transcript::new(vec![]),
             buffer_view: BufferView::Conversation,
-            minibuffer_notice: None,
+            echo_area: EchoArea::default(),
             transient_hint: None,
+            keypad_open: false,
+            pending_key_hint: None,
             history: Arc::new(Vec::new()),
             context_budget: ContextBudget::default(),
             endpoint,

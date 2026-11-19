@@ -1,5 +1,5 @@
 {
-  "checksum": "5fbc6aa6e4b049188e30ac8c9e7e9131461408d36086853ce97f62655172dfe0",
+  "checksum": "feaa3c5c816049a15e0be384a4283bd59525d2a84de11995246a2fb700141235",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -7975,22 +7975,10 @@
         ],
         "crate_features": {
           "common": [
+            "default",
             "std"
           ],
-          "selects": {
-            "aarch64-apple-darwin": [
-              "default"
-            ],
-            "aarch64-unknown-linux-gnu": [
-              "default"
-            ],
-            "x86_64-unknown-linux-gnu": [
-              "default"
-            ],
-            "x86_64-unknown-nixos-gnu": [
-              "default"
-            ]
-          }
+          "selects": {}
         },
         "deps": {
           "common": [],
@@ -15467,6 +15455,10 @@
             {
               "id": "criterion 0.8.2",
               "target": "criterion"
+            },
+            {
+              "id": "tokio 1.53.1",
+              "target": "tokio"
             }
           ],
           "selects": {}
@@ -31224,19 +31216,20 @@
             "socket2",
             "sync",
             "time",
-            "tokio-macros"
+            "tokio-macros",
+            "windows-sys"
           ],
-          "selects": {
-            "x86_64-pc-windows-msvc": [
-              "windows-sys"
-            ]
-          }
+          "selects": {}
         },
         "deps": {
           "common": [
             {
               "id": "bytes 1.12.1",
               "target": "bytes"
+            },
+            {
+              "id": "libc 0.2.191",
+              "target": "libc"
             },
             {
               "id": "mio 1.2.4",
@@ -31249,82 +31242,21 @@
             {
               "id": "pin-project-lite 0.2.17",
               "target": "pin_project_lite"
+            },
+            {
+              "id": "signal-hook-registry 1.4.8",
+              "target": "signal_hook_registry"
+            },
+            {
+              "id": "socket2 0.6.5",
+              "target": "socket2"
+            },
+            {
+              "id": "windows-sys 0.61.2",
+              "target": "windows_sys"
             }
           ],
-          "selects": {
-            "aarch64-apple-darwin": [
-              {
-                "id": "libc 0.2.191",
-                "target": "libc"
-              },
-              {
-                "id": "signal-hook-registry 1.4.8",
-                "target": "signal_hook_registry"
-              },
-              {
-                "id": "socket2 0.6.5",
-                "target": "socket2"
-              }
-            ],
-            "aarch64-unknown-linux-gnu": [
-              {
-                "id": "libc 0.2.191",
-                "target": "libc"
-              },
-              {
-                "id": "signal-hook-registry 1.4.8",
-                "target": "signal_hook_registry"
-              },
-              {
-                "id": "socket2 0.6.5",
-                "target": "socket2"
-              }
-            ],
-            "wasm32-wasip1": [
-              {
-                "id": "libc 0.2.191",
-                "target": "libc"
-              }
-            ],
-            "x86_64-pc-windows-msvc": [
-              {
-                "id": "socket2 0.6.5",
-                "target": "socket2"
-              },
-              {
-                "id": "windows-sys 0.61.2",
-                "target": "windows_sys"
-              }
-            ],
-            "x86_64-unknown-linux-gnu": [
-              {
-                "id": "libc 0.2.191",
-                "target": "libc"
-              },
-              {
-                "id": "signal-hook-registry 1.4.8",
-                "target": "signal_hook_registry"
-              },
-              {
-                "id": "socket2 0.6.5",
-                "target": "socket2"
-              }
-            ],
-            "x86_64-unknown-nixos-gnu": [
-              {
-                "id": "libc 0.2.191",
-                "target": "libc"
-              },
-              {
-                "id": "signal-hook-registry 1.4.8",
-                "target": "signal_hook_registry"
-              },
-              {
-                "id": "socket2 0.6.5",
-                "target": "socket2"
-              }
-            ]
-          }
+          "selects": {}
         },
         "edition": "2021",
         "proc_macro_deps": {

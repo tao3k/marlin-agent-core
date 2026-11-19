@@ -11,6 +11,7 @@
 |----------------+-----------|
 | Declare a form and bind the caller's names | Hygienic =defrules= or =defsyntax= |
 | Inherit defaults and compose a publication | POO =.def=, =.o=, =.mix= and slot refinements |
+| Construct and validate a Class instance before publishing it | POO =.new/checked= |
 | Validate, transform, and project values | Ordinary Scheme functions with explicit inputs and results |
 | Run a process, enter a VM boundary, or send a message | An explicit operation owned by the subsystem that performs the effect |
 
@@ -34,6 +35,41 @@ Use =defrules= for structural sugar that expands into value constructors or
 calls. Use =syntax-case= when expansion must inspect bindings or establish a
 private name, as in Yuanxu's Build binding. Keep expansion hygienic and pass
 ordinary values to the code that validates and projects them.
+
+** Checked Class construction and direct Script inheritance
+
+Use =.new/checked= from =:clan/poo/mop= when the caller has a Class
+descriptor and needs a checked instance immediately. The constructor
+validates the instance, calls the Class's =.instantiate= hook when
+present, and validates the hook's result before returning it. POO's
+class-validation test uses an existing Class fixture and checks that the
+returned callable honors its contract.
+
+#+begin_src scheme
+(def initialized (.new/checked class-validation.service.InitializedRecord))
+(check-equal? ((.get initialized run) 2) 5)
+(check-exception ((.get initialized audit) #f) TypeError?)
+#+end_src
+
+[[https://github.com/tao3k/gerbil-poo/blob/d7d438e53a5becf5c17bf781dc166ae54e8409ee/t/contracts/object-contract/class-validation.scm#L58-L60][POO class-validation test]]
+
+Use =.def= with =ProcessScript.= when declaring a Script with inherited
+defaults and local overrides. Import the prototype directly from
+=:tao3k/yuanxu/ops/objects= when that module owns the Script declaration.
+Yuanxu's compiled-module fixture declares the command and its execution
+settings, then explicitly calls =.run=. Ops checks the Script when preparing
+it for execution.
+
+#+begin_src scheme
+(.def (ConsumerBuild @ ProcessScript.)
+  command: '("gerbil" "-:max-heap=2G,debug=q" "build")
+  directory: root
+  environment: (.o GERBIL_PATH: state GERBIL_LOADPATH: inherited)
+  timeout: 60 idle-timeout: 60 check-status: #f)
+(def prepared (.call ConsumerBuild .run))
+#+end_src
+
+[[https://github.com/tao3k/gebril-yuanxu/blob/689db1886e8efdb04accd3c15dc2dc6140e14eeb/t/module-testing-compiled-test.ss#L28-L33][Yuanxu compiled-module fixture]]
 
 * File roles
 

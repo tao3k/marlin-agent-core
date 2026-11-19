@@ -58,6 +58,9 @@ use marlin_agent_ui::{
 };
 use termion::event::Key;
 
+mod echo_area;
+#[path = "editor.rs"]
+mod editor;
 #[path = "envrc.rs"]
 mod envrc;
 #[cfg(feature = "linked-ui")]
@@ -81,8 +84,6 @@ mod turn;
 #[path = "ui_events.rs"]
 mod ui_events;
 
-#[cfg(test)]
-#[cfg_attr(test, allow(unused_imports))]
 pub(crate) use presentation::safe_text;
 pub(crate) use presentation::{
     BufferView, GatewayObservation, MessageEvent, MessageSeverity, MessageSource, ModelineActivity,

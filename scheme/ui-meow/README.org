@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / ui-meow - Modal key bindings
+#+language: en
+
+Chat starts in Insert mode. Press =Esc= for Normal mode and =i= to focus
+and edit chat again. =M-x=, =C-o=, and =C-x b= open command interfaces from
+Normal mode. Space in Insert mode is text.
+Chat, command prompts, key hints, and idle messages share the Mini Buffer
+under the Modeline. An empty Normal Mini Buffer shows its state in one
+row. Normal mode retains nonempty drafts for selection and editing.
+
+| Sequence             | Command                  |
+|----------------------+--------------------------|
+| =SPC SPC=, =SPC x=    | Open =M-x=               |
+| =SPC m x=            | Send =M-x= through Keypad |
+| =SPC b b=, =C-x b=   | Switch buffer            |
+| =SPC b g=            | Open the Buffers Hydra   |
+| =SPC r=              | Search prompts           |
+| =SPC t t=            | Switch theme             |
+| =SPC h=, =C-h r=     | Open Marlin help         |
+
+In Keypad, =SPC m= introduces a Meta binding and =SPC c= introduces a Ctrl
+binding. For example, =SPC c h r= resolves the same binding as =C-h r=.
+The Keypad shows the next available keys and their commands for the active
+prefix. It uses the same hint layout as Hydra. Backspace returns to the
+previous prefix and refreshes the hint.
+The Minibuffer echoes a pending sequence with a trailing hyphen, such as
+=SPC-= or =SPC m-=. A completed chord stays visible briefly, including when
+it opens =M-x=. Backspace removes the last stroke. =Esc= and =C-g= cancel the
+sequence.
+
+Normal mode uses selection-first editing. =w= selects a word, =b= and =e=
+extend by word, and =x= selects a logical line. Repeat =x= to extend to the
+next line, or reverse with =;= before extending upward. The final newline
+stays outside the selection. =H=, =J=, =K=, and =L= extend the selection.
+=z= restores the previous selection. =g= and =Esc= clear the selection and
+its history. Selection history belongs to the current draft revision.
+=I= and =A= open a logical line above or below and enter Insert mode.
+=d= and =D= delete, =s= cuts,
+=c= changes into Insert mode, =y= copies, =p= pastes from the TUI's own
+yank register, and =u= undoes the last edit.
+
+Word and line selections label reachable endpoints in the visible input.
+Press a digit to move the active end there. The labels show one group of
+=1= through =9= and =0= for the tenth endpoint. =;= reverses the direction
+and refreshes the targets. Labels stay visible while the selection is
+active. With no word or line selection, =0= still moves to the start of
+the line. The =meow-expand= declaration supplies the keys, counts, and
+theme tone for the labels.
+
+In Normal mode, =f= reads a literal character and selects through its
+next occurrence. =t= stops before it. =F= and =T= are Marlin's backward
+shortcuts. The selection keeps its character as the target for numeric
+expansion, including after reversing direction. =Esc= or =C-g= cancels
+the character prompt and leaves the draft and selection as they were.
+
+With the cursor inside a text object, type =,= to select its content or
+=.= to include its delimiters. Follow that with =r= for parentheses, =s=
+for square brackets, =c= for braces, =g= for double quotes, or =t= for
+backticks. For example, =, r c= changes the text inside parentheses.
+Pairs can span lines. A backslash escapes the next grapheme.
+
+[[file:key-bindings.ss][key-bindings.ss]] holds the built-in declarations.
+They feed the terminal keymap and keyboard help. A package can import the
+same hygienic syntax from =:marlin-agent-core/ui-meow/interface=.
+
+#+begin_src scheme
+(define-key-bindings NotesKeymap
+  keypad: (meow-keypad ((SPC z) (M-z)))
+  (meow-global ((M-z) open-notes "Package notes"))
+  (meow-things (z #\| #\| "pipes")))
+#+end_src
+
+Put =(.get NotesKeymap bindings)= in the package's =keymap= slot. The optional
+=keypad:= clause adds aliases and derives modifier sequences for short chords. POO's
+=.new/checked= validates each declaration. The assembled keymap checks
+prefix conflicts across the active scopes before publishing.
+
+=just scheme-test t/ui-workbench-test.ss= verifies the published keymap and
+checks that the Space leader is confined to Normal mode. The same suite
+runs through the aggregate Scheme test entrypoint.

@@ -5,5 +5,5 @@
 (import (only-in :clan/poo/object .def))
 (export UiHydra.)
 
-(.def UiHydra.)
+(.def UiHydra. hint-mode: 'none key: #f)
 

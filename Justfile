@@ -37,9 +37,7 @@ property-model-gate: app-server-model-gate gitops-context-model-gate
   quint run dev/quint/event-bus.qnt --main=eventBus --seed=42 --max-samples=1000 --max-steps=10 --invariant=safe --verbosity=1
   @output=$(quint run dev/quint/event-bus.qnt --main=eventBus --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=10 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in event bus negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
   @test_binary=$(mktemp -t marlin-event-bus-test.XXXXXX); trap 'rm -f "$test_binary"' EXIT; rustc --edition=2024 --test dev/verification/event_bus_contract.rs -o "$test_binary"; "$test_binary"
-  quint typecheck dev/quint/tui-minibuffer.qnt
-  quint test dev/quint/tui-minibuffer.qnt --max-samples=100
-  quint run dev/quint/tui-minibuffer.qnt --seed=42 --max-samples=1000 --max-steps=30 --invariant=stateSafe --verbosity=1
+  just tui-model-gate
   quint typecheck dev/quint/model-tool-review.qnt
   quint test dev/quint/model-tool-review.qnt --main=modelToolReview --max-samples=100
   quint run dev/quint/model-tool-review.qnt --main=modelToolReview --seed=42 --max-samples=1000 --max-steps=10 --invariant=safe --verbosity=1
@@ -61,6 +59,15 @@ property-model-gate: app-server-model-gate gitops-context-model-gate
   quint test dev/quint/process-quota.qnt --main=processQuota --max-samples=100
   quint run dev/quint/process-quota.qnt --main=processQuota --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1
   @output=$(quint run dev/quint/process-quota.qnt --main=processQuota --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in process quota negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+
+# MAR-UI-R10/R11/R25. Layout and echo share the same TUI property entry.
+tui-model-gate:
+  quint typecheck dev/quint/tui-minibuffer.qnt
+  quint test dev/quint/tui-minibuffer.qnt --main=tuiMinibuffer --max-samples=100
+  quint run dev/quint/tui-minibuffer.qnt --main=tuiMinibuffer --seed=42 --max-samples=1000 --max-steps=30 --invariant=stateSafe --verbosity=1
+  quint test dev/quint/tui-minibuffer.qnt --main=minibufferEcho --max-samples=100
+  quint run dev/quint/tui-minibuffer.qnt --main=minibufferEcho --seed=42 --max-samples=1000 --max-steps=30 --invariant=safe --verbosity=1
+  @output=$(quint run dev/quint/tui-minibuffer.qnt --main=minibufferEcho --step=badStep --seed=42 --max-samples=100 --max-steps=4 --invariant=safe --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in echo timing negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
 
 # Run only inside a disposable, root-owned delegated Linux systemd scope.
 strict-linux-os-qualification:
@@ -111,14 +118,19 @@ property-gate: sysml-check property-model-gate scheme-property-gate
   cargo test --locked -p marlin-agent-gitops
   cargo test --locked -p marlin-agent-runtime --lib confirmed_process_does_not_release_until_pipe_endpoint_is_dropped
   cargo test --locked -p marlin-agent-kernel --test unit_test strict_tree_
-  python3 dev/verification/process_quota_gate.py
+  just process-quota-gate
   cargo test --locked -p marlin-agent-tui --no-default-features --lib
   cargo test --locked -p marlin-agent-ui --test ui_native_projection
   if [[ $(uname -s) == Darwin ]]; then just tui-runtime-gate; fi
 
+process-quota-gate:
+  cargo test --locked -p marlin-agent-runtime --test process_quota_gate -- --ignored --nocapture
+
 # Real linked macOS TUI: override MARLIN_TUI_SOAK_SECONDS for longer runs.
 tui-runtime-gate:
   just scheme-build
+  cargo test --locked -p marlin-agent-tui --test pty
+  cargo test --locked -p marlin-agent-tui --test pty streaming_command_navigation_stays_within_admitted_candidates -- --ignored --nocapture
   MARLIN_TUI_SOAK_SECONDS="${MARLIN_TUI_SOAK_SECONDS:-30}" cargo test --locked -p marlin-agent-tui --test pty repeated_stream_cancellation_soak -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty workspace_tool_cancel_reaps_process -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty workspace_tool_shutdown_reaps_after_exit -- --ignored --nocapture
@@ -179,7 +191,13 @@ scheme-package-gate:
   just scheme-test
 
 # Build the init-selected Scheme graph through the package Builder.
-scheme-build:
+scheme-build: (_scheme-package "build")
+
+# Remove the init-selected Scheme build and link products.
+scheme-clean: (_scheme-package "clean")
+
+[private]
+_scheme-package action:
   #!/usr/bin/env bash
   set -euo pipefail
   if [[ "$(uname -s)" == Darwin ]]; then
@@ -187,7 +205,7 @@ scheme-build:
     export PATH="${GERBIL_PREFIX:+$GERBIL_PREFIX/bin:}/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
   fi
   cd scheme
-  gerbil build
+  gerbil {{ quote(action) }}
 
 # Run the fixed full Context workload after provisioning the paired Scheme package.
 context-latency-gate:
@@ -246,7 +264,7 @@ tui-ui-mapping-bench: scheme-build
 
 # Keep interaction latency, first-copy startup, and source-free release
 # qualification in one reproducible command. Build time is not a sample.
-tui-performance-bench: tui-aot-debug tui-aot-build
+tui-performance-bench: tui-ui-mapping-bench tui-aot-debug tui-aot-build
   cargo test --locked -p marlin-agent-tui --test launch linked_debug_pre_ui_launch_pair -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test launch linked_release_pre_ui_launch_pair -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty first_mx_arrow_is_not_lost_before_the_menu_frame
@@ -254,6 +272,7 @@ tui-performance-bench: tui-aot-debug tui-aot-build
   cargo test --locked -p marlin-agent-tui --test pty debug_linked_fresh_copy_startup_pair -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty release_linked_fresh_copy_startup_pair -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty release_linked_ui_first_frame_without_a_gerbil_package_tree -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test pty idle_output_probe -- --ignored --nocapture
   cargo bench --locked -p marlin-agent-runtime --bench runtime_events
 
 # Diagnose whether the size-oriented profile improves a source-matched linked

@@ -435,6 +435,7 @@ fn input_measurement_counts_selected_nested_borders() {
         prefix: None,
         title: None,
         active: UiComponentId::new("focused").unwrap(),
+        trailing: None,
     };
     let tree = UiElement::Panel {
         border_tone: Some(UiTone::Normal),
@@ -448,8 +449,9 @@ fn input_measurement_counts_selected_nested_borders() {
             fallback: Box::new(input(true)),
         }])),
     };
-    assert_eq!(crate::ui_elements::input_border(&tree, &|_| false), Some(4));
-    assert_eq!(crate::ui_elements::input_border(&tree, &|_| true), Some(2));
+    let insets = |compact| crate::ui_elements::input_insets(&tree, &|_| compact).unwrap();
+    assert_eq!(insets(false).border, 4);
+    assert_eq!(insets(true).border, 2);
 }
 
 #[test]

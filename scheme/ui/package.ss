@@ -12,7 +12,7 @@
                  marlin-ui-buffer-identities marlin-ui-buffer-command-entries
                  marlin-ui-buffer-alias-command-entries marlin-ui-make-frame)
         (only-in "../ui-components/components.ss" marlin-ui-static-buffer-nodes)
-        (only-in "../ui-components/keymap.ss" marlin-ui-keymap marlin-ui-keymap-entries)
+        (only-in "../ui-meow/objects.ss" make-marlin-ui-keymap)
         (only-in "../ui-components/config.ss" UiComponentsScope)
         (only-in "../ui-modeline/config.ss" UiModelineScope)
         (only-in "../ui-transcript/config.ss" UiTranscriptScope)
@@ -61,7 +61,8 @@
                                 buffers))
              (error "invalid UI package contribution")))
          (catalog (.o entries: (append (.get marlin-ui-buffer-catalog entries) buffers)))
-         (keymap (.o entries: (append (.get marlin-ui-keymap entries) keys)))
+         (keymap (make-marlin-ui-keymap (append (.get components key-bindings) keys)))
+         (projected-keymap ((.get keymap project) (.get keymap bindings)))
          (ids (map car (.get catalog entries))))
     (unless (null? (duplicates ids eq?)) (error "duplicate package buffer"))
     (let* ((base (.get components command-catalog))
@@ -79,7 +80,8 @@
                  buffer-identities: (lambda () (marlin-ui-buffer-identities catalog))
                  static-buffer-nodes: (lambda () (marlin-ui-static-buffer-nodes catalog))
                  make-frame: (lambda () (marlin-ui-make-frame catalog))
-                 keymap-entries: (lambda () (marlin-ui-keymap-entries keymap)))))
+                 key-bindings: (.get keymap bindings)
+                 keymap-entries: (lambda () projected-keymap))))
       (make-ui-scope selected-components UiModelineScope UiTranscriptScope
                      UiThemesScope (.get package-value layout)
                      method-factories: (.get package-value method-factories)))))

@@ -11,5 +11,4 @@
 (.def UiModeline
   identity: 'ui-modeline
   core: (.o scope-contract: UiModelineScopeContract
-            exports: UiModelineScope)
-  features: (.o))
+            exports: UiModelineScope))

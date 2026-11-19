@@ -11,5 +11,4 @@
 (.def UiTranscript
   identity: 'ui-transcript
   core: (.o scope-contract: UiTranscriptScopeContract
-            exports: UiTranscriptScope)
-  features: (.o))
+            exports: UiTranscriptScope))

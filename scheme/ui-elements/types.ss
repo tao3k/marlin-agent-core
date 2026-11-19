@@ -23,6 +23,7 @@
                prompt: [(Fun UiElementVector <- UiElementIdentity UiElementVector)]
                bar: [(Fun UiElementVector <- UiElementIdentity UiBarDivisor UiElementValues)]
                choice: [(Fun UiElementVector <- UiElementValues UiElementVector)]
+               binding-present: [(Fun UiElementIdentity <- UiElementIdentity)]
                size-cells: [(Fun UiElementVector <- UiSizeCount)]
                size-flex: [(Fun UiElementVector <- UiSizeCount)]
                size-binding: [(Fun UiElementVector <- UiElementIdentity)]

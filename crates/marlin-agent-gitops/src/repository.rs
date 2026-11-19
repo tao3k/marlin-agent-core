@@ -27,6 +27,15 @@ impl GitCommitId {
     }
 }
 
+/// Git-owned inputs for shared Context and its worktree evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GitContext {
+    worktree: WorkingCopyGitTopLevel,
+    common_directory: PathBuf,
+    primary_worktree: Option<WorkingCopyGitTopLevel>,
+    commit: GitCommitId,
+}
+
 /// Exact Git checkout used to fence committed Context reads.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommittedCheckout {
@@ -111,6 +120,25 @@ impl CommittedCheckout {
     }
 }
 
+impl GitContext {
+    pub fn worktree(&self) -> &WorkingCopyGitTopLevel {
+        &self.worktree
+    }
+
+    pub fn common_directory(&self) -> &Path {
+        &self.common_directory
+    }
+
+    /// A repository with a bare main entry has no primary worktree.
+    pub fn primary_worktree(&self) -> Option<&WorkingCopyGitTopLevel> {
+        self.primary_worktree.as_ref()
+    }
+
+    pub fn commit(&self) -> &GitCommitId {
+        &self.commit
+    }
+}
+
 impl GitOperations {
     /// Read the stable Git directory shared by a repository's worktrees.
     pub async fn repository_owner(path: &Path) -> Result<PathBuf, GitReadError> {
@@ -144,6 +172,44 @@ impl GitOperations {
             reference: GitCheckoutRef(reference),
             commit: commit_id(&commit)?,
         })
+    }
+
+    /// Resolve a worktree, its repository owner, and its current committed revision.
+    pub async fn context(path: &Path) -> Result<GitContext, GitReadError> {
+        let worktree = Self::resolve_repository_root(path).await?;
+        let root = worktree.as_path();
+        let list_worktrees = ["worktree", "list", "--porcelain", "-z"].map(Into::into);
+        let (common_directory, listing, commit) = tokio::try_join!(
+            common_directory(root),
+            read_git_with(&LocalExecutor, root, &list_worktrees),
+            Self::head_commit(&worktree),
+        )?;
+        let primary_worktree = match main_worktree(&listing)? {
+            Some(primary) => Some(Self::resolve_repository_worktree(&worktree, &primary).await?),
+            None => None,
+        };
+        Ok(GitContext {
+            worktree,
+            common_directory,
+            primary_worktree,
+            commit,
+        })
+    }
+
+    pub async fn head_commit(
+        worktree: &WorkingCopyGitTopLevel,
+    ) -> Result<GitCommitId, GitReadError> {
+        let output = read_git_with(
+            &LocalExecutor,
+            worktree.as_path(),
+            &[
+                "rev-parse".into(),
+                "--verify".into(),
+                "HEAD^{commit}".into(),
+            ],
+        )
+        .await?;
+        commit_id(&output)
     }
 
     /// Read configured and rewritten fetch URLs for the selected repository.
@@ -272,6 +338,25 @@ fn absolute_path(output: &[u8]) -> Result<PathBuf, GitReadError> {
     let raw_path = output
         .strip_suffix(b"\n")
         .ok_or(GitReadError::InvalidRepositoryRoot)?;
+    absolute_path_bytes(raw_path)
+}
+
+fn main_worktree(output: &[u8]) -> Result<Option<PathBuf>, GitReadError> {
+    let mut fields = output.split(|byte| *byte == 0);
+    let path = fields
+        .next()
+        .and_then(|field| field.strip_prefix(b"worktree "))
+        .ok_or(GitReadError::InvalidRepositoryRoot)?;
+    if fields
+        .take_while(|field| !field.is_empty())
+        .any(|field| field == b"bare")
+    {
+        return Ok(None);
+    }
+    absolute_path_bytes(path).map(Some)
+}
+
+fn absolute_path_bytes(raw_path: &[u8]) -> Result<PathBuf, GitReadError> {
     #[cfg(unix)]
     let path = {
         use std::os::unix::ffi::OsStrExt;

@@ -11,5 +11,4 @@
 (.def UiComponents
   identity: 'ui-components
   core: (.o scope-contract: UiComponentsScopeContract
-            exports: UiComponentsScope)
-  features: (.o))
+            exports: UiComponentsScope))

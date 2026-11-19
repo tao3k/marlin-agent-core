@@ -2,7 +2,7 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-(import (only-in :clan/poo/type element? validate)
+(import (only-in :clan/poo/type element?)
         (only-in "../ui-components/config.ss" UiComponentsScope)
         (only-in "../ui-modeline/config.ss" UiModelineScope)
         (only-in "../ui-transcript/config.ss" UiTranscriptScope)
@@ -13,7 +13,8 @@
         (only-in "../ui-transcript/types.ss" UiTranscriptScopeContract)
         (only-in "../ui-themes/types.ss" UiThemesScopeContract)
         (only-in "../ui-layout/types.ss" UiLayoutScopeContract)
-        "./types.ss" "./objects.ss")
+        (only-in "./types.ss" ui-method-factories?)
+        (only-in "./objects.ss" make-ui-operations))
 (export make-ui-scope UiScope)
 (def (make-ui-scope components modeline transcript themes layout
                     method-factories: (method-factories #()))
@@ -32,8 +33,7 @@
   ;; Capture the declarations, not a caller-mutable vector. The factories
   ;; themselves build fresh method objects for each session.
   (def factories (vector-copy method-factories))
-  (validate UiScopeContract
-    (make-ui-operations components modeline transcript themes layout factories)))
+  (make-ui-operations components modeline transcript themes layout factories))
 
 ;;; Native imports express the selected source dependency graph. Package
 ;;; contributions extend this immutable base rather than a second registry.

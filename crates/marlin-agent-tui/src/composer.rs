@@ -5,11 +5,21 @@
 //! A grapheme-aware multiline composer.
 
 use std::collections::VecDeque;
+use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+use super::ui_elements::UiInputValue as ComposerView;
+
+#[path = "composer/expansion.rs"]
+mod expansion;
+use expansion::ExpansionUnit;
+#[path = "composer/layout.rs"]
+mod layout;
+
 pub(crate) const MAX_DRAFT_BYTES: usize = 1024 * 1024;
 const MAX_UNDO_EDITS: usize = 128;
+const MAX_SELECTION_HISTORY: usize = 32;
 
 fn word_class(grapheme: &str) -> u8 {
     match grapheme.chars().next() {
@@ -27,10 +37,11 @@ struct UndoEdit {
     cursor_before: usize,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct ComposerView {
-    pub(crate) rows: Vec<String>,
-    pub(crate) cursor: (u16, u16),
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct SelectionState {
+    anchor: Option<usize>,
+    cursor: usize,
+    expansion_unit: Option<ExpansionUnit>,
 }
 
 /// Editable multiline input with grapheme-aware cursor movement.
@@ -38,6 +49,9 @@ pub(crate) struct ComposerView {
 pub struct Composer {
     text: String,
     cursor: usize,
+    anchor: Option<usize>,
+    expansion_unit: Option<ExpansionUnit>,
+    selection_history: VecDeque<SelectionState>,
     vertical_column: Option<(u16, usize)>,
     limit_reached: bool,
     undo: VecDeque<UndoEdit>,
@@ -60,6 +74,9 @@ impl Composer {
         self.cursor
     }
     pub fn insert(&mut self, c: char) {
+        if self.anchor.is_some() && self.replace_selection(c.encode_utf8(&mut [0; 4])) {
+            return;
+        }
         if c.len_utf8() > MAX_DRAFT_BYTES.saturating_sub(self.text.len()) {
             self.limit_reached = true;
             return;
@@ -73,7 +90,7 @@ impl Composer {
         self.normalize_cursor();
     }
     pub fn insert_text(&mut self, text: &str) {
-        if text.is_empty() {
+        if text.is_empty() || self.replace_selection(text) {
             return;
         }
         if text.len() > MAX_DRAFT_BYTES.saturating_sub(self.text.len()) {
@@ -120,6 +137,9 @@ impl Composer {
             .map_or(self.text.len(), |i| self.cursor + i);
     }
     pub fn backspace(&mut self) {
+        if self.replace_selection("") {
+            return;
+        }
         let old = self.cursor;
         self.left();
         if self.cursor != old {
@@ -132,6 +152,9 @@ impl Composer {
         self.normalize_cursor();
     }
     pub fn delete(&mut self) {
+        if self.replace_selection("") {
+            return;
+        }
         let old = self.cursor;
         self.right();
         if self.cursor != old {
@@ -145,6 +168,7 @@ impl Composer {
         self.normalize_cursor();
     }
     pub fn take(&mut self) -> String {
+        self.clear_selection();
         self.cursor = 0;
         self.limit_reached = false;
         self.vertical_column = None;
@@ -246,8 +270,155 @@ impl Composer {
         }
     }
 
-    /// Delete the current logical line, including one adjacent newline.
+    fn selection(&self) -> Option<Range<usize>> {
+        let anchor = self.anchor?;
+        (anchor != self.cursor).then(|| anchor.min(self.cursor)..anchor.max(self.cursor))
+    }
+
+    pub(crate) fn selected_text(&self) -> Option<&str> {
+        self.selection().map(|range| &self.text[range])
+    }
+
+    pub(crate) fn extend_selection(&mut self, motion: impl FnOnce(&mut Self)) {
+        self.change_selection(|editor| {
+            editor.anchor.get_or_insert(editor.cursor);
+            editor.expansion_unit = None;
+            motion(editor);
+        });
+    }
+
+    fn selection_state(&self) -> SelectionState {
+        SelectionState {
+            anchor: self.anchor,
+            cursor: self.cursor,
+            expansion_unit: self.expansion_unit,
+        }
+    }
+
+    fn change_selection(&mut self, select: impl FnOnce(&mut Self)) {
+        let previous = self.selection_state();
+        select(self);
+        if self.selection_state() != previous {
+            if self.selection_history.len() == MAX_SELECTION_HISTORY {
+                self.selection_history.pop_front();
+            }
+            self.selection_history.push_back(previous);
+        }
+    }
+
+    pub(crate) fn previous_selection(&mut self) {
+        if let Some(previous) = self.selection_history.pop_back() {
+            self.anchor = previous.anchor;
+            self.cursor = previous.cursor;
+            self.expansion_unit = previous.expansion_unit;
+            self.vertical_column = None;
+            self.undo_insert_group = false;
+        }
+    }
+
+    pub(crate) fn reverse_selection(&mut self) {
+        self.vertical_column = None;
+        if let Some(anchor) = &mut self.anchor {
+            std::mem::swap(anchor, &mut self.cursor);
+        }
+    }
+
+    pub(crate) fn clear_selection(&mut self) -> bool {
+        let active = self.anchor.take().is_some() || !self.selection_history.is_empty();
+        self.selection_history.clear();
+        self.expansion_unit = None;
+        active
+    }
+
+    /// Select the current word or the next non-whitespace group.
+    pub(crate) fn select_word(&mut self) {
+        self.change_selection(Self::mark_word);
+    }
+
+    fn mark_word(&mut self) {
+        self.expansion_unit = Some(ExpansionUnit::Word);
+        self.vertical_column = None;
+        self.undo_insert_group = false;
+        let current = self.text[self.cursor..].graphemes(true).next();
+        if let Some(class) = current.map(word_class).filter(|class| *class != 0) {
+            for (start, _) in self.text[..self.cursor]
+                .grapheme_indices(true)
+                .rev()
+                .take_while(|(_, grapheme)| word_class(grapheme) == class)
+            {
+                self.cursor = start;
+            }
+        } else {
+            self.next_word();
+        }
+        self.anchor = Some(self.cursor);
+        self.move_word_end();
+    }
+
+    pub(crate) fn select_adjacent_word(&mut self, backward: bool) {
+        self.change_selection(|editor| {
+            editor.anchor.get_or_insert(editor.cursor);
+            editor.expansion_unit = Some(ExpansionUnit::Word);
+            if backward {
+                editor.previous_word();
+            } else {
+                editor.next_word();
+                editor.move_word_end();
+            }
+        });
+    }
+
+    fn move_word_end(&mut self) {
+        let mut graphemes = self.text[self.cursor..].graphemes(true).peekable();
+        if let Some(class) = graphemes.peek().map(|grapheme| word_class(grapheme)) {
+            self.cursor += graphemes
+                .take_while(|grapheme| word_class(grapheme) == class)
+                .map(str::len)
+                .sum::<usize>();
+        }
+    }
+
+    pub(crate) fn select_line(&mut self) {
+        self.change_selection(|editor| match editor.anchor {
+            Some(anchor)
+                if editor.expansion_unit == Some(ExpansionUnit::Line) && editor.cursor < anchor =>
+            {
+                editor.left();
+                editor.line_start();
+            }
+            Some(_) if editor.expansion_unit == Some(ExpansionUnit::Line) => {
+                editor.right();
+                editor.line_end();
+            }
+            _ => {
+                editor.line_start();
+                editor.anchor = Some(editor.cursor);
+                editor.line_end();
+                editor.expansion_unit = Some(ExpansionUnit::Line);
+            }
+        });
+    }
+
+    pub(crate) fn select_delimited(&mut self, open: char, close: char, inclusive: bool) {
+        let Some((left, right)) = enclosing_delimiters(&self.text, self.cursor, open, close) else {
+            return;
+        };
+        self.change_selection(|editor| {
+            let (anchor, cursor) = if inclusive {
+                (right + close.len_utf8(), left)
+            } else {
+                (left + open.len_utf8(), right)
+            };
+            editor.anchor = Some(anchor);
+            editor.cursor = cursor;
+            editor.expansion_unit = None;
+            editor.vertical_column = None;
+            editor.undo_insert_group = false;
+        });
+    }
+
     pub(crate) fn delete_line(&mut self) {
+        self.clear_selection();
         self.undo_insert_group = false;
         let before = self.cursor;
         let mut start = self.text[..before].rfind('\n').map_or(0, |index| index + 1);
@@ -257,18 +428,91 @@ impl Composer {
         if end == self.text.len() && start > 0 && (start == end || !self.text.ends_with('\n')) {
             start -= 1;
         }
-        if start == end {
-            return;
+        if start != end {
+            self.replace_range(start..end, "");
         }
-        self.record_edit(start, 0, self.text[start..end].to_owned(), before);
-        self.text.drain(start..end);
-        self.cursor = start.min(self.text.len());
+    }
+
+    /// Replace a selection as one bounded and undoable edit.
+    pub(crate) fn replace_selection(&mut self, text: &str) -> bool {
+        let Some(range) = self.selection() else {
+            return false;
+        };
+        if text.len() > MAX_DRAFT_BYTES - (self.text.len() - range.len()) {
+            self.limit_reached = true;
+            return true;
+        }
+        self.replace_range(range, text);
+        true
+    }
+
+    fn replace_range(&mut self, range: Range<usize>, text: &str) {
+        self.undo_insert_group = false;
+        self.record_edit(
+            range.start,
+            text.len(),
+            self.text[range.clone()].to_owned(),
+            self.cursor,
+        );
+        self.cursor = range.start + text.len();
+        self.text.replace_range(range, text);
         self.vertical_column = None;
         self.limit_reached = false;
         self.normalize_cursor();
     }
 
+    pub(crate) fn enter_insert(&mut self, after: bool) {
+        if let Some(anchor) = self.anchor {
+            self.cursor = if after {
+                anchor.max(self.cursor)
+            } else {
+                anchor.min(self.cursor)
+            };
+        } else if after {
+            self.right();
+        }
+        self.clear_selection();
+    }
+
+    /// Insert a logical line and leave the cursor at its start.
+    pub(crate) fn open_line(&mut self, below: bool) -> bool {
+        if self.text.len() == MAX_DRAFT_BYTES {
+            self.limit_reached = true;
+            return false;
+        }
+        self.clear_selection();
+        if below {
+            self.line_end();
+            self.insert('\n');
+        } else {
+            self.line_start();
+            self.insert('\n');
+            self.left();
+        }
+        true
+    }
+
+    pub(crate) fn paste(&mut self, text: &str, after: bool) {
+        if text.is_empty() {
+            return;
+        }
+        if !self.replace_selection(text) {
+            if text.len() > MAX_DRAFT_BYTES - self.text.len() {
+                self.limit_reached = true;
+                return;
+            }
+            if after && !self.text[self.cursor..].starts_with('\n') {
+                self.right();
+            }
+            self.insert_text(text);
+        }
+        if after && !self.limit_reached {
+            self.normal_cursor();
+        }
+    }
+
     pub(crate) fn undo(&mut self) {
+        self.clear_selection();
         self.undo_insert_group = false;
         let Some(edit) = self.undo.pop_back() else {
             return;
@@ -289,6 +533,8 @@ impl Composer {
         removed: String,
         cursor_before: usize,
     ) {
+        // Selection offsets refer to this draft revision only.
+        self.clear_selection();
         if self.undo_insert_group
             && removed.is_empty()
             && inserted_bytes > 0
@@ -474,121 +720,48 @@ impl Composer {
         (row + 1).min(limit) as u16
     }
 
-    /// Layout the cursor's visible rows without retaining the entire wrapped draft.
-    pub(crate) fn view(&self, width: u16, height: u16) -> Option<ComposerView> {
-        if width == 0 || height == 0 {
-            return None;
-        }
-        if self.is_plain_ascii() {
-            return Some(self.ascii_view(usize::from(width), usize::from(height)));
-        }
-        self.view_general(width, height)
-    }
-
     fn is_plain_ascii(&self) -> bool {
         self.text
             .bytes()
             .all(|byte| byte == b'\n' || (b' '..=b'~').contains(&byte))
     }
+}
 
-    fn ascii_view(&self, width: usize, height: usize) -> ComposerView {
-        let (mut row, mut col) = (0usize, 0usize);
-        for (index, line) in self.text[..self.cursor].split('\n').enumerate() {
-            if index > 0 {
-                row += 1;
-                col = 0;
-            }
-            advance_ascii(line.len(), width, &mut row, &mut col);
+/// Find the innermost matching pair around the cursor. Work on graphemes
+/// so the returned offsets remain valid even in text with combining marks.
+fn enclosing_delimiters(
+    text: &str,
+    cursor: usize,
+    open: char,
+    close: char,
+) -> Option<(usize, usize)> {
+    let mut open_bytes = [0; 4];
+    let mut close_bytes = [0; 4];
+    let open: &str = open.encode_utf8(&mut open_bytes);
+    let close: &str = close.encode_utf8(&mut close_bytes);
+    let mut starts = Vec::new();
+    let mut escaped = false;
+    for (offset, grapheme) in text.grapheme_indices(true) {
+        if offset > cursor && starts.is_empty() {
+            break;
         }
-        let (cursor_row, cursor_col) = visible_position(row, col, width);
-        let first_row = cursor_row.saturating_sub(height - 1);
-        let end_row = first_row + height;
-        let mut rows = vec![String::new(); height];
-        (row, col) = (0, 0);
-        'lines: for (index, line) in self.text.split('\n').enumerate() {
-            if index > 0 {
-                row += 1;
-                col = 0;
-            }
-            if row >= end_row {
-                break;
-            }
-            let mut offset = 0;
-            if row < first_row {
-                let skip = ((first_row - row).saturating_mul(width))
-                    .saturating_sub(col)
-                    .min(line.len());
-                advance_ascii(skip, width, &mut row, &mut col);
-                offset = skip;
-            }
-            while offset < line.len() {
-                if col == width {
-                    row += 1;
-                    col = 0;
-                }
-                if row >= end_row {
-                    break 'lines;
-                }
-                let take = (width - col).min(line.len() - offset);
-                if row >= first_row {
-                    rows[row - first_row].push_str(&line[offset..offset + take]);
-                }
-                offset += take;
-                col += take;
-            }
+        if std::mem::replace(&mut escaped, false) {
+            continue;
         }
-        ComposerView {
-            rows,
-            cursor: (cursor_col as u16, (cursor_row - first_row) as u16),
+        if grapheme == "\\" {
+            escaped = true;
+        } else if grapheme == close && (open != close || !starts.is_empty()) {
+            if let Some(start) = starts.pop()
+                && start <= cursor
+                && cursor <= offset
+            {
+                return Some((start, offset));
+            }
+        } else if grapheme == open {
+            starts.push(offset);
         }
     }
-
-    pub(crate) fn view_general(&self, width: u16, height: u16) -> Option<ComposerView> {
-        if width == 0 || height == 0 {
-            return None;
-        }
-        let width = usize::from(width);
-        let (mut row, mut col) = (0usize, 0usize);
-        for grapheme in self.text[..self.cursor].graphemes(true) {
-            advance(grapheme, width, &mut row, &mut col);
-        }
-        let (cursor_row, cursor_col) = cursor_position(
-            row,
-            col,
-            width,
-            self.text[self.cursor..].graphemes(true).next(),
-        );
-        let first_row = cursor_row.saturating_sub(usize::from(height) - 1);
-        let end_row = first_row + usize::from(height);
-        let mut rows = vec![String::new(); usize::from(height)];
-        (row, col) = (0, 0);
-        for grapheme in self.text.graphemes(true) {
-            if grapheme == "\n" {
-                advance(grapheme, width, &mut row, &mut col);
-                if row >= end_row {
-                    break;
-                }
-                continue;
-            }
-            let symbol = display_symbol(grapheme, width);
-            let symbol_width = UnicodeWidthStr::width(symbol);
-            if col + symbol_width > width || col == width {
-                row += 1;
-                col = 0;
-            }
-            if row >= end_row {
-                break;
-            }
-            if row >= first_row {
-                rows[row - first_row].push_str(symbol);
-            }
-            col += symbol_width;
-        }
-        Some(ComposerView {
-            rows,
-            cursor: (cursor_col as u16, (cursor_row - first_row) as u16),
-        })
-    }
+    None
 }
 
 fn advance_ascii(count: usize, width: usize, row: &mut usize, col: &mut usize) {

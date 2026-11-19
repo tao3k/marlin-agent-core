@@ -5,6 +5,7 @@
 (import (only-in :clan/poo/object .cc)
         (only-in :clan/poo/type Fun Object Type.)
         (only-in :clan/poo/type Exactly Record)
+        (only-in "../ui-meow/types.ss" KeyBindings)
         (only-in "./commands.ss" marlin-ui-command-entries? marlin-ui-command-history?))
 (export UiComponentsScopeContract)
 
@@ -25,6 +26,7 @@
                command-candidates: [(Fun UiCommandNames <- UiCommandEntries UiCommandQuery UiCommandHistory)]
                record-command-history: [(Fun UiCommandHistory <- UiCommandHistory UiCommandQuery)]
                command-extensions: [(Fun UiCommandEntries <-)]
+               key-bindings: [KeyBindings]
                transient-entries: [(Fun UiTransientEntries <-)]
                browse-command: [(Fun Object <- UiCommandEntries Object)])
        identity: 'marlin/ui-components))

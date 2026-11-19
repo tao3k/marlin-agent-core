@@ -17,7 +17,7 @@ error. This directory does not maintain a second source inventory. =just rust-de
 
 | Concern | Owner | First active property |
 |---------+-------+-----------------------|
-| Architecture and allocations | =project.sysml= and =dev/sysml/= | MAR-UI-R10/R11/R12/R13 |
+| Architecture and allocations | =project.sysml= and =dev/sysml/= | MAR-UI-R10/R11/R12/R13/R25 |
 | Finite UI transitions | =dev/quint/tui-minibuffer.qnt= | safe geometry, focus, first M-x arrow, Ask Frame draft retention, pointer/key separation |
 | Model tool review | =dev/quint/model-tool-review.qnt= | durable request, registered tool identity, matching one-shot approval, execution claim before effects, crash uncertainty without silent retry, stale/early execution controls |
 | Managed process quota and cleanup | =MAR-PROC-R01/R07= in =dev/sysml/process-lifecycle.sysml=, Rust runtime, =dev/quint/= | generated trace replay against OS process and output EOF observations, plus isolated mutations |
@@ -51,9 +51,34 @@ cases; a bounded exhaustive test covers terminal heights 7..80 and widths
 10, 24, 40, 80, 120 and 160. Failed seeds and counterexamples belong in the
 failing test output; do not replace them with a passing rerun.
 
+** Shared Minibuffer echo
+:PROPERTIES:
+:CUSTOM_ID: minibuffer-echo
+:END:
+
+MAR-UI-R25 lives in [[file:../sysml/tui-declarative-engine.sysml][the declarative UI model]].
+The Scheme workbench suite samples 1,024 combined fact sets with seed 42 and
+requires every source of echo, including the quiet case, to win at least once.
+The native timer property samples 128 replacements with seed 42. The binding
+also exercises the real Minibuffer while a loopback model response fails.
+
+=just tui-model-gate= checks layout and echo as separate models within
+=tui-minibuffer.qnt=. Each runs 1,000 traces of up to 30 steps with seed 42.
+The echo negative control reveals help before the first frame and must be
+rejected. =just property-gate= runs the TUI property gate and the native suites.
+
+=just tui-performance-bench= includes the mapper workload, debug and release
+startup, linked navigation and idle output. Mapper cases =input-adornment=
+measure empty feedback, visible feedback and clipped wide text at fixed
+terminal sizes. Criterion timings include TestBackend painting and diffing.
+The PTY samples include terminal input and output. The startup pair records
+elapsed time from process creation separately from application startup traces.
+
+** Managed process quota
+
 The process quota model fixes seed 42, 1,000 simulation traces and eight steps.
 Its negative control must report an invariant violation. In addition, the
-process quota gate generates three named and 20 seeded ITF traces, replays each
+Rust qualification in =just process-quota-gate= generates three named and 20 seeded ITF traces, replays each
 through Rust with OS observations, and checks isolated source mutations. Two
 process-tree traces additionally observe a same-group descendant and output
 EOF; Unix group disappearance gates quota reuse. Two lease traces cover strict-tree denial and caller-held stdin
@@ -112,7 +137,8 @@ PTY observation and fresh-file control, is retained in
 accepted OTLP/HTTP request open without sending a response. Before the TUI
 exits, the test checks the final Runtime task and process counts, the terminal
 mode, and OS absence of the workspace tool, its pipe-inheriting descendant,
-and their process group. The PTY test process measures a ten-second deadline
+their process group, and a deliberately blocked startup worktree probe.
+The PTY test process measures a ten-second deadline
 from the quit key. The TUI must report the export failure and exit successfully
 while the collector still owns the socket.
 

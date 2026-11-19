@@ -8,9 +8,13 @@
         (only-in :marlin-agent-core/ui/config UiScope)
         (only-in :marlin-agent-core/ui-centaur-tabs/funcs marlin-ui-buffer-tabs)
         (only-in :marlin-agent-core/ui-layout/config marlin-ui-layout-with-tab-bar)
+        (only-in :marlin-agent-core/ui-meow/interface define-key-bindings meow-global meow-keypad
+                 meow-things)
         (only-in :clan/poo/mop .defgeneric .defmethod .defmethod-bundle)
         (only-in :marlin-agent-core/ui-elements/funcs
-                 ui-rows ui-columns ui-region ui-sized ui-text ui-list ui-size-cells ui-template)
+                 ui-binding-present ui-rows ui-columns ui-region ui-sized ui-sized-with
+                 ui-text ui-list
+                 ui-size-cells ui-size-choice ui-template)
         (only-in :marlin-agent-core/ui/session UiPackage. make-ui-package
                  marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch))
 (export test-extension make-test-methods make-test-forged-methods test-publication
@@ -18,6 +22,11 @@
 
 ;;; This package contributes only Scheme values. The host has no case for
 ;;; notes, open-notes or M-z.
+(define-key-bindings NotesKeymap
+  keypad: (meow-keypad ((SPC z) (M-z)))
+  (meow-global ((M-z) open-notes "Package notes"))
+  (meow-things (z #\| #\| "pipes")))
+
 (def (make-package-methods)
   (def event-protocol (.get UiScope event-protocol))
   (def select-row (.get UiScope events select-list-row))
@@ -46,10 +55,16 @@
                                       '#(#(first #(#(entry "First Scheme row")))
                                          #(second #(#(entry "Second Scheme row"))))
                                       (ui-size-cells 0)
-                                      (ui-template 'none '((binding normal #f entry)))))))))
+                                      (ui-template 'none '((binding normal #f entry)))))
+                                  (ui-sized-with
+                                    (ui-size-choice
+                                      (list (list (ui-binding-present 'package-state) (ui-size-cells 1)))
+                                      (ui-size-cells 0))
+                                    (ui-region 'package-status #f
+                                      (ui-template 'none '((binding accent #f package-state)))))))))
                      #f))
         commands: '(("open-notes" "Open package notes" none select-buffer "notes"))
-        keymap: '((global (M-z) open-notes "Package notes"))
+        keymap: (.get NotesKeymap bindings)
         layout: (marlin-ui-layout-with-tab-bar
                   (lambda (buffers style)
                     (marlin-ui-buffer-tabs buffers '((notes "Lab Notes" packages)) style)))
@@ -82,11 +97,17 @@
          (set! state (vector-ref (marlin-ui-session-dispatch
                                   (vector state 'select-profile 'tabs-box)) 0))
          (set! step 1)
-         (vector 60 20 (marlin-ui-session-project state) #(#(2 2) #(2 4))))
+         (vector 60 20 (marlin-ui-session-project state) #(#(2 2) #(2 4))
+                 '#(#(package-state "Provided by Scheme"))))
         ((1)
          (unless (and (ormap (lambda (row) (string-contains row "Scheme package window"))
                              (vector->list (vector-ref screen 0)))
                       (string-contains (vector-ref (vector-ref screen 0) 0) "Lab Notes│")
+                      (ormap (lambda (row) (string-contains row "Provided by Scheme"))
+                             (vector->list (vector-ref screen 0)))
+                      (ormap (lambda (hit) (and (eq? (vector-ref hit 0) 'package-status)
+                                                (= (vector-ref hit 4) 1)))
+                             (vector->list (vector-ref screen 1)))
                       (ormap (lambda (hit)
                                (and (eq? (vector-ref hit 0) 'buffer-notes)
                                     (= (vector-ref hit 2) 0)))
@@ -111,6 +132,10 @@
                       (ormap (lambda (row)
                                (and (string-contains row "中") (string-contains row "🐟")))
                              (vector->list (vector-ref screen 0)))
+                      (not (ormap (lambda (row) (string-contains row "Provided by Scheme"))
+                                  (vector->list (vector-ref screen 0))))
+                      (not (ormap (lambda (hit) (eq? (vector-ref hit 0) 'package-status))
+                                  (vector->list (vector-ref screen 1))))
                       (<= 0 (vector-ref (vector-ref screen 2) 0) 31)
                       (<= 0 (vector-ref (vector-ref screen 2) 1) 9))
            (error "package window resize failed"))

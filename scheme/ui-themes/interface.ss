@@ -11,5 +11,4 @@
 (.def UiThemes
   identity: 'ui-themes
   core: (.o scope-contract: UiThemesScopeContract
-            exports: UiThemesScope)
-  features: (.o))
+            exports: UiThemesScope))

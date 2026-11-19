@@ -11,5 +11,4 @@
 (.def Ui
   identity: 'ui
   core: (.o scope-contract: UiScopeContract
-            exports: UiScope)
-  features: (.o))
+            exports: UiScope))

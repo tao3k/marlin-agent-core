@@ -6,83 +6,16 @@
 (import (only-in :clan/poo/object .mix .o .ref seal-object!)
         (only-in "./objects.ss" UiLayoutBase. frame-regions)
         (only-in "../ui-elements/funcs.ss"
-                 ui-text ui-rows ui-columns ui-region ui-scroll-target ui-template ui-choice ui-sized-with
+                 ui-text ui-rows ui-region ui-scroll-target ui-template ui-choice ui-sized-with
                  ui-size-cells ui-size-flex ui-size-binding ui-size-bounded ui-size-choice
                  ui-size-min ui-size-max ui-size-add ui-size-subtract
-                 ui-input ui-slot ui-panel ui-list ui-prompt)
-        (only-in "../ui-components/commands.ss" marlin-ui-candidate-templates marlin-ui-list-offset))
+                 ui-slot ui-panel ui-list)
+        (only-in "../ui-components/commands.ss" marlin-ui-candidate-templates marlin-ui-list-offset)
+        (only-in "./minibuffer.ss"
+                 minibuffer-echo-policy minibuffer-editor minibuffer-status
+                 echo-area-owns-minibuffer dashboard-overhead))
 (export marlin-ui-layout-policy-for)
 
-(def (status-line spans)
-  (ui-template 'none spans))
-(def (status-text text)
-  (status-line (list (list 'literal 'normal #f text))))
-(def (search-line prompt)
-  (ui-prompt 'query
-    (ui-template 'none (list (list 'literal 'normal #f prompt)
-                             '(binding normal #f query)))))
-(def status-prefix
-  (ui-choice
-    (list (list 'editor-collapsed
-                (ui-choice
-                  (list (list 'extra-two
-                              (status-line '((literal normal #f " › ") (binding normal #f extra-one)
-                                             (literal normal #f " · ") (binding normal #f extra-two)
-                                             (literal normal #f " · "))))
-                        (list 'extra-one
-                              (status-line '((literal normal #f " › ") (binding normal #f extra-one)
-                                             (literal normal #f " · ")))))
-                  (status-text " › "))))
-    (status-text " ")))
-(def status-prefix-width
-  (ui-size-choice
-    (list (list 'editor-collapsed
-                (ui-size-choice
-                  (list (list 'extra-two
-                              (ui-size-add (ui-size-cells 9)
-                                           (ui-size-add (ui-size-binding 'extra-one-width)
-                                                        (ui-size-binding 'extra-two-width))))
-                        (list 'extra-one
-                              (ui-size-add (ui-size-cells 6) (ui-size-binding 'extra-one-width))))
-                  (ui-size-cells 3))))
-    (ui-size-cells 1)))
-(def status-body
-  (ui-choice
-    (list (list 'notice (status-line '((binding normal #f notice))))
-          (list 'workspace (status-text "Workspace: PageUp/PageDown scroll  Esc/Ctrl-C return  Enter submit draft"))
-          (list 'messages (status-text "*Messages* · Esc returns to conversation"))
-          (list 'static-buffer (status-line '((binding normal #f static-name)
-                                             (literal normal #f " · Esc returns"))))
-          (list 'quit-armed (status-text "Press Ctrl-C again to quit; another key cancels. Draft will not be saved."))
-          (list 'draft-limit (status-text "Draft limit: 1 MiB. Insertion rejected; draft retained."))
-          (list 'runtime (status-text "Runtime: Esc/Ctrl-C return  Enter submit draft"))
-          (list 'commands-focus (status-text "Commands: Enter open  M-x search  Ctrl-Q quit"))
-          (list 'transcript-focus (status-text "Transcript: scroll to browse  M-x commands  Ctrl-Q quit"))
-          (list 'extension-focus (status-text "Extension: Enter activate  M-x commands  Ctrl-Q quit"))
-          (list 'normal-mode (status-text "NORMAL")))
-    (status-text "Message: Enter send  Ctrl-R search  M-x commands  Ctrl-Q quit")))
-(def minibuffer-status
-  (ui-choice
-    (list (list 'searching (search-line " Searching: "))
-          (list 'search-match (search-line " Search: "))
-          (list 'search-no-match (search-line " No match: "))
-          (list 'transient (ui-slot 'transient-hint)))
-    (ui-columns (list (ui-sized-with status-prefix-width status-prefix)
-                      (ui-sized-with (ui-size-flex 1) status-body)))))
-(def editor-view
-  (ui-choice
-    (list (list 'command
-                (ui-input #f 'bar
-                  (ui-choice
-                    (list (list 'width-at-least-20
-                                (ui-template 'none '((binding accent #f selected-count)
-                                                     (literal accent #f "/")
-                                                     (binding accent #f candidate-count)
-                                                     (literal accent #f " ")
-                                                     (binding accent #f prompt)))))
-                    (ui-template 'none '((binding accent #f compact-prompt))))
-                  #f 'focused)))
-    (ui-input #t 'none #f 'title 'focused)))
 (def extension-view
   (ui-list 'extension-list 'extensions marlin-ui-list-offset (ui-choice
     (list (list 'selected
@@ -123,23 +56,37 @@
   (ui-size-min (ui-size-binding 'transcript-min)
                (ui-size-subtract terminal-height (ui-size-cells 2))))
 (def footer-reservation
-  (ui-size-max (ui-size-binding 'footer-min) (ui-size-binding 'hint-rows)))
+  (ui-size-choice
+    (list (list 'transient
+                (ui-size-add (ui-size-binding 'hint-rows) dashboard-overhead))
+          (list echo-area-owns-minibuffer (ui-size-cells 1))
+          (list 'search-no-match (ui-size-cells 1))
+          (list 'editor-expanded (ui-size-cells 0)))
+    (ui-size-binding 'footer-min)))
+(def tab-editor-rows
+  (ui-size-choice
+    (list (list 'editor-fixed (ui-size-binding 'fixed-editor))
+          (list echo-area-owns-minibuffer (ui-size-cells 1))
+          (list 'editor-expanded (ui-size-binding 'measured-editor)))
+    (ui-size-cells 1)))
 (def tab-size
   (ui-size-min (ui-size-cells 1)
     (ui-size-subtract terminal-height
       (ui-size-add
         (ui-size-add (ui-size-binding 'transcript-min) footer-reservation)
-        (ui-size-max (ui-size-cells 2)
-                     (ui-size-add (ui-size-binding 'fixed-editor) (ui-size-cells 1)))))))
+        (ui-size-add tab-editor-rows (ui-size-cells 1))))))
 (def tab-rows (ui-size-binding 'region/buffer-tabs))
 (def editor-reservation
-  (ui-size-add (ui-size-add footer-reservation (ui-size-add tab-rows (ui-size-cells 1)))
-               transcript-reservation))
+  (ui-size-add
+    (ui-size-add (size-choice (list (list 'search-no-match (ui-size-cells 1))))
+                 (ui-size-add tab-rows (ui-size-cells 1)))
+    transcript-reservation))
 (def editor-budget
   (ui-size-min (ui-size-binding 'chatbox-limit)
                (ui-size-subtract terminal-height editor-reservation)))
 (def editor-size
   (size-choice (list (list 'editor-fixed (ui-size-bounded 'fixed-editor 'terminal-height))
+                     (list echo-area-owns-minibuffer (ui-size-cells 0))
                      (list 'editor-expanded
                            (ui-size-min (ui-size-binding 'measured-editor)
                                         editor-budget)))))
@@ -148,12 +95,11 @@
   (ui-size-binding (string->symbol (string-append "region/" (symbol->string (frame-region-id role))))))
 (def editor-rows (frame-region-extent 'editor))
 (def footer-size
-  (ui-size-max
-    (ui-size-min footer-reservation
+  (ui-size-min footer-reservation
+    (ui-size-max (ui-size-min (ui-size-cells 1) terminal-height)
                  (ui-size-subtract terminal-height
                    (ui-size-add (ui-size-add transcript-reservation editor-rows)
-                                (ui-size-add tab-rows (ui-size-cells 1)))))
-    (ui-size-min (ui-size-binding 'footer-min) terminal-height)))
+                                (ui-size-add tab-rows (ui-size-cells 1)))))))
 (def spare-rows
   (ui-size-subtract terminal-height
     (ui-size-add (ui-size-add (ui-size-binding 'region/minibuffer)
@@ -185,7 +131,7 @@
                  (case name
                    ((transcript) (main-view transcript-value))
                    ((extensions) extension-view)
-                   ((editor) editor-view)
+                   ((editor) minibuffer-editor)
                    ((candidates) marlin-ui-candidate-templates)
                    ((modeline) modeline-value)
                    ((minibuffer) minibuffer-status)
@@ -194,11 +140,13 @@
 (def (marlin-ui-layout-policy-for modeline-value transcript-value tab-bar)
   (let (region (lambda (slot) (frame-region modeline-value transcript-value slot)))
     (seal-object!
-      (.mix (.o frame-tree: (ui-rows
-              (list (ui-sized-with tab-size (ui-region 'buffer-tabs #f tab-bar))
-                    (ui-rows (map region '((transcript transcript 3) (extensions #f 0))))
-                    (region '(modeline #f 0))
-                    (ui-region (frame-region-id 'minibuffer-hover) #f
-                      (ui-rows (map region '((editor #f 0) (candidates candidates 1)
-                                             (minibuffer #f 0))))))))
+      (.mix (.o echo-policy: minibuffer-echo-policy
+                frame-tree:
+                (ui-rows
+                  (list (ui-sized-with tab-size (ui-region 'buffer-tabs #f tab-bar))
+                        (ui-rows (map region '((transcript transcript 3) (extensions #f 0))))
+                        (region '(modeline #f 0))
+                        (ui-region (frame-region-id 'minibuffer-hover) #f
+                          (ui-rows (map region '((editor #f 0) (candidates candidates 1)
+                                                 (minibuffer #f 0))))))))
             UiLayoutBase.))))

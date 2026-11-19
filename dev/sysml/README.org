@@ -89,6 +89,7 @@ files remain local outputs regardless of their extension.
 | MAR-TUI-R05 | Qualification harness | [[file:../../docs/40-rfcs/40.180-emacs-scheme-tui.org::#tui-performance][Matched performance measurement]] |
 | MAR-TUI-R06 | Composer | [[file:../../docs/40-rfcs/40.180-emacs-scheme-tui.org::#tui-performance][Unicode, paste and resize]] |
 | MAR-TUI-R07 | Terminal ownership | [[file:../../docs/40-rfcs/40.180-emacs-scheme-tui.org::#tui-performance][Suspend and handoff lifecycle]] |
+| MAR-UI-R25 | Scheme layout policy and generic Ratatui input mapping | [[file:../verification/README.org::#minibuffer-echo][Shared echo qualification]] |
 | MAR-GCTX-R01–R09 | GitOps, resource owner, discovery index, Lab Context, MRR/Data and TUI | [[file:../../docs/40-rfcs/40.182-gitops-context-discovery.org::*Qualification plan][GitOps Context qualification plan]] |
 
 The actual package references the Rust run registry, policy IR, Scheme C ABI

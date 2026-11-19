@@ -6,14 +6,15 @@
 // Reuse the production queue without exporting an internal terminal API.
 #[path = "../src/input/wheel.rs"]
 mod benchmark_input;
+#[path = "ui_mapping/input_adornment.rs"]
+mod input_adornment;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use marlin_agent_tui::ui_elements::{
     Extent, RegionExtents, UiContentSlot, UiListRow, UiListState, UiRenderInputs, UiSlotRenderer,
     hit_test, hit_test_scroll, layout_regions, layout_regions_with_facts,
-    layout_regions_with_scroll, render_input, render_list, render_prompt, render_template,
-    render_with_facts, render_with_regions, render_with_scroll, render_with_slots, resolve_choice,
-    resolve_size,
+    layout_regions_with_scroll, render_list, render_prompt, render_template, render_with_facts,
+    render_with_regions, render_with_scroll, render_with_slots, resolve_choice, resolve_size,
 };
 use marlin_agent_ui::{
     UiComponentId, UiElement, UiSpan, UiTemplateSpan, UiTemplateValue, UiTheme, UiTone,
@@ -492,87 +493,9 @@ fn mapping(c: &mut Criterion) {
                 .unwrap();
         })
     });
-    let input = UiElement::Input {
-        bordered: false,
-        background: marlin_agent_ui::UiBackground::Bar,
-        prefix: Some(Box::new(UiElement::Template {
-            background: marlin_agent_ui::UiBackground::None,
-            spans: vec![marlin_agent_ui::UiTemplateSpan {
-                value: marlin_agent_ui::UiTemplateValue::Binding(
-                    UiComponentId::new("prompt").unwrap(),
-                ),
-                tone: UiTone::Accent,
-                bold: false,
-            }],
-        })),
-        title: None,
-        active: UiComponentId::new("active").unwrap(),
-    };
-    let input_values = UiRenderInputs {
-        theme: &theme,
-        offset: &|_| 0,
-        facts: &|_| false,
-        extent: &|_| Extent::Cells(0),
-        bindings: &[("prompt", "M-x ")],
-    };
-    let mut input_terminal = Terminal::new(TestBackend::new(80, 1)).unwrap();
-    c.bench_function("ui/mapping/input", |b| {
-        b.iter(|| {
-            input_terminal
-                .draw(|frame| {
-                    render_input(frame, frame.area(), &input, &input_values, true, |_, _| {
-                        Some((vec![black_box("command").to_owned()], (7, 0)))
-                    });
-                })
-                .unwrap();
-        })
-    });
-    struct Editor;
-    impl UiSlotRenderer for Editor {
-        fn render(
-            &mut self,
-            _: &mut ratatui::Frame<'_>,
-            _: ratatui::layout::Rect,
-            _: &marlin_agent_ui::UiSlotSource,
-            _: Option<&UiElement>,
-            _: &UiRenderInputs<'_>,
-            _: usize,
-        ) {
-        }
-        fn input(
-            &mut self,
-            frame: &mut ratatui::Frame<'_>,
-            area: ratatui::layout::Rect,
-            element: &UiElement,
-            inputs: &UiRenderInputs<'_>,
-        ) {
-            render_input(frame, area, element, inputs, true, |_, _| {
-                Some((vec![black_box("command").to_owned()], (7, 0)))
-            });
-        }
-    }
-    let input_tree = UiElement::Rows(vec![UiElement::Sized {
-        size: marlin_agent_ui::UiSize::Flex(1),
-        child: Box::new(input.clone()),
-    }]);
-    c.bench_function("ui/mapping/input-tree", |b| {
-        b.iter(|| {
-            input_terminal
-                .draw(|frame| {
-                    render_with_slots(
-                        frame,
-                        frame.area(),
-                        &input_tree,
-                        &mut Vec::new(),
-                        &input_values,
-                        &mut Editor,
-                    )
-                })
-                .unwrap();
-        })
-    });
+    input_adornment::plain(c, &theme);
     let panel = UiElement::Panel {
-        border_tone: UiTone::Info,
+        border_tone: Some(UiTone::Info),
         field_template: Box::new(UiElement::Template {
             background: marlin_agent_ui::UiBackground::None,
             spans: vec![
@@ -625,7 +548,7 @@ fn mapping(c: &mut Criterion) {
                         frame.area(),
                         black_box(&panel),
                         &mut Vec::new(),
-                        &input_values,
+                        &inputs,
                         black_box(&mut panel_slot),
                     );
                 })
@@ -869,6 +792,7 @@ fn mapping(c: &mut Criterion) {
                         prefix: None,
                         title: None,
                         active: UiComponentId::new("ask").unwrap(),
+                        trailing: None,
                     },
                 ),
                 sized(
@@ -1021,5 +945,5 @@ fn mapping(c: &mut Criterion) {
     });
 }
 
-criterion_group! { name = benches; config = Criterion::default().sample_size(30).measurement_time(Duration::from_secs(3)); targets = mapping }
+criterion_group! { name = benches; config = Criterion::default().sample_size(30).measurement_time(Duration::from_secs(3)); targets = mapping, input_adornment::mapping }
 criterion_main!(benches);

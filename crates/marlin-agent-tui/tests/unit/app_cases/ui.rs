@@ -570,10 +570,7 @@ fn event_messages_use_a_switchable_buffer_without_polluting_conversation() {
     app.publish_message(event);
     assert_eq!(app.transcript.len(), 1);
     assert_eq!(app.messages.len(), 1);
-    assert_eq!(
-        app.minibuffer_notice.as_deref(),
-        Some("Profile selection failed")
-    );
+    assert_eq!(app.echo_area.message(), Some("Profile selection failed"));
     assert_eq!(
         app.messages[0].1,
         "Profile selection failed: native status 3"
@@ -835,13 +832,13 @@ fn modeline_sits_above_the_collapsible_minibuffer() {
 
     app.minibuffer_hovered = true;
     paint(&mut terminal, &app, &view);
-    assert!(row(&terminal, 8).contains("Message"));
+    assert!(row(&terminal, 8).starts_with('┌'));
     assert!(row(&terminal, 7).contains("ANCHOR"));
     assert!(mouse_over_minibuffer(&app, &test_layout(), 80, 12, 9));
     assert!(!mouse_over_minibuffer(&app, &test_layout(), 80, 12, 7));
     app.minibuffer_hovered = false;
     app.composer.insert_text("draft survives hover exit");
     paint(&mut terminal, &app, &view);
-    assert!(row(&terminal, 8).contains("Message"));
+    assert!(row(&terminal, 8).starts_with('┌'));
     assert!(row(&terminal, 9).contains("draft survives hover exit"));
 }

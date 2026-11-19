@@ -11,6 +11,7 @@
       text: ui-text rows: ui-rows columns: ui-columns
       region: ui-region scroll-target: ui-scroll-target
       template: ui-template prompt: ui-prompt bar: ui-bar choice: ui-choice
+      binding-present: ui-binding-present
       size-cells: ui-size-cells size-flex: ui-size-flex size-binding: ui-size-binding
       size-bounded: ui-size-bounded size-choice: ui-size-choice sized: ui-sized-with
       size-min: ui-size-min size-max: ui-size-max

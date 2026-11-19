@@ -219,6 +219,7 @@ fn streaming_command_navigation_stays_within_admitted_candidates() {
     terminal.wait_for(Duration::from_secs(10), "stream active", |output| {
         contains(output, b"stream-active")
     });
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bx");
     terminal.wait_for(
         Duration::from_secs(5),
@@ -237,8 +238,30 @@ fn streaming_command_navigation_stays_within_admitted_candidates() {
                     .all(|line| !line.contains("Command menu failed"))
         },
     );
-    terminal.send(b"\x07\x03");
-    let _ = release_tx.send(());
+    terminal.send(b"help");
+    terminal.wait_text("M-x help");
+    release_tx.send(()).unwrap();
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "message beside the active command query",
+        |output| {
+            screen_lines(output)
+                .iter()
+                .any(|line| line.contains("M-x help") && line.contains("Model request fail"))
+        },
+    );
+    terminal.send(b"\x7f");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "typing clears the echo without replacing the query",
+        |output| {
+            let rows = screen_lines(output);
+            rows.iter().any(|line| line.contains("M-x hel"))
+                && rows.iter().all(|line| !line.contains("Model request fail"))
+        },
+    );
+    terminal.send(b"\x07\x18bmessages\r");
+    terminal.wait_text("Model request failed");
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
     terminal.assert_restored();

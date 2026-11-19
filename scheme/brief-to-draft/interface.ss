@@ -10,5 +10,4 @@
 (.def BriefToDraft
   identity: 'brief-to-draft
   core: (.o scope-contract: BriefToDraftScopeContract
-            exports: BriefToDraftScope)
-  features: (.o))
+            exports: BriefToDraftScope))

@@ -11,5 +11,4 @@
 (.def CAbi
   identity: 'c-abi
   core: (.o scope-contract: CAbiScopeContract
-            exports: CAbiScope)
-  features: (.o))
+            exports: CAbiScope))

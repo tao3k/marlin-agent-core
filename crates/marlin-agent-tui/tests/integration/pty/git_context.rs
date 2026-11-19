@@ -41,7 +41,7 @@ fn commit_context(root: &Path, name: &str) -> String {
 }
 
 fn messages(terminal: &mut Terminal) {
-    terminal.wait_status("Message: Enter send");
+    terminal.enter_normal_mode();
     terminal.send(b"\x18b");
     terminal.wait_text("Switch to:");
     terminal.send(b"messages\r");

@@ -21,6 +21,6 @@ pub use diff::{
 };
 pub use read::{DISABLED_HOOKS, GIT_REPOSITORY_OVERRIDES, GitReadError};
 pub use repository::{
-    CommittedCheckout, ContextDocument, GitCheckoutRef, GitCommitId, GitOperations,
+    CommittedCheckout, ContextDocument, GitCheckoutRef, GitCommitId, GitContext, GitOperations,
 };
 pub use status::{GitFileState, GitPath, GitStatus, GitStatusEntry, GitStatusError};

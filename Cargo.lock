@@ -2734,6 +2734,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "gerbil-scheme",
+ "marlin-agent-gitops",
  "marlin-agent-graph",
  "marlin-agent-protocol",
  "marlin-context-org-model",
@@ -2742,7 +2743,10 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
  "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]

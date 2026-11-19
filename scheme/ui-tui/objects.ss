@@ -7,4 +7,6 @@
       program-entry: 'marlin-agent-core/ui-tui/entry
       ;; Gerbil resolves compiled plugin exports through these interfaces.
       ;; Include their compiler metadata for demand loading from the image.
-      program-runtime-imports: '(:gerbil/expander :marlin-agent-core/ui/session)))
+      program-runtime-imports: '(:gerbil/expander
+                                 :marlin-agent-core/ui/session
+                                 :marlin-agent-core/ui-meow/interface)))

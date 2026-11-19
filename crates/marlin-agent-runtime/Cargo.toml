@@ -55,3 +55,7 @@ harness = false
 [[test]]
 name = "policy"
 path = "tests/unit/policy.rs"
+
+[[test]]
+name = "process_quota_gate"
+path = "tests/verification/process_quota_gate.rs"

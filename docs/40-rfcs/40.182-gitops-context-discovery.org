@@ -329,6 +329,84 @@ These operations leave user branches and Worktree files under their existing
 Git owners. See [[https://git-scm.com/docs/git-update-ref][Git ref updates]]
 and [[https://git-scm.com/docs/git-gc][Git reachability and GC]].
 
+* Production entry-point research
+
+** Current call paths
+
+| Entry | Source observation | Qualification boundary |
+|-------+--------------------+------------------------|
+| TUI Git view | [[file:../../crates/marlin-agent-tui/src/workspace.rs][WorkspaceStatus]] dispatches status and diff through the managed Git executor for the supplied launch path. | This reads the checkout. It supplies no active working-copy receipt or Lab source selection. |
+| Worktrunk provider | [[file:../../scheme/init.ss][Marlin init]] selects =(gitops +worktrunk)=. [[file:../../crates/marlin-gerbil-scheme/src/working_copy_policy.rs][GerbilWorkingCopyPolicy]] selects and projects typed requests, and [[file:../../crates/marlin-agent-gitops/src/working_copy/driver.rs][WorkingCopyIsolationDriver]] executes them. | The provider has real fixture evidence. Marlin production code has no caller of =GerbilWorkingCopyPolicy::load= or =select_request= outside the adapter itself. |
+| Runtime binding | [[file:../../crates/marlin-agent-runtime/src/tokio_runtime/handle.rs][The runtime]] accepts externally prepared working-copy receipts for subagent execution. The [[file:../../crates/marlin-agent-runtime/src/model_tooling.rs][shell tool]] can use the resulting active path. | The runtime does not create the receipt through its ordinary launch path. The first accepted receipt can seed a call context. A foreground switch needs its own replacement and invalidation rule. |
+| Context authority | [[file:../../scheme/context-system/objects.ss][Marlin Context System]] exports scope admission, Org source and Contract operations and the causal refinement. The pinned Lab =context-task-select-worktree!= rechecks the selected Project, Worktree, source cut and declared Task roots, then reads from its admitted Query source catalog. | Marlin currently supplies no Worktree dependency and granted Git source admission on this call path. The PR #34 fixture supplies selected sources and grants explicitly. |
+| TUI restart | [[file:../../crates/marlin-agent-tui/src/app/runner.rs][Startup]] can restore a configured conversation journal. The separate =WorkspaceArtifacts= experiment has its own record and restore calls. | Git-derived Context still needs an owner-bound restore request after the first frame. The current conversation replay supplies neither the Worktree identity nor that Context. |
+
+The pinned Lab Worktree Context Feature requires =gitops/worktree=.
+The Worktrunk Context refinement also requires =gitops/worktrunk= and
+=ai-agentic-context/worktree=. Marlin's GitOps provider preference and its
+Context authoring scope are separate selections. The first integrated
+read must compose the Lab Worktree dependency through the existing Module
+interfaces.
+
+The provider bridge imports Marlin =init= to obtain that selection. The
+current Rust adapter resolves the export through a package path derived
+from =CARGO_MANIFEST_DIR=. The linked TUI already binds typed exports from
+its linked programme on its own Scheme owner, for example the Envrc
+operation. Use the same kind of linked export for the production provider
+and Context calls so a source-free release can use them too. Keep package
+activation and Context reads off the first-frame path. The standalone Rust
+request projection can be qualified independently of Scheme activation
+and of Worktrunk's external process.
+
+The rebuilt =marlin-gerbil-scheme= test binary passed three typed request
+projection tests. Its ignored =scheme_selects_the_provider_for_a_real_git_worktree=
+test also passed in 103.99 seconds using the retained compiled Marlin and
+Lab cohort, the 120-second watchdog and the 2 GiB Gerbil heap cap. It
+exercised actual Worktrunk selection, list, create, receipt path and removal,
+as well as the Git fallback. A cached-binary attempt timed out, and a
+separate Scheme-only bridge probe did not finish. Their logs are retained
+beside the passing run under
+=target/quint/gitops-context-verification/marlin-runtime-audit.zYXEXCK8/=.
+The passing test calls the adapter directly. It leaves TUI runtime
+composition, Lab source loading and restart unqualified.
+
+** First integrated read
+
+Start with an already checked-out Worktree. It gives the normal application
+entry a physical Git root even when no Worktrunk create command ran in this
+process. GitOps binds that observed checkout to the enrolled repository
+and resolves its symbolic ref or detached commit. A remote URL routes
+discovery while the Git common directory and independent Worktree facts
+bind the local instance. Reuse GitOps discovery and receipt types where
+they carry the required evidence. A provider command receipt establishes
+the selected checkout path. Re-observe the resulting Git facts before
+using it as a Context source.
+
+The Marlin Context System supplies an owner-bound Worktree dependency and
+a bounded source admission call to Lab. Lab owns the public selection,
+Contract evaluation, grants and Task lineage. Marlin owns the locators and
+the physical Git reader. For the first read, select the declared
+=index.org= and =topology.org= in the observed checkout at a committed
+cut. Check authorization before opening the selected objects and again
+before admission. Register the verified Org cuts and let the Lab Worktree
+resolver produce the view. On a rejected, revoked or superseded read,
+leave prior immutable cache entries intact and withhold the current view.
+Bring cross-repository discovery and locator indexing in after this
+single-owner path has independent evidence.
+
+Worktrunk create and switch then produce the same observation input as
+launch into an existing checkout. Bind the driver's actual receipt rather
+than the request's placeholder path. Selecting a different Worktree
+advances the restore request identity and retires the previous current
+view. A failed operation preserves the earlier binding. Git identity
+and the admitted Org source cut govern restart.
+
+| Acceptance step | Required observation |
+|-----------------+----------------------|
+| Launch from an existing secondary Worktree | Start the actual linked TUI in a nested path. Verify first frame and bounded restore independently. The Context receipt must bind this Worktree's Git common directory, ref or detached commit, actual Org blob and Lab Contract. |
+| Switch via the real Worktrunk path | Use Scheme provider selection, native driver and actual returned Worktree path. Block the old restore at delivery, switch to the new checkout, then release the old read. The new view must carry the new binding. The old payload must leave the existing Lab and cache state intact. |
+| Restart and refuse substitution | Close and restart into the same Worktree, then repeat with a clone of the same remote and with a revoked grant. Require matching lineage on the valid restart and an explicit refusal for the invalid input. Exercise the linked release without a Gerbil source package tree. The fixtures retain the 120-second and 2 GiB limits. |
+
 * Qualification plan
 
 Performance claims require an admitted-result oracle and source-bound
@@ -360,7 +438,7 @@ retention cases check exact-owner lookup, atomic cursor advance, stale view
 withdrawal, exact-tip retirement and cleanup after a new hold. An independent
 link model distinguishes rendered links, Lab-resolved source hops and
 Git-qualified hops. The policy model checks core and WorkTrunk Feature
-admission. Eight negative transitions exercise broken guards.
+admission. Eleven negative transitions exercise broken guards.
 Run =just gitops-context-model-gate= for the named cases and the existing
 16-step sampling budget. The symbolic gate exports each module with
 =quint compile= and checks the resulting Quint IR with the offline Apalache

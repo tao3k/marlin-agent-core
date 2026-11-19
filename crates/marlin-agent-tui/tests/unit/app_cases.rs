@@ -765,7 +765,7 @@ fn minibuffer_expands_with_the_draft_and_leaves_a_transcript_row() {
             .map(|x| terminal.backend().buffer()[(x, y)].symbol())
             .collect::<String>()
     };
-    assert!(!row(8).contains("Message"));
+    assert!(!row(8).starts_with('┌'));
     assert!(row(11).contains("fixture status"));
 
     app.composer
@@ -781,7 +781,7 @@ fn minibuffer_expands_with_the_draft_and_leaves_a_transcript_row() {
     let composer: String = (0..40).map(|x| buffer[(x, 3)].symbol()).collect();
     assert!(first_row.contains("You"));
     assert!(transcript.contains("visible transcript"));
-    assert!(composer.contains("Message"));
+    assert!(composer.starts_with('┌'));
     assert!(terminal.backend().cursor_position().y < 11);
 }
 

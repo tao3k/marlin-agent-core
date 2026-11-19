@@ -15,8 +15,8 @@ open an agent session. Other UI modules own the workbench behavior.
 =interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
 and scope assembly. =UiTuiScope= publishes =program-entry= and
 =program-runtime-imports=. The entry imports the terminal's runtime
-dependencies. The additional imports retain Gerbil's expander and the UI
-session's compiler metadata for on-demand loading by independent packages.
+dependencies. The additional imports retain Gerbil's expander and the compiler metadata of
+the UI session and Meow for on-demand loading by independent packages.
 The Build role includes the entry in the unified =std-make-spec=.
 Consumers access selected exports through =marlin-agent-core.init.exports=.
 

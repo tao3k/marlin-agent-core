@@ -4,8 +4,9 @@
 
 //! Scheme-selected Buffer views and bounded runtime presentation facts.
 
-use super::state::App;
+use super::state::{App, PendingKeyHint};
 use super::{Command, RuntimeEdgePolicyReceipt, UiBufferId, UiContent, UiEvent, UiWorkbench};
+use std::time::{Duration, Instant};
 
 const MAX_DYNAMIC_BUFFER_ITEMS: usize = 256;
 const MAX_DYNAMIC_BUFFER_BYTES: usize = 32 * 1024;
@@ -144,13 +145,12 @@ impl App {
         };
         if self.buffer_view != next && next == BufferView::Messages {
             self.message_scroll_up = 0;
-            self.minibuffer_notice = None;
         }
         if self.buffer_view != next && matches!(&next, BufferView::Named(_)) {
             self.static_buffer_scroll = 0;
-            self.minibuffer_notice = None;
         }
         self.buffer_view = next;
+        self.echo_area.configure(&ui.layout.echo);
         Ok(())
     }
 
@@ -204,7 +204,55 @@ impl App {
         let role = format!("{} · {}", event.source.label(), event.severity.label());
         self.messages.push((role, detail));
         self.messages.retain_latest(64);
-        self.minibuffer_notice = Some(summary);
+        self.echo_area.set_message(summary, Instant::now());
+    }
+
+    pub(super) fn echo_key_sequence(
+        &mut self,
+        (keys, state): (&[String], crate::ui_host::KeySequenceState),
+    ) {
+        self.echo_area.set_keys(keys, state, Instant::now());
+    }
+
+    pub(super) fn set_key_hint(
+        &mut self,
+        prefix: Option<(marlin_agent_ui::UiElement, Duration)>,
+        transient: Option<&marlin_agent_ui::UiElement>,
+    ) {
+        let was_visible = self.keypad_open && self.transient_hint.is_some();
+        self.keypad_open = prefix.is_some();
+        self.pending_key_hint = None;
+        self.transient_hint = match prefix {
+            Some((view, delay)) if !was_visible && !delay.is_zero() => {
+                self.pending_key_hint = Some(PendingKeyHint {
+                    view,
+                    delay,
+                    show_at: None,
+                });
+                None
+            }
+            Some((view, _)) => Some(view),
+            None => transient.cloned(),
+        };
+    }
+
+    pub(super) fn minibuffer_drawn(&mut self, now: Instant) {
+        if let Some(hint) = &mut self.pending_key_hint {
+            hint.show_at.get_or_insert(now + hint.delay);
+        }
+    }
+
+    pub(super) fn update_minibuffer(&mut self, now: Instant) -> bool {
+        let echo_expired = self.echo_area.expire(now);
+        let hint_ready = self
+            .pending_key_hint
+            .as_ref()
+            .and_then(|hint| hint.show_at)
+            .is_some_and(|at| now >= at);
+        if hint_ready {
+            self.transient_hint = self.pending_key_hint.take().map(|hint| hint.view);
+        }
+        hint_ready || echo_expired
     }
 
     /// Drain the runtime's bounded event bus into the Scheme-selected Messages buffer.

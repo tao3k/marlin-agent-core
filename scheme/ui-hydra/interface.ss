@@ -10,5 +10,4 @@
 (.def UiHydra
   identity: 'ui-hydra
   core: (.o scope-contract: UiHydraScopeContract
-            exports: UiHydraScope)
-  features: (.o))
+            exports: UiHydraScope))

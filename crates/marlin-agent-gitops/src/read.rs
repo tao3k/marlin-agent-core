@@ -51,6 +51,10 @@ pub enum GitReadError {
     InvalidCommit,
     #[error("git returned an invalid repository root")]
     InvalidRepositoryRoot,
+    #[error("git returned an invalid commit object ID")]
+    InvalidCommit,
+    #[error("the worktree HEAD changed while capturing its Context patch")]
+    ContextCommitChanged,
     #[error("target is not a worktree of the selected Git repository: {0:?}")]
     UnrelatedWorktree(std::path::PathBuf),
     #[error("git returned invalid fetch remote URLs")]

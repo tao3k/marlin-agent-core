@@ -12,5 +12,4 @@
 (.def Policy
   identity: 'policy
   core: (.o scope-contract: PolicyScopeContract
-            exports: PolicyScope)
-  features: (.o))
+            exports: PolicyScope))

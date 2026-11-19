@@ -24,7 +24,10 @@ use std::{
 
 use super::runtime_probe::RuntimeProbe;
 use super::tool_review::{open_tool_review, poll_tool_review, submit_tool_review};
-use super::ui_events::{apply_ui_request, browse_menu, command_menu_active, route_frame_click};
+use super::ui_events::{
+    apply_editor_mode, apply_ui_request, browse_menu, command_menu_active,
+    release_interrupted_key_sequence, route_frame_click, route_terminal_key,
+};
 use termion::input::TermReadEventsAndRaw;
 
 pub(super) fn run(
@@ -317,6 +320,7 @@ pub(super) fn run(
     let mut viewport_cache = TranscriptViewportCache::default();
     let mut scroll_anchor = ScrollAnchor::default();
     let mut painted_regions = Vec::new();
+    let mut layout_snapshot = None;
     let mut last_size = None;
     let mut first_frame_elapsed = None;
     let mut failed_ui_labels: Option<(String, String)> = None;
@@ -505,6 +509,9 @@ pub(super) fn run(
             {
                 schedule.mark_dirty();
             }
+            if app.update_minibuffer(Instant::now()) {
+                schedule.mark_dirty();
+            }
             let size = termion::terminal_size()?;
             if last_size != Some(size) {
                 last_size = Some(size);
@@ -512,7 +519,14 @@ pub(super) fn run(
             }
             let mouse = mouse_position.load(Ordering::Relaxed);
             let area = ratatui::layout::Rect::new(0, 0, size.0, size.1);
-            let mut snapshot = frame_snapshot(&app, ui.view(), area);
+            // Idle polls and pointer hit checks can reuse the last layout.
+            let snapshot = if schedule.has_changes() || layout_snapshot.is_none() {
+                layout_snapshot.insert(frame_snapshot(&app, ui.view(), area))
+            } else {
+                layout_snapshot
+                    .as_mut()
+                    .expect("initial frame has a layout")
+            };
             let hovered = mouse_over_minibuffer(
                 &snapshot.regions,
                 ui.view()
@@ -524,7 +538,7 @@ pub(super) fn run(
             );
             if hovered != app.minibuffer_hovered {
                 app.minibuffer_hovered = hovered;
-                snapshot = frame_snapshot(&app, ui.view(), area);
+                *snapshot = frame_snapshot(&app, ui.view(), area);
                 schedule.mark_dirty();
             }
             let now = Instant::now();
@@ -551,16 +565,16 @@ pub(super) fn run(
                             &error,
                         );
                         failed_ui_labels = Some(attempted);
-                        snapshot = frame_snapshot(&app, ui.view(), area);
+                        *snapshot = frame_snapshot(&app, ui.view(), area);
                     } else {
                         failed_ui_labels = None;
-                        snapshot = frame_snapshot(&app, ui.view(), area);
+                        *snapshot = frame_snapshot(&app, ui.view(), area);
                     }
                 }
                 let mut effective_scroll = app.scroll_up;
                 terminal.active().draw(|frame| {
                     if snapshot.area != frame.area() {
-                        snapshot = frame_snapshot(&app, ui.view(), frame.area());
+                        *snapshot = frame_snapshot(&app, ui.view(), frame.area());
                     }
                     let painted = draw_with_snapshot(
                         frame,
@@ -568,13 +582,15 @@ pub(super) fn run(
                         ui.view(),
                         &mut viewport_cache,
                         &mut scroll_anchor,
-                        &snapshot,
+                        snapshot,
                     );
                     effective_scroll = painted.scroll;
                     painted_regions = painted.regions;
                 })?;
                 app.set_effective_scroll(effective_scroll);
-                schedule.drawn(Instant::now());
+                let drawn = Instant::now();
+                schedule.drawn(drawn);
+                app.minibuffer_drawn(drawn);
                 if first_frame_elapsed.is_none() {
                     first_frame_elapsed = Some(startup.elapsed());
                     #[cfg(feature = "linked-ui")]
@@ -676,13 +692,27 @@ pub(super) fn run(
                 schedule.mark_dirty();
                 continue;
             }
-            if matches!(&received, Ok(Ok(_))) {
+            if let Ok(Ok(input)) = &received {
                 schedule.mark_dirty();
+                if matches!(
+                    input,
+                    TerminalInput::Key(_)
+                        | TerminalInput::Paste(_)
+                        | TerminalInput::PasteRejected
+                        | TerminalInput::MouseClick(_, _)
+                ) {
+                    app.echo_area.on_input();
+                }
             }
             if matches!(&received, Ok(Ok(input)) if !matches!(input, TerminalInput::Key(Key::Ctrl('c'))))
             {
                 app.disarm_exit();
             }
+            release_interrupted_key_sequence(
+                &mut app,
+                &mut ui,
+                received.as_ref().ok().and_then(|input| input.as_ref().ok()),
+            );
             if let Ok(Ok(TerminalInput::MouseClick(column, row))) = &received {
                 if route_frame_click(&mut app, &mut ui, &painted_regions, *column, *row) {
                     app.submit(&gateway, &runtime, &reply_tx);
@@ -781,113 +811,31 @@ pub(super) fn run(
                     }
                     continue;
                 }
-                let routed = ui.route_key(
-                    *key,
-                    app.command_draft.is_some(),
-                    app.command_draft.is_some(),
-                    app.key_mode,
-                );
-                app.transient_hint = ui.transient_hint().cloned();
+                let routed = route_terminal_key(&mut app, &mut ui, *key);
                 match routed {
                     Ok(UiKeyAction::Handled) => continue,
                     Ok(UiKeyAction::Cancel) => {
+                        if app.command_draft.is_none()
+                            && ui.accepts_text(false)
+                            && app.composer.clear_selection()
+                        {
+                            app.composer.clamp_normal_cursor();
+                            continue;
+                        }
                         app.cancel();
                         apply_ui_request(&mut app, &mut ui);
                         continue;
                     }
-                    Ok(UiKeyAction::Mode { mode, cancel }) => {
-                        // Escape first preserves existing cancel/return behaviour.
-                        // Enter normal mode only from the idle conversation.
-                        let enter_mode = !cancel
-                            || (app.buffer_view == super::BufferView::Conversation
-                                && app.modeline_activity() == super::ModelineActivity::Idle);
-                        if cancel {
-                            app.cancel();
-                            apply_ui_request(&mut app, &mut ui);
-                        }
-                        if enter_mode {
-                            if mode == marlin_agent_ui::UiKeyMode::Normal
-                                && app.key_mode == marlin_agent_ui::UiKeyMode::Insert
-                            {
-                                app.composer.normal_cursor();
-                            }
-                            app.key_mode = mode;
-                        }
+                    Ok(UiKeyAction::Mode(mode)) => {
+                        apply_editor_mode(&mut app, &mut ui, mode);
                         continue;
                     }
                     Ok(UiKeyAction::Edit(action)) => {
-                        let accepts_text = ui.accepts_text(app.command_draft.is_some());
-                        let normal = app.key_mode == marlin_agent_ui::UiKeyMode::Normal
-                            && app.command_draft.is_none();
-                        match action {
-                            UiEditorAction::HistorySearch => app.start_history_search(),
-                            UiEditorAction::PreviousPrompt if accepts_text => {
-                                app.navigate_prompts(true)
-                            }
-                            UiEditorAction::NextPrompt if accepts_text => {
-                                app.navigate_prompts(false)
-                            }
-                            UiEditorAction::InsertNewline if accepts_text => {
-                                app.composer.insert('\n')
-                            }
-                            UiEditorAction::BackwardChar if accepts_text && normal => {
-                                app.composer.normal_left()
-                            }
-                            UiEditorAction::BackwardChar if accepts_text => app.composer.left(),
-                            UiEditorAction::ForwardChar if accepts_text && normal => {
-                                app.composer.normal_right()
-                            }
-                            UiEditorAction::ForwardChar if accepts_text => app.composer.right(),
-                            UiEditorAction::DeleteChar if accepts_text => {
-                                app.composer.delete();
-                                if normal {
-                                    app.composer.clamp_normal_cursor();
-                                }
-                            }
-                            UiEditorAction::PreviousLine if accepts_text => {
-                                app.composer.move_vertical(size.0.saturating_sub(2), false);
-                                if normal {
-                                    app.composer.clamp_normal_cursor();
-                                }
-                            }
-                            UiEditorAction::NextLine if accepts_text => {
-                                app.composer.move_vertical(size.0.saturating_sub(2), true);
-                                if normal {
-                                    app.composer.clamp_normal_cursor();
-                                }
-                            }
-                            UiEditorAction::PreviousLine => app.scroll(true),
-                            UiEditorAction::NextLine => app.scroll(false),
-                            UiEditorAction::NextWord if accepts_text => {
-                                app.composer.next_word();
-                                if normal {
-                                    app.composer.clamp_normal_cursor();
-                                }
-                            }
-                            UiEditorAction::PreviousWord if accepts_text => {
-                                app.composer.previous_word()
-                            }
-                            UiEditorAction::DeleteLine if accepts_text => {
-                                app.composer.delete_line();
-                                app.composer.clamp_normal_cursor();
-                            }
-                            UiEditorAction::Undo if accepts_text => {
-                                app.composer.undo();
-                                app.composer.clamp_normal_cursor();
-                            }
-                            UiEditorAction::AppendInsert if accepts_text => {
-                                app.composer.right();
-                                app.key_mode = marlin_agent_ui::UiKeyMode::Insert;
-                            }
-                            UiEditorAction::LineStart if accepts_text => app.composer.line_start(),
-                            UiEditorAction::LineEnd if accepts_text => {
-                                app.composer.line_end();
-                                if normal {
-                                    app.composer.clamp_normal_cursor();
-                                }
-                            }
-                            _ => {}
-                        }
+                        app.edit(
+                            action,
+                            snapshot.editor_width,
+                            ui.accepts_text(app.command_draft.is_some()),
+                        );
                         continue;
                     }
                     Ok(UiKeyAction::InvokeCommand(name)) => {
@@ -926,15 +874,23 @@ pub(super) fn run(
                 Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() && accepts_text => {
                     app.composer.insert(c)
                 }
-                Ok(Ok(TerminalInput::Key(Key::Left))) if accepts_text => app.composer.left(),
-                Ok(Ok(TerminalInput::Key(Key::Right))) if accepts_text => app.composer.right(),
-                Ok(Ok(TerminalInput::Key(Key::Home))) if accepts_text => app.composer.line_start(),
-                Ok(Ok(TerminalInput::Key(Key::End))) if accepts_text => app.composer.line_end(),
+                Ok(Ok(TerminalInput::Key(Key::Left))) if accepts_text => {
+                    app.edit(UiEditorAction::BackwardChar, size.0, true)
+                }
+                Ok(Ok(TerminalInput::Key(Key::Right))) if accepts_text => {
+                    app.edit(UiEditorAction::ForwardChar, size.0, true)
+                }
+                Ok(Ok(TerminalInput::Key(Key::Home))) if accepts_text => {
+                    app.edit(UiEditorAction::LineStart, size.0, true)
+                }
+                Ok(Ok(TerminalInput::Key(Key::End))) if accepts_text => {
+                    app.edit(UiEditorAction::LineEnd, size.0, true)
+                }
                 Ok(Ok(TerminalInput::Key(Key::Up))) if accepts_text => {
-                    app.composer.move_vertical(size.0.saturating_sub(2), false)
+                    app.edit(UiEditorAction::PreviousLine, snapshot.editor_width, true)
                 }
                 Ok(Ok(TerminalInput::Key(Key::Down))) if accepts_text => {
-                    app.composer.move_vertical(size.0.saturating_sub(2), true)
+                    app.edit(UiEditorAction::NextLine, snapshot.editor_width, true)
                 }
                 Ok(Ok(TerminalInput::Key(Key::Backspace))) if accepts_text => {
                     app.composer.backspace()
@@ -968,14 +924,20 @@ pub(super) fn run(
     #[cfg(feature = "linked-ui")]
     drop(git_context);
     let terminal_result = terminal.suspend();
+    trace_startup("terminal restored");
     drop(signals);
+    // Startup discovery is no longer useful after terminal exit. Its Git
+    // child is killed on drop, and the tracked task joins the normal drain.
+    if let Some(probe) = worktree_probe {
+        probe.abort();
+    }
     #[cfg(target_os = "macos")]
     if let Some(task) = heartbeat_task {
         task.abort();
     }
     let shutdown_result = runtime.block_on(app.shutdown());
     drop(runtime_probe);
-    trace_startup("terminal restored");
+    trace_startup("Runtime tasks drained");
     if env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some()
         && let Some(elapsed) = first_frame_elapsed
     {

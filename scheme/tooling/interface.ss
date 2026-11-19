@@ -10,5 +10,4 @@
 (.def Tooling
   identity: 'tooling
   core: (.o scope-contract: ToolingScopeContract
-            exports: ToolingScope)
-  features: (.o))
+            exports: ToolingScope))

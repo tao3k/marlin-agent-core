@@ -3,16 +3,17 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 (import (only-in :clan/poo/object .get .o)
-        (only-in :std/list/list find)
+        (only-in :std/list/list filter find)
         (only-in "../ui-elements/funcs.ss"
-                 ui-bar ui-template ui-choice ui-size-binding ui-size-cells ui-size-subtract)
+                 ui-bar ui-template ui-choice
+                 ui-size-binding ui-size-cells ui-size-subtract)
         "./objects.ss")
 (export marlin-ui-modeline-nodes marlin-ui-modeline-nodes-for marlin-ui-modeline-bar-for)
 
 (def (modeline-node catalog entry)
   (def identity (car entry))
   (def caption (cadr entry))
-  (def glyph (string (integer->char (cdr (assq identity (.get NerdModelineIcons. entries))))))
+  (def glyph (string (integer->char (cadr (assq identity (.get NerdModelineIcons. entries))))))
   (def activity?
     (or (eq? identity 'modeline/left/activity)
         (string-prefix? "modeline/state/" (symbol->string identity))))
@@ -37,20 +38,44 @@
 (def (marlin-ui-modeline-nodes)
   (marlin-ui-modeline-nodes-for 'doom-one))
 
+;; The text representation remains available to status consumers. In the bar,
+;; split off the glyph so its color does not tint the separator or the label.
+(def (modeline-label-spans entry label bold?)
+  (def tone (.get entry tone))
+  (def icon (assq (.get entry identity) (.get NerdModelineIcons. entries)))
+  (def glyph (and icon (integer->char (cadr icon))))
+  (def index (and glyph (string-index label glyph)))
+  (filter (lambda (span) (not (string-empty? (cadddr span))))
+    (if index
+      (list (list 'literal tone bold? (substring label 0 index))
+            (list 'literal (caddr icon) #f (string glyph))
+            (list 'literal tone bold? (substring label (+ index 1) (string-length label))))
+      (list (list 'literal tone bold? label)))))
+
 ;;; Turn the selected catalog into a generic flow. The host only supplies facts
 ;;; and values; ordering, colors, compact forms and retention stay here.
 (def (marlin-ui-modeline-bar-for nodes)
+  (def (mode-label wide compact)
+    (ui-choice
+      (list (list 'width-at-least-64 (ui-template 'none (list (list 'literal 'muted #f wide)))))
+      (ui-template 'none (list (list 'literal 'muted #f compact)))))
+  (def mode
+    (ui-choice (list (list 'normal-mode (mode-label " NORMAL " " [N] ")))
+               (mode-label " INSERT " " [I] ")))
   (let* ((slot (lambda (identity-value)
                  (or (find (lambda (entry) (eq? (.get entry identity) identity-value)) nodes)
                      (error "missing modeline entry" identity-value))))
          (width-fact (lambda (width-value)
                        (string->symbol (string-append "width-at-least-" (number->string width-value)))))
-         (fixed (lambda (text-value tone-value background-value bold-value)
-                  (ui-template background-value (list (list 'literal tone-value bold-value text-value)))))
+         (fixed (lambda (entry label bold?)
+                  (ui-template 'none (modeline-label-spans entry label bold?))))
          (compact (lambda (entry full-value short-value)
-                    (ui-choice (list (list (width-fact (.get entry compact-below)) full-value)) short-value)))
-         (dynamic (lambda (template-value value-name tone-value tail-value)
-                    (let* ((parts (string-split template-value #\{))
+                    (let (width (.get entry compact-below))
+                      (if (zero? width) full-value
+                        (ui-choice (list (list (width-fact width) full-value)) short-value)))))
+         (dynamic (lambda (entry template-value value-name tail-value)
+                    (let* ((tone-value (.get entry tone))
+                           (parts (string-split template-value #\{))
                            (before (car parts))
                            (suffix (if (and (= (length parts) 2)
                                             (string-prefix? "value}" (cadr parts)))
@@ -62,13 +87,15 @@
                                            (ui-size-subtract (ui-size-binding 'bar-right-budget)
                                              (ui-size-cells (+ (string-length before) (string-length after)))))
                                          (list 'binding tone-value #f value-name))))
-                      (ui-template 'none (list (list 'literal tone-value #f before)
-                                              value-span (list 'literal tone-value #f after))))))
+                      (ui-template 'none
+                        (append (modeline-label-spans entry before #f)
+                                (list value-span)
+                                (if (string-empty? after) '()
+                                  (list (list 'literal tone-value #f after))))))))
          (activity (lambda (entry)
-                     (let (tone-value (.get entry tone))
-                       (compact entry
-                         (fixed (string-append (.get entry label) " ") tone-value 'none #f)
-                         (fixed (string-append (.get entry compact) " ") tone-value 'none #f)))))
+                     (compact entry
+                       (fixed entry (string-append (.get entry label) " ") #f)
+                       (fixed entry (string-append (.get entry compact) " ") #f))))
          (activity-view
            (ui-choice
              (map (lambda (name-value)
@@ -80,15 +107,16 @@
          (segments
            (apply append
              (map (lambda (entry)
-                    (let* ((id (.get entry identity)) (tone-value (.get entry tone))
+                    (let* ((id (.get entry identity))
                            (min-width (.get entry min-width)) (priority (.get entry keep-priority)))
                       (case id
                         ((modeline/left/brand)
                          (list (list 'left 0 0 #f
                                  (compact entry
-                                   (fixed (string-append " " (.get entry label) " ") tone-value 'none #t)
-                                   (fixed (string-append " " (.get entry compact) " ") tone-value 'none #t)))))
-                        ((modeline/left/activity) (list (list 'left 0 0 #f activity-view)))
+                                   (fixed entry (string-append " " (.get entry label) " ") #t)
+                                   (fixed entry (string-append " " (.get entry compact) " ") #t)))))
+                        ((modeline/left/activity)
+                         (list (list 'left 0 0 #f activity-view)))
                         ((modeline/left/model modeline/right/turns modeline/right/session)
                          (let* ((side (if (eq? id 'modeline/left/model) 'left 'right))
                                 (value-name (case id ((modeline/left/model) 'model)
@@ -97,7 +125,7 @@
                                 (condition (and (eq? id 'modeline/right/turns) 'has-turns)))
                            (list (list side priority min-width condition
                                    (compact entry
-                                     (dynamic (.get entry label) value-name tone-value tail-value)
-                                     (dynamic (.get entry compact) value-name tone-value tail-value))))))
+                                     (dynamic entry (.get entry label) value-name tail-value)
+                                     (dynamic entry (.get entry compact) value-name tail-value))))))
                         (else '())))) nodes))))
-    (ui-bar 'bar 3 segments)))
+    (ui-bar 'bar 3 (append segments (list (list 'left 0 0 #f mode))))))

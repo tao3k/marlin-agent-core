@@ -12,5 +12,4 @@
 (.def Hooks
   identity: 'hooks
   core: (.o scope-contract: HooksScopeContract
-            exports: HooksScope)
-  features: (.o))
+            exports: HooksScope))

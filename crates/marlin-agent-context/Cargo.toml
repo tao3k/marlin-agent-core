@@ -16,6 +16,7 @@ readme = "README.org"
 gerbil-scheme-abi = ["dep:gerbil-scheme"]
 # Package-host Context operations include the typed ABI.
 gerbil = ["gerbil-scheme-abi"]
+artifacts = ["gerbil", "dep:marlin-agent-gitops", "dep:sha2", "dep:tempfile"]
 org-source = [
     "dep:marlin-gerbil-ir",
     "dep:marlin-context-org-model",
@@ -40,11 +41,15 @@ serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 gerbil-scheme = { workspace = true, optional = true }
 marlin-agent-protocol.workspace = true
+marlin-agent-gitops = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [dev-dependencies]
 marlin-context-org-model.workspace = true
 criterion.workspace = true
+tokio.workspace = true
 
 [[bench]]
 name = "scope_batch"

@@ -10,5 +10,4 @@
 (.def UiTui
   identity: 'ui-tui
   core: (.o scope-contract: UiTuiScopeContract
-            exports: UiTuiScope)
-  features: (.o))
+            exports: UiTuiScope))

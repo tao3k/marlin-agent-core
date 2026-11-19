@@ -5,23 +5,23 @@
 (import (only-in :clan/poo/object .def .mix seal-object!))
 (export NerdModelineIcons. DoomModeline PiModeline.)
 
-;;; Code points from Nerd Fonts' Material Design collection.
+;;; Material Design code points with semantic foreground tones.
 (.def NerdModelineIcons.
-  entries: '((modeline/left/brand . #xf023a)         ; fish
-             (modeline/left/model . #xf167a)         ; robot-outline
-             (modeline/left/activity . #xf05e1)      ; check-circle-outline
-             (modeline/right/turns . #xf0199)        ; counter
-             (modeline/right/session . #xf0efe)      ; identifier
-             (modeline/state/online . #xf12cc)       ; cloud-check-outline
-             (modeline/state/offline . #xf0164)      ; cloud-off-outline
-             (modeline/state/unknown . #xf0a39)      ; cloud-question
-             (modeline/state/runtime . #xf08bb)      ; cog-outline
-             (modeline/state/workspace . #xf0256)    ; folder-outline
-             (modeline/state/recovery . #xf099b)     ; restore
-             (modeline/state/continuation . #xf05d6) ; alert-circle-outline
-             (modeline/state/history . #xf02da)      ; history
-             (modeline/state/working . #xf0996)      ; progress-clock
-             (modeline/state/reading . #xf0c7d)))    ; file-search-outline
+  entries: '((modeline/left/brand #xf023a accent)          ; fish
+             (modeline/left/model #xf167a info)           ; robot-outline
+             (modeline/left/activity #xf05e1 success)     ; check-circle-outline
+             (modeline/right/turns #xf0199 info)          ; counter
+             (modeline/right/session #xf0efe accent)      ; identifier
+             (modeline/state/online #xf12cc success)      ; cloud-check-outline
+             (modeline/state/offline #xf0164 warning)     ; cloud-off-outline
+             (modeline/state/unknown #xf0a39 warning)     ; cloud-question
+             (modeline/state/runtime #xf08bb accent)      ; cog-outline
+             (modeline/state/workspace #xf0256 info)      ; folder-outline
+             (modeline/state/recovery #xf099b warning)    ; restore
+             (modeline/state/continuation #xf05d6 warning); alert-circle-outline
+             (modeline/state/history #xf02da accent)      ; history
+             (modeline/state/working #xf0996 info)        ; progress-clock
+             (modeline/state/reading #xf0c7d info)))      ; file-search-outline
 
 ;;; Each slot records identity, label, tones, width limits and keep priority.
 (.def UiModelineBase.

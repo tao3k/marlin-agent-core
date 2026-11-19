@@ -8,5 +8,4 @@
 
 (.def UiCentaurTabs
   identity: 'ui-centaur-tabs
-  core: (.o scope-contract: UiCentaurTabsScopeContract exports: UiCentaurTabsScope)
-  features: (.o))
+  core: (.o scope-contract: UiCentaurTabsScopeContract exports: UiCentaurTabsScope))

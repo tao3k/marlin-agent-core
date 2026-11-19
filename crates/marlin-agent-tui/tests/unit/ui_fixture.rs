@@ -180,6 +180,7 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
         },
         max_chatbox_rows: 10,
         max_command_rows: 32,
+        echo: Default::default(),
         regions: marlin_agent_ui::UiFrameRegions::new(
             marlin_agent_ui::UiFrameRole::ALL
                 .map(|role| marlin_agent_ui::UiComponentId::new(role.as_str()).unwrap()),
@@ -329,42 +330,34 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                             }),
                         }
                     } else if name == "editor" {
-                        let input =
-                            |bordered, background, prefix: Option<&str>, title: Option<&str>| {
-                                UiElement::Input {
-                                    bordered,
-                                    background,
-                                    prefix: prefix.map(|name| {
-                                        Box::new(UiElement::Template {
-                                            background: marlin_agent_ui::UiBackground::None,
-                                            spans: vec![UiTemplateSpan {
-                                                value: UiTemplateValue::Binding(
-                                                    UiComponentId::new(name).unwrap(),
-                                                ),
-                                                tone: UiTone::Accent,
-                                                bold: false,
-                                            }],
-                                        })
-                                    }),
-                                    title: title.map(|name| UiComponentId::new(name).unwrap()),
-                                    active: UiComponentId::new("focused").unwrap(),
-                                }
-                            };
+                        let input = |bordered, background, prefix: Option<&str>| UiElement::Input {
+                            bordered,
+                            background,
+                            prefix: prefix.map(|name| {
+                                Box::new(UiElement::Template {
+                                    background: marlin_agent_ui::UiBackground::None,
+                                    spans: vec![UiTemplateSpan {
+                                        value: UiTemplateValue::Binding(
+                                            UiComponentId::new(name).unwrap(),
+                                        ),
+                                        tone: UiTone::Accent,
+                                        bold: false,
+                                    }],
+                                })
+                            }),
+                            title: None,
+                            active: UiComponentId::new("focused").unwrap(),
+                            trailing: None,
+                        };
                         UiElement::Choice {
                             cases: vec![(
                                 UiComponentId::new("command").unwrap(),
-                                input(
-                                    false,
-                                    marlin_agent_ui::UiBackground::Bar,
-                                    Some("prompt"),
-                                    None,
-                                ),
+                                input(false, marlin_agent_ui::UiBackground::Bar, Some("prompt")),
                             )],
                             fallback: Box::new(input(
                                 true,
                                 marlin_agent_ui::UiBackground::None,
                                 None,
-                                Some("title"),
                             )),
                         }
                     } else if name == "modeline" {

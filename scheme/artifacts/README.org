@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / Artifacts
+#+language: en
+
+The selected module combines the artifact kinds and operation in =config.ss=.
+Artifacts have a
+content digest and producer evidence anchored to the worktree and its Git commit.
+The worktree's branch name can change independently of a committed record.
+
+Linked worktrees resolve the same canonical Git common directory. The primary
+worktree owns =.data/marlin/context.db=, =context.org=, and =artifacts/=.
+A bare repository with an attached worktree stores them under =marlin/= in its
+common Git directory. Separate clones have distinct storage. Remote URLs can
+describe repository relationships when a shared project catalog is introduced.
+
+An authorized development environment enables the host adapter with
+=MARLIN_AGENT_CORE_DEV= set to =1=. The Rust =WorkspaceArtifacts= adapter resolves
+the Git origin, writes and verifies artifact bytes, and calls the Scheme exchange.
+The Lab durable journal commits each reference. Scheme renders the shared Org
+document and reads the references back through Lab's Orgize graph. On restart
+the host can recreate the Org projection from the committed journal and verify
+the referenced bytes before publishing it.
