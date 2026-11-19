@@ -141,6 +141,12 @@ impl App {
             match parsed {
                 Some(Command::Sessions(next)) => self.show_sessions(runtime, next),
                 Some(Command::Models) => self.show_models(),
+                Some(Command::Workspace {
+                    mode: "worktree-switch",
+                    arguments: Some(branch),
+                }) => {
+                    self.worktree_switch = Some(branch.trim().to_owned());
+                }
                 Some(Command::Workspace { mode, arguments }) => {
                     let query_text = match arguments {
                         Some(arguments) => format!("{mode} {arguments}"),
@@ -148,7 +154,11 @@ impl App {
                     };
                     let (severity, message) = match parse_query(&query_text) {
                         Err(error) => (MessageSeverity::Warning, error.to_owned()),
-                        Ok(query) => match env::current_dir() {
+                        Ok(query) => match self
+                            .context_worktree
+                            .clone()
+                            .map_or_else(env::current_dir, Ok)
+                        {
                             Ok(path) => {
                                 let session = self.runtime_session_id();
                                 if self.workspace.start(runtime, &session, path, query) {

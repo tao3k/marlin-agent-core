@@ -1,5 +1,5 @@
 {
-  "checksum": "9eba2582ab4f3c5ef458bf2ed18faa18fe8b505be9c7ecc0f17fdbcc4f38d155",
+  "checksum": "5fbc6aa6e4b049188e30ac8c9e7e9131461408d36086853ce97f62655172dfe0",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -15588,86 +15588,6 @@
       ],
       "license_file": null
     },
-    "marlin-agent-environment 0.1.0": {
-      "name": "marlin-agent-environment",
-      "version": "0.1.0",
-      "package_url": "https://github.com/tao3k/marlin-agent-core",
-      "repository": null,
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "marlin_agent_environment",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "marlin_agent_environment",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "serde 1.0.229",
-              "target": "serde"
-            },
-            {
-              "id": "serde_json 1.0.154",
-              "target": "serde_json"
-            },
-            {
-              "id": "thiserror 2.0.21",
-              "target": "thiserror"
-            },
-            {
-              "id": "tokio 1.53.1",
-              "target": "tokio"
-            }
-          ],
-          "selects": {
-            "cfg(unix)": [
-              {
-                "id": "rustix 1.1.6",
-                "target": "rustix"
-              }
-            ]
-          }
-        },
-        "deps_dev": {
-          "common": [
-            {
-              "id": "tempfile 3.27.0",
-              "target": "tempfile"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "proc_macro_deps": {
-          "common": [
-            {
-              "id": "async-trait 0.1.92",
-              "target": "async_trait"
-            }
-          ],
-          "selects": {}
-        },
-        "version": "0.1.0"
-      },
-      "license": "Apache-2.0 AND LGPL-2.1-or-later",
-      "license_ids": [
-        "Apache-2.0",
-        "LGPL-2.1"
-      ],
-      "license_file": null
-    },
     "marlin-agent-gitops 0.1.0": {
       "name": "marlin-agent-gitops",
       "version": "0.1.0",
@@ -15699,6 +15619,10 @@
               "target": "serde"
             },
             {
+              "id": "serde_json 1.0.154",
+              "target": "serde_json"
+            },
+            {
               "id": "thiserror 2.0.21",
               "target": "thiserror"
             },
@@ -15719,6 +15643,15 @@
           "selects": {}
         },
         "edition": "2024",
+        "proc_macro_deps": {
+          "common": [
+            {
+              "id": "async-trait 0.1.92",
+              "target": "async_trait"
+            }
+          ],
+          "selects": {}
+        },
         "version": "0.1.0"
       },
       "license": "Apache-2.0 AND LGPL-2.1-or-later",
@@ -16234,6 +16167,10 @@
               "target": "sysinfo"
             },
             {
+              "id": "thiserror 2.0.21",
+              "target": "thiserror"
+            },
+            {
               "id": "tokio 1.53.1",
               "target": "tokio"
             },
@@ -16258,7 +16195,14 @@
               "target": "tracing"
             }
           ],
-          "selects": {}
+          "selects": {
+            "cfg(unix)": [
+              {
+                "id": "rustix 1.1.6",
+                "target": "rustix"
+              }
+            ]
+          }
         },
         "deps_dev": {
           "common": [
@@ -16274,6 +16218,15 @@
           "selects": {}
         },
         "edition": "2024",
+        "proc_macro_deps": {
+          "common": [
+            {
+              "id": "async-trait 0.1.92",
+              "target": "async_trait"
+            }
+          ],
+          "selects": {}
+        },
         "version": "0.1.0"
       },
       "license": "Apache-2.0 AND LGPL-2.1-or-later",
@@ -17338,15 +17291,15 @@
       ],
       "license_file": null
     },
-    "marlin-workspace-query 0.1.0": {
-      "name": "marlin-workspace-query",
+    "marlin-workspace 0.1.0": {
+      "name": "marlin-workspace",
       "version": "0.1.0",
       "package_url": "https://github.com/tao3k/marlin-agent-core",
       "repository": null,
       "targets": [
         {
           "Library": {
-            "crate_name": "marlin_workspace_query",
+            "crate_name": "marlin_workspace",
             "crate_root": "src/lib.rs",
             "srcs": {
               "allow_empty": true,
@@ -17357,102 +17310,7 @@
           }
         }
       ],
-      "library_target_name": "marlin_workspace_query",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "serde 1.0.229",
-              "target": "serde"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.1.0"
-      },
-      "license": "Apache-2.0 AND LGPL-2.1-or-later",
-      "license_ids": [
-        "Apache-2.0",
-        "LGPL-2.1"
-      ],
-      "license_file": null
-    },
-    "marlin-workspace-status 0.1.0": {
-      "name": "marlin-workspace-status",
-      "version": "0.1.0",
-      "package_url": "https://github.com/tao3k/marlin-agent-core",
-      "repository": null,
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "marlin_workspace_status",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "marlin_workspace_status",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "serde 1.0.229",
-              "target": "serde"
-            }
-          ],
-          "selects": {}
-        },
-        "deps_dev": {
-          "common": [
-            {
-              "id": "serde_json 1.0.154",
-              "target": "serde_json"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.1.0"
-      },
-      "license": "Apache-2.0 AND LGPL-2.1-or-later",
-      "license_ids": [
-        "Apache-2.0",
-        "LGPL-2.1"
-      ],
-      "license_file": null
-    },
-    "marlin-workspace-view 0.1.0": {
-      "name": "marlin-workspace-view",
-      "version": "0.1.0",
-      "package_url": "https://github.com/tao3k/marlin-agent-core",
-      "repository": null,
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "marlin_workspace_view",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "marlin_workspace_view",
+      "library_target_name": "marlin_workspace",
       "common_attrs": {
         "compile_data_glob": [
           "**"
@@ -39513,7 +39371,6 @@
     "marlin-agent-app-server 0.1.0": "crates/marlin-agent-app-server",
     "marlin-agent-context 0.1.0": "crates/marlin-agent-context",
     "marlin-agent-core 0.1.0": "crates/marlin-agent-core",
-    "marlin-agent-environment 0.1.0": "crates/marlin-agent-environment",
     "marlin-agent-gitops 0.1.0": "crates/marlin-agent-gitops",
     "marlin-agent-graph 0.1.0": "crates/marlin-agent-graph",
     "marlin-agent-harness 0.1.0": "crates/marlin-agent-harness",
@@ -39538,9 +39395,7 @@
     "marlin-gerbil-ir 0.1.0": "crates/marlin-gerbil-ir",
     "marlin-gerbil-scheme 0.1.0": "crates/marlin-gerbil-scheme",
     "marlin-rust-project-harness-policy 0.1.0": "build-support/marlin-rust-project-harness-policy",
-    "marlin-workspace-query 0.1.0": "crates/marlin-workspace-query",
-    "marlin-workspace-status 0.1.0": "crates/marlin-workspace-status",
-    "marlin-workspace-view 0.1.0": "crates/marlin-workspace-view"
+    "marlin-workspace 0.1.0": "crates/marlin-workspace"
   },
   "conditions": {
     "aarch64-apple-darwin": [

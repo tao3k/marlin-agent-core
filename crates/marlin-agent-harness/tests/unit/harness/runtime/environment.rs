@@ -9,7 +9,7 @@ use marlin_agent_harness::{
     agent_harness_runtime_environment_visibility_evidence,
     agent_harness_working_copy_isolation_visibility_evidence,
 };
-use marlin_agent_runtime::{
+use marlin_agent_gitops::working_copy::{
     WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandReceipt,
     WorkingCopyCreateRequest, WorkingCopyGitTopLevel, WorkingCopyHandle,
     WorkingCopyIsolationProvider, WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest,

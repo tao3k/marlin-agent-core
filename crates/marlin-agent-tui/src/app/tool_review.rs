@@ -4,7 +4,7 @@
 
 //! Scheme-selected Mini Buffer Ask bound to one durable tool request.
 
-use super::runner::publish_error;
+use super::publish_error;
 use super::{
     App, MessageEvent, MessageSeverity, MessageSource, ModelStreamingGateway, ReplySender,
     Transcript, UiHost,

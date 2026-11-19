@@ -19,7 +19,6 @@ actor-runtime = ["dep:marlin-deck-runtime", "marlin-deck-runtime/actor-runtime"]
 gerbil-scheme-sys = { workspace = true, optional = true }
 marlin-agent-app-server = { workspace = true, optional = true }
 marlin-gerbil-scheme.workspace = true
-marlin-agent-environment.workspace = true
 marlin-agent-graph.workspace = true
 marlin-agent-harness.workspace = true
 marlin-agent-hooks.workspace = true
@@ -30,7 +29,7 @@ marlin-deck-runtime = { workspace = true, optional = true }
 marlin-agent-runtime.workspace = true
 marlin-agent-sessions.workspace = true
 marlin-gerbil-ir.workspace = true
-marlin-workspace-status.workspace = true
+marlin-workspace.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

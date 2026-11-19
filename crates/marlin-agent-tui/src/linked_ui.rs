@@ -5,7 +5,8 @@
 //! Process-owned Gerbil VM and its linked, Yuanxu-selected module graph.
 
 use gerbil_scheme::{
-    CollectionKind, GerbilRuntime, LinkedGerbilProgram, NativeError, RootedSchemeObject,
+    CollectionKind, GerbilRuntime, LinkedGerbilProgram, NativeError, RootedCallError,
+    RootedSchemeObject,
 };
 use gerbil_scheme_sys::{GerbilGlobalState, GerbilModuleOrLink};
 use marlin_agent_ui::UiLinkedExports;
@@ -26,6 +27,55 @@ unsafe extern "C" {
     fn marlin_ui_refresh_labels(root: i64) -> i64;
     fn marlin_tooling_project(root: i64) -> i64;
     fn marlin_envrc_plan(root: i64) -> i64;
+    fn marlin_worktree_context_prepare(root: i64) -> i64;
+    fn marlin_worktree_context_deliver(root: i64) -> i64;
+    fn marlin_worktree_provider(root: i64) -> i64;
+    fn gerbil_scheme_rust_take_call_error_raw() -> i64;
+}
+
+pub(crate) enum WorktreeOperation {
+    Prepare,
+    Deliver,
+    Provider,
+}
+
+pub(crate) fn worktree_call<'a>(
+    runtime: &'a GerbilRuntime,
+    operation: WorktreeOperation,
+    request: &RootedSchemeObject<'_>,
+) -> Result<RootedSchemeObject<'a>, RootedCallError> {
+    let export = match operation {
+        WorktreeOperation::Prepare => marlin_worktree_context_prepare,
+        WorktreeOperation::Deliver => marlin_worktree_context_deliver,
+        WorktreeOperation::Provider => marlin_worktree_provider,
+    };
+    // SAFETY: these rooted exports belong to the linked programme above.
+    unsafe { runtime.bind_object_export(export) }?
+        .call(request)
+        .into_result()
+        .map_err(|source| RootedCallError {
+            source,
+            diagnostic: worktree_diagnostic(runtime, request),
+        })
+}
+
+fn worktree_diagnostic(
+    runtime: &GerbilRuntime,
+    request: &RootedSchemeObject<'_>,
+) -> Option<String> {
+    unsafe extern "C" fn take_error(_: i64) -> i64 {
+        // SAFETY: the VM owner consumes its last diagnostic.
+        unsafe { gerbil_scheme_rust_take_call_error_raw() }
+    }
+    // SAFETY: the getter belongs to this initialized VM.
+    let export = unsafe { runtime.bind_object_export(take_error) }.ok()?;
+    let bytes = export
+        .call(request)
+        .into_result()
+        .ok()?
+        .into_bytevector()
+        .ok()?;
+    String::from_utf8(bytes.to_vec().into_result().ok()?).ok()
 }
 
 pub(crate) fn initialize() -> Result<GerbilRuntime, NativeError> {

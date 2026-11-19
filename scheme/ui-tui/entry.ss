@@ -8,7 +8,8 @@
         (only-in :marlin-agent-core/ui/config UiScope)
         :marlin-agent-core/c-abi/ui
         :marlin-agent-core/c-abi/tooling
-        :marlin-agent-core/c-abi/envrc)
+        :marlin-agent-core/c-abi/envrc
+        :marlin-agent-core/c-abi/worktree-context)
 (export main)
 
 (def (main . _) (void))

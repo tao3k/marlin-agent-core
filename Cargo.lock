@@ -2738,9 +2738,7 @@ dependencies = [
  "marlin-agent-protocol",
  "marlin-context-org-model",
  "marlin-gerbil-ir",
- "marlin-workspace-query",
- "marlin-workspace-status",
- "marlin-workspace-view",
+ "marlin-workspace",
  "parking_lot",
  "serde",
  "serde_json",
@@ -2756,7 +2754,6 @@ dependencies = [
  "gerbil-scheme-sys",
  "marlin-agent-app-server",
  "marlin-agent-context",
- "marlin-agent-environment",
  "marlin-agent-graph",
  "marlin-agent-harness",
  "marlin-agent-hooks",
@@ -2769,7 +2766,7 @@ dependencies = [
  "marlin-gerbil-aot-link",
  "marlin-gerbil-ir",
  "marlin-gerbil-scheme",
- "marlin-workspace-status",
+ "marlin-workspace",
  "ring",
  "serde",
  "serde_json",
@@ -2781,26 +2778,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "marlin-agent-environment"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "marlin-agent-gitops",
- "marlin-agent-protocol",
- "rustix 1.1.6",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
-]
-
-[[package]]
 name = "marlin-agent-gitops"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "marlin-agent-protocol",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -2820,6 +2804,7 @@ name = "marlin-agent-harness"
 version = "0.1.0"
 dependencies = [
  "marlin-agent-context",
+ "marlin-agent-gitops",
  "marlin-agent-harness-types",
  "marlin-agent-hooks",
  "marlin-agent-kernel",
@@ -2903,10 +2888,11 @@ name = "marlin-agent-runtime"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
+ "async-trait",
  "criterion",
  "globset",
  "libc",
- "marlin-agent-environment",
+ "marlin-agent-gitops",
  "marlin-agent-graph",
  "marlin-agent-harness-types",
  "marlin-agent-protocol",
@@ -2916,11 +2902,13 @@ dependencies = [
  "parking_lot",
  "process-wrap",
  "ring",
+ "rustix 1.1.6",
  "semver",
  "serde",
  "serde_json",
  "sysinfo",
  "tempfile",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -3003,10 +2991,10 @@ name = "marlin-agent-test-support"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "marlin-agent-environment",
  "marlin-agent-harness-types",
  "marlin-agent-kernel",
  "marlin-agent-protocol",
+ "marlin-agent-runtime",
  "marlin-agent-sessions",
  "marlin-gerbil-ir",
  "reqwest 0.13.5",
@@ -3133,7 +3121,6 @@ dependencies = [
  "futures-executor",
  "gerbil-scheme",
  "marlin-agent-context",
- "marlin-agent-environment",
  "marlin-agent-gitops",
  "marlin-agent-graph",
  "marlin-agent-harness-types",
@@ -3142,8 +3129,6 @@ dependencies = [
  "marlin-agent-runtime",
  "marlin-agent-storage",
  "marlin-gerbil-ir",
- "marlin-workspace-status",
- "marlin-workspace-view",
  "memoffset",
  "object",
  "serde",
@@ -3162,29 +3147,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "marlin-workspace-query"
-version = "0.1.0"
-dependencies = [
- "marlin-context-org-model",
- "serde",
-]
-
-[[package]]
-name = "marlin-workspace-status"
+name = "marlin-workspace"
 version = "0.1.0"
 dependencies = [
  "marlin-agent-protocol",
  "marlin-context-org-model",
  "marlin-gerbil-ir",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "marlin-workspace-view"
-version = "0.1.0"
-dependencies = [
- "marlin-context-org-model",
  "serde",
  "serde_json",
 ]

@@ -6,10 +6,10 @@
 
 use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
 
-use marlin_agent_environment::{
+use crate::environment::{
     ProcessDirenvCommandRunner, RuntimeEnvironmentActivationRequest, RuntimeEnvironmentActivator,
-    WorkingCopyGitTopLevel,
 };
+use marlin_agent_gitops::working_copy::WorkingCopyGitTopLevel;
 use marlin_agent_protocol::{
     RuntimeEnvironment, RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationStatus,
 };

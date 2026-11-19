@@ -7,7 +7,7 @@
 use std::collections::BTreeSet;
 
 use marlin_context_org_model::{OrgContractRegistry, OrgContractTemplate};
-use marlin_workspace_view::RenderedContractFacts;
+use marlin_workspace::view::RenderedContractFacts;
 
 pub(super) fn merge_contract_facts(
     target: &mut RenderedContractFacts,

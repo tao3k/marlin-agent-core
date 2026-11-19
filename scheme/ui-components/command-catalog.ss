@@ -20,6 +20,7 @@
 (.def WorkspaceCommands.
   (entries => append '(("status" "Show workspace status" none workspace "status")
                        ("diff" "Show unstaged or staged changes" optional workspace "diff")
+                       ("worktree-switch" "Switch to a local branch with Worktrunk" required workspace "worktree-switch")
                        ("context-budget" "Show request budget" none context-budget #f)
                        ("runtime" "Show runtime policy" none runtime #f)
                        ("list-processes" "List managed Runtime processes"

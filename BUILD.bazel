@@ -17,6 +17,9 @@ filegroup(
     srcs = [
         "Cargo.toml",
         "//build-support/marlin-rust-project-harness-policy:policy_unit_runtime_data",
+        "//crates/marlin-agent-context:marlin_agent_context_runtime_source_graph",
+        "//crates/marlin-agent-context/parts/org-model:marlin_context_org_model_runtime_source_graph",
+        "//crates/marlin-agent-gitops:marlin_agent_gitops_runtime_source_graph",
         "//crates/marlin-agent-graph:marlin_agent_graph_runtime_source_graph",
         "//crates/marlin-agent-harness-types:marlin_agent_harness_types_runtime_source_graph",
         "//crates/marlin-agent-protocol:marlin_agent_protocol_runtime_source_graph",
@@ -25,13 +28,8 @@ filegroup(
         "//crates/marlin-agent-telemetry:marlin_agent_telemetry_runtime_source_graph",
         "//crates/marlin-gerbil-ir:marlin_gerbil_ir_runtime_source_graph",
         "//crates/marlin-gerbil-scheme:policy_unit_runtime_data",
-        "//crates/marlin-agent-context:marlin_agent_context_runtime_source_graph",
-        "//crates/marlin-agent-context/parts/org-model:marlin_context_org_model_runtime_source_graph",
-        "//crates/marlin-agent-gitops:marlin_agent_gitops_runtime_source_graph",
+        "//crates/marlin-workspace:marlin_workspace_runtime_source_graph",
         "//crates/marlin-workspace-patch:marlin_workspace_patch_runtime_source_graph",
-        "//crates/marlin-workspace-query:marlin_workspace_query_runtime_source_graph",
-        "//crates/marlin-workspace-status:marlin_workspace_status_runtime_source_graph",
-        "//crates/marlin-workspace-view:marlin_workspace_view_runtime_source_graph",
     ] + glob(
         [
             "crates/**/Cargo.toml",
@@ -71,8 +69,6 @@ marlin_contract_set(
         "//crates/marlin-agent-context/parts/org-model:marlin_context_org_model_contract",
         "//crates/marlin-agent-gitops:marlin_agent_gitops_contract",
         "//crates/marlin-workspace-patch:marlin_workspace_patch_contract",
-        "//crates/marlin-workspace-query:marlin_workspace_query_contract",
-        "//crates/marlin-workspace-status:marlin_workspace_status_contract",
-        "//crates/marlin-workspace-view:marlin_workspace_view_contract",
+        "//crates/marlin-workspace:marlin_workspace_contract",
     ],
 )

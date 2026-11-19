@@ -227,7 +227,7 @@ receipts before runtime consumes it.
 P3 connects protocol projection to runtime execution without duplicating provider
 command semantics.
 
-=marlin-agent-environment= owns the runtime driver:
+=marlin-agent-gitops= owns the working-copy driver:
 
 - it compiles =WorkingCopyIsolationRequest= into =WorkingCopyIsolationPlan=;
 
@@ -367,8 +367,8 @@ Worktrunk plans through =wt=.
   after repository discovery paths resolve to Git top-levels, with structured
   program, =git_toplevel=, argv, and expected working-copy metadata.
 
-- =marlin-agent-environment= executes =WorkingCopyCommandProjection= through an
-  injectable runtime driver and records command receipts without duplicating
+- =marlin-agent-gitops= executes =WorkingCopyCommandProjection= through an
+  injectable working-copy driver and records command receipts without duplicating
   provider argv construction.
 
 - Before removal, the driver verifies that the target is a worktree root of
@@ -401,7 +401,7 @@ Worktrunk plans through =wt=.
 | Owner | Acceptance signal | Validation |
 |-------+-------------------+------------|
 | =marlin-agent-gitops= | Resolve a nested discovery path and project provider commands and typed receipts. | ~cargo test --locked -p marlin-agent-gitops~ |
-| =marlin-agent-environment= | Exercise the Worktrunk executable, verify its registered path and branch, and remove that worktree through the returned receipt. | ~cargo test --locked -p marlin-agent-environment --test unit_test -- --ignored worktrunk~ |
+| =marlin-agent-gitops= | Exercise the Worktrunk executable, verify its registered path and branch, and remove that worktree through the returned receipt. | ~cargo test --locked -p marlin-agent-gitops --test unit_test -- --ignored worktrunk~ |
 | =marlin-gerbil-scheme= | The built Scheme policy selects Git Worktree or Worktrunk. Rust executes the projected request and verifies the actual Git worktree and receipt. | [[file:../../.github/workflows/linked-scheme-aot-gate.yaml][Linked GitHub workflow]] |
 | =marlin-agent-runtime= | Working-copy fanout binds each receipt into the child environment and preserves bounded concurrency and stable output order. | ~cargo test --locked -p marlin-agent-runtime --test unit_test working_copy~ |
 

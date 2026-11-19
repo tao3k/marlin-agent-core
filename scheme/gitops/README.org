@@ -13,7 +13,24 @@ POO refinement for Marlin-specific requirements.
 preference into inputs for the selected policy. Rust owns working-copy
 requests, execution and receipts. The Cargo feature
 =marlin-agent-gitops/worktrunk= links Worktrunk's Rust library for pull
-request reference syntax. The environment applies plans through =wt=.
+request reference syntax. GitOps applies plans through =wt=.
+
+* TUI Git Context
+
+In a trusted TUI configuration, approve one Git repository by the absolute
+path to one of its checkouts.
+
+#+begin_src toml
+[git_context]
+repository = "/absolute/path/to/repository"
+#+end_src
+
+The linked TUI observes the launch checkout after painting its first frame.
+Lab admits the committed =index.org= and =topology.org= after checking the
+repository binding. The Messages buffer shows the admitted commit and both
+Org source digests. The =worktree-switch= command takes a local branch
+name, adopts Worktrunk's returned checkout, and invalidates any pending
+read for the previous checkout.
 
 * Cross-repository integration test
 
@@ -32,8 +49,8 @@ an empty directory. Use the corresponding =GERBIL_PATH= and
 =GERBIL_LOADPATH= for the compiled Lab and dependency products.
 
 #+begin_src sh
-cargo test --locked -p marlin-agent-environment \
-  --features marlin-agent-gitops/worktrunk --test gitops_context_worktrunk --no-run
+cargo test --locked -p marlin-agent-gitops \
+  --features worktrunk --test gitops_context_worktrunk --no-run
 timeout --signal=TERM --kill-after=5s 120s \
   python3 scheme/t/fixtures/gitops-context/run.py "$design" "$lab" "$output" "$provider"
 #+end_src

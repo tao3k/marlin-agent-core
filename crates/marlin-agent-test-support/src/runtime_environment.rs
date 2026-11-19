@@ -10,7 +10,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use marlin_agent_environment::{
+use marlin_agent_runtime::environment::{
     DirenvCommandRunner, RuntimeEnvironmentActivationError, RuntimeEnvironmentActivationResult,
 };
 use marlin_agent_protocol::{

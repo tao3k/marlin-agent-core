@@ -4,14 +4,14 @@
 
 use std::sync::Arc;
 
-use marlin_agent_environment::{
-    WorkingCopyCreateRequest, WorkingCopyHandle, WorkingCopyIsolationProvider,
+use marlin_agent_gitops::working_copy::{
+    WorkingCopyActiveBinding, WorkingCopyCreateRequest, WorkingCopyHandle, WorkingCopyIsolationProvider,
     WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest, WorkingCopyIsolationStatus,
 };
 use marlin_agent_runtime::{
     CancellationToken, RuntimeContext, RuntimeEnvironment, RuntimeFanoutJoinPolicy,
     RuntimeFanoutTaskStatus, RuntimeFuture, SubAgentRuntime, TokioAgentRuntime,
-    WorkingCopyActiveBinding, WorkingCopySubAgentFanoutItem,
+    WorkingCopySubAgentFanoutItem,
 };
 
 #[tokio::test]

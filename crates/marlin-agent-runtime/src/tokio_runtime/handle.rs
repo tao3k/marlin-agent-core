@@ -4,6 +4,7 @@
 
 //! Tokio runtime handle and spawn helpers.
 
+use marlin_agent_gitops::working_copy::WorkingCopyIsolationReceipt;
 use std::{collections::VecDeque, future::Future, sync::Arc, time::Duration};
 
 use crate::observability;
@@ -19,8 +20,7 @@ use super::{
     RuntimeTaskOutcome, RuntimeTaskShutdownReceipt, RuntimeTaskShutdownRequest, RuntimeTaskTracker,
     RuntimeTaskTrackerPolicy, SessionId, SessionIsolationReceipt, SessionKind,
     SessionRuntimeSnapshot, SubAgentRuntime, SubAgentSpawnConfig, SubAgentSpawnReceipt,
-    TokioRuntimePolicy, TokioRuntimePolicyReceipt, ToolRuntime, WorkingCopyIsolationReceipt,
-    WorkingCopySubAgentFanoutItem,
+    TokioRuntimePolicy, TokioRuntimePolicyReceipt, ToolRuntime, WorkingCopySubAgentFanoutItem,
 };
 use crate::tokio_runtime::context::context_visibility_from_sub_agent_policy;
 use crate::tokio_runtime::receipt::{

@@ -5,6 +5,7 @@
 //! Working-copy isolation contracts for agent-owned parallel work.
 
 mod command_projection;
+mod driver;
 mod ids;
 mod plan;
 mod provider;
@@ -14,6 +15,13 @@ mod request;
 pub use command_projection::{
     WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandProjection,
     WorkingCopyCommandProjectionError,
+};
+pub use driver::{
+    ProcessWorkingCopyCommandRunner, ProcessWorkingCopyGitRepositoryResolver,
+    WorkingCopyCommandOutput, WorkingCopyCommandRunner, WorkingCopyGitRepositoryResolver,
+    WorkingCopyIsolationDriver, WorkingCopyIsolationDriverError, WorkingCopyIsolationResult,
+    WorkingCopyParallelIsolationResult, WorkingCopyProviderExecutableProbe,
+    WorkingCopyProviderExecutableStatus,
 };
 pub use ids::{
     WorkingCopyBaseRef, WorkingCopyBranchName, WorkingCopyGitTopLevel, WorkingCopyId,

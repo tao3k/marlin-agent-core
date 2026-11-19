@@ -14,6 +14,6 @@
         (cond-expand
           (darwin '((gxc: "roots" "-ld-options" "-Wl,-undefined,dynamic_lookup")))
           (else '("roots")))
-        '("context" "deck-runtime" "ui" "tooling" "envrc" "context-admission")))
+        '("context" "deck-runtime" "ui" "tooling" "envrc" "context-admission" "worktree-context")))
   with-link:
   (lambda () ["-ld-options" (pkg-config-libs "openssl" "zlib" "sqlite3")]))

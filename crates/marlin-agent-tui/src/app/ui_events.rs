@@ -3,7 +3,7 @@
 
 //! Dispatch Scheme UI requests and minibuffer navigation.
 
-use super::runner::publish_error;
+use super::publish_error;
 use super::{
     App, MessageEvent, MessageSeverity, MessageSource, UiBrowseDirection, UiEvent, UiHost,
 };

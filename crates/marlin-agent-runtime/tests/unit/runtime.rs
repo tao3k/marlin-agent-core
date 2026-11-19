@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use marlin_agent_environment::{RuntimeEnvironmentRequest, RuntimeEnvironmentResolver};
+use marlin_agent_runtime::environment::{RuntimeEnvironmentRequest, RuntimeEnvironmentResolver};
 use marlin_agent_protocol::{
     RuntimeEnvironmentActivationPolicy, RuntimeHome, RuntimeSandboxPolicy, RuntimeWorkspaceProject,
 };

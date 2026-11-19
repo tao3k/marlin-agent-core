@@ -11,9 +11,9 @@ use marlin_agent_protocol::{
     GraphLoopIterationReport, GraphLoopNextAction, GraphLoopRunRequest, GraphLoopStrategyId,
     GraphPolicyProposalReceipt, GraphPolicyProposalStatus, RuntimePlanSnapshot,
 };
+use marlin_agent_gitops::working_copy::{WorkingCopyCommandStatus, WorkingCopyIsolationReceipt};
 use marlin_agent_runtime::{
     CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
-    WorkingCopyCommandStatus, WorkingCopyIsolationReceipt,
 };
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec};
 use std::time::{Duration, Instant};

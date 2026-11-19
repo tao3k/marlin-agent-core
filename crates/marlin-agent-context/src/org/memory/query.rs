@@ -6,7 +6,7 @@
 
 use crate::org::memory::format::todo_state;
 use marlin_context_org_model::{CheckboxState, LinkKind, OrgNode, OrgNodeId, OrgNodeKind};
-use marlin_workspace_query::{
+use marlin_workspace::query::{
     PropertyFilter, QueryFilter, QueryOrder, SourceRange, WorkspaceScope,
 };
 use std::collections::{BTreeMap, HashSet};

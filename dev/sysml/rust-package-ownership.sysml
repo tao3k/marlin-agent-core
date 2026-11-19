@@ -13,7 +13,7 @@ package MarlinRustPackageOwnership {
             doc /* marlin-agent-app-server: marlin.app.v1 Protobuf schema and gRPC
                    service. Translates wire messages to Session and Runtime calls. */
         }
-        part runtime { doc /* marlin-agent-runtime: Tokio scheduling, atomic admission, resource identities, cancellation and process/pipe reaping. */ }
+        part runtime { doc /* marlin-agent-runtime: Tokio scheduling, atomic admission, resource identities, cancellation and process/pipe reaping, environment resolution and direnv. */ }
         part telemetry { doc /* marlin-agent-telemetry: local host/process sampling, independent watchdog evidence and bounded OpenTelemetry export. */ }
         part tui { doc /* marlin-agent-tui: terminal I/O, input/render loop, application wiring and presentation. */ }
         part ui { doc /* marlin-agent-ui: scheme-ui enables typed Scheme projection. The optional grpc feature exposes generated client bindings. */ }
@@ -23,27 +23,17 @@ package MarlinRustPackageOwnership {
         part graph { doc /* marlin-agent-graph: graph topology and coordination types. */ }
         part sessions { doc /* marlin-agent-sessions: identity, visibility, isolation, turn journal and submission recovery. */ }
         part storage { doc /* marlin-agent-storage: typed persistence ports and enabled backend adapters. */ }
-        part environment {
-            doc /* marlin-agent-environment: resolve home and configuration layers,
-                   execute working-copy commands, and take the applied Worktrunk
-                   path and branch from the provider's structured output.
-                   Git switch and branch finalization use a worktree root
-                   verified against the selected repository's common directory.
-                   Worktrunk PR checkout verifies the requested GitHub repository
-                   against forge configuration, fetch URLs and gh default. */
-        }
         part stream { doc /* marlin-agent-stream: adapt provider gateway responses to typed model streams. */ }
         part context { doc /* marlin-agent-context: Context admission and scope, Org loading and document, query, view and status projection. */ }
         part contextOrg { doc /* marlin-context-org-model: Org identity and workspace data model. */ }
         part gitOps {
             doc /* marlin-agent-gitops: bounded Git repository discovery, status
-                   and diff, and typed GitWorktree and Worktrunk plans and
-                   receipts. Git checkout mutations disable repository hooks
-                   in the projected command. */
+                   and diff, and typed GitWorktree and Worktrunk plans,
+                   execution and receipts. GitOps checks the returned checkout
+                   against its repository and disables repository hooks during
+                   Git checkout mutations. */
         }
-        part workspaceQuery { doc /* marlin-workspace-query: workspace selectors and query records. */ }
-        part workspaceStatus { doc /* marlin-workspace-status: workspace status records. */ }
-        part workspaceView { doc /* marlin-workspace-view: workspace presentation contracts. */ }
+        part workspace { doc /* marlin-workspace: query selectors and results, status records, and presentation contracts. */ }
         part gerbilIr { doc /* marlin-gerbil-ir: typed artifacts exchanged with the Gerbil extension plane. */ }
         part gerbilScheme {
             doc /* marlin-gerbil-scheme: Scheme bindings and typed data conversion.
@@ -72,10 +62,8 @@ package MarlinRustPackageOwnership {
     dependency appServerUsesSessionJournal from packages::appServer to packages::sessions;
     dependency appServerUsesRuntime from packages::appServer to packages::runtime;
     dependency uiUsesAppServerClient from packages::ui to packages::appServer;
-    dependency environmentExecutesWorkingCopyPlans from packages::environment to packages::gitOps;
-    dependency contextUsesQueryRecords from packages::context to packages::workspaceQuery;
-    dependency contextUsesStatusRecords from packages::context to packages::workspaceStatus;
-    dependency contextUsesViewRecords from packages::context to packages::workspaceView;
+    dependency runtimeUsesWorkingCopyReceipts from packages::runtime to packages::gitOps;
+    dependency contextUsesWorkspaceRecords from packages::context to packages::workspace;
     dependency telemetryImplementsSampling from packages::telemetry to packages::protocol;
     dependency tuiComposesRuntime from packages::tui to packages::runtime;
     dependency tuiComposesTelemetry from packages::tui to packages::telemetry;
@@ -124,7 +112,7 @@ package MarlinRustPackageOwnership {
     }
     allocation selectWorkingCopyProvider allocate workingCopyBinding to packages.gerbilScheme;
     allocation projectWorkingCopyPlan allocate workingCopyBinding to packages.gitOps;
-    allocation applyWorkingCopyReceipt allocate workingCopyBinding to packages.environment;
+    allocation applyWorkingCopyReceipt allocate workingCopyBinding to packages.gitOps;
 
     requirement <'MAR-PKG-R05'> projectEnvironment {
         doc /* The ENVRC Module plans activation for the verified GitOps
@@ -137,7 +125,7 @@ package MarlinRustPackageOwnership {
                OpenTelemetry records durations and outcomes without environment values. */
     }
     allocation planProjectEnvironment allocate projectEnvironment to scheme;
-    allocation applyProjectEnvironment allocate projectEnvironment to packages.environment;
+    allocation applyProjectEnvironment allocate projectEnvironment to packages.runtime;
     allocation superviseProjectEnvironment allocate projectEnvironment to packages.runtime;
     allocation observeProjectEnvironment allocate projectEnvironment to packages.telemetry;
 }

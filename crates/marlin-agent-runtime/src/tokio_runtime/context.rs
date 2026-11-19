@@ -8,8 +8,8 @@ use super::{
     AgentSessionContext, CancellationToken, ContextNamespace, ContextVisibility, GraphId, RunId,
     RuntimeEnvironment, RuntimeEvent, RuntimeEventSendError, RuntimeEventSink, SessionId,
     SessionIsolationReceipt, SessionKind, SubAgentContextPolicy, SubAgentContextVisibility,
-    WorkingCopyActiveBinding, WorkingCopyIsolationReceipt,
 };
+use marlin_agent_gitops::working_copy::{WorkingCopyActiveBinding, WorkingCopyIsolationReceipt};
 
 /// Per-call runtime context passed into provider, tool, and sub-agent work.
 #[derive(Clone, Debug)]

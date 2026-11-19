@@ -10,7 +10,7 @@ use std::{
 };
 
 use marlin_gerbil_ir::ReleaseTopologySpec;
-use marlin_workspace_status::{ReleaseGateReceipt, ReleaseLandingReport, ReleaseStatus};
+use marlin_workspace::status::{ReleaseGateReceipt, ReleaseLandingReport, ReleaseStatus};
 
 use crate::org::store::{OrgSourceStoreError, OrgSourceStoreResult};
 

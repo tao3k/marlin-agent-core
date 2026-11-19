@@ -4,6 +4,7 @@
 
 //! Tokio-backed runtime extension traits used by the graph-loop kernel.
 
+pub mod environment;
 pub mod observability;
 pub mod plugin;
 pub mod process;
@@ -83,14 +84,5 @@ pub use tokio_runtime::{
     SubAgentSpawnConfig, SubAgentSpawnPolicy, SubAgentSpawnProfile, SubAgentSpawnReceipt,
     SubAgentSpawnStrategy, TokioAgentRuntime, TokioAgentRuntimeBuildRequest,
     TokioRuntimeDiagnosticsPolicy, TokioRuntimeFlavor, TokioRuntimePolicy,
-    TokioRuntimePolicyReceipt, ToolRuntime, WorkingCopyActiveBinding, WorkingCopyBaseRef,
-    WorkingCopyBranchName, WorkingCopyCommandInvocation, WorkingCopyCommandProgram,
-    WorkingCopyCommandProjection, WorkingCopyCommandReceipt, WorkingCopyCommandStatus,
-    WorkingCopyCreateRequest, WorkingCopyFanoutBenchmarkReceipt, WorkingCopyFinalizeBranchRequest,
-    WorkingCopyGitTopLevel, WorkingCopyHandle, WorkingCopyId, WorkingCopyIsolationOperationKind,
-    WorkingCopyIsolationPlan, WorkingCopyIsolationPlanStep, WorkingCopyIsolationProvider,
-    WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest, WorkingCopyIsolationStatus,
-    WorkingCopyParallelIsolationReceipt, WorkingCopyPullRequestCheckoutRequest,
-    WorkingCopyPullRequestNumber, WorkingCopyRepositoryDiscoveryPath, WorkingCopyRetentionPolicy,
-    WorkingCopyRetentionSweepReceipt, WorkingCopySubAgentFanoutItem,
+    TokioRuntimePolicyReceipt, ToolRuntime, WorkingCopySubAgentFanoutItem,
 };

@@ -61,7 +61,7 @@ The first implementation owns deliberately different package classes:
 - =crates/marlin-agent-storage= owns the default, Turso, and Turso-sync library contracts, three development integration scenarios, and three manual performance scenarios;
 - graph and protocol owners: =marlin-agent-graph=, =marlin-agent-protocol=, =marlin-agent-sessions=, and =marlin-gerbil-ir=;
 - Org owners: =marlin-org-model=, =marlin-org-patch=, =marlin-org-store=, =marlin-org-workspace=, and =marlin-org-memory=;
-- workspace owners: =marlin-workspace-patch=, =marlin-workspace-view=, =marlin-workspace-query=, =marlin-workspace-status=, and =marlin-workspace-protocol=.
+- workspace owners: =marlin-workspace=, =marlin-workspace-patch=, and =marlin-workspace-protocol=.
 
 Storage feature variants are separate labels because both their Rust feature set and direct dependency projection differ. The default library projects =serde=. The =turso= and =turso-sync= libraries also project =serde_json=, =tokio=, and =mrr-data-backend=. Integration scenarios depend on the matching library variant and declare their development dependencies explicitly.
 

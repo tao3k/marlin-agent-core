@@ -85,6 +85,7 @@ impl<'a> Command<'a> {
             (Capability::History, NoArguments, Some("older" | "newest")) => true,
             (Capability::Workspace, NoArguments, Some("status"))
             | (Capability::Workspace, Optional, Some("diff"))
+            | (Capability::Workspace, Required, Some("worktree-switch"))
             | (Capability::ToggleThinking, Optional, None) => true,
             (Capability::OpenMenu, NoArguments, Some(prefix)) => {
                 prefix.ends_with('-') && UiCommandName::is_valid_prefix(prefix)

@@ -35,6 +35,9 @@ use unicode_width::UnicodeWidthChar;
 #[path = "pty/envrc.rs"]
 #[cfg(feature = "linked-ui")]
 mod envrc;
+#[cfg(feature = "linked-ui")]
+#[path = "pty/git_context.rs"]
+mod git_context;
 #[path = "pty/live_provider.rs"]
 mod live_provider;
 #[path = "pty/minibuffer.rs"]

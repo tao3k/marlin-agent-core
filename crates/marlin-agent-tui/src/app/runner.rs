@@ -5,17 +5,16 @@
 //! Terminal event loop and process entry.
 
 use super::{
-    AgentId, App, Arc, AtomicU64, CliAction, FrameSchedule, HistorySearch, INPUT_QUEUE_ITEMS,
-    InputDecoder, Instant, JournalGateway, Key, MessageEvent, MessageSeverity, MessageSource,
-    Ordering, ProjectId, QueuedReply, REPLY_BATCH_LIMIT, REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS,
-    RUNTIME_EVENT_BATCH_LIMIT, RuntimeEdgePolicy, RuntimeStreamGateway, ScrollAnchor,
-    SessionBrowser, SessionId, SharedGateway, SignalMonitor, TerminalInput, TerminalOwner,
-    TranscriptViewportCache, TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode,
+    AgentId, App, Arc, AtomicU64, FrameSchedule, HistorySearch, INPUT_QUEUE_ITEMS, InputDecoder,
+    Instant, JournalGateway, Key, MessageEvent, MessageSeverity, MessageSource, Ordering,
+    ProjectId, REPLY_BATCH_LIMIT, REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS, RUNTIME_EVENT_BATCH_LIMIT,
+    RuntimeEdgePolicy, RuntimeStreamGateway, ScrollAnchor, SessionBrowser, SessionId,
+    SharedGateway, SignalMonitor, TerminalInput, TerminalOwner, TranscriptViewportCache,
+    TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode,
     TursoOptimizationProfile, UiBrowseDirection, UiHost, UiKeyAction, UiOpenFacts,
-    WheelAccumulator, config, draw_with_snapshot, frame_snapshot, io, list_sessions, load_session,
-    mouse_over_minibuffer, mpsc, parse_cli, reply_channel, thread,
+    WheelAccumulator, config, draw_with_snapshot, frame_snapshot, io, load_session,
+    mouse_over_minibuffer, mpsc, process_replies, publish_error, reply_channel, thread,
 };
-use marlin_agent_telemetry::{OpenTelemetry, TelemetryServiceName, TraceTarget};
 use marlin_agent_ui::UiEditorAction;
 use std::{
     env,
@@ -28,39 +27,7 @@ use super::tool_review::{open_tool_review, poll_tool_review, submit_tool_review}
 use super::ui_events::{apply_ui_request, browse_menu, command_menu_active, route_frame_click};
 use termion::input::TermReadEventsAndRaw;
 
-pub(crate) fn process_replies(
-    app: &mut App,
-    receiver: &mut tokio::sync::mpsc::Receiver<QueuedReply>,
-    limit: usize,
-) -> usize {
-    let mut processed = 0;
-    while processed < limit {
-        let Ok(event) = receiver.try_recv() else {
-            break;
-        };
-        let (id, reply) = event.into_parts();
-        app.receive(id, reply);
-        processed += 1;
-    }
-    processed
-}
-
-pub(super) fn publish_error(
-    app: &mut App,
-    source: MessageSource,
-    summary: &str,
-    error: &impl std::fmt::Display,
-) {
-    let detail = error.to_string();
-    app.publish_message(MessageEvent {
-        source,
-        severity: MessageSeverity::Error,
-        summary,
-        detail: &detail,
-    });
-}
-
-fn run(
+pub(super) fn run(
     path: PathBuf,
     selected_session: Option<SessionId>,
 ) -> Result<Option<i32>, Box<dyn std::error::Error>> {
@@ -74,6 +41,15 @@ fn run(
         return Err("marlin-tui requires a terminal on stdin and stdout".into());
     }
     let config = config::Config::load(&path)?;
+    #[cfg(feature = "linked-ui")]
+    let git_context_approval = config
+        .git_context
+        .as_ref()
+        .map(|approval| approval.repository.clone());
+    #[cfg(not(feature = "linked-ui"))]
+    if config.git_context.is_some() {
+        return Err("Git Context requires the linked Scheme programme".into());
+    }
     #[cfg(not(target_os = "macos"))]
     if config.process_budget.is_some() {
         return Err("process memory sampling is unavailable on this host".into());
@@ -196,6 +172,8 @@ fn run(
     };
     let (owner, events) = marlin_agent_runtime::TokioAgentRuntime::from_build_request(request);
     let mut app = App::with_runtime(endpoint, owner, events);
+    #[cfg(feature = "linked-ui")]
+    let launch_checkout = directory.clone();
     let mut worktree_probe = Some(app.runtime_owner.spawn_on(&runtime, async move {
         super::envrc::project(&directory).await
     }));
@@ -343,8 +321,34 @@ fn run(
     let mut first_frame_elapsed = None;
     let mut failed_ui_labels: Option<(String, String)> = None;
     let mut signal_exit = None;
+    #[cfg(feature = "linked-ui")]
+    let mut git_context: Option<super::git_context::GitContext<'_>> = None;
     let result = (|| -> io::Result<()> {
         loop {
+            if let Some(branch) = app.worktree_switch.take() {
+                #[cfg(feature = "linked-ui")]
+                if let Some(context) = git_context.as_mut() {
+                    context.switch(&mut app, &runtime, branch);
+                    schedule.mark_dirty();
+                    apply_ui_request(&mut app, &mut ui);
+                    continue;
+                }
+                let _ = branch;
+                app.publish_message(MessageEvent {
+                    source: MessageSource::Workspace,
+                    severity: MessageSeverity::Warning,
+                    summary: "Worktree switch unavailable",
+                    detail: "Configure an approved repository in [git_context].",
+                });
+                schedule.mark_dirty();
+            }
+            #[cfg(feature = "linked-ui")]
+            if git_context
+                .as_mut()
+                .is_some_and(|context| context.poll(&mut app, &runtime))
+            {
+                schedule.mark_dirty();
+            }
             app.workspace.pulse_host();
             #[cfg(target_os = "macos")]
             if let Some(pulse) = &host_pulse {
@@ -573,6 +577,16 @@ fn run(
                 schedule.drawn(Instant::now());
                 if first_frame_elapsed.is_none() {
                     first_frame_elapsed = Some(startup.elapsed());
+                    #[cfg(feature = "linked-ui")]
+                    if let Some(approved) = git_context_approval.as_ref() {
+                        git_context = Some(super::git_context::GitContext::new(
+                            &scheme_runtime,
+                            approved.clone(),
+                            launch_checkout.clone(),
+                            &app,
+                            &runtime,
+                        ));
+                    }
                 }
             }
             let wait = if processed == REPLY_BATCH_LIMIT
@@ -951,6 +965,8 @@ fn run(
         Ok(())
     })();
     trace_startup("event loop exit");
+    #[cfg(feature = "linked-ui")]
+    drop(git_context);
     let terminal_result = terminal.suspend();
     drop(signals);
     #[cfg(target_os = "macos")]
@@ -979,58 +995,4 @@ fn run(
     shutdown_result?;
     result?;
     Ok(signal_exit)
-}
-
-fn start_telemetry() -> Result<Option<OpenTelemetry>, Box<dyn std::error::Error>> {
-    let endpoint = match env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") {
-        Ok(endpoint) => endpoint,
-        Err(env::VarError::NotPresent) => return Ok(None),
-        Err(error) => return Err(error.into()),
-    };
-    let telemetry = OpenTelemetry::otlp_http(
-        TelemetryServiceName::new("marlin-tui"),
-        TraceTarget::new(marlin_agent_runtime::observability::TARGET_RUNTIME_SPAN),
-        &endpoint,
-    )?;
-    telemetry.install_global()?;
-    Ok(Some(telemetry))
-}
-
-/// Start the terminal client with the process argument list.
-pub fn run_cli() {
-    #[cfg(target_os = "macos")]
-    if marlin_agent_telemetry::run_host_observer_if_requested() {
-        return;
-    }
-    let args = match parse_cli(env::args_os().skip(1)) {
-        Ok(args) => args,
-        Err(error) => {
-            eprintln!("{error}");
-            std::process::exit(2);
-        }
-    };
-    let telemetry = match start_telemetry() {
-        Ok(telemetry) => telemetry,
-        Err(error) => {
-            eprintln!("marlin-tui: telemetry configuration: {error}");
-            std::process::exit(2);
-        }
-    };
-    let result = match args.action {
-        CliAction::Open { session } => run(args.config, session),
-        CliAction::List { after } => list_sessions(&args.config, after).map(|()| None),
-    };
-    if let Some(telemetry) = telemetry
-        && let Err(error) = telemetry.shutdown()
-    {
-        eprintln!("marlin-tui: telemetry shutdown: {error}");
-    }
-    match result {
-        Ok(Some(code)) => std::process::exit(code),
-        Ok(None) => {}
-        Err(error) => {
-            let _ = writeln!(io::stderr(), "marlin-tui: {error}");
-            std::process::exit(1);
-        }
-    }
 }

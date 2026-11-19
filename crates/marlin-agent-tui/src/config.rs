@@ -36,6 +36,14 @@ pub struct Config {
     pub timeout_seconds: u64,
     pub process_budget: Option<marlin_agent_runtime::RuntimeProcessBudget>,
     pub tui_ui_package: Option<TuiUiPackageConfig>,
+    pub git_context: Option<GitContextConfig>,
+}
+
+/// Local operator approval to display committed Context from one Git owner.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GitContextConfig {
+    pub repository: PathBuf,
 }
 
 /// An already compiled Scheme publication resolved by the SDK package API.
@@ -85,7 +93,15 @@ fn default_timeout() -> u64 {
 impl Config {
     pub fn load(path: &Path) -> Result<Self, String> {
         let content = fs::read_to_string(path).map_err(|e| format!("cannot read config: {e}"))?;
-        toml::from_str(&content).map_err(|e| format!("invalid config: {e}"))
+        let config: Self = toml::from_str(&content).map_err(|e| format!("invalid config: {e}"))?;
+        if config
+            .git_context
+            .as_ref()
+            .is_some_and(|approval| !approval.repository.is_absolute())
+        {
+            return Err("git_context.repository must be an absolute path".into());
+        }
+        Ok(config)
     }
 
     pub fn catalog(&self) -> Result<(ModelEndpoint, ModelCatalog), String> {

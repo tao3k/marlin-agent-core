@@ -20,5 +20,7 @@ pub use diff::{
     GitDiff, GitDiffRequest, GitDiffScope, GitRepositoryPath, InvalidGitRepositoryPath,
 };
 pub use read::{DISABLED_HOOKS, GIT_REPOSITORY_OVERRIDES, GitReadError};
-pub use repository::GitOperations;
+pub use repository::{
+    CommittedCheckout, ContextDocument, GitCheckoutRef, GitCommitId, GitOperations,
+};
 pub use status::{GitFileState, GitPath, GitStatus, GitStatusEntry, GitStatusError};

@@ -24,7 +24,7 @@ task. The first terminal frame can appear while discovery and loading run.
 - Resolve the target from the active GitOps binding and check the worktree root
   before dispatch. Authorize allow and deny through explicit user actions.
   Agent startup and reload use direnv's existing approval for the file.
-- Reuse =marlin-agent-environment= for the direnv subprocess and its typed
+- Reuse =marlin-agent-runtime= for the direnv subprocess and its typed
   receipts. Apply the resulting environment only when spawning tools for the
   same working copy. Use an unmodified base environment when the file is
   absent and expose a blocked state when authorization is missing.
