@@ -22,7 +22,7 @@ rust-dev-gate:
   cargo test --locked -p marlin-rust-project-harness-policy --test workspace_policy
 
 # Authored Quint models and reproducible trace checks.
-property-model-gate: app-server-model-gate
+property-model-gate: app-server-model-gate gitops-context-model-gate
   quint typecheck dev/quint/host-observer.qnt
   quint run dev/quint/host-observer.qnt --seed=42 --max-samples=100 --max-steps=8 --invariant=safe --verbosity=1
   @output=$(quint run dev/quint/host-observer.qnt --step=badStep --invariant=safe --seed=42 --max-samples=100 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in host exit negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
@@ -71,6 +71,35 @@ app-server-model-gate:
   quint typecheck dev/quint/app-server-turn.qnt
   quint test dev/quint/app-server-turn.qnt --max-samples=100
   quint run dev/quint/app-server-turn.qnt --seed=42 --max-samples=1000 --max-steps=30 --invariant=safe --verbosity=1
+
+# MAR-GCTX: versioned source admission, retirement and custody.
+gitops-context-model-gate:
+  quint typecheck dev/quint/gitops-context.qnt
+  quint test dev/quint/gitops-context.qnt --main=gitopsContextAdmission
+  quint test dev/quint/gitops-context.qnt --main=gitopsContextRetention
+  quint test dev/quint/gitops-context.qnt --main=gitopsOrgLinkEvidence
+  quint test dev/quint/gitops-context.qnt --main=gitopsCrossRepoPublication
+  quint test dev/quint/gitops-context.qnt --main=gitopsWorkingCopyPolicy
+  quint run dev/quint/gitops-context.qnt --main=gitopsContextAdmission --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/gitops-context.qnt --main=gitopsContextRetention --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/gitops-context.qnt --main=gitopsOrgLinkEvidence --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/gitops-context.qnt --main=gitopsCrossRepoPublication --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/gitops-context.qnt --main=gitopsWorkingCopyPolicy --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  @for control in gitopsContextAdmission:foreignCloneMutation gitopsContextAdmission:stalePublicationMutation gitopsContextAdmission:cursorMutation gitopsContextRetention:mergeMutation gitopsContextRetention:custodyMutation gitopsOrgLinkEvidence:attachmentMutation gitopsOrgLinkEvidence:crossRepoMutation gitopsCrossRepoPublication:latePublicationMutation gitopsCrossRepoPublication:preOpenMutation gitopsCrossRepoPublication:lateCacheMutation gitopsWorkingCopyPolicy:missingCoreMutation; do result=0; output=$(quint run dev/quint/gitops-context.qnt --main="${control%:*}" --step="${control#*:}" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
+
+# The offline CLI checks Quint IR without starting an RPC server.
+gitops-context-symbolic-gate apalache="apalache-mc":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  model_path="$PWD/dev/quint/gitops-context.qnt"
+  proof_dir="$PWD/target/quint/gitops-context-verification"
+  mkdir -p "$proof_dir"
+  cd "$proof_dir"
+  for module in gitopsContextAdmission gitopsContextRetention gitopsOrgLinkEvidence gitopsCrossRepoPublication gitopsWorkingCopyPolicy; do
+    quint compile "$model_path" --main="$module" --invariant=safe --target=json > "$module.qnt.json"
+    {{ quote(apalache) }} check --init=init --next=step --inv=safe --length=16 "$module.qnt.json" > "$module-apalache.log" 2>&1 || { tail -n 30 "$module-apalache.log"; exit 1; }
+    rg "Checker reports no error up to computation length 16" "$module-apalache.log"
+  done
 
 # One project gate: architecture, model, native Scheme PBT and Rust properties.
 property-gate: sysml-check property-model-gate scheme-property-gate

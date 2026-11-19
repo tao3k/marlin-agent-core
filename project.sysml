@@ -34,6 +34,7 @@ package MarlinAgentCORE {
     dependency declarativeTuiEngine from project to MarlinDeclarativeUi::engine;
     dependency contextOrgDesign from project to MarlinTuiArchitecture::target::contextOrgAuthority;
     dependency contextOrgLifecycle from project to MarlinContextOrgLifecycle::OrgTurnLifecycle;
+    dependency gitOpsContextDesign from project to MarlinGitOpsContext::target;
     dependency tuiTurnLifecycle from project to MarlinTuiLifecycle::TurnLifecycle;
 
     view projectStructure {
@@ -106,5 +107,19 @@ package MarlinAgentCORE {
         expose MarlinRustPackageOwnership::packages;
         expose MarlinRustPackageOwnership::scheme;
         render asInterconnectionDiagram;
+    }
+
+    view gitOpsContextDiscovery {
+        expose MarlinGitOpsContext::actual;
+        expose MarlinGitOpsContext::target;
+        render asTreeDiagram;
+    }
+
+    view gitOpsContextRestore : StandardViewDefinitions::ActionFlowView {
+        expose MarlinGitOpsContext::RestoreContext;
+    }
+
+    view gitOpsContextOrgLink : StandardViewDefinitions::ActionFlowView {
+        expose MarlinGitOpsContext::QualifyOrgLink;
     }
 }

@@ -14,3 +14,37 @@ preference into inputs for the selected policy. Rust owns working-copy
 requests, execution and receipts. The Cargo feature
 =marlin-agent-gitops/worktrunk= links Worktrunk's Rust library for pull
 request reference syntax. The environment applies plans through =wt=.
+
+* Cross-repository integration test
+
+[[file:../t/gitops-cross-repo-test.ss][The GitOps suites]] run through standard
+=gerbil test= using the selected Lab source and compiled libraries. The
+[[file:../t/fixtures/gitops-context/run.py][Python fixture]] verifies the two
+original PR #34 blobs, prepares both local repositories through the Rust
+Worktrunk test, and supplies the Git observations to the Scheme suite.
+This focused integration requires a real Worktrunk executable and two
+fixture repositories.
+
+From the workspace root, prebuild the provider test. Use the executable Cargo
+reports as =$provider=. Set =$design= to the original =index.org= and
+=topology.org= directory, =$lab= to the matching Lab source, and =$output= to
+an empty directory. Use the corresponding =GERBIL_PATH= and
+=GERBIL_LOADPATH= for the compiled Lab and dependency products.
+
+#+begin_src sh
+cargo test --locked -p marlin-agent-environment \
+  --features marlin-agent-gitops/worktrunk --test gitops_context_worktrunk --no-run
+timeout --signal=TERM --kill-after=5s 120s \
+  python3 scheme/t/fixtures/gitops-context/run.py "$design" "$lab" "$output" "$provider"
+#+end_src
+
+The default =gitops-inflight-test= runs the delivery acceptance under a
+120-second deadline and a 2 GiB Gerbil heap cap. Select
+=--suite gitops-cross-repo-test= for the baseline Org and pre-open controls
+with the same fixture and limits. Git traces corroborate permission
+refusals before opening. Two
+additional cases revoke one side after both Git children start delivering
+payloads. The caller checks both late payloads against their committed
+digests, discards them, and verifies Lab's retained sources and query
+history together with its own warm cache. Restoring a grant requires fresh
+physical reads. See the [[file:../../docs/40-rfcs/40.182-gitops-context-discovery.org::*PR #34 cross-Repo acceptance][acceptance record]].

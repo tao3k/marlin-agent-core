@@ -72,6 +72,30 @@ authored model to =property-model-gate=; package tests stay under the existing
 Gerbil and Cargo entrypoints. State the bounds and negative controls before
 claiming a broader stability result.
 
+** GitOps Context discovery
+
+[[file:../sysml/gitops-context.sysml][MAR-GCTX-R01–R09]] define the Git owner,
+Org admission, locator projection and retention requirements. The
+[[file:../quint/gitops-context.qnt][Quint model]] checks two same-route clones,
+three source generations, grant revocation and readmission, one pending
+restore, and one owned resource with two possible branch tips. The Org link
+module adds declared file hops, content-only links and Git binding evidence.
+The cross-Repo publication module checks both bindings, the declared origin,
+distinct Contracts, both grants before the first protected Git read, and
+invalidation before admitting late bytes or publishing a late result.
+The policy module checks GitOps core and WorkTrunk refinement admission.
+Run =just gitops-context-model-gate= for named traces, five fixed-seed
+samples of 1,000 traces up to 16 steps each, and eleven isolated negative
+controls. A control must exit with an invariant violation. Run
+=just gitops-context-symbolic-gate /path/to/apalache-mc= with Apalache
+0.62.1 for the 16-step symbolic checks. The recipe passes Quint IR to the
+offline checker and keeps its logs under =target/quint/=.
+Native fixture evidence, correspondence and performance qualification are in the
+[[file:../../docs/40-rfcs/40.182-gitops-context-discovery.org::*Qualification plan][design review]].
+
+The [[file:../../scheme/gitops/README.org::*Cross-repository integration test][GitOps module]]
+owns the native fixture and its reproduction commands.
+
 * macOS real TUI runtime gate
 
 On macOS =property-gate= also runs =tui-runtime-gate=. It stages the linked

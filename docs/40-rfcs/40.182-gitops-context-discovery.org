@@ -1,0 +1,376 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: GitOps Context discovery
+#+language: en
+#+property: STATUS design-review
+
+* Source audit
+
+Marlin selects Lab =731f6dfb0466aa47e51b04040db579e5e751ba47= in
+[[file:../../scheme/gerbil.pkg][gerbil.pkg]]. The linked Lab checkout inspected
+for this review was =a7279273704a6be7027220c0890cc6f7931c2b8b=. The GitOps,
+Context and Query module sources compared equal between the two revisions.
+The comparison concerns source. Installed build products and runtime behavior
+need separate qualification.
+
+| Lab surface | Verified responsibility | Marlin consequence |
+|-------------+-------------------------+--------------------|
+| [[https://github.com/tao3k/agentic-ai-lab/blob/731f6dfb0466aa47e51b04040db579e5e751ba47/modules/gitops/working-copy.ss][GitOps working-copy policy]] | Binds Org source, anchor and policy revision to provider selection and receipt interpretation. | Marlin can inherit selection and evidence policy. Rust supplies physical Git observations and effects. |
+| [[https://github.com/tao3k/agentic-ai-lab/blob/731f6dfb0466aa47e51b04040db579e5e751ba47/modules/ai-agentic-context/features/worktree/objects.ss][Worktree Feature]] and [[https://github.com/tao3k/agentic-ai-lab/blob/731f6dfb0466aa47e51b04040db579e5e751ba47/modules/ai-agentic-context/task-publication.ss][Task publication]] | Resolves selected Worktree/Task/Org declarations. Uses source-qualified anchors, captures read scope and grants, evaluates selected sources, and checks currentness before publication. | Reuse the declared Context selection and admission path. A top-level locator supplies candidates to it. |
+| [[https://github.com/tao3k/agentic-ai-lab/blob/731f6dfb0466aa47e51b04040db579e5e751ba47/modules/ai-agentic-context/query-provider.ss][Query Provider]] | Owns a bounded catalog of already admitted Org source cuts, their history and currentness. An execution binds one source identity. Task publication can combine explicit per-source observations. | Start with admitted Org queries. Catalog membership, source I/O and cross-repository discovery require an owning boundary. |
+| [[https://github.com/tao3k/agentic-ai-lab/blob/731f6dfb0466aa47e51b04040db579e5e751ba47/modules/query/results/model.org][GQL result contracts]] | Lab's scalar row receipt and MRR's typed catalog-bound result receipt have different digest and value contracts. The documented metadata projection carries declared MRR metadata. | A native MRR query path must prove catalog and admitted-result correspondence before its reuse. |
+
+Lab's [[https://github.com/tao3k/gebril-yuanxu/blob/9e6759318787802bf994b31d5779a57973161ae7/module-system/design/43-session-memory-recovery/12-git-project-context-model.org][Git Project Context model]]
+separates the Git source graph, the Context composition graph and the consumer
+graph. Its [[https://github.com/tao3k/gebril-yuanxu/blob/9e6759318787802bf994b31d5779a57973161ae7/module-system/design/43-session-memory-recovery/11-context-query-boundary.org][Query boundary]]
+defines indexes as projections of Org cuts. Marlin's
+[[file:../../scheme/context-system/objects.ss][Context bridge]] exposes core
+scope admission and Org projections. The
+[[file:../../crates/marlin-agent-context/src/artifacts.rs][Artifacts experiment]]
+uses a journal and a generated Org file to exercise write and restore. Its
+qualification covers that boundary.
+
+* Resolved design for review
+
+[[file:../../dev/sysml/gitops-context.sysml][The SysML v2 model]] defines
+identities, owner allocations, restore ordering and the lifecycle of one
+exact locator. The existing [[file:40.181-context-org-ownership.org][Org turn model]]
+covers a different consumer lifecycle. The GitOps restore request carries the
+launch observation and display scope, with no Session ID in its locator.
+
+** Repository binding
+
+Lab's [[https://github.com/tao3k/agentic-ai-lab/blob/731f6dfb0466aa47e51b04040db579e5e751ba47/modules/gitops/types.ss][GitOpsSourceCut]]
+carries project, worktree, path, Git HEAD and source text. Its Worktree
+prototype and dependency reader consume a selected Project, Worktree and
+source cut. Marlin GitOps supplies the additional local topology and remote
+route, then passes the corresponding observation to Lab. A Lab Project can
+relate multiple repos. A ref identifies a branch and a Worktree identifies a
+checkout, including a detached HEAD.
+
+| Input | Binding decision |
+|-------+------------------|
+| Local repository | Enroll once under an explicit GitOps operation. The durable owner records a fresh repository instance key bound to the canonical Git common directory and observed directory identity. All linked Worktrees use that binding. Resolve a moved repository through explicit rebinding. A replacement at the same path or a conflicting registration is unavailable until rebound. |
+| Worktree and ref | Resolve Git top-level, per-Worktree Git directory, common directory, full symbolic ref when present, and exact commit OID. Retain distinct HEAD, index, working and selected untracked observations as needed. A changed ref or selected input invalidates the corresponding cut. |
+| Remote choice | Select an explicitly configured source remote, otherwise =origin=, otherwise the sole eligible network remote. Multiple eligible remotes without a choice are ambiguous. A selected remote must resolve to one eligible fetch route or an explicit local route. Distinct fetch routes require a choice. An invalid selection is a binding error. A local route or a repo without remotes uses =repos/_local/<instance>=. |
+| Route | Normalize the fetch URL to percent-encoded path segments under =repos/<host>/<namespace...>/<repo>=. Fold the host, strip one terminal =.git=, discard userinfo and reject query, fragment, encoded separators and dot segments. Encode uppercase and reserved characters in path segments so case-sensitive identities survive on case-folding filesystems. Standard HTTPS and SSH routes to the same host/path agree. Retain nondefault ports in the authority component. A URL change is a route update with owner evidence. |
+| Related repositories | The declared Lab Project and admitted relations choose related repos. Two clones of a URL share its route and retain separate instance keys and observations. A fork has its own URL route. |
+| Storage mode | Ordinary mode uses =~/marlin-ai/index.db= with Repo routes below =~/marlin-ai/repos/=. =MARLIN_AGENT_CORE_DEV=1= selects the main Worktree's =.data/marlin= for that repository's development data and index. A bare repository uses =<git-common-dir>/marlin= in DEV. DEV includes only explicitly enrolled source roots and uses a separate index scope. Startup outside Git or before enrollment returns an unavailable view. |
+
+Read the common-directory and Worktree facts through
+[[https://git-scm.com/docs/git-rev-parse][Git plumbing]] and the existing
+Marlin GitOps native boundary. Scheme =config.ss= will select mode, eligible
+source remotes, policy and owner bindings. Rust will resolve canonical paths,
+read the registered owner and observe Git through bounded host operations.
+Terminal startup can read the binding. Enrollment and rebinding are explicit
+owner operations.
+
+The producer's durable owner records are the rebuild roots. In home mode each
+Repo route has a separate owner record per enrolled local instance. A route
+change updates discovery after the owner records the verified binding. The
+owner keeps custody at its recorded location until an explicit move completes.
+In DEV the enrolled primary Worktree root or bare root owns the records.
+Traversal of those owner roots rebuilds the selected index scope. Locators
+refer to the owner records and payload by identity.
+
+** Top-level locator index
+
+The first backend is the Turso driver already selected by Marlin. The
+[[https://github.com/tao3k/mrr-data/blob/daa6487820f798f0583713de8d03110aeac5d1fd/crates/mrr-data-backend/src/lib.rs][exact MRR Data pin]]
+exports =turso_driver= explicitly for hosts that own their schema and
+transactions. Marlin already uses cached prepared statements and indexes in
+[[file:../../crates/marlin-agent-storage/src/turso_storage.rs][its storage adapter]].
+Use that driver and a Marlin-owned locator schema. Locator indexes are
+derived, so one transaction advances affected source membership and its owner
+change cursor together. Crash recovery consumes owner records after that
+cursor. A cursor gap marks that scope incomplete until reconciled.
+
+The lookup key starts with storage scope, repo instance, and ref cut or
+detached commit. A row identifies a source, generation, owning locator and
+coverage. Indexes over repo route and declared relation endpoints support
+bounded candidate lookup. A locator can reference one Git commit and path or
+a retained content object with its digest. Org bodies and artifact payloads
+live with the source owner. A warm lookup seeks the scoped rows and opens
+only admitted sources; owner writes invalidate changed cuts and declared
+dependents. First build, cursor gaps and explicit repair use replay of the
+affected owners.
+
+Lab's [[https://github.com/tao3k/agentic-ai-lab/blob/731f6dfb0466aa47e51b04040db579e5e751ba47/modules/query/orgize-source.ss][incremental Org query]]
+reuses selected open-headline rows after replay verifies the old source. It
+still re-parses source reads for that bounded profile. Reuse it for that
+profile and measure its cost independently from locator deltas.
+
+| Layer | Source finding and selected use |
+|-------+---------------------------------|
+| MRR Data pinned =mrr-data-backend= | Reuse =turso_driver= for the locator projection. Marlin owns visibility, key layout, transactions and coverage. |
+| Lab Context and GQL | Use the selected Worktree Feature, source registration, per-source query and Task publication for the first Context path. Filter candidate visibility before source I/O and qualify every returned anchor. |
+| MRR query admission | [[https://github.com/tao3k/meta-relational-reasoning/blob/d5bc42942b53b0c57c4ac30b006f53ae87d81ac1/crates/mrr-property-source/src/source_query.rs][MRR source query]] binds original GQL, catalog and snapshot and admits typed results. Use this contract when qualifying graph queries over Lab-admitted relations. |
+| MRR Data physical graph execution | The inspected development head =55285d510bd655fd546d73e07400c642bdf534e4= has a [[https://github.com/tao3k/mrr-data/blob/55285d510bd655fd546d73e07400c642bdf534e4/crates/mrr-data-poo-flow/src/property_source.rs][DataFusion property-source worker]] over verified snapshots. Its MRR pin is =c4328064ab0bf5eca39dc2f79fbf890b6b99f7c9=. The newer MRR source-query facade was inspected at =d5bc42942b53b0c57c4ac30b006f53ae87d81ac1=. Qualify an exact paired producer, catalog and result transport before enabling this optional path. |
+
+An index row grants neither access nor result validity. Lab checks display
+authority before dereferencing the source and rechecks currentness before
+publishing the result. Across repositories the same locator mechanism supplies
+candidates through admitted project relations. The first Worktree integration
+selects Repo modules through the active Lab Project. Each additional Repo
+requires an admitted source binding, Module selection and current grant.
+
+** Org authoring and Lab library integration
+
+Reuse Lab's [[https://github.com/tao3k/agentic-ai-lab/blob/731f6dfb0466aa47e51b04040db579e5e751ba47/modules/ai-agentic-context/org-contract/templates/README.org][Org Contract templates]]
+and Worktree Feature. Marlin composes =+worktree= through its existing shared
+Scheme interface. WorkTrunk is an explicit refinement of that Feature and its
+Contract family. Ordinary Org remains authored as Org. For a Worktree Contract
+source, copy the open document bytes into the typed source admission request,
+assign the source owner's generation and compare the Worktree binding with
+GitOps observations. The Task resolver uses Lab's selected =org=, =tasks= and
+dependency scopes. Pass values across the existing Scheme ABI.
+
+| Org authoring surface | Interpretation |
+|-----------------------+----------------|
+| Root property drawer | Lab uses =ID=, =CONTRACT_ID= and =CONTRACT_REVISION= to identify the document and profile. The Worktree template includes =GITOPS_PROJECT=, =GITOPS_WORKTREE= and =GITOPS_SOURCE_CUT=, plus =GITOPS_WORKTRUNK= in the refinement. Host comparison binds these declarations to observed facts. |
+| Headline properties and links | Lab derives Element identity from source identity and local =ID=. The receipt separately binds generation and digest. In the inspected Worktree resolver, a relative =file:= link with a unique =CUSTOM_ID= can select a declared source inside the selected Worktree. =attachment:= and undeclared file links can appear as Org content. |
+| Declared derivation | Lab's =CONTEXT_ORIGIN_MODULE=, =CONTEXT_ORIGIN_SOURCE=, =CONTEXT_ORIGIN_ID= and =CONTEXT_ORIGIN_GENERATION= bind a selected leaf to its exact original. Admission resolves both ends and checks grants for each involved source. |
+| =scheme :org-contract= | Lab/Orgize owns structural assertions such as =assert-org-element=, property drawer checks and bounded descendant selectors. Its trusted tangled form uses =org-contract-block=. Runtime opens authored content as data and runs the admitted contract/profile. Ordinary blocks remain inert. |
+| Readable output | TUI can render the admitted Org window and its receipt. The exact source stays with its owner. The Worktree discovery contract uses Git observation and display scope independently of Lab's Session consumer template. |
+
+The upstream Agentic AI Context design now defines the repository
+[[https://github.com/tao3k/agentic-ai-lab/blob/c2c6bc8eda0fa7224be16e579f5aa6efb2eb9673/docs/10-19-design/10.06-poo-module-system/agentic-ai-context/index.org][index]]
+and
+[[https://github.com/tao3k/agentic-ai-lab/blob/c2c6bc8eda0fa7224be16e579f5aa6efb2eb9673/docs/10-19-design/10.06-poo-module-system/agentic-ai-context/topology.org][topology]].
+The two structured Org documents generate property values from admitted
+declarations and Git observations. The Worktree template below illustrates
+the existing input shape.
+
+#+begin_example
+:PROPERTIES:
+:ID: repo-context
+:CONTRACT_ID: context.gitops.worktree.v1
+:CONTRACT_REVISION: 1
+:GITOPS_PROJECT: marlin
+:GITOPS_WORKTREE: primary
+:GITOPS_SOURCE_CUT: cut-1
+:END:
+
+* Design
+:PROPERTIES:
+:ID: implementation-design
+:END:
+See [[file:design.org::#design-evidence][the design source]].
+#+end_example
+
+The target's =CUSTOM_ID= selects its headline, while its local =ID= and the
+registered source generation bind the receipt. A project can declare the
+same association through Lab's Worktree/Task modules and use Org Contract
+assertions to verify the required drawer fields and links. The historical
+receipt retains its original generation if the linked document changes.
+
+Lab stays a library. Reuse existing exported Feature and Query contracts
+first. If the downstream fixture identifies a public export gap, publish the
+existing operation and its type through the owning Lab Module. Defer new
+cross-repository or MRR admission semantics until their producer contract is
+qualified. This review changes neither Lab's implementation nor its pins.
+
+*** Qualified Lab fixture boundary
+
+The unchanged =org-descendants-test.ss= and =task-publication-test.ss= sources
+ran through Lab's =just test-file= at the Marlin-selected Lab revision
+=731f6dfb0466aa47e51b04040db579e5e751ba47=, using the corresponding previously
+built Lab and dependency products. Each suite kept the default 120-second and
+2 GiB limits. Acceptance requires =MODULE-OK=, =HARNESS-OK= and a final =OK=,
+with no test or harness error markers.
+
+| Case | Observed evidence and boundary |
+|------+-------------------------------|
+| Org descendants suite | All 15 cases passed with the required markers. =fileOwnedContractTest= validated the base Worktree fixture and WorkTrunk's three files with their own Contracts. =worktreeFeatureContractTest= rejected the base document under the WorkTrunk Feature and published it under the base Feature. =descendantScopeTest= checks qualified property and link rows in the selected window. |
+| WorkTrunk link chain | The fixture publishes =A/worktree.org= to =A/design.org= to =A/reference.org= in the same selected Worktree =A=. The lineage includes each source, generation, Contract and query digest. The same test retains =attachment:= and unregistered =file:outside.org= as returned link rows. Only declared relative file targets become resolved hops. |
+| Stale or refused link | The existing cases withdraw current results for a changed target or intermediate generation, revoke target and intermediate grants, refuse a substituted target, exclude out-of-window edges and reject cycles. |
+| Task publication suite | The original run exited zero with failure markers. Its synthetic GitOps publication exported only =component= while selecting =+worktrunk=. The refinement's read of =working-copy-policy= failed, and Yuanxu refused the Module scope. A test-only copy supplying the exported =GitOpsWorkingCopyPolicy= in that core passed with =MODULE-OK=, =HARNESS-OK= and final =OK= under the same limits. |
+
+=working-copy-policy= is a GitOps core capability. WorkTrunk specializes its
+provider selection. Task publication is a Context operation using the
+selected GitOps dependency. The three-file Org chain above is existing Lab
+fixture evidence. The repository design uses the two structured documents
+and derives relationship properties from typed data.
+
+The positive suite uses supplied Lab Project and Worktree values, a registered
+source catalog and explicit grants. Property drawer and Contract assertions
+establish document/profile shape. A document's =GITOPS_*= text carries no
+observed Git proof. The inspected
+[[https://github.com/tao3k/agentic-ai-lab/blob/731f6dfb0466aa47e51b04040db579e5e751ba47/modules/ai-agentic-context/worktree-selection.ss][Worktree resolver]]
+checks the selected Module's Worktree value and looks up relative file targets
+under its declared source keys. Repo IDs, Git worktree resolution and
+cross-Repo authority are outside this fixture. The cross-Repo acceptance case
+requires two actual Git repositories, verified current source bindings on
+both ends and an admitted relation/grant. Include a negative case where the
+target repo presents the same Worktree label and =CUSTOM_ID=. Visible text,
+Lab selection and independently verified Git binding remain distinct
+observations.
+
+*** PR #34 cross-Repo acceptance
+
+[[https://github.com/tao3k/agentic-ai-lab/pull/34][Lab PR #34]] provides the
+design source. The fixture verifies the original =index.org= and =topology.org=
+blobs at =c2c6bc8eda0fa7224be16e579f5aa6efb2eb9673= before using their text in
+the generated documents. The Lab Context System is the intended home of the
+Scheme library and Basic Templates. It already ships =gitops-worktree= and
+=worktree= under =org-contract/templates=. Marlin owns the Scheme composition
+and overrides that fill the templates with GitOps observations. Its Rust
+WorkTrunk provider supplies the observed checkout. The fixture uses the
+same Rust provider and consumes its two applied isolation receipts.
+
+| Document | Anchor and ownership |
+|----------+----------------------|
+| Checkout root =index.org= | The Report entry point. It records Git binding properties and references the companion topology. A declared external origin pins the remote route, ref, repository-relative path, anchor, publication commit, blob and generation. |
+| Checkout root =topology.org= | The Worktree topology, identified by =context.gitops.worktree.worktrunk.v1=. |
+| =branches/review/topology.org= | The Branch topology for the actual checked-out =refs/heads/review=. Its fixture Contract ID distinguishes it from the Worktree topology. |
+
+The index and branch IDs =marlin.fixture.gitops.index.v1= and
+=marlin.fixture.gitops.branch.v1= are test values. The unchanged Lab
+templates run through Orgize Contract validation. For the projected
+documents, the fixture checks the root Contract identity, parsed properties
+and Git observations.
+
+[[file:../../scheme/t/fixtures/gitops-context/run.py][The Python runner]]
+drives two independent local Git repositories, each with a =review=
+checkout created by Marlin's Rust =WorkingCopyIsolationDriver= using
+Worktrunk. The fixture fills drawers from the actual origin URL, common Git
+directory, per-Worktree Git directory, checkout path, symbolic ref and input
+commit. Each input commit precedes the publication that stores the bytes.
+The Git producer computes the SHA-256 from the projected bytes and records
+the committed blob identity. Both endpoints advance from generation 1 to
+generation 2. The protected reader consumes locator metadata and Lab grant
+observations. It rechecks both grant stamps before allowing either Git
+process to open its exact blob. After that it compares the actual returned
+bytes, parsed Properties, Contract and lineage with the producer's evidence.
+When Git returns bytes, the same caller rechecks both grant stamps before
+exposing either payload to parsing, Lab source admission or the cache.
+
+| Case | Acceptance observations |
+|------+-------------------------|
+| Admit both endpoints | The fixture matches the observed Git bindings and the origin declared in A's =index.org=. Lab publishes both source identities, generations, digests, Contracts and qualified anchors, and binds A's origin to B's exact query lineage. |
+| Substitute an owner | The fixture rejects A's topology despite the matching ref and =CUSTOM_ID=. It also rejects B's clone with the same URL, Git commit, blob and anchor, because the local Repo and Worktree binding differ. |
+| Substitute a profile or version | Worktree and Branch Contract IDs cannot be interchanged. The updated index rejects B's older topology. Advancing B invalidates the publication pinned to generation 1. The refreshed index and current B topology publish together at generation 2. |
+| Remove either permission | Task admission refuses a missing grant on either side. Target revocation withdraws the view and refuses a late completion. Source revocation withdraws the updated view and prevents another read. |
+| Authorize before Git I/O | Missing source, missing target, source revoked after preparation, and target revoked after preparation each produce zero Git Trace2 process events and zero pack accesses on both sides. With both current grants, the reader opens both committed blobs and publishes their lineage. The runner matches the observed pack offsets to the exact blob OIDs with =git verify-pack=. |
+| Revoke during Git delivery | Each case first publishes generation 1 under valid grants. Generation 2 starts in both real =git cat-file --batch= children. The test pauses after receiving the first payload character from each child and checks pack activity and that neither child has exited. It revokes one grant, drains both full payloads, and verifies their digests before discarding the pair. The Task current result is absent, the Task history count and Query recovery export are unchanged, and the caller cache and Lab source catalog still contain generation 1. Restored authority performs fresh Git reads and publishes generation 2. |
+
+The verified run used Worktrunk =0.58.0= and the prebuilt Lab cohort at
+=731f6dfb0466aa47e51b04040db579e5e751ba47=. The Python runner completed in
+87.819 seconds with exit 0. It observed two applied Rust Worktrunk
+receipts, all four Scheme fixture markers, =MODULE-OK=, =HARNESS-OK=,
+final Scheme =OK= and two exact pack offset matches. The outer deadline
+was 120 seconds and the Gerbil heap limit remained 2 GiB. The receipts and
+traces are in =target/quint/gitops-context-verification/pr34-provider.Vqs3g7o6/=.
+A's generation 2 index publication =65dc5d21eeb55185d4fe1aebfb1ad670c1affe26=
+points to B's generation 2 branch publication
+=cfd7f51160f8594e890076ffcd620b09a8013fc8=. The authorized read of A's blob
+=0f17ae7a99d42be119f5b48383d053ee574d1b42= reached pack offset 2610. B's blob
+=c9b81b598e5165616a0a3bd9f980bc4a4344a685= reached offset 460.
+
+The focused delivery fixture used the same prebuilt Lab cohort and Homebrew
+Gerbil =1cfb032= / Gambit =ea114fc=. The complete Python invocation exited
+normally with code 0 in 71.584 seconds under the original 120-second and
+2 GiB limits. =target/quint/gitops-context-verification/pr34-inflight.K66w1yrL/=
+contains the Scheme success markers and the Git process and pack traces.
+The four attempts, two revoked reads and two fresh reads, each matched
+A's index blob =2a918b4100a55ded054d7e9fedcec128fa69b9c5= at offset 2538 and
+B's Branch topology blob =76d1061f4f9f5b6a0af61c4deabad671773722c0= at offset
+449. Earlier runs that reached Scheme =OK= but hit the outer watchdog are
+retained as failed timing attempts.
+
+The modeled workflow is =MAR-GCTX-F04=. The reader uses the pinned Lab grant
+host and explicit source selection in a serialized test caller. The
+pause is at payload delivery across the Git pipes. This qualifies the
+fixture's cache and Lab's actual catalog, query recovery and publication
+state. Production discovery, cancellation of a kernel I/O operation, and
+Marlin's separate Rust Org workspace projection remain outside this read
+path. Quint models the read in flight, the warm cache, the delivery fence
+and the result fence separately. The late-cache mutation writes the new
+generation from a revoked read and must violate the model.
+The model gate passed five seeded 1,000-trace simulations at depth 16 and
+eleven negative controls, including a write to cache from a revoked read.
+Apalache checked all five modules to depth 16. OpenSysML reported zero
+violations.
+
+** Ref retirement and resource ownership
+
+GitOps retires the exact observed ref tip. For an ordinary merge, require Git
+ancestry into the selected target tip. For squash or rebase, require an
+admitted merge receipt binding source repo, source ref and tip, target repo
+and ref, and result commit present on the observed target. Deleting a ref
+retires membership with reason =deleted=. It supplies no merge evidence.
+If a branch advanced after the accepted merge, the new cut remains a separate
+active member. Stale, conflicting or unavailable merge observations leave
+current membership unchanged.
+
+Lab's existing
+[[https://github.com/tao3k/agentic-ai-lab/blob/731f6dfb0466aa47e51b04040db579e5e751ba47/modules/ai-agentic-context/features/memory/durable/artifact-object.ss][durable Artifact]]
+and [[https://github.com/tao3k/agentic-ai-lab/blob/731f6dfb0466aa47e51b04040db579e5e751ba47/modules/ai-agentic-context/features/memory/durable/artifact-policy.ss][manifest policy]]
+carry producer, owner, retention, visibility and lifecycle. The transition
+returns a policy value. The effect owner proves which bytes are held and
+which physical effect completed.
+
+| Source | Owner action and physical cleanup |
+|--------+-----------------------------------|
+| Committed Org or other Git-backed source | GitOps claims one private retention ref per retained commit in its owning repo before publishing a durable historical locator. Verify the commit and path and update the ref with the expected old value. Releasing the last live hold and retained-policy reference permits dropping that owned ref. Git's normal reachability/GC policy handles object reclamation. |
+| Selected dirty or untracked bytes, generated outputs | The producer registers and owns one immutable captured object in its declared local store. Reuse the pinned MRR Data =FilesystemContentStore= for bounded verified put/get where that store is selected. =ContentStore= exposes no deletion method. Physical cleanup requires a producer-owned deletion capability qualified against the same custody fence. Until then keep the bytes, report pending reclamation and retain the evidence. |
+| Top-level index | Rebuildable locator rows and cursors follow owner receipts. Withdraw current membership on ref retirement. Remove stale locators or evict derived cache entries without counting that as deletion of original bytes. |
+
+An owner acquires a hold before publishing a live reference, including when a
+second Repo links to its source. Unknown publication or incomplete reference
+coverage retains that hold until reconciliation. Cleanup runs under the same
+owner fence as hold acquisition and checks retention policy, generation, live
+holds and ownership again at commit. Keep durable sources by default. A
+configured expiry can nominate Marlin-owned resources for explicit
+maintenance. Missing or ambiguous provider custody is reported as unavailable.
+These operations leave user branches and Worktree files under their existing
+Git owners. See [[https://git-scm.com/docs/git-update-ref][Git ref updates]]
+and [[https://git-scm.com/docs/git-gc][Git reachability and GC]].
+
+* Qualification plan
+
+Performance claims require an admitted-result oracle and source-bound
+measurements. Compare the same Query, source generations, visibility and
+result bounds on cold, warm, incremental and rebuild runs. Record first
+frame separately from the first admitted view. Collect elapsed time, bytes
+read and written, number of sources opened, number of locator rows changed
+and peak RSS. Vary unrelated repository/source count independently of the
+number of matches and changed cuts. Require zero unrelated source opens in
+warm and one-cut cases. Set latency and storage budgets from the measured
+baseline before qualifying the Turso design for production.
+
+| Requirement | Later evidence |
+|-------------+----------------|
+| MAR-GCTX-R01 | Real Git observations for linked Worktrees, detached HEAD, two clones of a URL, nested repositories, moved or replaced Git directories, and staged or dirty changes with the same HEAD. Cover SSH/HTTPS mapping, URL encoding and ambiguous remotes. Reject a wrong repository or source generation. |
+| MAR-GCTX-R02 | Rebuild the index from retained owner evidence. Verify exact locators, no body copies in the locator index and the same results for rebuild and incremental updates. |
+| MAR-GCTX-R03 | Reuse Lab's Scheme source and publication cases. Add downstream negatives for unauthorized cross-repository lookup, changed original bytes, stale grant and partial coverage. Check locator visibility and count protected source reads in denied requests. |
+| MAR-GCTX-R04 | Confirm merge, squash, post-merge ref advancement and ref-reuse behavior against actual Git and admitted merge evidence. Inject a new reference between eligibility and disposal. A retained source must survive. |
+| MAR-GCTX-R05 | Measure cold open, warm lookup, one-cut replacement and rebuild, including a larger corpus of unrelated sources. Detect a full rescan in the warm and one-cut cases with I/O and write counts. |
+| MAR-GCTX-R06 | Boot and restart the actual linked TUI in two Worktrees. Check the displayed source lineage, first frame, cancellation of superseded restore, repository isolation and natural exit. |
+| MAR-GCTX-R07 | Retain the local Worktree link controls and the PR #34 two-Repo fixture. The cross-Repo fixture uses Rust Worktrunk receipts and checks both Git bindings, declared origin, Contract, exact source version and independent grants before the first Git object read. |
+| MAR-GCTX-R08 | Qualify the exact MRR/physical worker pair with a small admitted multi-Repo relation fixture. Check original query digest, both catalog digests, snapshot, typed rows and replayed MRR receipt. Reject mixed revisions, omitted results and a mismatched result contract. |
+| MAR-GCTX-R09 | Compare the published GitOps core and WorkTrunk refinement with the fixture replay. Refuse feature admission when the fixture omits its inherited policy. |
+
+The [[file:../../dev/quint/gitops-context.qnt][finite acceptance model]]
+models two same-route clones, three owner generations, one pending restore,
+and one resource with a bounded hold and two branch tips. Its admission and
+retention cases check exact-owner lookup, atomic cursor advance, stale view
+withdrawal, exact-tip retirement and cleanup after a new hold. An independent
+link model distinguishes rendered links, Lab-resolved source hops and
+Git-qualified hops. The policy model checks core and WorkTrunk Feature
+admission. Eight negative transitions exercise broken guards.
+Run =just gitops-context-model-gate= for the named cases and the existing
+16-step sampling budget. The symbolic gate exports each module with
+=quint compile= and checks the resulting Quint IR with the offline Apalache
+0.62.1 CLI. Run =just gitops-context-symbolic-gate /path/to/apalache-mc=.
+
+The link model checks how evidence is credited. The fixture replays check
+the existing Scheme and Org behavior against the pinned producer.
+The policy review run passed all four symbolic modules at 16 steps, all
+16 named cases and the eight negative controls.
+
+Review the design before changing Scheme policy, Rust host I/O or the TUI.
+Native Git, Lab/Orgize, Turso and MRR/Data correspondence, PTY behavior, measured
+budgets and actual resource cleanup require the separate tests above.
