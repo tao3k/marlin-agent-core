@@ -47,8 +47,6 @@ pub enum GitReadError {
     Timeout,
     #[error("git read output pipe was unavailable")]
     MissingOutput,
-    #[error("git returned an invalid commit object ID")]
-    InvalidCommit,
     #[error("git returned an invalid repository root")]
     InvalidRepositoryRoot,
     #[error("git returned an invalid commit object ID")]
