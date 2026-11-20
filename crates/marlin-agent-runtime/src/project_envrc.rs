@@ -64,6 +64,7 @@ impl EnvrcPlan {
     }
 }
 
+/// Observed state of the `.envrc` binding for one admitted worktree.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EnvrcStatus {
     Absent,

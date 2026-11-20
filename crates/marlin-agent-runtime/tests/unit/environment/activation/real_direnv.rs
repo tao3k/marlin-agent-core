@@ -16,8 +16,8 @@ use marlin_agent_runtime::environment::{
     RuntimeEnvironmentActivationRequest, RuntimeEnvironmentActivator,
 };
 
-use super::{command_stdout, shell_single_quote};
-use crate::environment::isolated_direnv_environment;
+use super::fixtures::{command_stdout, shell_single_quote};
+use crate::environment::fixtures::isolated_direnv_environment;
 
 #[tokio::test]
 async fn activator_real_direnv_reload_applies_allowed_temp_project_when_available() {

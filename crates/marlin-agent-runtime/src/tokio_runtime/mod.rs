@@ -13,6 +13,7 @@ mod receipt;
 mod task;
 mod traits;
 
+use context::context_visibility_from_sub_agent_policy;
 pub use context::{RuntimeContext, RuntimeExecutionIdentity};
 pub use events::{
     EventStream, MAX_RUNTIME_EVENT_HEAP_BYTES, RuntimeEventSendError, RuntimeEventSink,

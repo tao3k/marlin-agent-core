@@ -58,4 +58,4 @@ path = "tests/unit/policy.rs"
 
 [[test]]
 name = "process_quota_gate"
-path = "tests/verification/process_quota_gate.rs"
+path = "tests/integration/process_quota_gate.rs"

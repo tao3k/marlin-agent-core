@@ -17,7 +17,7 @@ use marlin_agent_runtime::environment::{
     RuntimeEnvironmentActivationRequest, RuntimeEnvironmentActivator,
 };
 
-use super::RecordingDirenvRunner;
+use super::fixtures::RecordingDirenvRunner;
 
 #[tokio::test]
 async fn activator_runs_direnv_reload_before_export() {

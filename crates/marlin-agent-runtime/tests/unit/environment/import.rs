@@ -11,7 +11,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use super::isolated_direnv_environment;
 use async_trait::async_trait;
 use marlin_agent_protocol::{
     RuntimeEnvironment, RuntimeEnvironmentActivationAction, RuntimeEnvironmentActivationPolicy,
@@ -24,6 +23,8 @@ use marlin_agent_runtime::environment::{
     RuntimeEnvironmentActivator, RuntimeWorkspaceProjectImportRequest,
     RuntimeWorkspaceProjectImporter,
 };
+
+use super::fixtures::isolated_direnv_environment;
 
 #[derive(Clone, Debug)]
 struct ImportRecordingDirenvRunner {

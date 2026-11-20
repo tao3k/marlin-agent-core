@@ -10,15 +10,16 @@ use std::{
     time::Duration,
 };
 
+use marlin_agent_gitops::working_copy::WorkingCopyGitTopLevel;
 use marlin_agent_protocol::{ModelToolCall, ModelToolName};
 use tempfile::TempDir;
 
 use crate::{
     ModelToolDeclaration, ModelToolOutcome, ShellToolDeclarationRequest, ShellToolHandler,
-    TokioAgentRuntimeBuildRequest, ToolRuntime,
+    TokioAgentRuntime, TokioAgentRuntimeBuildRequest, ToolRuntime,
 };
 
-use super::*;
+use super::{EnvrcIntent, EnvrcPlan, EnvrcStatus, ProjectEnvrc, ProjectEnvrcDiscovery};
 
 fn git(cwd: &Path, args: &[&str]) -> String {
     let output = Command::new("git")

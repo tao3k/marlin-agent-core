@@ -13,7 +13,7 @@ use marlin_agent_runtime::environment::{
     RuntimeEnvironmentActivator,
 };
 
-use super::FakeDirenvRunner;
+use super::fixtures::FakeDirenvRunner;
 
 #[tokio::test]
 async fn activator_applies_direnv_json_and_records_name_only_delta() {
