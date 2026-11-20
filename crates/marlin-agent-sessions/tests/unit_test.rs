@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-#[path = "unit/conversation.rs"]
+#[path = "unit/conversation/mod.rs"]
 mod conversation;
 #[path = "unit/session_context.rs"]
 mod session_context;
