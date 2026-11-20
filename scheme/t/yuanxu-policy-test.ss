@@ -5,8 +5,11 @@
 ;;; Exercise Marlin's publications through the selected package entry.
 
 (import (only-in :marlin-agent-core/interface LabContext)
-        (only-in :marlin-agent-core/scheme-package-hooks/funcs run-ui-package-hooks)
-        (only-in :tao3k/yuanxu/module-system/module-hooks ModuleHook. make-module-hooks)
+        (only-in :marlin-agent-core/scheme-package-hooks/funcs
+                 make-ui-package-hooks run-ui-package-hooks)
+        (only-in :marlin-agent-core/ui/config UiScope)
+        (only-in :marlin-agent-core/ui/package marlin-ui-load-publication)
+        (only-in :tao3k/yuanxu/module-system/module-hooks ModuleHook.)
         (only-in :clan/poo/object .call .get .o)
         (only-in :clan/poo/type TypeError?)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
@@ -35,18 +38,28 @@
                (not (.get selection dynamic-hook-action)))
     (error "Agent Hooks must publish its decision selector through init" selection)))
 
-(let (package-hooks (.get marlin-agent-core.init.exports Marlin scheme-package-hooks))
-  (unless (eq? (.call package-hooks .run 'unrelated-scene (.o) 'untouched) 'untouched)
-    (error "an unrelated scene must leave the Scheme package result alone")))
-
-(let* ((hooks
-         (make-module-hooks
+(let* ((request (.o directory: "." module: ':fixture/ui export: 'publication
+                    trigger: 'ui-command-catalog))
+       (observed-demand #f)
+       (hooks
+         (make-ui-package-hooks
            (.o fixture: (.o (:: @ ModuleHook.) on: '(ui-command-catalog)
-                            .run: (lambda (_request _result) 'publication))
+                            .run: (lambda (_request _result) UiScope))
                customize: (.o (:: @ ModuleHook.) on: '(ui-package-loaded)
-                              .run: (lambda (request publication)
-                                      (list (.get request trigger) publication))))))
-       (result (run-ui-package-hooks hooks 'ui-command-catalog
-                 (.o trigger: 'ui-command-catalog))))
-  (unless (equal? result '(ui-command-catalog publication))
-    (error "post-load hooks did not receive the publication and its demand" result)))
+                             .run: (lambda (request publication)
+                                     (set! observed-demand (.get request trigger))
+                                     publication)))))
+       (published (.get marlin-agent-core.init.exports Marlin scheme-package-hooks)))
+  (unless (and (run-ui-package-hooks hooks request)
+               (eq? observed-demand 'ui-command-catalog))
+    (error "post-load hook did not receive the publication and its demand"))
+  (unless (with-catch TypeError? (lambda () (.call published .run 'unrelated-scene request #f) #f))
+    (error "the published hook contract accepted an unrelated scene"))
+  (unless (with-catch TypeError?
+            (lambda () (marlin-ui-load-publication '#("." :fixture/ui publication ui-package-loaded)) #f))
+    (error "the native input admitted an internal hook event as a UI demand"))
+  (let (invalid (make-ui-package-hooks
+                  (.o fixture: (.o (:: @ ModuleHook.) on: '(ui-command-catalog)
+                                   .run: (lambda (_request _result) 'not-a-publication)))))
+    (unless (with-catch TypeError? (lambda () (run-ui-package-hooks invalid request) #f))
+      (error "the hook contract accepted an invalid UI publication"))))

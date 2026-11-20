@@ -5,8 +5,8 @@
 #+language: en
 
 Yuanxu Module Hooks orders named callbacks by depth and declaration order.
-Marlin declares which events dispatch them. Each callback receives the
-event's facts and the current result, and returns the next result.
+Marlin declares which events dispatch them. The dispatch contract checks
+the UI demand, the configured module and export, and the publication result.
 
 The terminal publishes =ui-command-catalog= when it first needs the full
 command list and =ui-keymap-miss= when it needs to resolve an extension
@@ -18,6 +18,6 @@ handlers receive that publication and the original demand as =trigger=.
 They can compose the publication before the terminal admits it.
 
 =SchemePackageHooks.= is the POO declaration. Compose its named slots and
-pass the result to =make-module-hooks= to produce a new dispatch plan.
+pass the result to =make-ui-package-hooks= to produce a checked dispatch plan.
 Lower depths run first. A handler's =.when= predicate can further narrow
 its =on= events.

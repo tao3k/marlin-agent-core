@@ -3,8 +3,14 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 (import (only-in :clan/poo/object .call .get)
-        (only-in :tao3k/yuanxu/prelude yuanxu-module-export))
-(export load-configured-publication run-ui-package-hooks)
+        (only-in :clan/poo/type validate)
+        (only-in :tao3k/yuanxu/module-system/module-hooks make-module-hooks)
+        (only-in :tao3k/yuanxu/prelude yuanxu-module-export)
+        (only-in "./types.ss" SchemePackageHooksScopeContract))
+(export load-configured-publication make-ui-package-hooks run-ui-package-hooks)
+
+(def (make-ui-package-hooks declarations)
+  (validate SchemePackageHooksScopeContract (make-module-hooks declarations)))
 
 (def (load-configured-publication request publication)
   (or publication
@@ -13,7 +19,9 @@
 
 ;;; Post-load hooks see an available publication and can compose its value
 ;;; before the native UI owner admits it into the current session.
-(def (run-ui-package-hooks hooks event request)
-  (let (publication (.call hooks .run event request #f))
-    (unless publication (error "no Scheme package hook handled the UI demand" event))
-    (.call hooks .run 'ui-package-loaded request publication)))
+(def (run-ui-package-hooks hooks request)
+  (let* ((demand (.get request trigger))
+         (publication (.call hooks .run demand request #f)))
+    (unless publication (error "no Scheme package hook handled the UI demand" demand))
+    (or (.call hooks .run 'ui-package-loaded request publication)
+        (error "Scheme package hook discarded the loaded UI publication" demand))))

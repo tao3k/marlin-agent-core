@@ -4,8 +4,10 @@
 ;;; A package extends the selected scopes using ordinary POO values. There is
 ;;; no process-global registry: each publication retains its own catalogs.
 (import (only-in :clan/poo/object .def .get .o)
+        (only-in :clan/poo/type validate)
         (only-in "../scheme-package-hooks/config.ss" SchemePackageHooksScope)
         (only-in "../scheme-package-hooks/funcs.ss" run-ui-package-hooks)
+        (only-in "../scheme-package-hooks/types.ss" UiPackageDemandInput)
         (only-in :std/list/list duplicates)
         (only-in "../ui-components/bounds.ss" marlin-ui-bounded-list?)
         (only-in "../ui-components/commands.ss" marlin-ui-command-entries?)
@@ -24,15 +26,10 @@
 
 ;;; Admit the native demand before passing typed facts to the Scheme hooks.
 (def (marlin-ui-load-publication input)
-  (unless (and (vector? input) (= (vector-length input) 4)
-               (string? (vector-ref input 0))
-               (< 0 (string-length (vector-ref input 0)) 4097)
-               (symbol? (vector-ref input 1)) (symbol? (vector-ref input 2))
-               (symbol? (vector-ref input 3)))
-    (error "invalid UI package publication request"))
-  (run-ui-package-hooks SchemePackageHooksScope (vector-ref input 3)
-    (.o directory: (vector-ref input 0) module: (vector-ref input 1)
-        export: (vector-ref input 2) trigger: (vector-ref input 3))))
+  (let (request (validate UiPackageDemandInput input))
+    (run-ui-package-hooks SchemePackageHooksScope
+      (.o directory: (vector-ref request 0) module: (vector-ref request 1)
+          export: (vector-ref request 2) trigger: (vector-ref request 3)))))
 
 (.def UiPackage.
   buffers: '()
