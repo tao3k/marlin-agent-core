@@ -13,31 +13,26 @@ use marlin_agent_runtime::plugin::{
 use marlin_gerbil_scheme::{
     BriefSettings, BriefSettingsDenial, BriefTemplate, GerbilBriefSettings,
 };
-#[cfg(unix)]
-mod execution;
-#[cfg(unix)]
-pub use execution::{BriefRun, BriefRunError, BriefRunEvidence, run};
-
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-const INPUT_SCHEMA: &str = "marlin.brief-to-draft.start.v0";
-const SETTINGS_SCHEMA: &str = "marlin.brief-to-draft.settings.v0";
+pub(super) const INPUT_SCHEMA: &str = "marlin.brief-to-draft.start.v0";
+pub(super) const SETTINGS_SCHEMA: &str = "marlin.brief-to-draft.settings.v0";
 
-fn policy_module() -> PolicyModuleId {
+pub(super) fn policy_module() -> PolicyModuleId {
     "marlin.brief-to-draft.draft-output"
         .to_owned()
         .try_into()
         .expect("valid Brief-to-Draft policy module ID")
 }
 
-fn capability(name: &str) -> CapabilityId {
+pub(super) fn capability(name: &str) -> CapabilityId {
     name.to_owned()
         .try_into()
         .expect("registered Brief-to-Draft capability")
 }
 
-fn file_capabilities() -> BTreeMap<CapabilityId, FileCapability> {
+pub(super) fn file_capabilities() -> BTreeMap<CapabilityId, FileCapability> {
     [
         (
             capability("read-brief"),
@@ -134,7 +129,7 @@ fn validate(
     Ok(settings_digest(audience, template))
 }
 
-fn settings_digest(audience: bool, template: BriefTemplate) -> [u8; 32] {
+pub(super) fn settings_digest(audience: bool, template: BriefTemplate) -> [u8; 32] {
     let mut digest = Sha256::new();
     digest.update(b"marlin.brief-to-draft.settings.v0\0");
     digest.update([

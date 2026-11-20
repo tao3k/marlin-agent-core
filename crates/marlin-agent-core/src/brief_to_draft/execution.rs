@@ -27,21 +27,18 @@ use marlin_gerbil_scheme::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::capability;
-
-mod replay;
-pub use replay::BriefRunEvidence;
+use super::registration::{capability, policy_module, settings_digest};
 
 const EXPORT: &str = "marlin_brief_to_draft_propose";
-const RENDER: &str = "brief-to-draft.render";
-const CREATE: &str = "brief-to-draft.create";
-const CREATE_REFUSED: &str = "draft create refused or failed";
+pub(super) const RENDER: &str = "brief-to-draft.render";
+pub(super) const CREATE: &str = "brief-to-draft.create";
+pub(super) const CREATE_REFUSED: &str = "draft create refused or failed";
 
 /// Evidence from the Scheme proposal, Rust readiness gate and kernel execution.
 #[derive(Debug)]
 pub struct BriefRun {
-    activation: ActivationId,
-    render_input: BriefRenderInput,
+    pub(super) activation: ActivationId,
+    pub(super) render_input: BriefRenderInput,
     pub readiness: GraphCAbiReadinessReceipt,
     pub proposal: GraphPolicyProposal,
     pub admission: GraphPolicyProposalReceipt,
@@ -80,9 +77,9 @@ pub async fn run(
         return Err(BriefRunError::Cancelled);
     }
     let admitted = host
-        .active_workflow(activation, &super::policy_module())
+        .active_workflow(activation, &policy_module())
         .map_err(BriefRunError::Activation)?;
-    if admitted.settings_digest != super::settings_digest(audience_required, template) {
+    if admitted.settings_digest != settings_digest(audience_required, template) {
         return Err(BriefRunError::SettingsMismatch);
     }
     let read = capability("read-brief");
@@ -152,11 +149,11 @@ pub async fn run(
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct BriefRenderInput {
-    title: String,
-    audience: String,
-    audience_required: bool,
-    release_note: bool,
+pub(super) struct BriefRenderInput {
+    pub(super) title: String,
+    pub(super) audience: String,
+    pub(super) audience_required: bool,
+    pub(super) release_note: bool,
 }
 
 impl BriefRenderInput {
@@ -183,7 +180,7 @@ impl BriefRenderInput {
         Ok(input)
     }
 
-    fn is_valid(&self) -> bool {
+    pub(super) fn is_valid(&self) -> bool {
         !self.title.trim().is_empty()
             && (!self.audience_required || !self.audience.trim().is_empty())
             && (!self.release_note || self.audience_required)
@@ -192,16 +189,16 @@ impl BriefRenderInput {
                 .all(|text| !text.chars().any(char::is_control))
     }
 
-    fn settings_digest(&self) -> [u8; 32] {
+    pub(super) fn settings_digest(&self) -> [u8; 32] {
         let template = if self.release_note {
             BriefTemplate::ReleaseNote
         } else {
             BriefTemplate::BriefNote
         };
-        super::settings_digest(self.audience_required, template)
+        settings_digest(self.audience_required, template)
     }
 
-    fn render(&self) -> Vec<u8> {
+    pub(super) fn render(&self) -> Vec<u8> {
         let label = if self.release_note {
             "Release note"
         } else {
@@ -211,11 +208,11 @@ impl BriefRenderInput {
     }
 }
 
-fn workflow_abi_requirement() -> GraphCAbiRequirement {
+pub(super) fn workflow_abi_requirement() -> GraphCAbiRequirement {
     GraphCAbiRequirement::new("marlin.brief-to-draft", 1).with_required_symbols([EXPORT])
 }
 
-fn graph() -> LoopGraph {
+pub(super) fn graph() -> LoopGraph {
     LoopGraph {
         graph_id: "brief-to-draft".into(),
         nodes: vec![node("render", RENDER), node("create", CREATE)],
@@ -235,12 +232,12 @@ fn node(id: &str, executor: &str) -> LoopNodeSpec {
     }
 }
 
-fn hash(bytes: &[u8]) -> [u8; 32] {
+pub(super) fn hash(bytes: &[u8]) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     Sha256::digest(bytes).into()
 }
 
-fn digest_ref(hash: [u8; 32]) -> String {
+pub(super) fn digest_ref(hash: [u8; 32]) -> String {
     use std::fmt::Write;
     let mut value = String::from("sha256:");
     for byte in hash {

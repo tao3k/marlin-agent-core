@@ -2754,7 +2754,6 @@ name = "marlin-agent-core"
 version = "0.1.0"
 dependencies = [
  "gerbil-scheme",
- "gerbil-scheme-aot-build",
  "gerbil-scheme-sys",
  "marlin-agent-app-server",
  "marlin-agent-context",

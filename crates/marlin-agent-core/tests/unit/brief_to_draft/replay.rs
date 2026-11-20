@@ -3,20 +3,27 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use marlin_agent_protocol::{
-    GraphLoopStrategy, GraphNodeExecutionReceipt, RuntimePlanSnapshot, RuntimeWorkspaceProject,
+    GraphCAbiReadinessReceipt, GraphLoopExecutionResult, GraphLoopStrategy,
+    GraphNodeExecutionReceipt, GraphPolicyProposal, RuntimePlanSnapshot, RuntimeWorkspaceProject,
     RuntimeWorkspaceProjectId,
 };
 use marlin_agent_runtime::plugin::{
-    ContributionId, EnableWorkflow, PluginDenial, ProjectGrant, ReleaseAttestation, ReleaseTrust,
-    SignedRelease, WorkflowRegistration, WorkspaceEffectError, WorkspaceFileBroker,
+    ContributionId, EnableWorkflow, PluginDenial, PluginHost, ProjectGrant, ReleaseAttestation,
+    ReleaseTrust, SignedRelease, WorkflowEvidenceError, WorkflowRegistration, WorkspaceEffectError,
+    WorkspaceFileBroker,
 };
 use ring::signature::{Ed25519KeyPair, KeyPair};
 
-use super::super::{CREATE, RENDER, graph};
-use super::*;
+use super::BriefRunEvidence;
+use crate::brief_to_draft::{
+    execution::{
+        BriefRenderInput, BriefRun, CREATE, CREATE_REFUSED, RENDER, digest_ref, graph, hash,
+        workflow_abi_requirement,
+    },
+    registration::{INPUT_SCHEMA, SETTINGS_SCHEMA, capability, file_capabilities, policy_module},
+};
 
-const MANIFEST: &str =
-    include_str!("../../../../../../scheme/t/fixtures/brief-to-draft/plugin.toml");
+const MANIFEST: &str = include_str!("../../../../../scheme/t/fixtures/brief-to-draft/plugin.toml");
 
 #[test]
 fn replay_checks_the_signed_workflow_contract_after_authenticating_the_archive() {

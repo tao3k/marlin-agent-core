@@ -5,6 +5,7 @@
 //! Build-script support for Gerbil native integration crates.
 
 mod archive;
+mod brief_to_draft;
 mod deck_actor;
 mod discovery;
 mod header;
@@ -16,6 +17,7 @@ pub use archive::{
     build_agent_policy_routing_static_archive_from_link_plan, build_static_archive_from_link_plan,
     scheme_link_manifest, static_archive_cargo_directives, static_archive_file_name,
 };
+pub use brief_to_draft::emit_brief_to_draft_link_directives;
 pub use deck_actor::emit_deck_actor_link_directives;
 pub use header::{CHeaderGenerationReceipt, write_c_header};
 pub use script::{emit_agent_policy_routing_abi_link_directives, rustc_wrapper_is_clippy};

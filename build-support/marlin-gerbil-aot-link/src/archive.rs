@@ -5,7 +5,7 @@
 //! Marlin archive adapters over the upstream Gerbil native build substrate.
 
 use gerbil_scheme_aot_build::{
-    CargoDirectiveKind, NativeStaticLinkPlan,
+    CargoDirectiveKind, NativeStaticLinkPlan, ProgramArchiveObservation, ProgramArchiveObserver,
     build_static_archive_from_link_plan as build_upstream_static_archive, source_workspace,
     static_archive_cargo_directives as upstream_cargo_directives,
 };
@@ -26,6 +26,16 @@ pub use gerbil_scheme_aot_build::static_archive_file_name;
 
 /// Cargo/rustc link name for the generated AgentGraph policy-routing native archive.
 pub const AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME: &str = "marlin_agent_policy_routing_abi";
+
+pub(crate) struct CargoSourceObserver;
+
+impl ProgramArchiveObserver for CargoSourceObserver {
+    fn observe(&self, _: ProgramArchiveObservation<'_>) {}
+
+    fn observe_source_input(&self, source: &Path) {
+        println!("cargo:rerun-if-changed={}", source.display());
+    }
+}
 
 /// The name of a program in the compiled Marlin module selection.
 pub struct SchemeProgram<'a>(&'a str);
