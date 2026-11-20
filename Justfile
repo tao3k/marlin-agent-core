@@ -264,15 +264,28 @@ tui-ui-mapping-bench: scheme-build
 
 # Keep interaction latency, first-copy startup, and source-free release
 # qualification in one reproducible command. Build time is not a sample.
-tui-performance-bench: tui-ui-mapping-bench tui-aot-debug tui-aot-build
-  cargo test --locked -p marlin-agent-tui --test launch linked_debug_pre_ui_launch_pair -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test launch linked_release_pre_ui_launch_pair -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty first_mx_arrow_is_not_lost_before_the_menu_frame
-  cargo test --locked -p marlin-agent-tui --test pty mx_navigation_pty_latency -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty debug_linked_fresh_copy_startup_pair -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty release_linked_fresh_copy_startup_pair -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty release_linked_ui_first_frame_without_a_gerbil_package_tree -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty idle_output_probe -- --ignored --nocapture
+tui-performance-bench: tui-ui-mapping-bench
+  #!/usr/bin/env bash
+  set -euo pipefail
+  artifacts=$(mktemp)
+  trap 'rm -f "$artifacts"' EXIT
+  # Cargo's test build can replace target/debug/marlin-tui with a different artifact.
+  cargo test --locked -p marlin-agent-tui --test launch --test pty --no-run --message-format=json > "$artifacts"
+  test_binary() {
+    jq -er --arg name "$1" 'select(.reason == "compiler-artifact" and .target.name == $name and .executable != null) | .executable' "$artifacts"
+  }
+  launch=$(test_binary launch)
+  pty=$(test_binary pty)
+  cargo build --locked -p marlin-agent-tui --bin marlin-tui
+  cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --release
+  "$launch" linked_debug_pre_ui_launch_pair --ignored --nocapture
+  "$launch" linked_release_pre_ui_launch_pair --ignored --nocapture
+  "$pty" first_mx_arrow_is_not_lost_before_the_menu_frame
+  "$pty" mx_navigation_pty_latency --ignored --nocapture
+  "$pty" debug_linked_fresh_copy_startup_pair --ignored --nocapture
+  "$pty" release_linked_fresh_copy_startup_pair --ignored --nocapture
+  "$pty" release_linked_ui_first_frame_without_a_gerbil_package_tree --ignored --nocapture
+  "$pty" idle_output_probe --ignored --nocapture
   cargo bench --locked -p marlin-agent-runtime --bench runtime_events
 
 # Diagnose whether the size-oriented profile improves a source-matched linked

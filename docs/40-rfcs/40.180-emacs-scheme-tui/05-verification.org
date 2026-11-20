@@ -143,3 +143,39 @@ reached its first frame in 282 ms on this host.
 The 30 two-frame debug window samples measured 23.6 ms at the median and
 87.9 ms at P95, including Scheme assertions and excluding scenario creation.
 These samples are not a fresh executable launch measurement.
+
+* Pinned Darwin startup qualification — 2026-11-20
+
+Marlin =765f1abf=, Lab =5702335b= and Yuanxu =359a85c6= were built from a
+clean source checkout with the locked Gerbil packages and standard Cargo
+commands. The arm64 Debug and Release executable SHA-256 prefixes are
+=5450c8998987= and =74463df9fd6d=. The benchmark compiled its Rust test
+drivers first and restored the product paths with =cargo build=. All twelve
+paired PTY runs per profile reached the workbench and exited within the
+original limits. Other compiler activity was observed on the host.
+
+| Profile | Fresh-copy workbench median / max | Same-file workbench median | Fresh-copy time to Rust entry median |
+|---------+-----------------------------------+----------------------------+--------------------------------------|
+| Debug | 2.157 / 4.178 s | 72 ms | 1.810 s |
+| Release | 1.767 / 2.262 s | 68 ms | 1.389 s |
+
+The Release first-arrow test, extension with only compiled plugin artifacts,
+and Worktrunk without a Gerbil installation passed. The extension action
+registered once and could be called repeatedly. Its three first-action
+measurements ranged from 19.7 to 868.7 ms. The first M-x arrow after the first
+frame in ten new Release processes had a maximum latency of 20.9 ms.
+Fresh-copy startup remains above the subsecond target in this cohort.
+
+On the same Release executable, the pre-UI time to Rust entry had medians of
+15 ms for the existing file, 15 ms by symlink, 394 ms by hardlink, 1.325 s for
+a new copy and 1.354 s for a clone-requested copy. Direct and linked paths
+resolved to the existing inode. Both copy modes used new inodes. These
+controls identify a first-execution cost that depends on file identity and
+access path. The system trace did not identify the specific OS subsystem.
+
+The same Release also completed eight interleaved PTY trials per case with a
+shared experimental launcher. End-to-end workbench medians were 2.047 s with
+direct execution, 1.187 s including a sequential read and 1.921 s including a
+230 ms wait. Other compiler activity was observed. The sequential-read case
+improved the median in this diagnostic and its fastest sample was 1.037 s.
+That result does not qualify a subsecond product startup.
