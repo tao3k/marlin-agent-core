@@ -8,7 +8,9 @@
         "./types.ss"
         "./objects.ss")
 
-(export MarlinContextSystemScope)
+(export MarlinContextSystemScope context-scope)
 
 (def MarlinContextSystemScope
   (validate MarlinContextSystemContract MarlinContextSystemOperations))
+
+(def (context-scope) MarlinContextSystemScope)

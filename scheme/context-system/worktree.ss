@@ -13,7 +13,7 @@
         :tao3k/agentic-ai-lab/modules/temporal-causality/truth-maintenance/support/policy-host
         (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/time/objects
                  agentic-ai-lab-temporal-instant))
-(export prepare-worktree-context deliver-worktree-context)
+(export prepare-worktree-context deliver-worktree-context revoke-worktree-context)
 
 (def (clock coordinate)
   (agentic-ai-lab-temporal-instant (number->string coordinate) "git-context" coordinate "marlin" 'observed))
@@ -29,6 +29,15 @@
      (let (decision (agentic-ai-lab-context-use-host-observe authority policies file 1 'display))
        (and (eq? (.ref decision 'decision) 'allowed)
             (equal? (.ref (.ref decision 'grant) 'admission-digest) id)))))
+   entries))
+
+(def (revoke-sources! authority entries)
+  (for-each
+   (match <> ([file _]
+     (let (grant (agentic-ai-lab-context-use-host-current authority file))
+       (when (.ref grant 'enabled?)
+         (agentic-ai-lab-context-use-host-refresh! authority
+           (agentic-ai-lab-context-use-grant-revoke grant))))))
    entries))
 
 ;; The host resolves the operator's configured repository and the observed
@@ -57,10 +66,14 @@
                   contract "git-context" (.ref policy 'semantic-digest) '(display) #t))))
             entries)
            (and (sources-authorized? authority policies entries)
-                (lambda (body)
-                  (and (equal? commit (vector-ref body 1))
-                       (sources-authorized? authority policies entries)
-                       (publish-worktree-sources scope entries body))))))))
+                (lambda (operation body)
+                  (case operation
+                    ((deliver)
+                     (and (equal? commit (vector-ref body 1))
+                          (sources-authorized? authority policies entries)
+                          (publish-worktree-sources scope entries body)))
+                    ((revoke) (revoke-sources! authority entries))
+                    (else (error "Invalid Git Context permit operation")))))))))
 
 (def (publish-worktree-sources scope entries body)
   ;; Validate both payloads before admitting either. Only the completed
@@ -79,4 +92,9 @@
 (def (deliver-worktree-context input)
   (unless (and (vector? input) (= (vector-length input) 4) (procedure? (vector-ref input 0)))
     (error "Invalid Git Context delivery request"))
-  ((vector-ref input 0) input))
+  ((vector-ref input 0) 'deliver input))
+
+(def (revoke-worktree-context permit)
+  (unless (procedure? permit)
+    (error "Invalid Git Context permit"))
+  (permit 'revoke #f))

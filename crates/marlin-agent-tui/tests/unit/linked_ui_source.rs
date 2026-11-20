@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use super::TestUiHost;
-use marlin_agent_ui::UiOpenFacts;
+use marlin_agent_ui::{UiFrameRole, UiOpenFacts};
 
 #[test]
 fn linked_scheme_workbench_renders_through_the_native_boundary() {
@@ -70,30 +70,32 @@ fn linked_scheme_workbench_renders_through_the_native_boundary() {
         host.view(),
         ratatui::layout::Rect::new(0, 0, 80, 12),
     );
-    let region = |name| {
+    let roles = &host.view().layout.regions;
+    let region = |role| {
         regions
             .iter()
-            .find(|region| region.id.as_str() == name)
+            .find(|region| &region.id == roles.id(role))
             .unwrap()
             .area
     };
-    let editor = region("editor");
-    let candidates = region("candidates");
-    let step = |name| {
+    let editor = region(UiFrameRole::Editor);
+    let candidates = region(UiFrameRole::Candidates);
+    let step = |role| {
         regions
             .iter()
-            .find(|region| region.id.as_str() == name)
+            .find(|region| &region.id == roles.id(role))
             .and_then(|region| region.scroll_step())
     };
-    assert_eq!(step("transcript"), Some(3));
-    assert_eq!(step("candidates"), Some(1));
+    assert_eq!(step(UiFrameRole::Transcript), Some(3));
+    assert_eq!(step(UiFrameRole::Candidates), Some(1));
     assert_eq!(editor.height, 1);
     assert_eq!(candidates.height, 1);
     assert_eq!(editor.bottom(), candidates.top());
-    assert_eq!(region("modeline").bottom(), editor.top());
+    assert_eq!(region(UiFrameRole::Modeline).bottom(), editor.top());
 
     // Candidate count crosses the real Scheme-to-Ratatui measurement boundary.
-    for (count, expected) in [(0, 0), (3, 3), (20, 10)] {
+    let candidates_id = roles.id(UiFrameRole::Candidates);
+    for count in [0, 3, 20] {
         app.command_candidates = (0..count)
             .map(|index| marlin_agent_ui::UiCommandName::new(&format!("command-{index}")).unwrap())
             .collect();
@@ -104,9 +106,9 @@ fn linked_scheme_workbench_renders_through_the_native_boundary() {
         );
         let height = regions
             .iter()
-            .find(|region| region.id.as_str() == "candidates")
+            .find(|region| &region.id == candidates_id)
             .map_or(0, |region| region.area.height);
-        assert_eq!(height, expected);
+        assert_eq!(height, count.min(host.view().layout.max_command_rows));
     }
 
     // Evaluate the linked Scheme list policy across consecutive selections.
@@ -114,7 +116,7 @@ fn linked_scheme_workbench_renders_through_the_native_boundary() {
         .view()
         .layout
         .frame_tree
-        .region_child("candidates")
+        .region_child(candidates_id.as_str())
         .unwrap();
     let mut state = super::super::ui_elements::UiListState::default();
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 5)).unwrap();

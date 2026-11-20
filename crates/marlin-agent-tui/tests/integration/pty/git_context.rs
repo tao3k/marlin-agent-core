@@ -58,6 +58,68 @@ fn context_ready(terminal: &mut Terminal, name: &str, commit: &str) {
     });
 }
 
+fn configure_context(config: &Path, approved: &Path) {
+    fs::write(
+        config,
+        format!(
+            "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n[git_context]\nrepository={approved:?}\n"
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn unapproved_clone_is_refused_before_opening_context_blobs() {
+    let fixture = tempfile::tempdir().unwrap();
+    let directory = fixture.path().canonicalize().unwrap();
+    let approved = directory.join("approved");
+    let clone = directory.join("clone");
+    let remote = "https://example.invalid/context/shared.git";
+    fs::create_dir(&approved).unwrap();
+    git(&approved, &["init", "-q", "-b", "main"]);
+    let commit = commit_context(&approved, "shared");
+    git(&approved, &["remote", "add", "origin", remote]);
+    git(
+        &directory,
+        &["clone", "-q", "--no-local", "approved", "clone"],
+    );
+    git(&clone, &["remote", "set-url", "origin", remote]);
+    assert_eq!(git(&clone, &["rev-parse", "HEAD"]), commit);
+    assert_eq!(git(&clone, &["remote", "get-url", "origin"]), remote);
+
+    let config = directory.join("tui.toml");
+    let trace = directory.join("git-trace.jsonl");
+    configure_context(&config, &approved);
+    let variables = [
+        ("GAMBOPT", "max-heap=2G,debug=q".to_owned()),
+        ("GIT_TRACE2_EVENT", trace.display().to_string()),
+    ];
+    let mut terminal = Terminal::start_in(&config, &[], &variables, 30, 100, &clone);
+    messages(&mut terminal);
+    terminal.wait_text("Git Context unavailable");
+    terminal.wait_text("approved in git_context");
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+
+    let trace = fs::read_to_string(trace).unwrap();
+    let mut observed_checkout = false;
+    for entry in trace
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+    {
+        let Some(arguments) = entry["argv"].as_array() else {
+            continue;
+        };
+        observed_checkout |= arguments.iter().any(|argument| argument == "rev-parse");
+        assert!(!arguments.iter().any(|argument| argument == "cat-file"));
+    }
+    assert!(
+        observed_checkout,
+        "Git trace must include checkout discovery"
+    );
+}
+
 #[test]
 #[ignore = "requires real Worktrunk and the linked Scheme programme"]
 fn committed_worktree_context_restores_and_fences_a_late_read() {
@@ -75,10 +137,7 @@ fn committed_worktree_context_restores_and_fences_a_late_read() {
     fs::write(repo.join("index.org"), "dirty bytes must not be read").unwrap();
 
     let config = directory.join("tui.toml");
-    fs::write(&config, format!(
-        "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n[git_context]\nrepository={:?}\n",
-        repo.display().to_string(),
-    )).unwrap();
+    configure_context(&config, &repo);
     let prefs = directory.join("worktrunk.toml");
     fs::write(
         &prefs,

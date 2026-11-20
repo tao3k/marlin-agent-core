@@ -116,7 +116,8 @@ jobs:
         if: ${{ !cancelled() && steps.compiler.outcome == 'success' }}
         id: linked-build
         run: |
-          cargo test --locked -p marlin-deck-runtime --features actor-runtime --no-run
+          cargo test --locked -p marlin-deck-runtime --features actor-runtime --no-run \
+            --message-format=json > "$RUNNER_TEMP/deck-test-build.jsonl"
           cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector --no-run
 
       - name: Run linked-selector tests
@@ -126,28 +127,16 @@ jobs:
           cargo test --locked -p marlin-deck-runtime --features actor-runtime
           cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector
 
-      - name: Inspect the compiled INIT and Deck link input
-        if: ${{ !cancelled() && steps.linked-build.outcome != 'skipped' && steps.compiler.outcome == 'success' }}
+      - name: Verify the Deck's deferred Scheme scopes
+        if: ${{ !cancelled() && steps.linked-build.outcome == 'success' }}
         shell: bash
         run: |
-          describe_init() {
-            local file=$1
-            [[ -f "$file" ]] || return 0
-            shasum -a 256 "$file"
-            if grep -qE 'expand-yuanxu-program-declaration|module-program-namespace' "$file"; then
-              printf 'Compiled Module publication present in %s\n' "$file"
-            else
-              printf 'Compiled Module publication marker missing in %s\n' "$file"
-            fi
-          }
-          describe_init "$GERBIL_PATH/lib/.yuanxu-source/marlin-agent-core/init.ss"
-          describe_init "$GERBIL_PATH/lib/static/marlin-agent-core__init.scm"
-          shopt -s nullglob
-          for manifest in target/debug/build/marlin-deck-runtime-*/out/stage/program.json; do
-            while IFS= read -r source; do
-              describe_init "$source"
-            done < <(jq -r '.modules[] | select(.module == "marlin-agent-core/init") | .scm' "$manifest")
-          done
+          program_out=$(jq -ers '[.[] | select(.reason == "build-script-executed" and
+            (.package_id | test("/marlin-deck-runtime#|#marlin-deck-runtime@"))) | .out_dir] |
+            if length == 1 then .[0] else error("expected one Deck build receipt") end' "$RUNNER_TEMP/deck-test-build.jsonl")
+          jq -e 'any(.modules[]; .module == "marlin-agent-core/deck-runtime/config" and .deferred == true) and
+            any(.modules[]; .module == "marlin-agent-core/context-system/config" and .deferred == true) and
+            all(.modules[]; .module != "marlin-agent-core/init")' "$program_out/program/linked-program.json"
 
       - name: Link the Interface-selected Brief-to-Draft program
         if: ${{ !cancelled() && steps.compiler.outcome == 'success' }}
@@ -161,7 +150,7 @@ jobs:
             if length == 1 then .[0] else error("expected one Brief-to-Draft build receipt") end' <<< "$receipt")
           jq -e 'any(.modules[]; .module == "marlin-agent-core/context-system/types" and .deferred == true) and
             any(.modules[]; .module == "marlin-agent-core/brief-to-draft/config" and .deferred == true)' \
-            "$program_out/program/program.json"
+            "$program_out/program/linked-program.json"
 
       - name: Verify Brief-to-Draft activation and offline replay
         if: ${{ !cancelled() && steps.brief-stage.outcome == 'success' }}

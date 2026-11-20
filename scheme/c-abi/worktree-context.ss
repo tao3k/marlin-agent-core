@@ -29,6 +29,10 @@
     "marlin_worktree_context_deliver" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root
       marlin-agent-core/c-abi/worktree-context#deliver-context))
+  (c-define (worktree-revoke root) (int64) int64
+    "marlin_worktree_context_revoke" "extern"
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root
+      marlin-agent-core/c-abi/worktree-context#revoke-context))
   (c-define (worktree-provider root) (int64) int64
     "marlin_worktree_provider" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root

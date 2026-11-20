@@ -28,6 +28,7 @@ unsafe extern "C" {
     fn marlin_envrc_plan(root: i64) -> i64;
     fn marlin_worktree_context_prepare(root: i64) -> i64;
     fn marlin_worktree_context_deliver(root: i64) -> i64;
+    fn marlin_worktree_context_revoke(root: i64) -> i64;
     fn marlin_worktree_provider(root: i64) -> i64;
     fn gerbil_scheme_rust_take_call_error_raw() -> i64;
 }
@@ -35,6 +36,7 @@ unsafe extern "C" {
 pub(crate) enum WorktreeOperation {
     Prepare,
     Deliver,
+    Revoke,
     Provider,
 }
 
@@ -46,6 +48,7 @@ pub(crate) fn worktree_call<'a>(
     let export = match operation {
         WorktreeOperation::Prepare => marlin_worktree_context_prepare,
         WorktreeOperation::Deliver => marlin_worktree_context_deliver,
+        WorktreeOperation::Revoke => marlin_worktree_context_revoke,
         WorktreeOperation::Provider => marlin_worktree_provider,
     };
     // SAFETY: these rooted exports belong to the linked programme above.

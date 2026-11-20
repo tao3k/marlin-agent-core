@@ -29,8 +29,10 @@ The linked TUI observes the launch checkout after painting its first frame.
 Lab admits the committed =index.org= and =topology.org= after checking the
 repository binding. The Messages buffer shows the admitted commit and both
 Org source digests. The =worktree-switch= command takes a local branch
-name, adopts Worktrunk's returned checkout, and invalidates any pending
-read for the previous checkout.
+name. Before asking Worktrunk to switch, Marlin retires any pending read's
+Lab display grants and drops its delivery ticket. Lab rejects a revoked
+delivery before parsing or admitting its Org payloads. Marlin changes its
+current Context only after Worktrunk returns the observed checkout.
 
 * Cross-repository integration test
 

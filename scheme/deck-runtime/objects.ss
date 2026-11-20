@@ -11,4 +11,6 @@
 
 (def DeckOperations
   (.o metadata: (.o module-id: "deck-runtime" version: 6)
+      program-entry: 'marlin-agent-core/deck-runtime/entry
+      program-runtime-imports: '()
       open: open-deck-runtime))

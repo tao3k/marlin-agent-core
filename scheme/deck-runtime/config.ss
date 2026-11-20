@@ -8,6 +8,8 @@
         "./objects.ss"
         "./types.ss")
 
-(export DeckScope)
+(export DeckScope deck-scope)
 
 (def DeckScope (validate DeckScopeContract DeckOperations))
+
+(def (deck-scope) DeckScope)

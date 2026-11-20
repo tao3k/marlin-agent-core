@@ -9,7 +9,7 @@
 
         (only-in :clan/poo/type Fun Type.)
         (only-in :clan/poo/number UInt)
-        (only-in :clan/poo/type Record String True))
+        (only-in :clan/poo/type Exactly Record String True))
 
 (export DeckScopeContract DeckActorRuntime)
 
@@ -32,5 +32,7 @@
           close: [(Fun MessageIds <-)]))
 (def DeckScopeContract
   (.cc (Record metadata: [DeckMetadata]
+               program-entry: [(Exactly 'marlin-agent-core/deck-runtime/entry)]
+               program-runtime-imports: [(Exactly '())]
                open: [(Fun DeckActorRuntime <- (.get LabContext admission-type) ScopeEncoder)])
        identity: 'marlin/deck-runtime))

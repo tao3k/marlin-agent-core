@@ -116,10 +116,25 @@ impl<'vm> GitContext<'vm> {
                 return;
             }
         };
-        // Remove the old delivery ticket before scheduling the switch. A
-        // completed Git read can no longer reach the Scheme delivery export.
+        // Remove the old delivery ticket and retire its Lab grants before
+        // the next checkout can be observed.
         if let Some(old) = self.pending.take() {
+            let revoked = match &old {
+                Pending::Read(_, permit, _) => {
+                    worktree_call(self.scheme, WorktreeOperation::Revoke, permit).map(|_| ())
+                }
+                _ => Ok(()),
+            };
             old.abort();
+            if let Err(error) = revoked {
+                publish(
+                    app,
+                    MessageSeverity::Warning,
+                    "Worktree switch refused",
+                    &error.to_string(),
+                );
+                return;
+            }
         }
         let branch = WorkingCopyBranchName::new(branch);
         let path = self.directory.clone();

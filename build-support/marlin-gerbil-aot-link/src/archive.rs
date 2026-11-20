@@ -42,6 +42,14 @@ pub fn scheme_link_manifest(
     program: SchemeProgram<'_>,
     output: &Path,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    scheme_link_manifest_with_layout(program, output, &[])
+}
+
+pub(crate) fn scheme_link_manifest_with_layout(
+    program: SchemeProgram<'_>,
+    output: &Path,
+    separate_procedures: &[&str],
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=GERBIL_LOADPATH");
     let load_path = env::var_os("GERBIL_LOADPATH").ok_or("GERBIL_LOADPATH is not set")?;
     let product = Path::new("marlin-agent-core/programs").join(program.0);
@@ -86,6 +94,13 @@ pub fn scheme_link_manifest(
         if let Ok(relative) = Path::new(source).strip_prefix(&origin) {
             module["scm"] = serde_json::to_value(library.join(relative))?;
         }
+    }
+    for identity in separate_procedures {
+        let module = modules
+            .iter_mut()
+            .find(|row| row["module"] == *identity)
+            .ok_or_else(|| format!("separate-procedure module is absent: {identity}"))?;
+        module["host_layout"] = json!("separate-procedures");
     }
     let sdk = source_workspace();
     let mut carriers = Vec::new();

@@ -4,31 +4,31 @@
 
 ;;; Rooted typed entry points for the single-VM Deck Actor runtime.
 
-;; Root the two selected runtime roles in the linked compiler graph. Yuanxu
-;; still owns their checked publication; its role loader reuses these builtins.
-(import (only-in :marlin-agent-core/deck-runtime/objects DeckOperations)
-        (only-in :marlin-agent-core/context-system/objects MarlinContextSystemOperations)
-        (only-in :marlin-agent-core/deck-runtime/runtime check-deck-kernel!)
+(import (only-in :marlin-agent-core/deck-runtime/runtime check-deck-kernel!)
         (only-in :marlin-agent-core/c-abi/roots marlin-rooted-call)
         (only-in :clan/poo/object .get)
-        (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
+        (only-in :tao3k/yuanxu/prelude yuanxu-build-autoloads)
+        (for-syntax :gerbil/expander
+          (only-in "./build.ss" Build)))
 
-(export main)
-(def (main . _) (void))
+(yuanxu-build-autoloads Build deck)
+(yuanxu-build-autoloads Build context)
+
 (def deck #f)
 (def context-bridge #f)
 
 (def (open wake-fds)
   (when deck (error "Deck runtime is already open"))
-  (def runtime (.get marlin-agent-core.init.exports Marlin deck-runtime))
+  (def runtime (deck-scope))
+  (def context (context-scope))
   (def metadata (.get runtime metadata))
   (def module-id (.get metadata module-id))
   (when (zero? (string-length module-id)) (error "Deck runtime module ID is empty"))
   (def receipt (vector (string-copy module-id)
                        (u64vector (.get metadata version))))
-  (set! context-bridge (.get marlin-agent-core.init.exports Marlin context-system bridge))
+  (set! context-bridge (.get context bridge))
   (set! deck ((.get runtime open)
-              (.get marlin-agent-core.init.exports Marlin context-system admit-scope)
+              (.get context admit-scope)
               (.get context-bridge encode-scopes)))
   ;; The actual constructed runtime must use the linked library procedures.
   ;; Compiler manifests alone cannot certify a reader's private interpreted copy.

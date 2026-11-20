@@ -33,4 +33,5 @@
   (gitops +worktrunk)
   (envrc)
   (deck-runtime)
+  (bench)
   (c-abi))
