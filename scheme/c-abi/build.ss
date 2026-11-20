@@ -3,7 +3,9 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 (import (only-in :clan/poo/object .def .o)
-        (only-in :std/make pkg-config-libs))
+        (only-in :std/make pkg-config-libs)
+        (only-in :tao3k/yuanxu/module-system/source/build-binding
+                 module-build-feature-selected?))
 (export Build)
 
 ;;; The selected native adapter Module owns its compiler inputs.
@@ -15,5 +17,7 @@
           (darwin '((gxc: "roots" "-ld-options" "-Wl,-undefined,dynamic_lookup")))
           (else '("roots")))
         '("context" "deck-runtime" "ui" "tooling" "envrc" "context-admission" "worktree-context")))
+  .worktree-provider:
+  (lambda () (and (module-build-feature-selected? 'gitops 'worktrunk) 'worktrunk))
   with-link:
   (lambda () ["-ld-options" (pkg-config-libs "openssl" "zlib" "sqlite3")]))

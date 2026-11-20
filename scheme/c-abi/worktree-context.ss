@@ -5,17 +5,15 @@
 (import (only-in :marlin-agent-core/c-abi/roots marlin-rooted-call)
         (only-in :marlin-agent-core/context-system/worktree prepare-worktree-context deliver-worktree-context)
         (for-syntax :gerbil/expander
-          (only-in :marlin-agent-core/gitops/bridge select-working-copy-provider)))
+          (only-in :clan/poo/object .call)
+          (only-in "./build.ss" Build)))
 
-;; Worktree switching explicitly requires Worktrunk. Resolve that capability
-;; against the selected GitOps Feature at expansion time. The linked VM only
-;; consumes the resulting symbol, so input handling never opens Yuanxu's build
-;; graph to rediscover the selected Module.
+;; Compile the capability from the admitted GitOps Feature. The host checks
+;; executable availability when the user requests a switch.
 (defsyntax (selected-worktrunk stx)
   (syntax-case stx ()
     ((keyword)
-     (with-syntax ((provider (datum->syntax #'keyword
-                               (select-working-copy-provider '#(#f #t #t)))))
+     (with-syntax ((provider (datum->syntax #'keyword (.call Build .worktree-provider))))
        #'(quote provider)))))
 
 (def (worktree-switch-provider _) (selected-worktrunk))
