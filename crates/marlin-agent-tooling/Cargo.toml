@@ -16,7 +16,7 @@ marlin-agent-runtime.workspace = true
 marlin-agent-protocol.workspace = true
 
 [dev-dependencies]
-marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
+asp-rust.workspace = true
 
 [[test]]
 name = "unit_test"

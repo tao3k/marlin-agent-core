@@ -9,12 +9,12 @@ use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use super::ui_elements::UiInputValue as ComposerView;
+use crate::ui_elements::UiInputValue as ComposerView;
 
-#[path = "composer/expansion.rs"]
+#[path = "expansion.rs"]
 mod expansion;
 use expansion::ExpansionUnit;
-#[path = "composer/layout.rs"]
+#[path = "layout.rs"]
 mod layout;
 
 pub(crate) const MAX_DRAFT_BYTES: usize = 1024 * 1024;

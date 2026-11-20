@@ -1,5 +1,5 @@
 {
-  "checksum": "feaa3c5c816049a15e0be384a4283bd59525d2a84de11995246a2fb700141235",
+  "checksum": "d32611b462228cc0cb6f65706b085486ce67d57d5fb763b74309813d2f3bc75a",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -16199,6 +16199,10 @@
         "deps_dev": {
           "common": [
             {
+              "id": "asp-rust 0.1.2",
+              "target": "asp_rust"
+            },
+            {
               "id": "criterion 0.8.2",
               "target": "criterion"
             },
@@ -16519,6 +16523,10 @@
         "deps_dev": {
           "common": [
             {
+              "id": "asp-rust 0.1.2",
+              "target": "asp_rust"
+            },
+            {
               "id": "opentelemetry-proto 0.31.0",
               "target": "opentelemetry_proto"
             },
@@ -16637,6 +16645,15 @@
             {
               "id": "gerbil-scheme 0.1.0",
               "target": "gerbil_scheme"
+            }
+          ],
+          "selects": {}
+        },
+        "deps_dev": {
+          "common": [
+            {
+              "id": "asp-rust 0.1.2",
+              "target": "asp_rust"
             }
           ],
           "selects": {}
@@ -16769,6 +16786,10 @@
         "deps_dev": {
           "common": [
             {
+              "id": "asp-rust 0.1.2",
+              "target": "asp_rust"
+            },
+            {
               "id": "criterion 0.8.2",
               "target": "criterion"
             },
@@ -16871,6 +16892,10 @@
         },
         "deps_dev": {
           "common": [
+            {
+              "id": "asp-rust 0.1.2",
+              "target": "asp_rust"
+            },
             {
               "id": "criterion 0.8.2",
               "target": "criterion"
@@ -17245,26 +17270,13 @@
       "version": "0.1.0",
       "package_url": "https://github.com/tao3k/marlin-agent-core",
       "repository": null,
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "marlin_rust_project_harness_policy",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "marlin_rust_project_harness_policy",
+      "targets": [],
+      "library_target_name": null,
       "common_attrs": {
         "compile_data_glob": [
           "**"
         ],
-        "deps": {
+        "deps_dev": {
           "common": [
             {
               "id": "asp-rust 0.1.2",
@@ -39626,7 +39638,6 @@
   },
   "direct_deps": [
     "aho-corasick 1.1.5",
-    "asp-rust 0.1.2",
     "async-stream 0.3.6",
     "async-trait 0.1.92",
     "cc 1.11.1",
@@ -39668,6 +39679,7 @@
     "wiremock 0.6.5"
   ],
   "direct_dev_deps": [
+    "asp-rust 0.1.2",
     "criterion 0.8.2",
     "futures-executor 0.3.34",
     "memoffset 0.9.1",

@@ -337,3 +337,18 @@ pub(crate) fn append_safe_text(output: &mut String, text: &str) {
     }
     output.push_str(&text[start..]);
 }
+
+pub(super) fn publish_error(
+    app: &mut App,
+    source: MessageSource,
+    summary: &str,
+    error: &impl std::fmt::Display,
+) {
+    let detail = error.to_string();
+    app.publish_message(MessageEvent {
+        source,
+        severity: MessageSeverity::Error,
+        summary,
+        detail: &detail,
+    });
+}

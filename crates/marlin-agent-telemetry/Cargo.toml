@@ -31,6 +31,6 @@ tracing-subscriber.workspace = true
 libc.workspace = true
 
 [dev-dependencies]
-marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
+asp-rust.workspace = true
 opentelemetry-proto = { version = "0.31", default-features = false, features = ["gen-tonic-messages", "trace"] }
 prost = "0.14"

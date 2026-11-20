@@ -138,6 +138,23 @@ pub(crate) struct App {
 }
 
 impl App {
+    pub(crate) fn process_replies(
+        &mut self,
+        receiver: &mut tokio::sync::mpsc::Receiver<crate::event_queue::QueuedReply>,
+        limit: usize,
+    ) -> usize {
+        let mut processed = 0;
+        while processed < limit {
+            let Ok(event) = receiver.try_recv() else {
+                break;
+            };
+            let (id, reply) = event.into_parts();
+            self.receive(id, reply);
+            processed += 1;
+        }
+        processed
+    }
+
     pub(crate) fn new(endpoint: ModelEndpoint) -> Self {
         let (runtime_owner, runtime_events) = marlin_agent_runtime::TokioAgentRuntime::new(64);
         Self::with_runtime(endpoint, runtime_owner, runtime_events)

@@ -49,7 +49,6 @@ marlin_contract_set(
     name = "marlin_contracts",
     testonly = True,
     contracts = [
-        "//build-support/marlin-rust-project-harness-policy:marlin_rust_project_harness_policy_contract",
         "//build-support/marlin-rust-project-harness-policy:workspace_policy_contract",
         "//crates/marlin-agent-storage:marlin_agent_storage_contract",
         "//crates/marlin-agent-storage:marlin_agent_storage_turso_contract",

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use super::*;
+use super::{Command, Duration, Terminal, fs};
 
 #[test]
 #[ignore = "linked terminal with real Git, direnv and an isolated authorization store"]

@@ -9,7 +9,10 @@ use super::{
     UiEvent, UiHost, UiKeyAction,
 };
 use crate::ui_elements::{HitRegion, hit_test_command};
-use marlin_agent_ui::{UiCommandArguments, UiKeyMode};
+use crate::{command::Command, config};
+use marlin_agent_ui::{
+    UiCommandArguments, UiCommandCapability, UiKeyMode, UiPackageCommandSource, UiPackageEvent,
+};
 
 pub(super) fn command_menu_active(app: &App, ui: &UiHost<'_>) -> bool {
     app.command_draft.is_some()
@@ -196,4 +199,70 @@ pub(super) fn apply_ui_request(app: &mut App, ui: &mut UiHost<'_>) {
         }
         app.set_key_hint(None, ui.transient_hint());
     }
+}
+
+pub(super) fn stage_ui_package(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    pending: &mut Option<config::TuiUiPackageConfig>,
+) -> bool {
+    let Some(package) = pending.take() else {
+        return false;
+    };
+    let Some(directory) = package.directory.to_str() else {
+        return false;
+    };
+    apply_package_event(
+        app,
+        ui,
+        UiPackageEvent::Catalog {
+            directory,
+            module: &package.module,
+            export: &package.export,
+        },
+    )
+}
+
+pub(super) fn activate_deferred_command(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    source: UiPackageCommandSource,
+) -> bool {
+    if app.command_draft.is_none() || app.pending.is_some() || app.workspace.is_pending() {
+        return true;
+    }
+    let input = app.command_lookup_query();
+    let Some(command) = app
+        .command_descriptor(&input)
+        .filter(|command| command.capability == UiCommandCapability::Deferred)
+    else {
+        return true;
+    };
+    if Command::arguments(command, &input).is_none() {
+        return false;
+    }
+    let command = command.name.clone();
+    apply_package_event(
+        app,
+        ui,
+        UiPackageEvent::Execute {
+            command: &command,
+            source,
+        },
+    )
+}
+
+fn apply_package_event(app: &mut App, ui: &mut UiHost<'_>, event: UiPackageEvent<'_>) -> bool {
+    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+        ui.package_event(event)?;
+        app.sync_window(ui.view())?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        publish_error(app, MessageSource::Ui, "UI package event failed", &error);
+        return false;
+    }
+    app.set_commands(ui.view());
+    app.transcript_policy = Some(ui.view().layout.transcript_policy.clone());
+    true
 }

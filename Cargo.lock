@@ -2892,6 +2892,7 @@ name = "marlin-agent-runtime"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
+ "asp-rust",
  "async-trait",
  "criterion",
  "globset",
@@ -2902,7 +2903,6 @@ dependencies = [
  "marlin-agent-protocol",
  "marlin-agent-sessions",
  "marlin-agent-test-support",
- "marlin-rust-project-harness-policy",
  "parking_lot",
  "process-wrap",
  "ring",
@@ -2973,10 +2973,10 @@ dependencies = [
 name = "marlin-agent-telemetry"
 version = "0.1.0"
 dependencies = [
+ "asp-rust",
  "http",
  "libc",
  "marlin-agent-protocol",
- "marlin-rust-project-harness-policy",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry-proto",
@@ -3011,16 +3011,17 @@ dependencies = [
 name = "marlin-agent-tooling"
 version = "0.1.0"
 dependencies = [
+ "asp-rust",
  "gerbil-scheme",
  "marlin-agent-protocol",
  "marlin-agent-runtime",
- "marlin-rust-project-harness-policy",
 ]
 
 [[package]]
 name = "marlin-agent-tui"
 version = "0.1.0"
 dependencies = [
+ "asp-rust",
  "async-stream",
  "criterion",
  "gerbil-scheme",
@@ -3037,7 +3038,6 @@ dependencies = [
  "marlin-agent-tooling",
  "marlin-agent-ui",
  "marlin-gerbil-aot-link",
- "marlin-rust-project-harness-policy",
  "nix",
  "proptest",
  "ratatui",
@@ -3060,11 +3060,11 @@ dependencies = [
 name = "marlin-agent-ui"
 version = "0.1.0"
 dependencies = [
+ "asp-rust",
  "criterion",
  "gerbil-scheme",
  "marlin-agent-app-server",
  "marlin-agent-protocol",
- "marlin-rust-project-harness-policy",
 ]
 
 [[package]]

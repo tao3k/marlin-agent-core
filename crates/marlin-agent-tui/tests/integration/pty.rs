@@ -40,9 +40,12 @@ mod envrc;
 mod git_context;
 #[path = "pty/live_provider.rs"]
 mod live_provider;
-#[path = "pty/minibuffer.rs"]
+#[path = "pty/minibuffer_commands.rs"]
 #[cfg(feature = "linked-ui")]
-mod minibuffer;
+mod minibuffer_commands;
+#[path = "pty/minibuffer_navigation.rs"]
+#[cfg(feature = "linked-ui")]
+mod minibuffer_navigation;
 #[path = "pty/scheme_package.rs"]
 #[cfg(feature = "linked-ui")]
 mod scheme_package;

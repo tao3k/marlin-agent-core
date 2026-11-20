@@ -21,11 +21,11 @@ Rust project quality is an engineering harness concern. It is not a Marlin
 agent graph, loop, or CLI protocol concern.
 
 ASP Rust supplies the Rust analysis and verification APIs. The
-=marlin-rust-project-harness-policy= Build Support crate owns only the shared
-policy and Cargo test macros. ASP Rust owns package analysis, findings,
-verification obligations and the workspace graph. Member crates depend on
-Build Support only in =dev-dependencies=; =just rust-dev-gate= runs ASP Rust's
-native workspace Dev Gate.
+=marlin-rust-project-harness-policy= package mounts the native workspace Dev
+Gate as a Cargo integration test. Member crates mount the native package gate
+through an =asp-rust= development dependency. ASP Rust owns package analysis,
+findings, verification obligations and the workspace graph. Run the workspace
+check with =just rust-dev-gate=.
 
 The =marlin= debug CLI may consume generated receipts as external evidence when
 an agent is repairing this repository, but it must not add command surface such

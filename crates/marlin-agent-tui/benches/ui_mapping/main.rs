@@ -4,9 +4,8 @@
 //! Terminal mapping and hit testing; excludes VM initialization and projection.
 
 // Reuse the production queue without exporting an internal terminal API.
-#[path = "../src/input/wheel.rs"]
+#[path = "../../src/input/wheel.rs"]
 mod benchmark_input;
-#[path = "ui_mapping/input_adornment.rs"]
 mod input_adornment;
 
 use criterion::{Criterion, criterion_group, criterion_main};

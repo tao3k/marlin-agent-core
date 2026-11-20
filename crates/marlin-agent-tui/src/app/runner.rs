@@ -13,12 +13,9 @@ use super::{
     TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode,
     TursoOptimizationProfile, UiBrowseDirection, UiHost, UiKeyAction, UiOpenFacts,
     WheelAccumulator, config, draw_with_snapshot, frame_snapshot, io, load_session,
-    mouse_over_minibuffer, mpsc, process_replies, publish_error, reply_channel, thread,
+    mouse_over_minibuffer, mpsc, publish_error, reply_channel, thread,
 };
-use crate::command::Command;
-use marlin_agent_ui::{
-    UiCommandCapability, UiEditorAction, UiPackageCommandSource, UiPackageEvent,
-};
+use marlin_agent_ui::{UiEditorAction, UiPackageCommandSource};
 use std::{
     env,
     io::{IsTerminal, Write},
@@ -28,8 +25,9 @@ use std::{
 use super::runtime_probe::RuntimeProbe;
 use super::tool_review::{open_tool_review, poll_tool_review, submit_tool_review};
 use super::ui_events::{
-    apply_editor_mode, apply_ui_request, browse_menu, command_menu_active,
-    release_interrupted_key_sequence, route_frame_click, route_terminal_key,
+    activate_deferred_command, apply_editor_mode, apply_ui_request, browse_menu,
+    command_menu_active, release_interrupted_key_sequence, route_frame_click, route_terminal_key,
+    stage_ui_package,
 };
 use termion::input::TermReadEventsAndRaw;
 
@@ -404,7 +402,7 @@ pub(super) fn run(
             if signal_exit.is_some() {
                 break;
             }
-            let processed = process_replies(&mut app, &mut reply_rx, REPLY_BATCH_LIMIT);
+            let processed = app.process_replies(&mut reply_rx, REPLY_BATCH_LIMIT);
             let tool_review_finished = poll_tool_review(&mut app, &gateway, &runtime, &reply_tx);
             let tool_review_opened = open_tool_review(&mut app, &ui);
             let runtime_processed = app.poll_runtime_events(RUNTIME_EVENT_BATCH_LIMIT);
@@ -974,70 +972,4 @@ pub(super) fn run(
     shutdown_result?;
     result?;
     Ok(signal_exit)
-}
-
-fn stage_ui_package(
-    app: &mut App,
-    ui: &mut UiHost<'_>,
-    pending: &mut Option<config::TuiUiPackageConfig>,
-) -> bool {
-    let Some(package) = pending.take() else {
-        return false;
-    };
-    let Some(directory) = package.directory.to_str() else {
-        return false;
-    };
-    apply_package_event(
-        app,
-        ui,
-        UiPackageEvent::Catalog {
-            directory,
-            module: &package.module,
-            export: &package.export,
-        },
-    )
-}
-
-fn activate_deferred_command(
-    app: &mut App,
-    ui: &mut UiHost<'_>,
-    source: UiPackageCommandSource,
-) -> bool {
-    if app.command_draft.is_none() || app.pending.is_some() || app.workspace.is_pending() {
-        return true;
-    }
-    let input = app.command_lookup_query();
-    let Some(command) = app
-        .command_descriptor(&input)
-        .filter(|command| command.capability == UiCommandCapability::Deferred)
-    else {
-        return true;
-    };
-    if Command::arguments(command, &input).is_none() {
-        return false;
-    }
-    let command = command.name.clone();
-    apply_package_event(
-        app,
-        ui,
-        UiPackageEvent::Execute {
-            command: &command,
-            source,
-        },
-    )
-}
-
-fn apply_package_event(app: &mut App, ui: &mut UiHost<'_>, event: UiPackageEvent<'_>) -> bool {
-    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
-        ui.package_event(event)?;
-        app.sync_window(ui.view())?;
-        Ok(())
-    })();
-    if let Err(error) = result {
-        publish_error(app, MessageSource::Ui, "UI package event failed", &error);
-        return false;
-    }
-    app.set_commands(ui.view());
-    app.transcript_policy = Some(ui.view().layout.transcript_policy.clone());
-    true
 }
