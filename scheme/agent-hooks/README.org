@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 tao3k team and Contributors
 # SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-#+title: Marlin / hooks - Hook policies
+#+title: Marlin / Agent Hooks
 #+language: en
 
 * Responsibility
@@ -12,7 +12,7 @@ actions to existing handlers.
 * Interface and contracts
 
 =interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
-and scope assembly. HooksScope, conditions and selection.
+and assemble the Agent Hooks scope.
 Consumers access selected exports through =marlin-agent-core.init.exports=.
 
 * Build and verification

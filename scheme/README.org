@@ -24,7 +24,8 @@ selects Marlin's Modules and their Features through =yuanxu!=, including
 | [[file:artifacts/README.org][Artifacts]] | Record Git-anchored artifacts and recover shared Org references. |
 | [[file:ui/README.org][UI workbench]] | Compose Buffers, commands, keymaps, layouts, themes, and event dispatch. |
 | [[file:ui-elements/README.org][UI elements]] and [[file:ui-tui/README.org][TUI entry]] | Publish the typed view tree and the terminal program. Rust maps the reusable primitives to Ratatui. |
-| [[file:hooks/README.org][Hooks]] and [[file:policy/README.org][Policy]] | Select hooks and project graph routing, topology, continuation, and Deck policy. |
+| [[file:agent-hooks/README.org][Agent Hooks]] and [[file:policy/README.org][Policy]] | Select agent hooks and project graph routing, topology, continuation, and Deck policy. |
+| [[file:scheme-package-hooks/README.org][Scheme Package Hooks]] | Associate UI package loading with terminal lifecycle events. |
 | [[file:deck-runtime/README.org][Deck Runtime]] and [[file:c-abi/README.org][C ABI]] | Own Scheme mailbox operations and expose typed calls to host programs. |
 | [[file:brief-to-draft/README.org][Brief to Draft]], [[file:gitops/README.org][GitOps]], [[file:envrc/README.org][Envrc]], and [[file:tooling/README.org][Tooling]] | Publish workflow proposals, provider selection, environment plans, and tool declarations. |
 

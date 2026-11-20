@@ -9,7 +9,7 @@ receipts. Registrations may carry a compiled include/exclude path filter.
 The filter matches typed workspace-relative target paths; it does not grant
 file access. A filter with no matching path produces a typed skip receipt.
 
-Marlin selects ~scheme/hooks/~ as an independent module in ~scheme/init.ss~.
+Marlin selects ~scheme/agent-hooks/~ as an independent module in ~scheme/init.ss~.
 The Rust ~HookActionProvider~
 accepts typed proposals against read-only dispatch facts. Rust resolves
 registration proposals against its existing catalog and constructs the

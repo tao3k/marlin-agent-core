@@ -123,7 +123,7 @@ Keep the work of a method in an ordinary function when it can be expressed
 as a value transformation. Marlin's hook condition evaluator and UI event
 protocol show this boundary. The Core Ops Script uses its shared execution
 path for ordinary Script values.
-[[file:hooks/conditions.ss][Hook condition dispatch]] ·
+[[file:agent-hooks/conditions.ss][Hook condition dispatch]] ·
 [[file:ui/dispatch.ss][UI event protocol]]
 
 * Verify at the owning boundary

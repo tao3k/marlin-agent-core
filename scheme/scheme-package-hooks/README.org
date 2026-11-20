@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Scheme Package Hooks
+#+language: en
+
+Yuanxu orders named package callbacks by depth and declaration order.
+Marlin declares which events dispatch them. Each callback receives the
+event's facts and the current result, and returns the next result.
+
+The terminal publishes =ui-command-catalog= when it first needs the full
+command list and =ui-keymap-miss= when it needs to resolve an extension
+shortcut. Both events can load the configured Scheme UI package through
+Gerbil. An action in that package can use Yuanxu's autoload independently.
+
+=SchemePackageHooks.= is the POO declaration. Compose its named slots and
+pass the result to =make-package-hooks= to produce a new dispatch plan.
+Lower depths run first. A handler's =.when= predicate can further narrow
+its =on= events.

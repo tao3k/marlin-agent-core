@@ -45,6 +45,6 @@ pub use projection::{
 };
 #[cfg(feature = "scheme-ui")]
 pub use runtime::{
-    UiLinkedExports, UiModule, UiNativeSession, dispatch_event, open_session, prepare_open_request,
-    project_workbench,
+    UiLinkedExports, UiModule, UiNativeSession, UiPackageDemand, dispatch_event, open_session,
+    prepare_open_request, project_workbench,
 };

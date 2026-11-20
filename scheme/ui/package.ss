@@ -3,8 +3,8 @@
 
 ;;; A package extends the selected scopes using ordinary POO values. There is
 ;;; no process-global registry: each publication retains its own catalogs.
-(import (only-in :tao3k/yuanxu/prelude yuanxu-module-export)
-        (only-in :clan/poo/object .def .get .o)
+(import (only-in :clan/poo/object .call .def .get .o)
+        (only-in "../scheme-package-hooks/config.ss" SchemePackageHooksScope)
         (only-in :std/list/list duplicates)
         (only-in "../ui-components/bounds.ss" marlin-ui-bounded-list?)
         (only-in "../ui-components/commands.ss" marlin-ui-command-entries?)
@@ -21,17 +21,18 @@
         (only-in "./config.ss" make-ui-scope))
 (export UiPackage. make-ui-package marlin-ui-load-publication)
 
-;;; Explicit package activation on the existing VM and package environment.
-;;; Use Gerbil's import/export semantics, including renamed/re-exported values;
-;;; neither Rust nor this module maintains an alternate module registry/path.
+;;; Admit the native demand before passing typed facts to the Scheme hooks.
 (def (marlin-ui-load-publication input)
-  (unless (and (vector? input) (= (vector-length input) 3)
+  (unless (and (vector? input) (= (vector-length input) 4)
                (string? (vector-ref input 0))
                (< 0 (string-length (vector-ref input 0)) 4097)
-               (symbol? (vector-ref input 1)) (symbol? (vector-ref input 2)))
+               (symbol? (vector-ref input 1)) (symbol? (vector-ref input 2))
+               (symbol? (vector-ref input 3)))
     (error "invalid UI package publication request"))
-  (parameterize ((current-directory (path-expand (vector-ref input 0))))
-    (yuanxu-module-export (vector-ref input 1) (vector-ref input 2))))
+  (or (.call SchemePackageHooksScope .run (vector-ref input 3)
+        (.o directory: (vector-ref input 0) module: (vector-ref input 1)
+            export: (vector-ref input 2)) #f)
+      (error "no Scheme package hook handled the UI demand" (vector-ref input 3))))
 
 (.def UiPackage.
   buffers: '()

@@ -8,12 +8,12 @@
         (only-in :clan/poo/type Fun Object Bool)
         (only-in :clan/poo/type Record String OrFalse))
 
-(export HooksScopeContract)
+(export AgentHooksScopeContract)
 
 (def HookSelection
   (Record kind: [String] source: [String] selector: [(OrFalse String)]
           matched: [Bool] matched-case: [(OrFalse String)] dynamic-hook-action: [(OrFalse Object)]))
 
-(def HooksScopeContract
+(def AgentHooksScopeContract
   (.cc (Record select: [(Fun HookSelection <- (OrFalse Object) String Object Object String String)])
-       identity: 'marlin/hooks))
+       identity: 'marlin/agent-hooks))

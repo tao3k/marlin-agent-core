@@ -8,7 +8,7 @@
         "./types.ss"
         "./objects.ss")
 
-(export HooksScope)
+(export AgentHooksScope)
 
-(def HooksScope
-  (validate HooksScopeContract HooksOperations))
+(def AgentHooksScope
+  (validate AgentHooksScopeContract AgentHooksOperations))

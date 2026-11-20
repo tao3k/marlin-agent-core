@@ -118,6 +118,22 @@ pub struct UiLinkedExports {
     pub refresh_labels: unsafe extern "C" fn(i64) -> i64,
 }
 
+/// Host observations that can request the configured Scheme UI publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiPackageDemand {
+    CommandCatalog,
+    KeymapMiss,
+}
+
+impl UiPackageDemand {
+    fn scheme_event(self) -> &'static str {
+        match self {
+            Self::CommandCatalog => "ui-command-catalog",
+            Self::KeymapMiss => "ui-keymap-miss",
+        }
+    }
+}
+
 impl<'runtime> UiModule<'runtime> {
     /// Resolve the declared publication and UI procedure exports in one VM.
     #[cfg(not(feature = "linked-ui"))]
@@ -320,6 +336,7 @@ impl<'runtime> UiModule<'runtime> {
         directory: &str,
         module: &str,
         export: &str,
+        demand: UiPackageDemand,
     ) -> Result<RootedSchemeObject<'runtime>, UiProjectionError> {
         let directory = self.runtime.string_from_utf8(directory)?.into_object();
         let module = self
@@ -328,9 +345,15 @@ impl<'runtime> UiModule<'runtime> {
         let export = self
             .runtime
             .intern_identifier(IdentifierKind::Symbol, export)?;
+        let event = self
+            .runtime
+            .intern_identifier(IdentifierKind::Symbol, demand.scheme_event())?;
         let request = self
             .runtime
-            .collection_from_objects(CollectionKind::Vector, &[&directory, &module, &export])?
+            .collection_from_objects(
+                CollectionKind::Vector,
+                &[&directory, &module, &export, &event],
+            )?
             .into_object();
         self.load_publication.call(self.runtime, &request)
     }

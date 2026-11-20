@@ -7,7 +7,7 @@
 (import (only-in :clan/poo/object .o)
         (only-in "./selection.ss" select-hook))
 
-(export HooksOperations)
+(export AgentHooksOperations)
 
-(def HooksOperations
+(def AgentHooksOperations
   (.o select: select-hook))

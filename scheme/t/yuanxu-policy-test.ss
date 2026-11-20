@@ -5,7 +5,7 @@
 ;;; Exercise Marlin's publications through the selected package entry.
 
 (import (only-in :marlin-agent-core/interface LabContext)
-        (only-in :clan/poo/object .get .o)
+        (only-in :clan/poo/object .call .get .o)
         (only-in :clan/poo/type TypeError?)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
 
@@ -26,9 +26,13 @@
   (unless (with-catch TypeError? (lambda () (admit-turn #f 0) #f))
     (error "Lab's Scope type must refuse a Context turn without a session")))
 
-(let* ((select (.get marlin-agent-core.init.exports Marlin hooks select))
+(let* ((select (.get marlin-agent-core.init.exports Marlin agent-hooks select))
        (selection (select #f "init-test" (.o) (.o) "test" "local")))
   (unless (and (equal? (.get selection source) "init-test")
                (not (.get selection matched))
                (not (.get selection dynamic-hook-action)))
-    (error "Hooks must publish its decision selector through init" selection)))
+    (error "Agent Hooks must publish its decision selector through init" selection)))
+
+(let (package-hooks (.get marlin-agent-core.init.exports Marlin scheme-package-hooks))
+  (unless (eq? (.call package-hooks .run 'unrelated-scene (.o) 'untouched) 'untouched)
+    (error "an unrelated scene must leave the Scheme package result alone")))

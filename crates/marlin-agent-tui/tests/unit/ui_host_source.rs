@@ -80,7 +80,12 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
     )
     .unwrap();
     package_host
-        .activate_publication(root, ":marlin-tui-ui-test/fixture", "test-publication")
+        .activate_publication(
+            root,
+            ":marlin-tui-ui-test/fixture",
+            "test-publication",
+            marlin_agent_ui::UiPackageDemand::KeymapMiss,
+        )
         .unwrap();
     assert!(matches!(
         package_host

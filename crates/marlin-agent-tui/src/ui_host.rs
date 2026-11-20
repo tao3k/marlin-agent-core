@@ -96,8 +96,11 @@ impl<'runtime> UiHost<'runtime> {
         directory: &str,
         module: &str,
         export: &str,
+        demand: marlin_agent_ui::UiPackageDemand,
     ) -> Result<(), UiProjectionError> {
-        let publication = self.module.load_publication(directory, module, export)?;
+        let publication = self
+            .module
+            .load_publication(directory, module, export, demand)?;
         let session = self
             .module
             .activate_publication(&self.session, &publication)?;

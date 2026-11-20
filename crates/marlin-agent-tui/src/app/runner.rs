@@ -15,7 +15,7 @@ use super::{
     WheelAccumulator, config, draw_with_snapshot, frame_snapshot, io, load_session,
     mouse_over_minibuffer, mpsc, process_replies, publish_error, reply_channel, thread,
 };
-use marlin_agent_ui::UiEditorAction;
+use marlin_agent_ui::{UiEditorAction, UiPackageDemand};
 use std::{
     env,
     io::{IsTerminal, Write},
@@ -348,7 +348,12 @@ pub(super) fn run(
                 app.command_selection_locked = false;
             }
             if app.command_draft.is_some() {
-                if activate_ui_package(&mut app, &mut ui, &mut ui_package) {
+                if activate_ui_package(
+                    &mut app,
+                    &mut ui,
+                    &mut ui_package,
+                    UiPackageDemand::CommandCatalog,
+                ) {
                     schedule.mark_dirty();
                 }
                 if !app.command_query_is_current()
@@ -799,7 +804,12 @@ pub(super) fn run(
                     && (ui.has_undefined_key_sequence()
                         || (matches!(routed, Ok(UiKeyAction::Unhandled))
                             && matches!(key, Key::Alt(_))))
-                    && activate_ui_package(&mut app, &mut ui, &mut ui_package)
+                    && activate_ui_package(
+                        &mut app,
+                        &mut ui,
+                        &mut ui_package,
+                        UiPackageDemand::KeymapMiss,
+                    )
                 {
                     // The built-in map has already declined the key. Replay
                     // it with the same prefix in the newly admitted map.
@@ -957,6 +967,7 @@ fn activate_ui_package(
     app: &mut App,
     ui: &mut UiHost<'_>,
     pending: &mut Option<config::TuiUiPackageConfig>,
+    demand: UiPackageDemand,
 ) -> bool {
     let Some(package) = pending.take() else {
         return false;
@@ -966,7 +977,7 @@ fn activate_ui_package(
             .directory
             .to_str()
             .ok_or("UI package path is not UTF-8")?;
-        ui.activate_publication(directory, &package.module, &package.export)?;
+        ui.activate_publication(directory, &package.module, &package.export, demand)?;
         app.sync_window(ui.view())?;
         Ok(())
     })();
