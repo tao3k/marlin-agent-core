@@ -4,9 +4,13 @@
 
 //! Bounded Tokio admission into one Scheme VM.
 
+#[path = "config.rs"]
 mod config;
+#[path = "module.rs"]
 mod module;
+#[path = "owner.rs"]
 mod owner;
+#[path = "wake.rs"]
 mod wake;
 pub use module::{
     DeckContextModule, DeckModuleInstanceId, DeckModuleRetirementReceipt, DeckTimerId,
@@ -14,8 +18,11 @@ pub use module::{
 };
 use module::{ModuleState, queue_error};
 #[cfg(feature = "context-profiling")]
+#[path = "profile.rs"]
 mod profile;
+#[path = "receipt.rs"]
 mod receipt;
+#[path = "vm.rs"]
 mod vm;
 
 use crate::{DeckRuntimeMetadata, DeckRuntimeMetadataError};
@@ -304,7 +311,7 @@ impl DeckRuntime {
 }
 
 #[cfg(test)]
-#[path = "../tests/unit/runtime_queue.rs"]
+#[path = "../../tests/unit/runtime_queue.rs"]
 mod queue_tests;
 
 impl Drop for DeckRuntime {

@@ -4,7 +4,7 @@
 
 #![cfg(feature = "actor-runtime")]
 
-#[path = "unit/context_fixture.rs"]
+#[path = "../unit/context_fixture.rs"]
 mod context_fixture;
 
 use marlin_agent_context::{

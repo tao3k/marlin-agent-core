@@ -3,5 +3,5 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 #[cfg(feature = "actor-runtime")]
-#[path = "unit/actor_runtime.rs"]
+#[path = "../unit/actor_runtime.rs"]
 mod actor_runtime;

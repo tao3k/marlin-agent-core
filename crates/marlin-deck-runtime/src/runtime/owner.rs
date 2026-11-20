@@ -6,9 +6,10 @@
 
 use super::vm::{Completion, DeckVm, MessageId};
 use super::{
-    DeckMailboxMetrics, DeckRuntimeConfig, DeckRuntimeMetrics, DeckRuntimeRejection,
-    DeckRuntimeShutdownReceipt, DeckRuntimeStartupError, DeckRuntimeStopReason, Job, Outcome,
-    OwnerMessage, SchemeVmError,
+    DeckMailboxMetrics, DeckModuleInstanceId, DeckRuntimeConfig, DeckRuntimeMetrics,
+    DeckRuntimeRejection, DeckRuntimeShutdownReceipt, DeckRuntimeStartupError,
+    DeckRuntimeStopReason, DeckTimerId, DeckTimerReceipt, Job, Outcome, OwnerMessage,
+    SchemeVmError,
 };
 use crate::DeckRuntimeMetadata;
 use gerbil_scheme::{GerbilRuntime, LinkedGerbilProgram};
@@ -260,14 +261,14 @@ pub(super) fn run(
 }
 
 struct TimerSlot {
-    module: super::DeckModuleInstanceId,
-    reply: tokio::sync::oneshot::Sender<Result<super::DeckTimerReceipt, DeckRuntimeRejection>>,
+    module: DeckModuleInstanceId,
+    reply: tokio::sync::oneshot::Sender<Result<DeckTimerReceipt, DeckRuntimeRejection>>,
 }
 struct Controls {
     next_module: u64,
     next_timer: u64,
-    modules: HashSet<super::DeckModuleInstanceId>,
-    timers: HashMap<super::DeckTimerId, TimerSlot>,
+    modules: HashSet<DeckModuleInstanceId>,
+    timers: HashMap<DeckTimerId, TimerSlot>,
     retiring: Vec<Arc<super::ModuleState>>,
 }
 impl Controls {
@@ -275,7 +276,7 @@ impl Controls {
         Self {
             next_module: 2,
             next_timer: 1,
-            modules: HashSet::from([super::DeckModuleInstanceId(std::num::NonZeroU64::MIN)]),
+            modules: HashSet::from([DeckModuleInstanceId(std::num::NonZeroU64::MIN)]),
             timers: HashMap::new(),
             retiring: Vec::new(),
         }
@@ -324,10 +325,7 @@ impl Controls {
         }
         Ok(())
     }
-    fn validate_timers(
-        &self,
-        receipts: &[super::DeckTimerReceipt],
-    ) -> Result<(), DeckRuntimeRejection> {
+    fn validate_timers(&self, receipts: &[DeckTimerReceipt]) -> Result<(), DeckRuntimeRejection> {
         let unique: HashSet<_> = receipts.iter().map(|receipt| receipt.timer).collect();
         if unique.len() != receipts.len()
             || receipts.iter().any(|receipt| {
@@ -340,7 +338,7 @@ impl Controls {
         }
         Ok(())
     }
-    fn publish_timers(&mut self, receipts: Vec<super::DeckTimerReceipt>) {
+    fn publish_timers(&mut self, receipts: Vec<DeckTimerReceipt>) {
         for receipt in receipts {
             let slot = self
                 .timers
@@ -372,7 +370,7 @@ fn receive(
             if reply.is_closed() {
                 return Ok(());
             }
-            let id = super::DeckModuleInstanceId(
+            let id = DeckModuleInstanceId(
                 std::num::NonZeroU64::new(control.next_module)
                     .ok_or(DeckRuntimeRejection::InvalidProjection)?,
             );
@@ -404,7 +402,7 @@ fn receive(
                 let _ = reply.send(Err(DeckRuntimeRejection::ModuleRetired));
                 return Ok(());
             }
-            let timer = super::DeckTimerId(
+            let timer = DeckTimerId(
                 std::num::NonZeroU64::new(control.next_timer)
                     .ok_or(DeckRuntimeRejection::InvalidProjection)?,
             );
