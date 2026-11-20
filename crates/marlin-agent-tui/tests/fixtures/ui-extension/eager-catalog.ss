@@ -2,11 +2,12 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-;;; PTY control: use the original eager Yuanxu export lookup before completion.
-(import (only-in :tao3k/yuanxu/prelude define-yuanxu-module-declaration yuanxu-module-export)
+;;; PTY control: demand the publication at completion time using the same loader.
+(import (only-in :tao3k/yuanxu/prelude define-yuanxu-module-declaration yuanxu-module-declaration)
+        (only-in :marlin-agent-core/ui/types UiScopeContract)
         (only-in "./catalog.ss" test-catalog))
 (export eager-catalog)
 
 (define-yuanxu-module-declaration eager-catalog
-  (and (yuanxu-module-export ':marlin-tui-ui-test/fixture 'test-publication)
+  (and (yuanxu-module-declaration ':marlin-tui-ui-test/fixture 'test-publication UiScopeContract)
        test-catalog))

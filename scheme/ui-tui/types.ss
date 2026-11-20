@@ -6,8 +6,5 @@
 (def UiTuiScopeContract
   (.cc (Record identity: [(Exactly 'marlin/ui-tui)]
                program-entry: [(Exactly 'marlin-agent-core/ui-tui/entry)]
-               program-runtime-imports:
-               [(Exactly '(:gerbil/expander
-                           :marlin-agent-core/ui/session
-                           :marlin-agent-core/ui-meow/interface))])
+               program-runtime-imports: [(Exactly '())])
        identity: 'marlin/ui-tui))

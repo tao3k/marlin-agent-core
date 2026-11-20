@@ -6,6 +6,7 @@
 ;;; Context or other agent services as a side effect of its first frame.
 (import (only-in :marlin-agent-core/c-abi/roots marlin-rooted-call)
         (only-in :marlin-agent-core/ui/config UiScope)
+        (for-template :marlin-agent-core/ui-meow/interface)
         :marlin-agent-core/c-abi/ui
         :marlin-agent-core/c-abi/tooling
         :marlin-agent-core/c-abi/envrc
