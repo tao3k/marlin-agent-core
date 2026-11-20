@@ -2,8 +2,8 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-(import (only-in :tao3k/yuanxu/module-system/package-hooks make-package-hooks)
+(import (only-in :tao3k/yuanxu/module-system/module-hooks make-module-hooks)
         (only-in "./objects.ss" SchemePackageHooks.))
 (export SchemePackageHooksScope)
 
-(def SchemePackageHooksScope (make-package-hooks SchemePackageHooks.))
+(def SchemePackageHooksScope (make-module-hooks SchemePackageHooks.))

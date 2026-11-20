@@ -4,7 +4,7 @@
 #+title: Scheme Package Hooks
 #+language: en
 
-Yuanxu orders named package callbacks by depth and declaration order.
+Yuanxu Module Hooks orders named callbacks by depth and declaration order.
 Marlin declares which events dispatch them. Each callback receives the
 event's facts and the current result, and returns the next result.
 
@@ -14,6 +14,6 @@ shortcut. Both events can load the configured Scheme UI package through
 Gerbil. An action in that package can use Yuanxu's autoload independently.
 
 =SchemePackageHooks.= is the POO declaration. Compose its named slots and
-pass the result to =make-package-hooks= to produce a new dispatch plan.
+pass the result to =make-module-hooks= to produce a new dispatch plan.
 Lower depths run first. A handler's =.when= predicate can further narrow
 its =on= events.
