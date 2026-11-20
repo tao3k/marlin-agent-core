@@ -13,7 +13,8 @@
                  meow-things meow-expand)
         (only-in :marlin-agent-core/ui/projection marlin-ui-native-facts marlin-ui-apply-native
                  marlin-ui-apply-event marlin-ui-project-intent)
-        (only-in :marlin-agent-core/ui/package marlin-ui-load-publication UiPackage. make-ui-package)
+        (only-in :marlin-agent-core/ui/package UiPackage. make-ui-package)
+        (only-in :marlin-agent-core/ui/session marlin-ui-session-open marlin-ui-session-package-event)
         (only-in :clan/poo/mop .defgeneric .defmethod .defmethod-bundle
                  clos-compose-method-bundle)
         (only-in :clan/poo/type Enum)
@@ -329,16 +330,18 @@
   (error "package text objects must publish both typed ranges"))
 
 ;; Malformed requests fail before the module loader or directory scope is entered.
-(let ((directory (current-directory)) (context (current-expander-context)))
+(let ((directory (current-directory)) (context (current-expander-context))
+      (session (marlin-ui-session-open (vector ui #("model" "session" #() #()) #()))))
   (for-each
     (lambda (request)
-      (unless (and (rejected? (lambda () (marlin-ui-load-publication request)))
+      (unless (and (rejected? (lambda () (marlin-ui-session-package-event (vector session request))))
                    (equal? directory (current-directory))
                    (eq? context (current-expander-context)))
         (error "UI package request changed the caller scope" request)))
-    (list #f '#() '#("" :example/module publication)
-          '#("." "example/module" publication) '#("." :example/module "publication")
-          (vector (make-string 4097 #\x) ':example/module 'publication))))
+    (list #f '#() '#(catalog "" :example/module publication)
+          '#(catalog "." "example/module" publication) '#(catalog "." :example/module "publication")
+          '#(ui-package-loaded "open-notes") '#(ui-command-execution "Bad name")
+          (vector 'catalog (make-string 4097 #\x) ':example/module 'publication))))
 (let (target (.get ui-elements scroll-target))
   (unless (and (equal? (target 'candidates 1) '#(candidates 1))
                (rejected? (lambda () (target 'candidates 0)))

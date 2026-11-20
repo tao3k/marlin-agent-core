@@ -5,7 +5,8 @@
 (import (only-in :clan/poo/object .call .get)
         (only-in :clan/poo/type validate)
         (only-in :tao3k/yuanxu/module-system/module-hooks make-module-hooks)
-        (only-in :tao3k/yuanxu/prelude yuanxu-module-export)
+        (only-in :tao3k/yuanxu/prelude yuanxu-module-declaration)
+        (only-in "../ui/types.ss" UiScopeContract)
         (only-in "./types.ss" SchemePackageHooksScopeContract))
 (export load-configured-publication make-ui-package-hooks run-ui-package-hooks)
 
@@ -14,8 +15,8 @@
 
 (def (load-configured-publication request publication)
   (or publication
-      (parameterize ((current-directory (path-expand (.get request directory))))
-        (yuanxu-module-export (.get request module) (.get request export)))))
+      (yuanxu-module-declaration (.get request module) (.get request export) UiScopeContract
+        directory: (.get request directory))))
 
 ;;; Post-load hooks see an available publication and can compose its value
 ;;; before the native UI owner admits it into the current session.

@@ -737,6 +737,7 @@ fn decode_commands(payload: RootedSchemeObject<'_>) -> Result<UiRegion, UiProjec
             "envrc" => UiCommandCapability::Envrc,
             "toggle-thinking" => UiCommandCapability::ToggleThinking,
             "clear" => UiCommandCapability::Clear,
+            "deferred" => UiCommandCapability::Deferred,
             _ => return Err(UiProjectionError::Invalid("unknown command capability")),
         };
         let value = match row.element(4)?.as_ref().kind()? {

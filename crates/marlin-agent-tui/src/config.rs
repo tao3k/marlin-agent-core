@@ -46,7 +46,7 @@ pub struct GitContextConfig {
     pub repository: PathBuf,
 }
 
-/// An already compiled Scheme publication resolved by the SDK package API.
+/// An already compiled Scheme package declaration resolved by the SDK.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TuiUiPackageConfig {

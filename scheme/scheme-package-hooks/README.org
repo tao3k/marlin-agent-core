@@ -8,13 +8,14 @@ Yuanxu Module Hooks orders named callbacks by depth and declaration order.
 Marlin declares which events dispatch them. The dispatch contract checks
 the UI demand, the configured module and export, and the publication result.
 
-The terminal publishes =ui-command-catalog= when it first needs the full
-command list and =ui-keymap-miss= when it needs to resolve an extension
-shortcut. Both events can load the configured Scheme UI package through
-Gerbil. An action in that package can use Yuanxu's autoload independently.
+Opening =M-x= reads a command declaration. Executing a declared command
+dispatches =ui-command-execution=. A bound key invokes the same command via
+=ui-key-command=. Only those execution events ask Gerbil for the package
+publication. An action in the package can use Yuanxu's =yuanxu-autoload= with
+its function =contract:= to defer loading that action independently.
 
 =ui-package-loaded= runs after a hook has resolved the publication. Its
-handlers receive that publication and the original demand as =trigger=.
+handlers receive that publication, its command and the original =trigger=.
 They can compose the publication before the terminal admits it.
 
 =SchemePackageHooks.= is the POO declaration. Compose its named slots and

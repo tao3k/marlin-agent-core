@@ -7,7 +7,8 @@
         (only-in :std/list/list length<=n?))
 (export marlin-ui-max-contributions marlin-ui-max-extensions marlin-ui-max-content-items
         marlin-ui-max-browse-steps
-        marlin-ui-bounded-label? marlin-ui-bounded-list? marlin-ui-required-object)
+        marlin-ui-bounded-label? marlin-ui-bounded-list? marlin-ui-command-name?
+        marlin-ui-required-object)
 
 (def marlin-ui-max-contributions 8)
 (def marlin-ui-max-extensions 16)
@@ -23,6 +24,12 @@
 
 (def (marlin-ui-bounded-label? value)
   (and (string? value) (<= (string-length value) max-label-length)))
+
+(def (marlin-ui-command-name? value)
+  (and (string? value) (<= 1 (string-length value) 32)
+       (andmap (lambda (char)
+                 (or (char<=? #\a char #\z) (char<=? #\0 char #\9) (char=? char #\-)))
+               (string->list value))))
 
 ;;; Bound traversal first: list? then rejects an improper short tail.
 (def (marlin-ui-bounded-list? values limit)

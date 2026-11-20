@@ -82,6 +82,7 @@ impl<'a> Command<'a> {
                 EnvrcCommand::from_value(action).is_some()
             }
             (Capability::Sessions, Optional, None) => true,
+            (Capability::Deferred, _, None) => true,
             (Capability::History, NoArguments, Some("older" | "newest")) => true,
             (Capability::Workspace, NoArguments, Some("status"))
             | (Capability::Workspace, Optional, Some("diff"))
@@ -101,12 +102,7 @@ impl<'a> Command<'a> {
         }
     }
 
-    /// Parse arguments using the selected descriptor, then select one native
-    /// capability. A new command alias needs no Rust name-table edit.
-    pub(crate) fn parse(descriptor: &'a UiCommand, input: &'a str) -> Option<Self> {
-        if !Self::admit(descriptor) {
-            return None;
-        }
+    pub(crate) fn arguments(descriptor: &UiCommand, input: &'a str) -> Option<Option<&'a str>> {
         let input = input.trim();
         let (name, argument) = input
             .split_once(' ')
@@ -114,7 +110,7 @@ impl<'a> Command<'a> {
         if name != descriptor.name.as_str() {
             return None;
         }
-        let argument = match descriptor.arguments {
+        Some(match descriptor.arguments {
             UiCommandArguments::None if argument.is_none() => None,
             UiCommandArguments::Required
                 if argument.is_some_and(|value| !value.trim().is_empty()) =>
@@ -125,7 +121,16 @@ impl<'a> Command<'a> {
                 argument
             }
             _ => return None,
-        };
+        })
+    }
+
+    /// Parse arguments using the selected descriptor, then select one native
+    /// capability. A new command alias needs no Rust name-table edit.
+    pub(crate) fn parse(descriptor: &'a UiCommand, input: &'a str) -> Option<Self> {
+        if !Self::admit(descriptor) {
+            return None;
+        }
+        let argument = Self::arguments(descriptor, input)?;
         let value = descriptor.value.as_deref();
         use UiCommandCapability as Capability;
         Some(match descriptor.capability {
@@ -156,6 +161,7 @@ impl<'a> Command<'a> {
             }
             Capability::EnterTransient => Self::EnterTransient(UiTransientId::new(value?).ok()?),
             Capability::Clear => Self::Clear,
+            Capability::Deferred => return None,
             Capability::ToggleThinking => Self::ToggleThinking(match argument {
                 Some(value) => value.trim().parse().ok().filter(|index| *index > 0)?,
                 None => 1,

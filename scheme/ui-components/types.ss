@@ -7,7 +7,7 @@
         (only-in :clan/poo/type Exactly Record)
         (only-in "../ui-meow/types.ss" KeyBindings)
         (only-in "./commands.ss" marlin-ui-command-entries? marlin-ui-command-history?))
-(export UiComponentsScopeContract)
+(export UiCommandEntries UiComponentsScopeContract)
 
 (def UiCommandEntries (.cc Type. '.element? marlin-ui-command-entries?))
 (def UiTransientEntries (.cc Type. '.element? vector?))

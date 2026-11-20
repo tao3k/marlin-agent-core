@@ -4,12 +4,12 @@
 
 ;;; A contributed component and method bundle selected from the real UI scope.
 (import (only-in :clan/poo/object .get .o)
-        (only-in :tao3k/yuanxu/prelude yuanxu-autoload)
+        (only-in :clan/poo/type Exactly Fun Record Symbol)
+        (only-in :tao3k/yuanxu/prelude define-yuanxu-module-declaration yuanxu-autoload)
         (only-in :marlin-agent-core/ui/config UiScope)
         (only-in :marlin-agent-core/ui-centaur-tabs/funcs marlin-ui-buffer-tabs)
         (only-in :marlin-agent-core/ui-layout/config marlin-ui-layout-with-tab-bar)
-        (only-in :marlin-agent-core/ui-meow/interface define-key-bindings meow-global meow-keypad
-                 meow-things)
+        (only-in "./catalog.ss" test-catalog)
         (only-in :clan/poo/mop .defgeneric .defmethod .defmethod-bundle)
         (only-in :marlin-agent-core/ui-elements/funcs
                  ui-binding-present ui-rows ui-columns ui-region ui-sized ui-sized-with
@@ -22,16 +22,13 @@
 
 ;;; This package contributes only Scheme values. The host has no case for
 ;;; notes, open-notes or M-z.
-(define-key-bindings NotesKeymap
-  keypad: (meow-keypad ((SPC z) (M-z)))
-  (meow-global ((M-z) open-notes "Package notes"))
-  (meow-things (z #\| #\| "pipes")))
+(def RowAction (Fun (Record kind: [(Exactly 'focus)] identity: [Symbol]) <- Symbol))
 
 (def (make-package-methods)
   (def event-protocol (.get UiScope event-protocol))
   (def select-row (.get UiScope events select-list-row))
   (def select-package-row
-    (yuanxu-autoload ':marlin-tui-ui-test/row-action 'select-package-row))
+    (yuanxu-autoload ':marlin-tui-ui-test/row-action 'select-package-row contract: RowAction))
   (.defgeneric package-event (component event) (protocol event-protocol))
   (.defmethod-bundle PackageMethods event-protocol
     (.defmethod (package-event (list-id (eql 'package-list))
@@ -39,10 +36,11 @@
       (select-package-row (.get event row))))
   PackageMethods)
 
-(def test-publication
+(define-yuanxu-module-declaration test-publication
   (make-ui-package
     (.o (:: @ UiPackage.)
-        buffers: `((notes "Package notes"
+        buffers: (let (header (car (.get test-catalog buffers)))
+          `((,(car header) ,(cadr header)
                      ("*Notes*"
                        ,(ui-region 'notes-body #f
                           (ui-rows
@@ -62,9 +60,9 @@
                                       (ui-size-cells 0))
                                     (ui-region 'package-status #f
                                       (ui-template 'none '((binding accent #f package-state)))))))))
-                     #f))
-        commands: '(("open-notes" "Open package notes" none select-buffer "notes"))
-        keymap: (.get NotesKeymap bindings)
+                     ,(caddr header))))
+        commands: (.get test-catalog commands)
+        keymap: (.get test-catalog keymap)
         layout: (marlin-ui-layout-with-tab-bar
                   (lambda (buffers style)
                     (marlin-ui-buffer-tabs buffers '((notes "Lab Notes" packages)) style)))

@@ -6,24 +6,30 @@
 (import (only-in :clan/poo/object .def .get .o seal-object!)
         (only-in :std/list/list find filter)
         (only-in :clan/poo/mop prototype-instance?)
-        (only-in :clan/poo/type element?)
+        (only-in :clan/poo/type element? validate)
         (only-in "./types.ss" UiScopeContract)
         (only-in "../ui-centaur-tabs/funcs.ss" marlin-ui-tab-style?)
         (only-in "../ui-components/bounds.ss" marlin-ui-max-browse-steps)
         "./projection.ss"
-        (only-in "./package.ss" UiPackage. make-ui-package marlin-ui-load-publication))
+        (only-in "./package-types.ss" UiPackageEventInput)
+        (only-in "./package.ss" UiPackage. make-ui-package marlin-ui-package-catalog
+                 marlin-ui-package-preview marlin-ui-package-publication marlin-ui-package-check-commands))
 (export marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch
         marlin-ui-session-browse-command
         marlin-ui-session-command-candidates
         marlin-ui-session-review-menu
-        marlin-ui-session-refresh-labels UiPackage. make-ui-package marlin-ui-load-publication)
+        marlin-ui-session-refresh-labels UiPackage. make-ui-package marlin-ui-session-package-event)
 
 ;;; Each event returns a successor; older frames keep their own rooted state.
 (.def UiNativeSession.)
-(def (session ui-value generic-value workbench-value focus-value frame-value history-value)
+(def (session ui-value generic-value workbench-value focus-value frame-value history-value
+              (package-value #f))
   (seal-object! (.o (:: @ UiNativeSession.) ui: ui-value generic: generic-value
                     workbench: workbench-value focus: focus-value frame: frame-value
-                    command-history: history-value)))
+                    command-history: history-value package: package-value)))
+(def (continue-session current workbench focus frame history)
+  (session (.get current ui) (.get current generic) workbench focus frame history
+           (.get current package)))
 (def (checked-session value)
   (unless (prototype-instance? UiNativeSession. value) (error "invalid UI native session"))
   value)
@@ -38,17 +44,19 @@
     (error "invalid UI command browse request"))
   (let* ((current (checked-session (vector-ref input 0)))
          (ui (.get current ui))
-         (component (find (lambda (region) (eq? (.get region identity) 'commands))
-                          (.get (.get current workbench) regions)))
+         (component (command-region (.get current workbench)))
          (prototype (.get ui events browse-command))
          (event (.o (:: @ prototype) query: (vector-ref input 1)
                     previous: (vector-ref input 2) direction: (vector-ref input 3)
                     steps: (vector-ref input 4) history: (.get current command-history)
                     allowed: (and (vector-ref input 5) (vector->list (vector-ref input 5))))))
-    (unless component (error "UI command region is missing"))
     (let (intent ((.get ui dispatch) (.get current generic) component event))
       (unless (eq? (.get intent kind) 'command-selection) (error "invalid command browse intent"))
       (.get intent name))))
+
+(def (command-region workbench)
+  (or (find (lambda (region) (eq? (.get region identity) 'commands)) (.get workbench regions))
+      (error "UI command region is missing")))
 
 (def (marlin-ui-session-command-candidates input)
   (unless (and (vector? input) (= (vector-length input) 3)
@@ -57,9 +65,7 @@
     (error "invalid UI command candidate request"))
   (let* ((current (checked-session (vector-ref input 0)))
          (ui (.get current ui))
-         (component (find (lambda (region) (eq? (.get region identity) 'commands))
-                          (.get (.get current workbench) regions))))
-    (unless component (error "UI command region is missing"))
+         (component (command-region (.get current workbench))))
     (let* ((names ((.get ui command-candidates) (.get component entries) (vector-ref input 1)
                    (.get current command-history)))
            (locked (vector-ref input 2)))
@@ -81,7 +87,7 @@
 
 ;;; A configured package extends the built-in session. Keep the selected
 ;;; Buffer, theme, focus and command ranking when admitting its publication.
-(def (activate-publication ui current)
+(def (activate-publication ui current (package #f))
   (let* ((old-workbench (.get current workbench))
          (old-frame (.get current frame))
          (facts (profile-facts old-workbench old-frame))
@@ -96,7 +102,30 @@
     (unless (memq focus (.get workbench focus-order))
       (error "UI package removed the current focus"))
     (session ui ((.get ui make-dispatch) #()) workbench focus frame
-             (.get current command-history))))
+             (.get current command-history) package)))
+
+;;; A preview has ranked commands and keys only. The full publication is
+;;; admitted on execution, using the same current window and profile.
+(def (marlin-ui-session-package-event input)
+  (unless (and (vector? input) (= (vector-length input) 2))
+    (error "invalid UI package event envelope"))
+  (let* ((current (checked-session (vector-ref input 0)))
+         (event (validate UiPackageEventInput (vector-ref input 1)))
+         (kind (vector-ref event 0))
+         (staged (.get current package)))
+    (case kind
+      ((catalog)
+       (when staged (error "a UI package is already staged"))
+       (let (catalog (marlin-ui-package-catalog
+                      (vector-ref event 1) (vector-ref event 2) (vector-ref event 3)))
+         (activate-publication (marlin-ui-package-preview catalog) current catalog)))
+      (else
+       (unless staged (error "no staged UI package"))
+       (let* ((ui (marlin-ui-package-publication staged kind (vector-ref event 1)))
+              (next (activate-publication ui current)))
+         (marlin-ui-package-check-commands staged
+           (.get (command-region (.get next workbench)) entries))
+         next)))))
 
 (def (marlin-ui-session-open input)
   (unless (and (vector? input) (<= 2 (vector-length input) 3)
@@ -142,8 +171,8 @@
                    transcript-policy: (.get old transcript-policy)
                    theme-palette: (.get old theme-palette)
                    regions: (.get old regions) focus-order: (.get old focus-order)))
-      (session ui (.get current generic) next (.get current focus) (.get current frame)
-               (.get current command-history)))))
+      (continue-session current next (.get current focus) (.get current frame)
+                        (.get current command-history)))))
 
 (def (event-for ui workbench kind)
   (case kind
@@ -201,28 +230,25 @@
       (let* ((_arity (unless (and (= (vector-length input) 3) (symbol? (vector-ref input 2)))
                        (error "invalid UI command history request")))
              (name (symbol->string (vector-ref input 2)))
-             (component (find (lambda (region) (eq? (.get region identity) 'commands))
-                              (.get workbench regions)))
-             (_known (unless (and component
-                                  (find (lambda (entry) (string=? (car entry) name))
-                                        (.get component entries)))
+             (component (command-region workbench))
+             (_known (unless (assoc name (.get component entries))
                        (error "unknown UI command history entry")))
              (next-history ((.get ui record-command-history) (.get current command-history) name)))
-        (vector (session ui generic workbench focus (.get current frame) next-history)
+        (vector (continue-session current workbench focus (.get current frame) next-history)
                 (vector 'focus focus))))
      ((select-buffer)
       (let* ((_arity (unless (= (vector-length input) 3)
                        (error "invalid UI buffer request")))
              (next-frame ((.get ui select-buffer) (.get current frame)
                           (vector-ref input 2))))
-        (vector (session ui generic workbench focus next-frame (.get current command-history))
+        (vector (continue-session current workbench focus next-frame (.get current command-history))
                 (vector 'select-buffer (vector-ref input 2)))))
      ((select-focus)
       (unless (= (vector-length input) 3) (error "invalid UI focus request"))
       (let (target (vector-ref input 2))
         (unless (memq target (.get workbench focus-order))
           (error "unknown UI focus target" target))
-        (vector (session ui generic workbench target (.get current frame) (.get current command-history))
+        (vector (continue-session current workbench target (.get current frame) (.get current command-history))
                 (vector 'focus target))))
      ((select-profile)
       (let* ((_arity (unless (and (= (vector-length input) 3)
@@ -234,13 +260,13 @@
              (tab-style (if tab-selection? selection (.get workbench tab-style)))
              (next ((.get ui profile-workbench)
                     (profile-facts workbench (.get current frame)) profile tab-style)))
-        (vector (session ui generic next focus (.get current frame) (.get current command-history))
+        (vector (continue-session current next focus (.get current frame) (.get current command-history))
                 (vector 'focus focus))))
      ((select-list-row)
       (unless (= (vector-length input) 3) (error "invalid UI row selection request"))
       (let (intent (row-selection ui generic workbench focus (vector-ref input 2)))
-        (vector (session ui generic workbench (vector-ref intent 1)
-                         (.get current frame) (.get current command-history))
+        (vector (continue-session current workbench (vector-ref intent 1)
+                                  (.get current frame) (.get current command-history))
                 intent)))
      (else
       (let* ((_arity (unless (= (vector-length input) 2)
@@ -248,5 +274,5 @@
              (event (event-for ui workbench kind))
              (intent (marlin-ui-apply-event ui generic workbench focus event))
              (next-focus (if (eq? (vector-ref intent 0) 'focus) (vector-ref intent 1) focus)))
-        (vector (session ui generic workbench next-focus (.get current frame) (.get current command-history))
+        (vector (continue-session current workbench next-focus (.get current frame) (.get current command-history))
                 intent))))))

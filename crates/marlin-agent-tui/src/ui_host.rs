@@ -91,19 +91,11 @@ impl<'runtime> UiHost<'runtime> {
         &self.view
     }
 
-    pub(crate) fn activate_publication(
+    pub(crate) fn package_event(
         &mut self,
-        directory: &str,
-        module: &str,
-        export: &str,
-        demand: marlin_agent_ui::UiPackageDemand,
+        event: marlin_agent_ui::UiPackageEvent<'_>,
     ) -> Result<(), UiProjectionError> {
-        let publication = self
-            .module
-            .load_publication(directory, module, export, demand)?;
-        let session = self
-            .module
-            .activate_publication(&self.session, &publication)?;
+        let session = self.module.package_event(&self.session, event)?;
         let view = self.module.project(&session)?;
         admit_terminal_view(&view)?;
         self.admitted_commands = view

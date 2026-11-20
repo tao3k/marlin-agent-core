@@ -8,7 +8,6 @@
         (only-in :marlin-agent-core/scheme-package-hooks/funcs
                  make-ui-package-hooks run-ui-package-hooks)
         (only-in :marlin-agent-core/ui/config UiScope)
-        (only-in :marlin-agent-core/ui/package marlin-ui-load-publication)
         (only-in :tao3k/yuanxu/module-system/module-hooks ModuleHook.)
         (only-in :clan/poo/object .call .get .o)
         (only-in :clan/poo/type TypeError?)
@@ -39,11 +38,11 @@
     (error "Agent Hooks must publish its decision selector through init" selection)))
 
 (let* ((request (.o directory: "." module: ':fixture/ui export: 'publication
-                    trigger: 'ui-command-catalog))
+                    trigger: 'ui-command-execution command: "open-notes"))
        (observed-demand #f)
        (hooks
          (make-ui-package-hooks
-           (.o fixture: (.o (:: @ ModuleHook.) on: '(ui-command-catalog)
+           (.o fixture: (.o (:: @ ModuleHook.) on: '(ui-command-execution)
                             .run: (lambda (_request _result) UiScope))
                customize: (.o (:: @ ModuleHook.) on: '(ui-package-loaded)
                              .run: (lambda (request publication)
@@ -51,15 +50,12 @@
                                      publication)))))
        (published (.get marlin-agent-core.init.exports Marlin scheme-package-hooks)))
   (unless (and (run-ui-package-hooks hooks request)
-               (eq? observed-demand 'ui-command-catalog))
+               (eq? observed-demand 'ui-command-execution))
     (error "post-load hook did not receive the publication and its demand"))
   (unless (with-catch TypeError? (lambda () (.call published .run 'unrelated-scene request #f) #f))
     (error "the published hook contract accepted an unrelated scene"))
-  (unless (with-catch TypeError?
-            (lambda () (marlin-ui-load-publication '#("." :fixture/ui publication ui-package-loaded)) #f))
-    (error "the native input admitted an internal hook event as a UI demand"))
   (let (invalid (make-ui-package-hooks
-                  (.o fixture: (.o (:: @ ModuleHook.) on: '(ui-command-catalog)
+                  (.o fixture: (.o (:: @ ModuleHook.) on: '(ui-command-execution)
                                    .run: (lambda (_request _result) 'not-a-publication)))))
     (unless (with-catch TypeError? (lambda () (run-ui-package-hooks invalid request) #f))
       (error "the hook contract accepted an invalid UI publication"))))

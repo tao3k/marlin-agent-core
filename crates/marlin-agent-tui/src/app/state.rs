@@ -313,7 +313,13 @@ impl App {
     pub(crate) fn accept_command_completion(&mut self, completed: &str) -> bool {
         let runnable = self
             .command_descriptor(completed)
-            .is_some_and(|descriptor| Command::parse(descriptor, completed).is_some());
+            .is_some_and(|descriptor| {
+                if descriptor.capability == marlin_agent_ui::UiCommandCapability::Deferred {
+                    Command::arguments(descriptor, completed).is_some()
+                } else {
+                    Command::parse(descriptor, completed).is_some()
+                }
+            });
         let display = self
             .command_menu
             .as_ref()

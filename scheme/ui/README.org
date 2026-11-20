@@ -21,6 +21,16 @@ layout scope. It receives the admitted Buffer identities and the selected
 tab style, then returns a bar. An interactive segment names an existing
 zero-argument command from the package catalog.
 
+Use Yuanxu's =define-yuanxu-module-declaration= for the catalog and the
+implementation publication. The TUI reads the catalog before painting the
+command list. Its =module= and =export= slots locate the implementation.
+Its =commands=, =buffers= (identity,
+description and optional alias) and =keymap= slots are data used by completion
+and key dispatch. Keep the declaration's imports independent of the
+implementation and share that data with the implementation. Scheme resolves
+the publication on invocation and checks the advertised command descriptors
+against it before admitting the successor session.
+
 * Build and verification
 
 [[file:../init.ss][init.ss]] selects this module. Its Build role, if present,

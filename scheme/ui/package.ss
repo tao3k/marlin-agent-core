@@ -1,16 +1,15 @@
 ;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-;;; A package extends the selected scopes using ordinary POO values. There is
-;;; no process-global registry: each publication retains its own catalogs.
+;;; A package extends the selected scopes using ordinary POO values. Each
+;;; session retains its catalog and activation state.
 (import (only-in :clan/poo/object .def .get .o)
-        (only-in :clan/poo/type validate)
+        (only-in :tao3k/yuanxu/prelude yuanxu-module-declaration)
         (only-in "../scheme-package-hooks/config.ss" SchemePackageHooksScope)
         (only-in "../scheme-package-hooks/funcs.ss" run-ui-package-hooks)
-        (only-in "../scheme-package-hooks/types.ss" UiPackageDemandInput)
-        (only-in :std/list/list duplicates)
+        (only-in :std/list/list duplicates find)
         (only-in "../ui-components/bounds.ss" marlin-ui-bounded-list?)
-        (only-in "../ui-components/commands.ss" marlin-ui-command-entries?)
+        (only-in "../ui-components/commands.ss" marlin-ui-command-entries marlin-ui-command-entries?)
         (only-in "../ui-components/buffers.ss" marlin-ui-buffer-catalog
                  marlin-ui-buffer-identities marlin-ui-buffer-command-entries
                  marlin-ui-buffer-alias-command-entries marlin-ui-make-frame)
@@ -21,15 +20,47 @@
         (only-in "../ui-transcript/config.ss" UiTranscriptScope)
         (only-in "../ui-themes/config.ss" UiThemesScope)
         (only-in "../ui-layout/config.ss" UiLayoutScope)
-        (only-in "./config.ss" make-ui-scope))
-(export UiPackage. make-ui-package marlin-ui-load-publication)
+        (only-in "./config.ss" make-ui-scope)
+        (only-in "./package-types.ss" UiPackageDeclaration))
+(export UiPackage. make-ui-package marlin-ui-package-catalog
+        marlin-ui-package-preview marlin-ui-package-publication marlin-ui-package-check-commands)
 
-;;; Admit the native demand before passing typed facts to the Scheme hooks.
-(def (marlin-ui-load-publication input)
-  (let (request (validate UiPackageDemandInput input))
-    (run-ui-package-hooks SchemePackageHooksScope
-      (.o directory: (vector-ref request 0) module: (vector-ref request 1)
-          export: (vector-ref request 2) trigger: (vector-ref request 3)))))
+;;; Resolve data separately from the implementation. Buffer metadata uses the
+;;; same command projection as the full publication, without constructing bodies.
+(def (marlin-ui-package-catalog directory-value module-spec export-name)
+  (let* ((declaration
+           (yuanxu-module-declaration module-spec export-name UiPackageDeclaration
+             directory: directory-value))
+         (buffers (.o entries: (map (lambda (entry)
+                                      (list (car entry) (cadr entry) #f (caddr entry)))
+                                    (.get declaration buffers))))
+         (command-entries (append (.get declaration commands)
+                                  (marlin-ui-buffer-alias-command-entries buffers)
+                                  (marlin-ui-buffer-command-entries buffers))))
+    (when (ormap (lambda (entry) (eq? (cadddr entry) 'deferred)) command-entries)
+      (error "a UI package must advertise real command descriptors"))
+    (.o directory: directory-value module: (.get declaration module) export: (.get declaration export)
+        commands: (marlin-ui-command-entries (.o entries: command-entries))
+        keymap: (.get declaration keymap))))
+
+(def (marlin-ui-package-preview catalog)
+  (make-ui-package
+    (.o (:: @ UiPackage.) keymap: (.get catalog keymap)
+        commands: (map (lambda (entry) (list (car entry) (cadr entry) (caddr entry) 'deferred #f))
+                       (.get catalog commands)))))
+
+(def (marlin-ui-package-publication catalog event command-name)
+  (unless (assoc command-name (.get catalog commands))
+    (error "command is not declared by the UI package" command-name))
+  (run-ui-package-hooks SchemePackageHooksScope
+    (.o directory: (.get catalog directory) module: (.get catalog module)
+        export: (.get catalog export) trigger: event command: command-name)))
+
+(def (marlin-ui-package-check-commands catalog entries)
+  (for-each (lambda (declared)
+              (unless (equal? (assoc (car declared) entries) declared)
+                (error "published UI command differs from its declaration" (car declared))))
+            (.get catalog commands)))
 
 (.def UiPackage.
   buffers: '()

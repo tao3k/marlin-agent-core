@@ -16,7 +16,7 @@ use super::ui_host::UiHost as TestUiHost;
 unsafe extern "C" {
     fn ___LNK_marlin__tui(gs: *mut GerbilGlobalState) -> *mut GerbilModuleOrLink;
     fn marlin_ui_publication(root: i64) -> i64;
-    fn marlin_ui_package_publication(root: i64) -> i64;
+    fn marlin_ui_package_event(root: i64) -> i64;
     fn marlin_ui_open(root: i64) -> i64;
     fn marlin_ui_project_workbench(root: i64) -> i64;
     fn marlin_ui_dispatch_event(root: i64) -> i64;
@@ -87,7 +87,7 @@ pub(crate) fn initialize() -> Result<GerbilRuntime, NativeError> {
 pub(crate) fn exports() -> UiLinkedExports {
     UiLinkedExports {
         publication: marlin_ui_publication,
-        load_publication: marlin_ui_package_publication,
+        package_event: marlin_ui_package_event,
         open: marlin_ui_open,
         project: marlin_ui_project_workbench,
         dispatch: marlin_ui_dispatch_event,

@@ -15,7 +15,10 @@ use super::{
     WheelAccumulator, config, draw_with_snapshot, frame_snapshot, io, load_session,
     mouse_over_minibuffer, mpsc, process_replies, publish_error, reply_channel, thread,
 };
-use marlin_agent_ui::{UiEditorAction, UiPackageDemand};
+use crate::command::Command;
+use marlin_agent_ui::{
+    UiCommandCapability, UiEditorAction, UiPackageCommandSource, UiPackageEvent,
+};
 use std::{
     env,
     io::{IsTerminal, Write},
@@ -348,12 +351,7 @@ pub(super) fn run(
                 app.command_selection_locked = false;
             }
             if app.command_draft.is_some() {
-                if activate_ui_package(
-                    &mut app,
-                    &mut ui,
-                    &mut ui_package,
-                    UiPackageDemand::CommandCatalog,
-                ) {
+                if stage_ui_package(&mut app, &mut ui, &mut ui_package) {
                     schedule.mark_dirty();
                 }
                 if !app.command_query_is_current()
@@ -701,7 +699,9 @@ pub(super) fn run(
                 received.as_ref().ok().and_then(|input| input.as_ref().ok()),
             );
             if let Ok(Ok(TerminalInput::MouseClick(column, row))) = &received {
-                if route_frame_click(&mut app, &mut ui, &painted_regions, *column, *row) {
+                if route_frame_click(&mut app, &mut ui, &painted_regions, *column, *row)
+                    && activate_deferred_command(&mut app, &mut ui, UiPackageCommandSource::Command)
+                {
                     app.submit(&gateway, &runtime, &reply_tx);
                     apply_ui_request(&mut app, &mut ui);
                 }
@@ -783,7 +783,13 @@ pub(super) fn run(
                         app.selected_command(),
                     ) {
                         Ok(Some(completed)) => {
-                            if app.accept_command_completion(&completed) {
+                            if app.accept_command_completion(&completed)
+                                && activate_deferred_command(
+                                    &mut app,
+                                    &mut ui,
+                                    UiPackageCommandSource::Command,
+                                )
+                            {
                                 app.submit(&gateway, &runtime, &reply_tx);
                                 apply_ui_request(&mut app, &mut ui);
                             }
@@ -804,15 +810,10 @@ pub(super) fn run(
                     && (ui.has_undefined_key_sequence()
                         || (matches!(routed, Ok(UiKeyAction::Unhandled))
                             && matches!(key, Key::Alt(_))))
-                    && activate_ui_package(
-                        &mut app,
-                        &mut ui,
-                        &mut ui_package,
-                        UiPackageDemand::KeymapMiss,
-                    )
+                    && stage_ui_package(&mut app, &mut ui, &mut ui_package)
                 {
                     // The built-in map has already declined the key. Replay
-                    // it with the same prefix in the newly admitted map.
+                    // it with the same prefix in the declaration's keymap.
                     ui.retry_undefined_key_sequence();
                     routed = route_terminal_key(&mut app, &mut ui, *key);
                 }
@@ -843,15 +844,27 @@ pub(super) fn run(
                         continue;
                     }
                     Ok(UiKeyAction::InvokeCommand(name)) => {
-                        if app.prepare_bound_command(&name) {
+                        if app.prepare_bound_command(&name)
+                            && activate_deferred_command(
+                                &mut app,
+                                &mut ui,
+                                UiPackageCommandSource::KeyBinding,
+                            )
+                        {
                             app.submit(&gateway, &runtime, &reply_tx);
                             apply_ui_request(&mut app, &mut ui);
                         }
                         continue;
                     }
                     Ok(UiKeyAction::Submit) => {
-                        app.submit(&gateway, &runtime, &reply_tx);
-                        apply_ui_request(&mut app, &mut ui);
+                        if activate_deferred_command(
+                            &mut app,
+                            &mut ui,
+                            UiPackageCommandSource::Command,
+                        ) {
+                            app.submit(&gateway, &runtime, &reply_tx);
+                            apply_ui_request(&mut app, &mut ui);
+                        }
                         continue;
                     }
                     Ok(UiKeyAction::OpenCommands) => {
@@ -963,31 +976,65 @@ pub(super) fn run(
     Ok(signal_exit)
 }
 
-fn activate_ui_package(
+fn stage_ui_package(
     app: &mut App,
     ui: &mut UiHost<'_>,
     pending: &mut Option<config::TuiUiPackageConfig>,
-    demand: UiPackageDemand,
 ) -> bool {
     let Some(package) = pending.take() else {
         return false;
     };
+    let Some(directory) = package.directory.to_str() else {
+        return false;
+    };
+    apply_package_event(
+        app,
+        ui,
+        UiPackageEvent::Catalog {
+            directory,
+            module: &package.module,
+            export: &package.export,
+        },
+    )
+}
+
+fn activate_deferred_command(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    source: UiPackageCommandSource,
+) -> bool {
+    if app.command_draft.is_none() || app.pending.is_some() || app.workspace.is_pending() {
+        return true;
+    }
+    let input = app.command_lookup_query();
+    let Some(command) = app
+        .command_descriptor(&input)
+        .filter(|command| command.capability == UiCommandCapability::Deferred)
+    else {
+        return true;
+    };
+    if Command::arguments(command, &input).is_none() {
+        return false;
+    }
+    let command = command.name.clone();
+    apply_package_event(
+        app,
+        ui,
+        UiPackageEvent::Execute {
+            command: &command,
+            source,
+        },
+    )
+}
+
+fn apply_package_event(app: &mut App, ui: &mut UiHost<'_>, event: UiPackageEvent<'_>) -> bool {
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
-        let directory = package
-            .directory
-            .to_str()
-            .ok_or("UI package path is not UTF-8")?;
-        ui.activate_publication(directory, &package.module, &package.export, demand)?;
+        ui.package_event(event)?;
         app.sync_window(ui.view())?;
         Ok(())
     })();
     if let Err(error) = result {
-        publish_error(
-            app,
-            MessageSource::Ui,
-            "UI package activation failed",
-            &error,
-        );
+        publish_error(app, MessageSource::Ui, "UI package event failed", &error);
         return false;
     }
     app.set_commands(ui.view());

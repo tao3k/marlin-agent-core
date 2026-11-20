@@ -72,7 +72,7 @@ pub struct UiNativeSession<'runtime> {
 pub struct UiModule<'runtime> {
     runtime: &'runtime GerbilRuntime,
     publication: RootedSchemeObject<'runtime>,
-    load_publication: UiCallable<'runtime>,
+    package_event: UiCallable<'runtime>,
     open: UiCallable<'runtime>,
     project: UiCallable<'runtime>,
     dispatch: UiCallable<'runtime>,
@@ -108,7 +108,7 @@ impl<'runtime> UiCallable<'runtime> {
 #[derive(Clone, Copy)]
 pub struct UiLinkedExports {
     pub publication: unsafe extern "C" fn(i64) -> i64,
-    pub load_publication: unsafe extern "C" fn(i64) -> i64,
+    pub package_event: unsafe extern "C" fn(i64) -> i64,
     pub open: unsafe extern "C" fn(i64) -> i64,
     pub project: unsafe extern "C" fn(i64) -> i64,
     pub dispatch: unsafe extern "C" fn(i64) -> i64,
@@ -118,18 +118,30 @@ pub struct UiLinkedExports {
     pub refresh_labels: unsafe extern "C" fn(i64) -> i64,
 }
 
-/// Host observations that can request the configured Scheme UI publication.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UiPackageDemand {
-    CommandCatalog,
-    KeymapMiss,
+/// Observations sent to the Scheme session's package dispatcher.
+pub enum UiPackageEvent<'a> {
+    Catalog {
+        directory: &'a str,
+        module: &'a str,
+        export: &'a str,
+    },
+    Execute {
+        command: &'a UiCommandName,
+        source: UiPackageCommandSource,
+    },
 }
 
-impl UiPackageDemand {
+#[derive(Clone, Copy)]
+pub enum UiPackageCommandSource {
+    Command,
+    KeyBinding,
+}
+
+impl UiPackageCommandSource {
     fn scheme_event(self) -> &'static str {
         match self {
-            Self::CommandCatalog => "ui-command-catalog",
-            Self::KeymapMiss => "ui-keymap-miss",
+            Self::Command => "ui-command-execution",
+            Self::KeyBinding => "ui-key-command",
         }
     }
 }
@@ -173,7 +185,7 @@ impl<'runtime> UiModule<'runtime> {
         )?;
         trace("UI scope");
         let ui = ":marlin-agent-core/ui/session";
-        let load_publication = export(runtime, directory, ui, "marlin-ui-load-publication")?;
+        let package_event = export(runtime, directory, ui, "marlin-ui-session-package-event")?;
         let open = export(runtime, directory, ui, "marlin-ui-session-open")?;
         trace("session open");
         let project = export(runtime, directory, ui, "marlin-ui-session-project")?;
@@ -194,7 +206,7 @@ impl<'runtime> UiModule<'runtime> {
         let refresh_labels = export(runtime, directory, ui, "marlin-ui-session-refresh-labels")?;
         trace("label refresh");
         for procedure in [
-            &load_publication,
+            &package_event,
             &open,
             &project,
             &dispatch,
@@ -210,7 +222,7 @@ impl<'runtime> UiModule<'runtime> {
         Ok(Self {
             runtime,
             publication,
-            load_publication: UiCallable::Dynamic(load_publication),
+            package_event: UiCallable::Dynamic(package_event),
             open: UiCallable::Dynamic(open),
             project: UiCallable::Dynamic(project),
             dispatch: UiCallable::Dynamic(dispatch),
@@ -243,7 +255,7 @@ impl<'runtime> UiModule<'runtime> {
         Ok(Self {
             runtime,
             publication,
-            load_publication: bind(exports.load_publication)?,
+            package_event: bind(exports.package_event)?,
             open: bind(exports.open)?,
             project: bind(exports.project)?,
             dispatch: bind(exports.dispatch)?,
@@ -329,47 +341,45 @@ impl<'runtime> UiModule<'runtime> {
         })
     }
 
-    /// Load the configured module on demand, using the same Scheme loader in
-    /// both runtime modes. The result remains rooted in the VM owner.
-    pub fn load_publication(
-        &self,
-        directory: &str,
-        module: &str,
-        export: &str,
-        demand: UiPackageDemand,
-    ) -> Result<RootedSchemeObject<'runtime>, UiProjectionError> {
-        let directory = self.runtime.string_from_utf8(directory)?.into_object();
-        let module = self
-            .runtime
-            .intern_identifier(IdentifierKind::Symbol, module)?;
-        let export = self
-            .runtime
-            .intern_identifier(IdentifierKind::Symbol, export)?;
-        let event = self
-            .runtime
-            .intern_identifier(IdentifierKind::Symbol, demand.scheme_event())?;
-        let request = self
-            .runtime
-            .collection_from_objects(
-                CollectionKind::Vector,
-                &[&directory, &module, &export, &event],
-            )?
-            .into_object();
-        self.load_publication.call(self.runtime, &request)
-    }
-
-    /// Extend an open session with a package publication from the same VM.
-    pub fn activate_publication(
+    /// Transport a typed package event and retain the Scheme session successor.
+    pub fn package_event(
         &self,
         current: &UiNativeSession<'_>,
-        publication: &RootedSchemeObject<'_>,
+        event: UiPackageEvent<'_>,
     ) -> Result<UiNativeSession<'runtime>, UiProjectionError> {
+        let symbol = |name| self.runtime.intern_identifier(IdentifierKind::Symbol, name);
+        let event = match event {
+            UiPackageEvent::Catalog {
+                directory,
+                module,
+                export,
+            } => {
+                let kind = symbol("catalog")?;
+                let directory = self.runtime.string_from_utf8(directory)?.into_object();
+                let module = symbol(module)?;
+                let export = symbol(export)?;
+                self.runtime.collection_from_objects(
+                    CollectionKind::Vector,
+                    &[&kind, &directory, &module, &export],
+                )?
+            }
+            UiPackageEvent::Execute { command, source } => {
+                let kind = symbol(source.scheme_event())?;
+                let command = self
+                    .runtime
+                    .string_from_utf8(command.as_str())?
+                    .into_object();
+                self.runtime
+                    .collection_from_objects(CollectionKind::Vector, &[&kind, &command])?
+            }
+        }
+        .into_object();
         let request = self
             .runtime
-            .collection_from_objects(CollectionKind::Vector, &[publication, &current.root])?
+            .collection_from_objects(CollectionKind::Vector, &[&current.root, &event])?
             .into_object();
         Ok(UiNativeSession {
-            root: self.open.call(self.runtime, &request)?,
+            root: self.package_event.call(self.runtime, &request)?,
         })
     }
 

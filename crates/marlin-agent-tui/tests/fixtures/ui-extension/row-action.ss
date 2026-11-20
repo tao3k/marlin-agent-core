@@ -3,7 +3,8 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 ;;; Compiled separately from the package's declarations and keymap.
-(import (only-in :clan/poo/object .o))
+(import (only-in :clan/poo/object .o)
+        (only-in :tao3k/yuanxu/prelude define-yuanxu-module-declaration))
 (export select-package-row)
 
 (def (append-receipt message)
@@ -14,6 +15,7 @@
 
 (append-receipt "ROW-ACTION-LOADED\n")
 
-(def (select-package-row row)
-  (append-receipt "ROW-ACTION-CALLED\n")
-  (.o kind: 'focus identity: (if (eq? row 'first) 'commands 'composer)))
+(define-yuanxu-module-declaration select-package-row
+  (lambda (row)
+    (append-receipt "ROW-ACTION-CALLED\n")
+    (.o kind: 'focus identity: (if (eq? row 'first) 'commands 'composer))))

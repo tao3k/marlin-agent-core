@@ -8,10 +8,10 @@
         :marlin-agent-core/ui/session)
 
 (begin-foreign
-  (c-define (ui-package-publication root) (int64) int64
-    "marlin_ui_package_publication" "extern"
+  (c-define (ui-package-event root) (int64) int64
+    "marlin_ui_package_event" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root
-      marlin-agent-core/ui/package#marlin-ui-load-publication)))
+      marlin-agent-core/ui/session#marlin-ui-session-package-event)))
 
 (begin-foreign
   (c-define (ui-open root) (int64) int64

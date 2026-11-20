@@ -8,7 +8,8 @@
         (only-in :std/list/list duplicates)
         (only-in "../ui-elements/funcs.ss" ui-template ui-choice ui-list ui-size-binding
                  ui-size-cells ui-size-add ui-size-subtract ui-size-min ui-size-max ui-size-choice)
-        (only-in "./bounds.ss" marlin-ui-bounded-list? marlin-ui-max-browse-steps))
+        (only-in "./bounds.ss" marlin-ui-bounded-list? marlin-ui-command-name?
+                 marlin-ui-max-browse-steps))
 (export marlin-ui-command-entries
         marlin-ui-candidate-templates marlin-ui-list-offset
         marlin-ui-command-history? marlin-ui-record-command-history
@@ -80,15 +81,17 @@
 (def (command-entry? entry)
   (and (marlin-ui-bounded-list? entry 5)
        (= (length entry) 5)
-       (string? (car entry)) (<= 1 (string-length (car entry)) 32)
+       (marlin-ui-command-name? (car entry))
        (string? (cadr entry)) (<= (string-length (cadr entry)) 256)
        (memq (caddr entry) '(none required optional))
        (memq (cadddr entry)
              '(models model sessions session inspect history workspace context-budget
                runtime open-menu select-profile select-buffer enter-transient
-               kill-process envrc toggle-thinking clear))
+               kill-process envrc toggle-thinking clear deferred))
        (let (value (car (cddddr entry)))
-         (or (not value) (and (string? value) (<= 1 (string-length value) 32))))))
+         (if (eq? (cadddr entry) 'deferred)
+           (not value)
+           (or (not value) (and (string? value) (<= 1 (string-length value) 32)))))))
 
 ;;; Admission is bounded before map/filter can traverse a supplied catalog.
 (def (marlin-ui-command-entries? entries)

@@ -10,5 +10,5 @@
 (.def SchemePackageHooks.
   configured-ui:
   (.o (:: @ ModuleHook.)
-      on: '(ui-command-catalog ui-keymap-miss)
+      on: '(ui-command-execution ui-key-command)
       .run: load-configured-publication))
