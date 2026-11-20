@@ -11,20 +11,7 @@ pub use grpc::AppServer;
 #[cfg(feature = "grpc")]
 mod session;
 #[cfg(feature = "grpc")]
-pub use session::SessionBinding;
+pub use session::{SessionBinding, SessionOpen};
 
-#[cfg(feature = "grpc")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SessionOpen {
-    Create,
-    Existing,
-}
-
-/// Versioned wire types and client bindings. The `grpc` feature adds service bindings.
 #[cfg(feature = "client")]
-pub mod v1 {
-    tonic::include_proto!("marlin.app.v1");
-
-    /// Descriptor set generated with the bindings from the same Protobuf source.
-    pub const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("marlin-app-v1");
-}
+pub mod v1;
