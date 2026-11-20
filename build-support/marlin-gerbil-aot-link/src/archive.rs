@@ -18,9 +18,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(test)]
+#[path = "../tests/unit/program_paths.rs"]
+mod tests;
+
 pub use gerbil_scheme_aot_build::static_archive_file_name;
 
-/// Cargo/rustc link name for the generated Deck runtime native archive.
 /// Cargo/rustc link name for the generated AgentGraph policy-routing native archive.
 pub const AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME: &str = "marlin_agent_policy_routing_abi";
 
@@ -50,7 +53,9 @@ pub(crate) fn scheme_link_manifest_with_layout(
     output: &Path,
     separate_procedures: &[&str],
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    println!("cargo:rerun-if-env-changed=GERBIL_LOADPATH");
+    for variable in ["GERBIL_LOADPATH", "GERBIL_HOME"] {
+        println!("cargo:rerun-if-env-changed={variable}");
+    }
     let load_path = env::var_os("GERBIL_LOADPATH").ok_or("GERBIL_LOADPATH is not set")?;
     let product = Path::new("marlin-agent-core/programs").join(program.0);
     let (library, published) = env::split_paths(&load_path)
@@ -69,32 +74,18 @@ pub(crate) fn scheme_link_manifest_with_layout(
     println!("cargo:rerun-if-changed={}", published.display());
     fs::create_dir_all(output)?;
     let mut plan: Value = serde_json::from_reader(fs::File::open(published)?)?;
-    let relative_stub = product.join("program__exe.scm");
-    let stub = Path::new(
-        plan["stub"]
+    let sdk_origin = PathBuf::from(
+        plan["library_dir"]
             .as_str()
-            .ok_or("compiler program has no stub")?,
+            .ok_or("compiler program has no SDK library directory")?,
     );
-    let origin = stub
-        .ancestors()
-        .nth(relative_stub.components().count())
-        .filter(|_| stub.is_absolute() && stub.ends_with(&relative_stub))
-        .ok_or("compiler program stub is outside its published directory")?
-        .to_path_buf();
-    plan["stub"] = serde_json::to_value(library.join(relative_stub))?;
-    let modules = plan
-        .get_mut("modules")
-        .and_then(Value::as_array_mut)
-        .ok_or("compiler program has no module array")?;
-    // A restored package artifact can have a different prefix from its producer.
-    for module in modules.iter_mut() {
-        let source = module["scm"]
-            .as_str()
-            .ok_or("compiler module has no source")?;
-        if let Ok(relative) = Path::new(source).strip_prefix(&origin) {
-            module["scm"] = serde_json::to_value(library.join(relative))?;
-        }
-    }
+    let sdk_library = env::var_os("GERBIL_HOME")
+        .filter(|home| !home.is_empty())
+        .map_or_else(
+            || sdk_origin.clone(),
+            |home| PathBuf::from(home).join("lib"),
+        );
+    let modules = rebase_program_paths(&mut plan, &product, &library, &sdk_origin, &sdk_library)?;
     for identity in separate_procedures {
         let module = modules
             .iter_mut()
@@ -133,6 +124,48 @@ pub(crate) fn scheme_link_manifest_with_layout(
     }
 
     Ok(manifest)
+}
+
+fn rebase_program_paths<'a>(
+    plan: &'a mut Value,
+    product: &Path,
+    library: &Path,
+    sdk_origin: &Path,
+    sdk_library: &Path,
+) -> Result<&'a mut Vec<Value>, Box<dyn std::error::Error>> {
+    let relative_stub = product.join("program__exe.scm");
+    let stub = Path::new(
+        plan["stub"]
+            .as_str()
+            .ok_or("compiler program has no stub")?,
+    );
+    let origin = stub
+        .ancestors()
+        .nth(relative_stub.components().count())
+        .filter(|_| stub.is_absolute() && stub.ends_with(&relative_stub))
+        .ok_or("compiler program stub is outside its published directory")?
+        .to_path_buf();
+    plan["stub"] = serde_json::to_value(library.join(relative_stub))?;
+    plan["library_dir"] = serde_json::to_value(sdk_library)?;
+    let modules = plan
+        .get_mut("modules")
+        .and_then(Value::as_array_mut)
+        .ok_or("compiler program has no module array")?;
+    // Restore package and toolchain inputs against their respective local owners.
+    for module in modules.iter_mut() {
+        let source = module["scm"]
+            .as_str()
+            .ok_or("compiler module has no source")?;
+        let source = Path::new(source);
+        if let Ok(relative) = source.strip_prefix(&origin) {
+            module["scm"] = serde_json::to_value(library.join(relative))?;
+        } else if module["system"] == true
+            && let Ok(relative) = source.strip_prefix(sdk_origin)
+        {
+            module["scm"] = serde_json::to_value(sdk_library.join(relative))?;
+        }
+    }
+    Ok(modules)
 }
 
 /// Marlin receipt emitted after the upstream substrate packages native objects.
