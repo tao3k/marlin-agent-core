@@ -2,51 +2,43 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Ordered conversation turns over the runtime-owned session event store.
+//! Admission, durable writes, and ordered replay over the session event store.
 
-use std::{error::Error, fmt, future::Future};
+use std::future::Future;
 
-use marlin_agent_protocol::{
-    ModelEndpoint, ModelGatewayCompletionResponse, ModelGatewayMessage, ModelGatewayMessageRole,
-    ModelStreamInterruption, ModelToolCall,
-};
 use marlin_agent_storage::{
     AgentId, EventId, ProjectId, SessionEventPageRequest, SessionEventRecord, SessionEventStore,
-    SessionId, StorageError, StoragePageLimit, TurnId,
-};
-use serde::{Deserialize, Serialize};
-
-#[path = "conversation_events.rs"]
-mod events;
-pub use events::{
-    ConversationCancellationEvidence, ConversationEvent, ConversationEventEntry,
-    ConversationEventReader, ConversationRetirementStatus, ConversationTail, ConversationTailState,
-};
-mod tool_review;
-pub use tool_review::{
-    ConversationToolCallResult, ConversationToolExecutionClaim, ConversationToolRequestKey,
-    ConversationToolResultOutcome, ConversationToolResultsReceipt, ConversationToolReviewDecision,
-    ConversationToolReviewReceipt, ConversationToolReviewRequest, ConversationToolReviewStatus,
+    SessionId, StoragePageLimit, TurnId,
 };
 
-const START_KIND: &str = "marlin.conversation.turn.started.v1";
-const TOOL_CONTINUATION_START_KIND: &str = "marlin.conversation.turn.tool-continuation.v1";
-const END_KIND: &str = "marlin.conversation.turn.finished.v1";
-const CHECKPOINT_KIND: &str = "marlin.conversation.turn.checkpoint.v1";
-const THINKING_CHECKPOINT_KIND: &str = "marlin.conversation.turn.thinking-checkpoint.v1";
-const UNCERTAIN_KIND: &str = "marlin.conversation.turn.uncertain.v1";
-const TURN_PREFIX: &str = "conversation:";
-const SUBMISSION_KIND: &str = "marlin.conversation.submission.v1";
-const MAX_CHECKPOINT_BYTES: usize = 128 * 1024;
+use super::{
+    events::{self, ConversationEvent},
+    tool_review::ConversationToolReviewStatus,
+    turn::{
+        ConversationCheckpointChannel, ConversationJournalError, ConversationPendingToolRequest,
+        ConversationSubmissionId, ConversationTerminalObservation,
+        ConversationToolContinuationStart, ConversationTurn, ConversationTurnId,
+        ConversationTurnOutcome, ConversationTurnSource, ConversationTurnStart,
+        ConversationUncertaintyReason, TURN_PREFIX, pending_tool_request_from_outcome,
+        validate_checkpoint_prefix, validate_outcome,
+    },
+};
+
+pub(super) const START_KIND: &str = "marlin.conversation.turn.started.v1";
+pub(super) const TOOL_CONTINUATION_START_KIND: &str =
+    "marlin.conversation.turn.tool-continuation.v1";
+pub(super) const END_KIND: &str = "marlin.conversation.turn.finished.v1";
+pub(super) const CHECKPOINT_KIND: &str = "marlin.conversation.turn.checkpoint.v1";
+pub(super) const THINKING_CHECKPOINT_KIND: &str = "marlin.conversation.turn.thinking-checkpoint.v1";
+pub(super) const UNCERTAIN_KIND: &str = "marlin.conversation.turn.uncertain.v1";
+pub(super) const SUBMISSION_KIND: &str = "marlin.conversation.submission.v1";
+pub(super) const MAX_CHECKPOINT_BYTES: usize = 128 * 1024;
 const MAX_PARTIAL_BYTES: usize = 16 * 1024 * 1024;
-/// Maximum contiguous channel runs in one recorded turn.
-pub const CONVERSATION_MAX_CHECKPOINT_SEGMENTS: usize = 4096;
-
 #[cfg(test)]
-#[path = "../tests/unit/authority_write.rs"]
+#[path = "../../tests/unit/authority_write.rs"]
 mod authority_write_tests;
 
-async fn write_with_authority<E>(
+pub(super) async fn write_with_authority<E>(
     owned: &mut bool,
     write: impl Future<Output = Result<(), E>>,
 ) -> Result<(), E> {
@@ -56,301 +48,13 @@ async fn write_with_authority<E>(
     Ok(())
 }
 
-/// Ordinal in a single conversation, encoded as a fixed-width storage key.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub struct ConversationTurnId(u64);
-
-/// Client-generated identity of one submission, scoped to a project and Session.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ConversationSubmissionId(String);
-
-impl ConversationSubmissionId {
-    pub fn new(value: String) -> Option<Self> {
-        (!value.is_empty()
-            && value.len() <= 128
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')))
-        .then_some(Self(value))
-    }
-
-    fn record_turn(&self) -> Result<TurnId, StorageError> {
-        TurnId::new(format!("conversation-submission:{}", self.0))
-    }
-}
-
-impl ConversationTurnId {
-    /// Returns the numeric ordinal, starting at one.
-    pub fn get(self) -> u64 {
-        self.0
-    }
-
-    pub fn from_ordinal(value: std::num::NonZeroU64) -> Self {
-        Self(value.get())
-    }
-
-    fn storage_id(self) -> Result<TurnId, StorageError> {
-        TurnId::new(format!("{TURN_PREFIX}{:020}", self.0))
-    }
-
-    fn from_storage_id(id: &TurnId) -> Option<Self> {
-        let value = id.as_str().strip_prefix(TURN_PREFIX)?;
-        if value.len() != 20 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-            return None;
-        }
-        value.parse().ok().map(Self::from_ordinal)
-    }
-
-    fn start_event_id(self) -> Result<EventId, StorageError> {
-        EventId::new(format!("{TURN_PREFIX}{:020}:00-start", self.0))
-    }
-
-    fn finish_event_id(self) -> Result<EventId, StorageError> {
-        EventId::new(format!("{TURN_PREFIX}{:020}:01-finish", self.0))
-    }
-
-    fn review_event_id(self) -> Result<EventId, StorageError> {
-        EventId::new(format!("{TURN_PREFIX}{:020}:02-tool-review", self.0))
-    }
-
-    fn claim_event_id(self) -> Result<EventId, StorageError> {
-        EventId::new(format!("{TURN_PREFIX}{:020}:03-tool-claim", self.0))
-    }
-
-    fn tool_results_event_id(self) -> Result<EventId, StorageError> {
-        EventId::new(format!("{TURN_PREFIX}{:020}:04-tool-results", self.0))
-    }
-
-    fn uncertain_event_id(self) -> Result<EventId, StorageError> {
-        EventId::new(format!("{TURN_PREFIX}{:020}:01-uncertain", self.0))
-    }
-
-    fn checkpoint_event_id(self, sequence: u64) -> Result<EventId, StorageError> {
-        EventId::new(format!(
-            "{TURN_PREFIX}{:020}:00-start:chunk:{sequence:020}",
-            self.0
-        ))
-    }
-}
-
-/// A user request admitted before model dispatch.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ConversationTurnStart {
-    pub endpoint: ModelEndpoint,
-    pub user_text: String,
-}
-
-/// A new provider request caused by committed tool results, never by a
-/// fabricated user prompt. Its source is the exact reviewed result batch.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ConversationToolContinuationStart {
-    pub endpoint: ModelEndpoint,
-    pub source: ConversationToolRequestKey,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum ConversationTurnSource {
-    User(ConversationTurnStart),
-    ToolResults(ConversationToolContinuationStart),
-}
-
-impl ConversationTurnSource {
-    pub fn endpoint(&self) -> &ModelEndpoint {
-        match self {
-            Self::User(start) => &start.endpoint,
-            Self::ToolResults(start) => &start.endpoint,
-        }
-    }
-
-    pub fn user_text(&self) -> Option<&str> {
-        match self {
-            Self::User(start) => Some(&start.user_text),
-            Self::ToolResults(_) => None,
-        }
-    }
-}
-
-/// A committed model-tool request awaiting runtime review. This observation
-/// grants no authority to execute a tool.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ConversationPendingToolRequest {
-    session: SessionId,
-    turn: ConversationTurnId,
-    endpoint: ModelEndpoint,
-    assistant: ModelGatewayMessage,
-    calls: Vec<ModelToolCall>,
-    status: ConversationToolReviewStatus,
-    review_receipt: Option<ConversationToolReviewReceipt>,
-    results_receipt: Option<ConversationToolResultsReceipt>,
-}
-
-impl ConversationPendingToolRequest {
-    pub fn session(&self) -> &SessionId {
-        &self.session
-    }
-
-    pub fn turn(&self) -> ConversationTurnId {
-        self.turn
-    }
-
-    pub fn calls(&self) -> &[ModelToolCall] {
-        &self.calls
-    }
-
-    pub fn endpoint(&self) -> &ModelEndpoint {
-        &self.endpoint
-    }
-
-    pub fn assistant(&self) -> &ModelGatewayMessage {
-        &self.assistant
-    }
-}
-
-/// A recorded observation; uncertainty does not claim runtime retirement.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum ConversationTurnOutcome {
-    Completed {
-        response: ModelGatewayCompletionResponse,
-    },
-    /// Provider retired with a tool request; execution remains unapproved.
-    ToolRequested {
-        response: ModelGatewayCompletionResponse,
-    },
-    Failed {
-        diagnostic: String,
-        partial_text: String,
-    },
-    CancelledLocally {
-        partial_text: String,
-    },
-    /// The gateway established that it did not dispatch the request.
-    RejectedBeforeDispatch {
-        diagnostic: String,
-    },
-    /// A local observation that does not establish remote retirement.
-    Uncertain {
-        reason: ConversationUncertaintyReason,
-    },
-}
-
-/// Observations that may release a turn's local admission claim.
-#[derive(Clone, Debug, PartialEq)]
-pub enum ConversationTerminalObservation {
-    Completed {
-        response: ModelGatewayCompletionResponse,
-    },
-    ToolRequested {
-        response: ModelGatewayCompletionResponse,
-    },
-    RejectedBeforeDispatch {
-        diagnostic: String,
-    },
-}
-
-/// Typed cause of an observed but unresolved turn.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum ConversationUncertaintyReason {
-    StreamOpenTimeout,
-    StreamOpenTransport,
-    StreamOpenUnclassified,
-    StreamInterrupted { reason: ModelStreamInterruption },
-}
-
-/// One replayed turn. Missing outcome means it was not observed to finish.
-#[derive(Clone, PartialEq)]
-pub struct ConversationTurn {
-    pub id: ConversationTurnId,
-    pub start: ConversationTurnSource,
-    pub outcome: Option<ConversationTurnOutcome>,
-    pub tool_results: Option<ConversationToolResultsReceipt>,
-    pub tool_denial: Option<ConversationToolReviewReceipt>,
-    /// Durable prefix of streamed text, possibly shorter than observed output.
-    pub partial_text: String,
-    /// Recorded thinking prefix. It is an observation, not a validated provider continuation.
-    pub partial_thinking: String,
-    /// Ordered channel runs; offsets address the corresponding UTF-8 prefix.
-    pub checkpoint_spans: Vec<ConversationCheckpointSpan>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ConversationCheckpointChannel {
-    Text,
-    Thinking,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ConversationCheckpointSpan {
-    pub channel: ConversationCheckpointChannel,
-    pub start: usize,
-    pub end: usize,
-}
-
-impl fmt::Debug for ConversationTurn {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ConversationTurn")
-            .field("id", &self.id)
-            .field("start", &self.start)
-            .field("outcome", &self.outcome)
-            .field("tool_results", &self.tool_results)
-            .field("tool_denial", &self.tool_denial)
-            .field("partial_text", &self.partial_text)
-            .field("partial_thinking_bytes", &self.partial_thinking.len())
-            .field("checkpoint_spans", &self.checkpoint_spans)
-            .finish()
-    }
-}
-
-impl ConversationTurn {
-    pub fn continuation_messages(&self) -> Option<Vec<ModelGatewayMessage>> {
-        self.tool_results
-            .as_ref()
-            .map(ConversationToolResultsReceipt::gateway_messages)
-            .or_else(|| {
-                self.tool_denial
-                    .as_ref()
-                    .and_then(ConversationToolReviewReceipt::denial_messages)
-            })
-    }
-
-    fn can_append_checkpoint(&self, channel: ConversationCheckpointChannel) -> bool {
-        self.checkpoint_spans
-            .last()
-            .is_some_and(|span| span.channel == channel)
-            || self.checkpoint_spans.len() < CONVERSATION_MAX_CHECKPOINT_SEGMENTS
-    }
-
-    fn append_checkpoint(&mut self, channel: ConversationCheckpointChannel, delta: &str) {
-        let target = match channel {
-            ConversationCheckpointChannel::Text => &mut self.partial_text,
-            ConversationCheckpointChannel::Thinking => &mut self.partial_thinking,
-        };
-        let start = target.len();
-        target.push_str(delta);
-        let end = target.len();
-        if let Some(last) = self
-            .checkpoint_spans
-            .last_mut()
-            .filter(|span| span.channel == channel)
-        {
-            last.end = end;
-        } else {
-            self.checkpoint_spans.push(ConversationCheckpointSpan {
-                channel,
-                start,
-                end,
-            });
-        }
-    }
-}
-
 /// Single-client journal over a shared runtime storage backend.
 ///
 /// A started-event key is claimed before dispatch; concurrent stale writers
 /// cannot claim the same ordinal. This is not a process lease: a replayed
 /// unfinished turn must not be automatically retried or marked dead.
 pub struct ConversationJournal<S> {
-    storage: S,
+    pub(super) storage: S,
     project: ProjectId,
     session: SessionId,
     agent: AgentId,
@@ -360,9 +64,9 @@ pub struct ConversationJournal<S> {
     owns_active: bool,
     next_checkpoint: u64,
     legacy_outcome_unresolved: bool,
-    pending_tool_request: Option<ConversationPendingToolRequest>,
-    owns_pending_review: bool,
-    owns_pending_result: bool,
+    pub(super) pending_tool_request: Option<ConversationPendingToolRequest>,
+    pub(super) owns_pending_review: bool,
+    pub(super) owns_pending_result: bool,
 }
 
 impl<S: SessionEventStore> ConversationJournal<S> {
@@ -879,7 +583,7 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         Ok(())
     }
 
-    fn record(
+    pub(super) fn record(
         &self,
         id: ConversationTurnId,
         event_id: EventId,
@@ -943,7 +647,7 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                         })
                     }
                 };
-                if !allowed || self.active.is_some() || id.0 != self.next {
+                if !allowed || self.active.is_some() || id.get() != self.next {
                     return Err(ConversationJournalError::InvalidEvent(
                         "noncontiguous or overlapping start".into(),
                     ));
@@ -1114,153 +818,3 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         Ok(())
     }
 }
-
-fn validate_checkpoint_prefix(
-    prefix: &str,
-    outcome: &ConversationTurnOutcome,
-) -> Result<(), ConversationJournalError> {
-    let text = match outcome {
-        ConversationTurnOutcome::Completed { response }
-        | ConversationTurnOutcome::ToolRequested { response } => response
-            .choices
-            .iter()
-            .find(|choice| choice.message.role == ModelGatewayMessageRole::Assistant)
-            .map(|choice| choice.message.content.as_str())
-            .unwrap_or(""),
-        ConversationTurnOutcome::Failed { partial_text, .. }
-        | ConversationTurnOutcome::CancelledLocally { partial_text } => partial_text,
-        ConversationTurnOutcome::RejectedBeforeDispatch { .. } => "",
-        ConversationTurnOutcome::Uncertain { .. } => {
-            return Err(ConversationJournalError::InvalidEvent(
-                "uncertain outcome has no terminal text".into(),
-            ));
-        }
-    };
-    if !text.starts_with(prefix) {
-        return Err(ConversationJournalError::InvalidEvent(
-            "terminal text contradicts checkpoint".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_outcome(outcome: &ConversationTurnOutcome) -> Result<(), ConversationJournalError> {
-    match outcome {
-        ConversationTurnOutcome::Completed { response } => {
-            response
-                .choices
-                .iter()
-                .find(|choice| choice.message.role == ModelGatewayMessageRole::Assistant)
-                .ok_or_else(|| {
-                    ConversationJournalError::InvalidEvent(
-                        "completion has no assistant choice".into(),
-                    )
-                })?;
-            if response
-                .choices
-                .iter()
-                .any(|choice| !choice.message.tool_calls.is_empty())
-            {
-                return Err(ConversationJournalError::InvalidEvent(
-                    "tool request recorded as completed answer".into(),
-                ));
-            }
-        }
-        ConversationTurnOutcome::ToolRequested { response }
-            if response.choices.len() != 1
-                || response.choices[0].message.role != ModelGatewayMessageRole::Assistant
-                || response.choices[0].message.tool_calls.is_empty()
-                || response.choices[0]
-                    .message
-                    .validate_tool_contract()
-                    .is_err() =>
-        {
-            return Err(ConversationJournalError::InvalidEvent(
-                "invalid pending tool request".into(),
-            ));
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn pending_tool_request_from_outcome(
-    session: &SessionId,
-    turn: ConversationTurnId,
-    start: &ConversationTurnSource,
-    outcome: &ConversationTurnOutcome,
-) -> Option<ConversationPendingToolRequest> {
-    let ConversationTurnOutcome::ToolRequested { response } = outcome else {
-        return None;
-    };
-    let assistant = response.choices.first()?.message.clone();
-    let calls = assistant.tool_calls.clone();
-    Some(ConversationPendingToolRequest {
-        session: session.clone(),
-        turn,
-        endpoint: start.endpoint().clone(),
-        assistant,
-        calls,
-        status: ConversationToolReviewStatus::AwaitingReview,
-        review_receipt: None,
-        results_receipt: None,
-    })
-}
-
-/// Storage, validation, or state-transition failure for a conversation journal.
-#[derive(Debug)]
-pub enum ConversationJournalError {
-    Storage(StorageError),
-    Encoding(serde_json::Error),
-    InvalidEvent(String),
-    UnfinishedTurn,
-    /// Historical terminal record lacks evidence that remote work retired.
-    LegacyOutcomeUnresolved,
-    ToolRequestPending,
-    StaleTurn,
-    SubmissionConflict,
-    UnownedTurn,
-    WrongActiveTurn,
-    OrdinalExhausted,
-    ReplayStopped,
-    ReplayInconsistent,
-}
-
-impl From<StorageError> for ConversationJournalError {
-    fn from(value: StorageError) -> Self {
-        Self::Storage(value)
-    }
-}
-impl From<serde_json::Error> for ConversationJournalError {
-    fn from(value: serde_json::Error) -> Self {
-        Self::Encoding(value)
-    }
-}
-impl fmt::Display for ConversationJournalError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Storage(error) => write!(f, "conversation storage: {error}"),
-            Self::Encoding(error) => write!(f, "conversation encoding: {error}"),
-            Self::InvalidEvent(error) => write!(f, "invalid conversation event: {error}"),
-            Self::UnfinishedTurn => f.write_str("conversation has an unfinished turn"),
-            Self::LegacyOutcomeUnresolved => {
-                f.write_str("historical failure or cancellation has no remote retirement evidence")
-            }
-            Self::ToolRequestPending => f.write_str("conversation has a pending tool request"),
-            Self::StaleTurn => f.write_str("Session turn cursor is stale"),
-            Self::SubmissionConflict => {
-                f.write_str("submission ID was already used with different input")
-            }
-            Self::UnownedTurn => {
-                f.write_str("replayed unfinished turn is owned by an unknown process")
-            }
-            Self::WrongActiveTurn => f.write_str("conversation turn is not active"),
-            Self::OrdinalExhausted => f.write_str("conversation ordinal exhausted"),
-            Self::ReplayStopped => f.write_str("conversation replay stopped by visitor"),
-            Self::ReplayInconsistent => f.write_str(
-                "session events changed or were incomplete during replay; reopen the session",
-            ),
-        }
-    }
-}
-impl Error for ConversationJournalError {}

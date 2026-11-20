@@ -2,30 +2,16 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use std::{
-    env,
-    path::{Path, PathBuf},
-};
+use std::{env, path::PathBuf};
 
 use gerbil_scheme_aot_build::{
-    ProgramArchiveObservation, ProgramArchiveObserver, ProgramArchiveRequest,
-    build_program_archive_observed, discover_gambit_gsc_from_env,
+    ProgramArchiveRequest, build_program_archive_observed, discover_gambit_gsc_from_env,
 };
 
-use crate::archive::{SchemeProgram, scheme_link_manifest_with_layout};
+use crate::archive::{CargoSourceObserver, SchemeProgram, scheme_link_manifest_with_layout};
 
 /// Link the Deck program published by the standard Gerbil package build.
 pub fn emit_deck_actor_link_directives() {
-    struct CargoSourceObserver;
-
-    impl ProgramArchiveObserver for CargoSourceObserver {
-        fn observe(&self, _: ProgramArchiveObservation<'_>) {}
-
-        fn observe_source_input(&self, source: &Path) {
-            println!("cargo:rerun-if-changed={}", source.display());
-        }
-    }
-
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory"));
     let (program, separate_procedures): (_, &[_]) =
         if env::var_os("CARGO_FEATURE_MAILBOX_BENCHMARK").is_some() {

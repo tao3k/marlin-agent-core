@@ -14,13 +14,16 @@ use marlin_agent_runtime::plugin::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::super::{INPUT_SCHEMA, SETTINGS_SCHEMA, file_capabilities, policy_module};
 use super::{
-    BriefRenderInput, BriefRun, CREATE_REFUSED, capability, digest_ref, hash,
-    workflow_abi_requirement,
+    execution::{
+        BriefRenderInput, BriefRun, CREATE_REFUSED, digest_ref, graph as workflow_graph, hash,
+        workflow_abi_requirement,
+    },
+    registration::{INPUT_SCHEMA, SETTINGS_SCHEMA, capability, file_capabilities, policy_module},
 };
 
 #[cfg(test)]
+#[path = "../../tests/unit/brief_to_draft/replay.rs"]
 mod tests;
 
 const SCHEMA: &str = "marlin.brief-to-draft.run.v2";
@@ -150,7 +153,7 @@ impl BriefRunEvidence {
         {
             return Err(Inconsistent);
         }
-        if *graph != super::graph() {
+        if *graph != workflow_graph() {
             return Err(Inconsistent);
         }
         let receipts = &run.node_receipts;

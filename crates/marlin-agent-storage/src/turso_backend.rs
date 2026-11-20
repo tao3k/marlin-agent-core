@@ -6,6 +6,8 @@
 mod operations;
 #[path = "turso_schema.rs"]
 mod schema;
+#[path = "turso_session_store.rs"]
+mod session_store;
 #[path = "turso_storage.rs"]
 mod storage;
 
