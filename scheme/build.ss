@@ -5,42 +5,13 @@
 
 ;;; Build the package selected by Yuanxu.
 
-(import (for-syntax
-          (only-in :gerbil/tools/gxpkg pkg-root-dir)
-          (only-in :std/source this-source-file)
-          (only-in :tao3k/yuanxu/module-system/building/source-package register-module-build-source!)))
-(begin-syntax
-  ;; Register the dependency's source owner for native public imports. Module
-  ;; import/export closure supplies dependencies; INIT selects Marlin only.
-  (register-module-build-source!
-    (path-expand "github.com/tao3k/agentic-ai-lab" (pkg-root-dir)) 'tao3k/agentic-ai-lab)
-  (register-module-build-source! (path-directory (this-source-file)) 'marlin-agent-core))
-
-(import (only-in :clan/poo/object .get .call)
+(import (only-in :clan/poo/object .call .get)
         (only-in :std/build-script defbuild-script)
-        (only-in :std/source this-source-file)
-        (only-in :tao3k/yuanxu/module-system/building/build-projection yuanxu-project-source-spec)
-        (only-in :tao3k/yuanxu/module-system/building/products current-build-source-directory))
+        (only-in "./c-abi/build.ss" Build)
+        (only-in "./init.ss" marlin-agent-core.init.exports))
 
-(export main marlin-build-projection)
-
-(def build-script (this-source-file))
-(def source-root (path-directory build-script))
-
-(def (marlin-build-projection)
-  (yuanxu-project-source-spec (path-expand "init.ss" source-root) '("init")
-    source-root build-script))
-
-(def (main . arguments)
-  (def projection (marlin-build-projection))
-  (def spec (.get projection spec))
-  (def (dispatch)
-    (def (this-source-file)
-      (path-expand "build.ss" (or (current-build-source-directory) source-root)))
-    (defbuild-script spec)
-    (apply main arguments))
-  (match arguments
-    (["clean"] (.call projection .with-clean-outputs dispatch))
-    (["spec"] (dispatch))
-    (["meta"] (dispatch))
-    (else (.call projection .with-compiler-inputs dispatch))))
+(defvalues (main)
+  (.call marlin-agent-core.init.exports .with-link (.get Build with-link)
+    (let ()
+      (defbuild-script (.get marlin-agent-core.init.exports std-make-spec))
+      main)))

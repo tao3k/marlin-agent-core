@@ -26,6 +26,10 @@ impl FrameSchedule {
         self.dirty = true;
     }
 
+    pub(crate) fn has_changes(&self) -> bool {
+        self.dirty
+    }
+
     pub(crate) fn should_draw(&self, now: Instant) -> bool {
         self.dirty
             && self

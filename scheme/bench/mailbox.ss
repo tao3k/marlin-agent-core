@@ -3,8 +3,6 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 ;;; Production mailbox transport, timed inside Gerbil after startup and warmup.
-package: marlin-benchmark
-
 (import (only-in :clan/poo/object .get)
         (only-in :marlin-agent-core/deck-runtime/mailbox
                  open-deck-mailboxes deck-reply-id deck-reply-failed? deck-reply-value))
@@ -13,7 +11,7 @@ package: marlin-benchmark
 
 (extern mailbox-clock-ns)
 (begin-foreign
-  (namespace ("marlin-benchmark/mailbox#" mailbox-clock-ns))
+  (namespace ("marlin-agent-core/bench/mailbox#" mailbox-clock-ns))
   (c-declare #<<c-end
 #include <stdint.h>
 #include <time.h>

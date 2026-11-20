@@ -56,7 +56,8 @@ pub(crate) fn editor_fact(app: &App, policy: &UiLayoutPolicy, name: &str) -> boo
             frame.fixed_editor_rows > 0
         }
         "editor-expanded" => {
-            app.minibuffer_hovered
+            app.editor_keyboard_active
+                || (app.minibuffer_hovered && app.key_mode == marlin_agent_ui::UiKeyMode::Insert)
                 || !app.composer.text().is_empty()
                 || app.history_search.is_some()
         }
@@ -129,15 +130,67 @@ fn activity_fact(app: &App) -> &'static str {
     }
 }
 
+fn echo_bindings(app: &App) -> [(&'static str, &str); 2] {
+    [
+        (
+            "key-echo",
+            app.echo_area
+                .keys
+                .as_ref()
+                .map_or("", |echo| echo.text.as_str()),
+        ),
+        ("notice", app.echo_area.message().unwrap_or("").trim_start()),
+    ]
+}
+
+struct FrameFacts<'a> {
+    extra_count: usize,
+    bindings: &'a [(UiComponentId, String)],
+}
+
 fn frame_fact(
     app: &App,
     ui: &UiWorkbench,
     buffer: &BufferView,
     previewing: bool,
-    collapsed: bool,
-    extra_count: usize,
+    frame: &FrameFacts<'_>,
     name: &str,
 ) -> bool {
+    if let Some(names) = name.strip_prefix("any/") {
+        return names
+            .split('/')
+            .any(|name| frame_fact(app, ui, buffer, previewing, frame, name));
+    }
+    if let Some(id) = name.strip_prefix("binding-present/") {
+        return frame
+            .bindings
+            .iter()
+            .find_map(|(name, value)| (name.as_str() == id).then_some(!value.is_empty()))
+            .unwrap_or_else(|| {
+                echo_bindings(app)
+                    .iter()
+                    .any(|(name, value)| *name == id && !value.is_empty())
+            });
+    }
+    let comparison = name
+        .strip_prefix("binding-is/")
+        .map(|rest| (true, rest))
+        .or_else(|| {
+            name.strip_prefix("binding-is-not/")
+                .map(|rest| (false, rest))
+        });
+    if let Some((equal, comparison)) = comparison {
+        return comparison
+            .split_once('/')
+            .is_some_and(|(binding, expected)| {
+                let value = match binding {
+                    "active-buffer" => buffer.as_str(),
+                    "focus" => ui.focus.as_str(),
+                    _ => return false,
+                };
+                (value == expected) == equal
+            });
+    }
     match name {
         "searching" => app
             .history_search
@@ -149,25 +202,69 @@ fn frame_fact(
             .is_some_and(|search| search.preview().is_some()),
         "search-no-match" => app.history_search.is_some(),
         "transient" => app.transient_hint.is_some(),
-        "notice" => app.minibuffer_notice.is_some(),
+        "keypad" => app.keypad_open,
+        "key-prefix-pending" => app
+            .echo_area
+            .keys
+            .as_ref()
+            .is_some_and(|echo| echo.state == crate::ui_host::KeySequenceState::Pending),
+        "key-undefined" => app
+            .echo_area
+            .keys
+            .as_ref()
+            .is_some_and(|echo| echo.state == crate::ui_host::KeySequenceState::Undefined),
         "static-buffer" => main_view_fact(app, ui, buffer, previewing, "static"),
-        "editor-collapsed" => collapsed,
-        "extra-one" => extra_count >= 1,
-        "extra-two" => extra_count >= 2,
+        "extra-one" => frame.extra_count >= 1,
+        "extra-two" => frame.extra_count >= 2,
         "quit-armed" => app.quit_armed,
         "draft-limit" => app.composer.limit_reached(),
         "commands-focus" => ui.focus.as_str() == "commands",
         "transcript-focus" => ui.focus.as_str() == "transcript",
         "extension-focus" => ui.focus.as_str() != "composer",
-        "normal-mode" => {
-            app.command_draft.is_none()
-                && app.tool_review_prompt.is_none()
-                && app.key_mode == marlin_agent_ui::UiKeyMode::Normal
-        }
+        "normal-mode" => app.key_mode == marlin_agent_ui::UiKeyMode::Normal,
         "has-turns" => app.history.len() >= 2,
         name if name.starts_with("activity-") => name == activity_fact(app),
         name => main_view_fact(app, ui, buffer, previewing, name),
     }
+}
+
+fn echo_text(
+    app: &App,
+    ui: &UiWorkbench,
+    area: Rect,
+    buffer: &BufferView,
+    previewing: bool,
+    bindings: &[(UiComponentId, String)],
+) -> String {
+    let frame = FrameFacts {
+        extra_count: 0,
+        bindings,
+    };
+    let facts = |id: &UiComponentId| {
+        ui_elements::fits_area(id, area)
+            .unwrap_or_else(|| frame_fact(app, ui, buffer, previewing, &frame, id.as_str()))
+    };
+    let raw = echo_bindings(app);
+    let mut provided = Vec::new();
+    let values = if bindings.is_empty() {
+        raw.as_slice()
+    } else {
+        provided.extend(
+            bindings
+                .iter()
+                .map(|(id, value)| (id.as_str(), value.as_str())),
+        );
+        provided.extend(raw);
+        provided.as_slice()
+    };
+    let inputs = ui_elements::UiRenderInputs {
+        theme: &ui.theme,
+        facts: &facts,
+        bindings: values,
+        extent: &|_| ui_elements::Extent::Cells(0),
+        offset: &|_| 0,
+    };
+    ui_elements::inline_text(&ui.layout.echo.view, &inputs, area.width)
 }
 
 pub(crate) struct EditorMeasurements<'a> {
@@ -179,7 +276,7 @@ pub(crate) struct EditorMeasurements<'a> {
     height: u16,
     composer: &'a Composer,
     width: u16,
-    border: u16,
+    insets: super::ui_elements::InputInsets,
     max_rows: u16,
 }
 
@@ -194,10 +291,10 @@ impl EditorMeasurements<'_> {
                     let value = self
                         .composer
                         .preferred_rows(
-                            self.width.saturating_sub(self.border),
-                            self.max_rows.saturating_sub(self.border),
+                            self.insets.text_width(self.width, true),
+                            self.max_rows.saturating_sub(self.insets.border),
                         )
-                        .saturating_add(self.border);
+                        .saturating_add(self.insets.border);
                     self.measured.set(Some(value));
                     value
                 }
@@ -229,23 +326,23 @@ pub(crate) fn editor_measurements<'a>(
         .as_ref()
         .and_then(|search| search.preview())
         .unwrap_or(&app.composer);
-    let border = policy
+    let insets = policy
         .frame_tree
         .region_child(policy.regions.id(UiFrameRole::Editor).as_str())
-        .and_then(|editor| super::ui_elements::input_border(editor, facts))
-        .unwrap_or(0);
+        .and_then(|editor| super::ui_elements::input_insets(editor, facts))
+        .unwrap_or_default();
     EditorMeasurements {
         fixed: frame.fixed_editor_rows,
         measured: std::cell::Cell::new(None),
         footer_min: frame.footer_rows,
         hint_rows: app.transient_hint.as_ref().map_or(0, |hint| {
-            u16::try_from(hint.intrinsic_rows()).unwrap_or(u16::MAX)
+            u16::try_from(hint.intrinsic_rows_with(facts)).unwrap_or(u16::MAX)
         }),
         transcript_min: frame.min_transcript_rows,
         height,
         composer,
         width,
-        border,
+        insets,
         max_rows: policy.max_chatbox_rows,
     }
 }
@@ -262,14 +359,32 @@ pub(crate) fn frame_regions(
 pub(crate) struct FrameSnapshot {
     pub(crate) regions: Vec<super::ui_elements::HitRegion>,
     pub(crate) area: Rect,
-    collapsed: bool,
+    pub(crate) editor_width: u16,
     extras: Vec<String>,
+    bindings: Vec<(UiComponentId, String)>,
 }
 
 pub(crate) fn frame_snapshot(app: &App, ui: &UiWorkbench, area: Rect) -> FrameSnapshot {
+    frame_snapshot_with_bindings(app, ui, area, Vec::new())
+}
+
+pub(crate) fn frame_snapshot_with_bindings(
+    app: &App,
+    ui: &UiWorkbench,
+    area: Rect,
+    mut bindings: Vec<(UiComponentId, String)>,
+) -> FrameSnapshot {
     use super::ui_elements::{Extent, RegionExtents, layout_regions_with_facts};
     let preview = app.preview_buffer();
     let buffer = preview.as_ref().unwrap_or(&app.buffer_view);
+    let echo = echo_text(app, ui, area, buffer, preview.is_some(), &bindings);
+    bindings.retain(|(id, _)| id.as_str() != "echo");
+    if !echo.is_empty() {
+        bindings.push((
+            UiComponentId::new("echo").expect("static frame binding"),
+            echo,
+        ));
+    }
     let suggestions = if app.history_search.is_none()
         && app.command_draft.is_some()
         && app.tool_review_prompt.is_none()
@@ -301,16 +416,14 @@ pub(crate) fn frame_snapshot(app: &App, ui: &UiWorkbench, area: Rect) -> FrameSn
             .take(2)
             .map(|item| display_value(&item.label, 16))
             .collect();
-        let facts = |id: &marlin_agent_ui::UiComponentId| {
-            frame_fact(
-                app,
-                ui,
-                buffer,
-                preview.is_some(),
-                collapsed,
-                extras.len(),
-                id.as_str(),
-            )
+        let frame = FrameFacts {
+            extra_count: extras.len(),
+            bindings: &bindings,
+        };
+        let facts = |id: &UiComponentId| {
+            super::ui_elements::fits_area(id, area).unwrap_or_else(|| {
+                frame_fact(app, ui, buffer, preview.is_some(), &frame, id.as_str())
+            })
         };
         let metrics = FrameMeasurements::new(app, ui, area, &facts);
         let raw_extent = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
@@ -332,16 +445,24 @@ pub(crate) fn frame_snapshot(app: &App, ui: &UiWorkbench, area: Rect) -> FrameSn
             &mut regions,
             &facts,
         );
-        let actual = regions
+        let editor = regions
             .iter()
-            .find(|region| &region.id == ui.layout.regions.id(UiFrameRole::Editor))
-            .is_none_or(|region| region.area.height == 0);
+            .find(|region| &region.id == ui.layout.regions.id(UiFrameRole::Editor));
+        let actual = editor.is_none_or(|region| region.area.height == 0);
         if actual == collapsed || attempt == 2 {
+            let editor_width = editor.map_or(area.width, |region| {
+                let rect = region.area;
+                metrics
+                    .editor
+                    .insets
+                    .text_width(rect.width, rect.width > 2 && rect.height > 2)
+            });
             return FrameSnapshot {
                 regions,
                 area,
-                collapsed,
+                editor_width,
                 extras,
+                bindings,
             };
         }
         collapsed = actual;
@@ -487,15 +608,6 @@ pub(crate) fn draw_with_snapshot(
     } else {
         &[]
     };
-    let regions = &snapshot.regions;
-    let part = |role| {
-        regions
-            .iter()
-            .find(|region| &region.id == ui.layout.regions.id(role))
-            .map_or(Rect::default(), |region| region.area)
-    };
-    let editor_area = part(UiFrameRole::Editor);
-    let minibuffer_area = part(UiFrameRole::Minibuffer);
     let preview = app.preview_buffer();
     let buffer = preview.as_ref().unwrap_or(&app.buffer_view);
     let focused_content = if preview.is_none()
@@ -548,11 +660,6 @@ pub(crate) fn draw_with_snapshot(
         },
         |prompt| prompt.menu.prompt.as_str(),
     );
-    let title = if app.history_search.is_some() {
-        " History · Enter accept · Esc cancel "
-    } else {
-        command_prompt
-    };
     let selected_count = selected_index.map_or(0, |index| index + 1).to_string();
     let candidate_count = app
         .tool_review_prompt
@@ -575,16 +682,21 @@ pub(crate) fn draw_with_snapshot(
         .map_or_else(String::new, header_value);
     let extra_one = snapshot.extras.first();
     let extra_two = snapshot.extras.get(1);
-    let facts = |id: &marlin_agent_ui::UiComponentId| {
-        frame_fact(
-            app,
-            ui,
-            buffer,
-            preview.is_some(),
-            snapshot.collapsed,
-            snapshot.extras.len(),
-            id.as_str(),
-        )
+    let frame_facts = FrameFacts {
+        extra_count: snapshot.extras.len(),
+        bindings: &snapshot.bindings,
+    };
+    let facts = |id: &UiComponentId| {
+        super::ui_elements::fits_area(id, area).unwrap_or_else(|| {
+            frame_fact(
+                app,
+                ui,
+                buffer,
+                preview.is_some(),
+                &frame_facts,
+                id.as_str(),
+            )
+        })
     };
     let measurements = FrameMeasurements::new(app, ui, area, &facts);
     let raw_extent = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
@@ -602,13 +714,13 @@ pub(crate) fn draw_with_snapshot(
         _ => measurements.extent(id),
     };
     let extents = RegionExtents::new(&ui.layout.frame_tree, &raw_extent, &facts);
-    let bindings = [
+    let [key_echo, notice] = echo_bindings(app);
+    let host_bindings = [
         ("panel-title", panel_title.as_str()),
         ("selected-count", selected_count.as_str()),
         ("candidate-count", candidate_count.as_str()),
         ("prompt", command_prompt.trim_start()),
         ("compact-prompt", command_prompt),
-        ("title", title),
         (
             "query",
             app.history_search
@@ -620,18 +732,29 @@ pub(crate) fn draw_with_snapshot(
         ("turns", turns.as_str()),
         ("extra-one", extra_one.map_or("", String::as_str)),
         ("extra-two", extra_two.map_or("", String::as_str)),
-        (
-            "notice",
-            app.minibuffer_notice.as_deref().unwrap_or("").trim_start(),
-        ),
+        key_echo,
+        notice,
         ("static-name", static_name.as_deref().unwrap_or("")),
     ];
+    let mut bindings = Vec::new();
+    let bindings = if snapshot.bindings.is_empty() {
+        host_bindings.as_slice()
+    } else {
+        bindings.extend(
+            snapshot
+                .bindings
+                .iter()
+                .map(|(id, value)| (id.as_str(), value.as_str())),
+        );
+        bindings.extend(host_bindings);
+        bindings.as_slice()
+    };
     let inputs = UiRenderInputs {
         theme: &ui.theme,
         offset: &|_| 0,
         facts: &facts,
         extent: &|id| extents.extent(id),
-        bindings: &bindings,
+        bindings,
     };
     let mut slots = main_view::FrameSlots {
         main: main_view::MainSlots {
@@ -645,6 +768,15 @@ pub(crate) fn draw_with_snapshot(
         },
         editor: main_view::EditorSlots {
             composer,
+            expansion_bindings: if !command_active
+                && app.history_search.is_none()
+                && ui.focus.as_str() == "composer"
+                && app.key_mode == marlin_agent_ui::UiKeyMode::Normal
+            {
+                &ui.keymap
+            } else {
+                &[]
+            },
             show_cursor: command_active
                 || (app.history_search.is_none() && ui.focus.as_str() == "composer"),
             read_only: app.tool_review_prompt.is_some(),
@@ -665,14 +797,6 @@ pub(crate) fn draw_with_snapshot(
         &inputs,
         &mut slots,
     );
-    if editor_area.height == 0
-        && ui.focus.as_str() == "composer"
-        && minibuffer_area.width > 2
-        && app.transient_hint.is_none()
-        && app.history_search.is_none()
-    {
-        frame.set_cursor_position((minibuffer_area.x + 2, minibuffer_area.y));
-    }
     PaintedFrame {
         scroll: slots.main.effective_scroll,
         regions: painted,

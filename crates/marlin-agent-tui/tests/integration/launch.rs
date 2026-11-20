@@ -28,7 +28,13 @@ fn linked_release_size_pre_ui_launch_pair() {
 
 #[cfg(target_os = "macos")]
 fn linked_pre_ui_launch_pair(profile: &str) {
-    use std::{fs, path::Path, process::Command, time::Instant};
+    use std::{
+        fs,
+        io::{BufRead, BufReader},
+        path::Path,
+        process::{Command, Stdio},
+        time::Instant,
+    };
 
     static LAUNCH_BENCH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _serial = LAUNCH_BENCH_LOCK.lock().expect("launch benchmark lock");
@@ -45,18 +51,39 @@ fn linked_pre_ui_launch_pair(profile: &str) {
 
     for launch in ["fresh", "same-file"] {
         let start = Instant::now();
-        let output = Command::new(&copied)
+        let mut child = Command::new(&copied)
             .arg(directory.path().join("absent-config.toml"))
-            .output()
+            .env("MARLIN_TUI_STARTUP_TRACE", "1")
+            .env("DYLD_PRINT_LIBRARIES", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
             .expect("launch copied Marlin executable");
-        let elapsed = start.elapsed();
-        assert!(!output.status.success());
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains("requires a terminal"),
-            "early exit changed: {}",
-            String::from_utf8_lossy(&output.stderr)
+        let spawned = start.elapsed();
+        let mut first_image = None;
+        let mut main = None;
+        let mut terminal_error = false;
+        let stderr = child.stderr.take().expect("launch stderr");
+        for line in BufReader::new(stderr).lines() {
+            let line = line.expect("launch diagnostics");
+            if line.starts_with("dyld[") {
+                first_image.get_or_insert_with(|| start.elapsed());
+            } else if line == "marlin-tui startup Rust main" {
+                main = Some(start.elapsed());
+            } else if line.contains("requires a terminal") {
+                terminal_error = true;
+            }
+        }
+        assert!(!child.wait().expect("pre-UI exit").success());
+        assert!(terminal_error, "pre-UI exit must reject a missing terminal");
+        let main = main.expect("Rust entry marker");
+        // Dyld tracing can be suppressed by the platform's signing policy.
+        let loader_to_main = first_image.and_then(|image| main.checked_sub(image));
+        eprintln!(
+            "linked {profile} {launch} pre-UI launch: spawn={spawned:?}, first image={first_image:?}, Rust main={main:?}, image to main={loader_to_main:?}, exit={:?}",
+            start.elapsed()
         );
-        eprintln!("linked {profile} {launch} pre-UI launch: {elapsed:?}");
     }
 
     let control = directory.path().join("true");

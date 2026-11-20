@@ -15,6 +15,7 @@ readme = "README.org"
 marlin-agent-kernel.workspace = true
 marlin-agent-harness-types.workspace = true
 marlin-agent-protocol.workspace = true
+marlin-agent-gitops.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-gerbil-ir.workspace = true
 marlin-gerbil-scheme = { version = "0.1.0", path = "../marlin-gerbil-scheme" }

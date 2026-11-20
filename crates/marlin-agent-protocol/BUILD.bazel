@@ -12,6 +12,7 @@ marlin_crate_with_policy_data(
     gate_data = glob(["tests/**/*.rs"]),
     deps = crate_deps([
         "serde",
+        "serde_json",
         "toml",
     ]) + [
         "//crates/marlin-agent-graph:marlin_agent_graph",

@@ -5,5 +5,5 @@
 
 ;;; Test-only package built through the SDK's standard Gerbil make interface.
 (import (only-in :std/build-script defbuild-script))
-(def (ui-test-spec) '("fixture"))
+(def (ui-test-spec) '("catalog" "fixture" "row-action" "eager-catalog"))
 (defbuild-script (ui-test-spec))

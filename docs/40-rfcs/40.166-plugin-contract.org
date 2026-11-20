@@ -156,7 +156,7 @@ independent work on owned data after Rust qualifies the projection. Effect
 admission and receipt ordering remain with the Rust runtime.
 [[https://github.com/tao3k/gerbil-scheme-rust/blob/bfe803f597a15a3654b70a64c3a039980c31da8a/docs/instance-runtime.org#public-native-numeric-batches-and-scheme-mailbox-actors][Gerbil mailbox actor example at the pinned revision]]
 
-The selected =scheme/hooks/= module publishes the Scheme selector. Policy
+The selected =scheme/agent-hooks/= module publishes the Scheme selector. Policy
 declares a dependency on Hooks and uses it during evaluation. Projection
 constructs receipts from the decisions already made. The Rust
 =HookActionProvider= proposes typed actions. The dispatcher constructs the

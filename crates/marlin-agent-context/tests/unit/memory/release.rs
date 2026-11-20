@@ -4,7 +4,7 @@
 
 use marlin_agent_context::org::MemoryOrgWorkspace;
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
-use marlin_workspace_status::{ReleaseGateReceipt, ReleaseGateState, WorkspaceTarget};
+use marlin_workspace::status::{ReleaseGateReceipt, ReleaseGateState, WorkspaceTarget};
 
 #[test]
 fn memory_workspace_reports_recorded_release_topology_status() {

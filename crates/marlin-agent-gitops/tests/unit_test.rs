@@ -6,3 +6,5 @@
 mod git;
 #[path = "unit/working_copy/mod.rs"]
 mod working_copy;
+#[path = "unit/working_copy_driver/mod.rs"]
+mod working_copy_driver;

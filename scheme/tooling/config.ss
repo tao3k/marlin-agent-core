@@ -3,12 +3,11 @@
 
 ;;; The host admits this finite projection before advertising a tool. Adding
 ;;; another tool is a Scheme declaration, not a Rust command dispatcher case.
-(import (only-in :clan/poo/object .o)
-        (only-in :clan/poo/mop validate)
-        "./types.ss" "./objects.ss")
+(import (only-in :clan/poo/mop .new/checked)
+        "./types.ss" "./objects.ss" "./funcs.ss")
 (export ToolingScope)
 
 (def ToolingScope
-  (validate ToolingScopeContract
-            (.o identity: 'marlin/tooling
-                project: (lambda () (project-tooling ToolingCatalogValue)))))
+  (.new/checked ToolingScopeContract
+    identity: 'marlin/tooling
+    project: (lambda () (project-tooling ToolingCatalogValue))))

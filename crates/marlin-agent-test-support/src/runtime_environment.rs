@@ -10,14 +10,14 @@ use std::{
 };
 
 use async_trait::async_trait;
-use marlin_agent_environment::{
-    DirenvCommandRunner, RuntimeEnvironmentActivationError, RuntimeEnvironmentActivationResult,
-};
 use marlin_agent_protocol::{
     RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment,
     RuntimeEnvironmentActivationAction, RuntimeEnvironmentActivationActionReceipt,
     RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationStatus, RuntimeHome,
     RuntimeHomeSource,
+};
+use marlin_agent_runtime::environment::{
+    DirenvCommandRunner, RuntimeEnvironmentActivationError, RuntimeEnvironmentActivationResult,
 };
 
 /// Fixture describing root, hook, and sub-agent runtime environments.

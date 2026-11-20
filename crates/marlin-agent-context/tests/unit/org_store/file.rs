@@ -13,7 +13,7 @@ use marlin_agent_context::org::store::{
     OrgSourceCleanState, OrgSourceStore, discover_project_roots,
 };
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
-use marlin_workspace_status::{ReleaseGateReceipt, ReleaseGateState};
+use marlin_workspace::status::{ReleaseGateReceipt, ReleaseGateState};
 
 #[test]
 fn filesystem_read_failures_do_not_look_like_missing_documents() {

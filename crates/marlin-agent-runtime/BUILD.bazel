@@ -21,10 +21,12 @@ _RUNTIME_DEPS = crate_deps([
     "tokio-stream",
     "tokio-util",
     "toml",
+    "thiserror",
+    "rustix",
     "tower",
     "tracing",
 ]) + [
-    "//crates/marlin-agent-environment:marlin_agent_environment",
+    "//crates/marlin-agent-gitops:marlin_agent_gitops",
     "//crates/marlin-agent-graph:marlin_agent_graph",
     "//crates/marlin-agent-protocol:marlin_agent_protocol",
 ]
@@ -34,6 +36,7 @@ marlin_crate_with_policy_data(
     srcs = glob(["src/**/*.rs"]),
     edition = crate_edition(),
     gate_data = glob(["tests/**/*.rs"]),
+    proc_macro_deps = crate_deps(["async-trait"]),
     deps = _RUNTIME_DEPS + ["//crates/marlin-agent-sessions:marlin_agent_sessions"],
 )
 
@@ -45,6 +48,7 @@ marlin_rust_crate(
     crate_root = "src/lib.rs",
     edition = crate_edition(),
     manifest = "Cargo.toml",
+    proc_macro_deps = crate_deps(["async-trait"]),
     visibility = ["//visibility:public"],
     deps = _RUNTIME_DEPS + ["//crates/marlin-agent-sessions:marlin_agent_sessions_turso"],
 )

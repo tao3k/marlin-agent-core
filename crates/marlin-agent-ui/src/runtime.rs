@@ -72,6 +72,7 @@ pub struct UiNativeSession<'runtime> {
 pub struct UiModule<'runtime> {
     runtime: &'runtime GerbilRuntime,
     publication: RootedSchemeObject<'runtime>,
+    package_event: UiCallable<'runtime>,
     open: UiCallable<'runtime>,
     project: UiCallable<'runtime>,
     dispatch: UiCallable<'runtime>,
@@ -107,6 +108,7 @@ impl<'runtime> UiCallable<'runtime> {
 #[derive(Clone, Copy)]
 pub struct UiLinkedExports {
     pub publication: unsafe extern "C" fn(i64) -> i64,
+    pub package_event: unsafe extern "C" fn(i64) -> i64,
     pub open: unsafe extern "C" fn(i64) -> i64,
     pub project: unsafe extern "C" fn(i64) -> i64,
     pub dispatch: unsafe extern "C" fn(i64) -> i64,
@@ -116,13 +118,35 @@ pub struct UiLinkedExports {
     pub refresh_labels: unsafe extern "C" fn(i64) -> i64,
 }
 
-impl<'runtime> UiModule<'runtime> {
-    /// Select a package-composed publication in this module's VM. The ordinary
-    /// open/project admission gates still validate every returned value.
-    pub fn with_publication(mut self, publication: RootedSchemeObject<'runtime>) -> Self {
-        self.publication = publication;
-        self
+/// Observations sent to the Scheme session's package dispatcher.
+pub enum UiPackageEvent<'a> {
+    Catalog {
+        directory: &'a str,
+        module: &'a str,
+        export: &'a str,
+    },
+    Execute {
+        command: &'a UiCommandName,
+        source: UiPackageCommandSource,
+    },
+}
+
+#[derive(Clone, Copy)]
+pub enum UiPackageCommandSource {
+    Command,
+    KeyBinding,
+}
+
+impl UiPackageCommandSource {
+    fn scheme_event(self) -> &'static str {
+        match self {
+            Self::Command => "ui-command-execution",
+            Self::KeyBinding => "ui-key-command",
+        }
     }
+}
+
+impl<'runtime> UiModule<'runtime> {
     /// Resolve the declared publication and UI procedure exports in one VM.
     #[cfg(not(feature = "linked-ui"))]
     pub fn resolve(
@@ -161,6 +185,7 @@ impl<'runtime> UiModule<'runtime> {
         )?;
         trace("UI scope");
         let ui = ":marlin-agent-core/ui/session";
+        let package_event = export(runtime, directory, ui, "marlin-ui-session-package-event")?;
         let open = export(runtime, directory, ui, "marlin-ui-session-open")?;
         trace("session open");
         let project = export(runtime, directory, ui, "marlin-ui-session-project")?;
@@ -181,6 +206,7 @@ impl<'runtime> UiModule<'runtime> {
         let refresh_labels = export(runtime, directory, ui, "marlin-ui-session-refresh-labels")?;
         trace("label refresh");
         for procedure in [
+            &package_event,
             &open,
             &project,
             &dispatch,
@@ -196,6 +222,7 @@ impl<'runtime> UiModule<'runtime> {
         Ok(Self {
             runtime,
             publication,
+            package_event: UiCallable::Dynamic(package_event),
             open: UiCallable::Dynamic(open),
             project: UiCallable::Dynamic(project),
             dispatch: UiCallable::Dynamic(dispatch),
@@ -228,6 +255,7 @@ impl<'runtime> UiModule<'runtime> {
         Ok(Self {
             runtime,
             publication,
+            package_event: bind(exports.package_event)?,
             open: bind(exports.open)?,
             project: bind(exports.project)?,
             dispatch: bind(exports.dispatch)?,
@@ -310,6 +338,48 @@ impl<'runtime> UiModule<'runtime> {
     ) -> Result<UiNativeSession<'runtime>, UiProjectionError> {
         open_session_with(self.runtime, &self.publication, facts, |request| {
             self.open.call(self.runtime, request)
+        })
+    }
+
+    /// Transport a typed package event and retain the Scheme session successor.
+    pub fn package_event(
+        &self,
+        current: &UiNativeSession<'_>,
+        event: UiPackageEvent<'_>,
+    ) -> Result<UiNativeSession<'runtime>, UiProjectionError> {
+        let symbol = |name| self.runtime.intern_identifier(IdentifierKind::Symbol, name);
+        let event = match event {
+            UiPackageEvent::Catalog {
+                directory,
+                module,
+                export,
+            } => {
+                let kind = symbol("catalog")?;
+                let directory = self.runtime.string_from_utf8(directory)?.into_object();
+                let module = symbol(module)?;
+                let export = symbol(export)?;
+                self.runtime.collection_from_objects(
+                    CollectionKind::Vector,
+                    &[&kind, &directory, &module, &export],
+                )?
+            }
+            UiPackageEvent::Execute { command, source } => {
+                let kind = symbol(source.scheme_event())?;
+                let command = self
+                    .runtime
+                    .string_from_utf8(command.as_str())?
+                    .into_object();
+                self.runtime
+                    .collection_from_objects(CollectionKind::Vector, &[&kind, &command])?
+            }
+        }
+        .into_object();
+        let request = self
+            .runtime
+            .collection_from_objects(CollectionKind::Vector, &[&current.root, &event])?
+            .into_object();
+        Ok(UiNativeSession {
+            root: self.package_event.call(self.runtime, &request)?,
         })
     }
 
@@ -594,6 +664,7 @@ fn dispatch_event_with<'runtime>(
     let name = match &event {
         UiEvent::NextFocus => "next-focus",
         UiEvent::PreviousFocus => "previous-focus",
+        UiEvent::SelectFocus(_) => "select-focus",
         UiEvent::Submit => "submit",
         UiEvent::Dismiss => "dismiss",
         UiEvent::ScrollUp => "scroll-up",
@@ -605,6 +676,9 @@ fn dispatch_event_with<'runtime>(
     };
     let symbol = runtime.intern_identifier(IdentifierKind::Symbol, name)?;
     let argument = match &event {
+        UiEvent::SelectFocus(id) => {
+            Some(runtime.intern_identifier(IdentifierKind::Symbol, id.as_str())?)
+        }
         UiEvent::SelectProfile(name) => {
             Some(runtime.intern_identifier(IdentifierKind::Symbol, name.as_str())?)
         }

@@ -70,6 +70,7 @@ files remain local outputs regardless of their extension.
 | [[file:tui-declarative-engine.sysml][tui-declarative-engine.sysml]] | Marlin's Scheme/Rust UI engine, admission lifecycle, composability and performance qualification | [[file:../../docs/40-rfcs/40.180-emacs-scheme-tui.org::#tui-performance][Declarative UI design]] |
 | [[file:tui-lifecycle.sysml][tui-lifecycle.sysml]] | Proposed turn lifecycle and cancellation retirement | [[file:../../docs/40-rfcs/40.180-emacs-scheme-tui.org::#tui-performance][TUI design and qualification]] |
 | [[file:context-org-lifecycle.sysml][context-org-lifecycle.sysml]] | Target Org turn persistence, current-use admission and uncertainty | [[file:../../docs/40-rfcs/40.181-context-org-ownership.org][Context-owned Org architecture]] |
+| [[file:gitops-context.sysml][gitops-context.sysml]] | Git identity, source locator ownership, retention, Context restore and Org link qualification | [[file:../../docs/40-rfcs/40.182-gitops-context-discovery.org][Lab audit and GitOps Context design review]] |
 
 #+NAME: plugin-requirement-trace
 | Requirement | Planned owner | Org responsibility |
@@ -88,6 +89,8 @@ files remain local outputs regardless of their extension.
 | MAR-TUI-R05 | Qualification harness | [[file:../../docs/40-rfcs/40.180-emacs-scheme-tui.org::#tui-performance][Matched performance measurement]] |
 | MAR-TUI-R06 | Composer | [[file:../../docs/40-rfcs/40.180-emacs-scheme-tui.org::#tui-performance][Unicode, paste and resize]] |
 | MAR-TUI-R07 | Terminal ownership | [[file:../../docs/40-rfcs/40.180-emacs-scheme-tui.org::#tui-performance][Suspend and handoff lifecycle]] |
+| MAR-UI-R25 | Scheme layout policy and generic Ratatui input mapping | [[file:../verification/README.org::#minibuffer-echo][Shared echo qualification]] |
+| MAR-GCTX-R01–R09 | GitOps, resource owner, discovery index, Lab Context, MRR/Data and TUI | [[file:../../docs/40-rfcs/40.182-gitops-context-discovery.org::*Qualification plan][GitOps Context qualification plan]] |
 
 The actual package references the Rust run registry, policy IR, Scheme C ABI
 bridge, and graph admission at the inspected Marlin revision
@@ -123,6 +126,14 @@ sysml -strict -no-record-cache project.sysml dev/sysml \
   -render '#state:MarlinPluginLifecycle::InvocationLifecycle' -render-form mermaid > target/sysml/invocation-lifecycle.mmd
 sysml -strict -no-record-cache project.sysml dev/sysml \
   -render MarlinAgentCORE::tuiPerformanceDesign -render-form mermaid > target/sysml/tui-performance.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCORE::gitOpsContextDiscovery -render-form mermaid > target/sysml/gitops-context-discovery.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCORE::gitOpsContextRestore -render-form mermaid > target/sysml/gitops-context-restore.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCORE::gitOpsContextOrgLink -render-form mermaid > target/sysml/gitops-context-org-link.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render '#state:MarlinGitOpsContext::LocatorLifecycle' -render-form mermaid > target/sysml/gitops-context-lifecycle.mmd
 sysml -strict -no-record-cache project.sysml dev/sysml \
   -render '#state:MarlinTuiLifecycle::TurnLifecycle' -render-form mermaid > target/sysml/turn-lifecycle.mmd
 sysml -strict -no-record-cache project.sysml dev/sysml \

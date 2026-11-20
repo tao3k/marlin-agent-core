@@ -27,14 +27,13 @@ justify claiming zero VM startup cost. Measure the actual generated executable
 and its first-copy launch. Reuse Gerbil/Yuanxu Build and Scheme Rust staging;
 do not introduce a parallel loader, artifact scanner or cache hierarchy.
 
-The current linked debug first-M-x gate fails before input: no initial
-Modeline appears within its original ten-second limit. A bounded startup
-sample, resolved with a link map whose text-section digest matches the sampled
-executable, reaches VM initialization, Yuanxu linking, POO execution and GC.
-This is evidence about work performed before the first frame, not a completed
-startup optimization. The compiled closure's availability and its bootstrap
-initialization need separate qualification through the owning compiler/runtime
-interfaces. Deferred activation must retain source, binding and Contract checks.
+The earlier linked debug cohort recorded a first-M-x failure before input
+because the initial Modeline missed the ten-second limit. A bounded sample with
+a matching link map reached VM initialization, Yuanxu linking, POO execution and
+GC. The [[file:05-verification.org][verification record]] identifies the source
+cohort for that failure. Qualify the compiled closure and its bootstrap
+initialization separately through the owning compiler and runtime interfaces.
+Deferred activation must retain source, binding and Contract checks.
 
 * Event scheduling
 
@@ -79,6 +78,20 @@ sample counts and tails. Include normal and deep scroll, resize, folding,
 first M-x navigation, event bursts and package-extension overhead. Compare the
 same content, terminal size and cache state. Do not mix builds or concurrent
 compilers into latency samples.
+
+For startup, record the commit, resolved package revisions, SDK and executable
+hash. Compile the test drivers before staging the measured product binaries.
+Cargo can replace a product at its default path while compiling tests.
+Distinguish a launch at the installed path, a new executable copy and a
+second launch of the same file. Include a small native control. Record the
+first process output, Rust entry, Scheme readiness, usable workbench and first
+successful input separately. A first dyld message is an observation marker and
+does not identify the cause of earlier elapsed time.
+
+The subsecond first-interaction target in =MAR-TUI-R09= is a performance goal.
+The ten-second workbench limit and five-second natural-exit limit remain the
+failure gates. Measure plugin first use and repeated actions separately so that
+deferring initialization cannot hide a delay in the first command.
 
 The thirty two-frame Scheme test-window samples include Scheme assertions and
 debug mapping. They are a diagnostic workload, not a release startup benchmark.

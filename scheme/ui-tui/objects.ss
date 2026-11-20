@@ -3,4 +3,7 @@
 (import (only-in :clan/poo/object .o))
 (export UiTuiOperations)
 (def UiTuiOperations
-  (.o identity: 'marlin/ui-tui program-entry: 'marlin-agent-core/ui-tui/entry))
+  (.o identity: 'marlin/ui-tui
+      program-entry: 'marlin-agent-core/ui-tui/entry
+      ;; The entry declares the libraries needed by compiled extensions.
+      program-runtime-imports: '()))

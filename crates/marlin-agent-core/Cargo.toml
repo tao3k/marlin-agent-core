@@ -11,7 +11,7 @@ authors.workspace = true
 repository.workspace = true
 
 [features]
-brief-to-draft-vm-test = ["dep:gerbil-scheme-aot-build", "dep:gerbil-scheme-sys"]
+brief-to-draft-vm-test = ["dep:gerbil-scheme-sys", "marlin-gerbil-scheme/external-program"]
 app-server = ["dep:marlin-agent-app-server", "marlin-agent-app-server/grpc"]
 actor-runtime = ["dep:marlin-deck-runtime", "marlin-deck-runtime/actor-runtime"]
 
@@ -19,7 +19,6 @@ actor-runtime = ["dep:marlin-deck-runtime", "marlin-deck-runtime/actor-runtime"]
 gerbil-scheme-sys = { workspace = true, optional = true }
 marlin-agent-app-server = { workspace = true, optional = true }
 marlin-gerbil-scheme.workspace = true
-marlin-agent-environment.workspace = true
 marlin-agent-graph.workspace = true
 marlin-agent-harness.workspace = true
 marlin-agent-hooks.workspace = true
@@ -30,7 +29,7 @@ marlin-deck-runtime = { workspace = true, optional = true }
 marlin-agent-runtime.workspace = true
 marlin-agent-sessions.workspace = true
 marlin-gerbil-ir.workspace = true
-marlin-workspace-status.workspace = true
+marlin-workspace.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -39,7 +38,6 @@ toml.workspace = true
 
 [build-dependencies]
 marlin-gerbil-aot-link.workspace = true
-gerbil-scheme-aot-build = { workspace = true, optional = true }
 
 [dev-dependencies]
 gerbil-scheme.workspace = true

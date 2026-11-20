@@ -22,6 +22,8 @@ package MarlinTelemetry {
     requirement <'MAR-TEL-R03'> silentCollectorShutdown {
         doc /* On macOS the linked TUI must restore the terminal and drain
                Runtime ownership before attempting its final OTLP export.
+               Terminal-owned Git worktree discovery must be cancelled on
+               exit without waiting out its normal discovery timeout.
                A collector that accepts the request and withholds a response
                must not keep the TUI alive past the PTY shutdown deadline. */
     }

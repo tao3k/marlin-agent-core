@@ -1,7 +1,7 @@
 ;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 (import (only-in :clan/poo/object .cc)
-        (only-in :clan/poo/mop Fun Type.)
+        (only-in :clan/poo/type Fun Type.)
         (only-in :clan/poo/type Exactly Record))
 (export UiElementsScopeContract)
 (def UiElementValues (.cc Type. '.element? list?))
@@ -23,6 +23,7 @@
                prompt: [(Fun UiElementVector <- UiElementIdentity UiElementVector)]
                bar: [(Fun UiElementVector <- UiElementIdentity UiBarDivisor UiElementValues)]
                choice: [(Fun UiElementVector <- UiElementValues UiElementVector)]
+               binding-present: [(Fun UiElementIdentity <- UiElementIdentity)]
                size-cells: [(Fun UiElementVector <- UiSizeCount)]
                size-flex: [(Fun UiElementVector <- UiSizeCount)]
                size-binding: [(Fun UiElementVector <- UiElementIdentity)]

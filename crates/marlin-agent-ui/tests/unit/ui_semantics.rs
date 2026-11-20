@@ -22,6 +22,7 @@ fn test_layout() -> UiLayoutPolicy {
         },
         max_chatbox_rows: 10,
         max_command_rows: 32,
+        echo: Default::default(),
         regions: marlin_agent_ui::UiFrameRegions::new(
             marlin_agent_ui::UiFrameRole::ALL
                 .map(|role| marlin_agent_ui::UiComponentId::new(role.as_str()).unwrap()),

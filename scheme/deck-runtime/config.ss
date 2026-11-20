@@ -4,10 +4,12 @@
 
 ;;; Validate the Deck publication before exposing its operations.
 
-(import (only-in :clan/poo/mop validate)
+(import (only-in :clan/poo/type validate)
         "./objects.ss"
         "./types.ss")
 
-(export DeckScope)
+(export DeckScope deck-scope)
 
 (def DeckScope (validate DeckScopeContract DeckOperations))
+
+(def (deck-scope) DeckScope)

@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use marlin_agent_environment::{RuntimeEnvironmentActivationRequest, RuntimeEnvironmentActivator};
+use marlin_agent_runtime::environment::{
+    RuntimeEnvironmentActivationRequest, RuntimeEnvironmentActivator,
+};
 use marlin_agent_test_support::{
     assert_custom_sub_agent_environment, assert_direnv_activation_fixture,
     assert_hook_environment_uses_root_home, custom_home_runtime_environment_fixture,

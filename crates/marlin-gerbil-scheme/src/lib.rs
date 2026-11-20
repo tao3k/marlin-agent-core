@@ -173,7 +173,8 @@ pub use scheme_types::{
     validate_gerbil_scheme_package_manifest, validate_gerbil_scheme_type_manifest,
     validate_gerbil_scheme_typed_value,
 };
+#[cfg(not(feature = "external-program"))]
 pub use working_copy_policy::{
-    GerbilWorkingCopyPolicy, GerbilWorkingCopyPolicyError, GerbilWorkingCopyPolicyOperation,
-    GerbilWorkingCopyPolicySelection, WorkingCopyProviderAvailability,
+    GerbilWorkingCopyPolicy, GerbilWorkingCopyPolicyError, WorkingCopyProviderAvailability,
 };
+pub use working_copy_policy::{GerbilWorkingCopyPolicyOperation, GerbilWorkingCopyPolicySelection};

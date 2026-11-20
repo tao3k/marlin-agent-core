@@ -13,6 +13,7 @@ mod receipt;
 mod task;
 mod traits;
 
+use context::context_visibility_from_sub_agent_policy;
 pub use context::{RuntimeContext, RuntimeExecutionIdentity};
 pub use events::{
     EventStream, MAX_RUNTIME_EVENT_HEAP_BYTES, RuntimeEventSendError, RuntimeEventSink,
@@ -20,18 +21,6 @@ pub use events::{
 };
 pub use fanout_item::WorkingCopySubAgentFanoutItem;
 pub use handle::{RuntimeTaskScope, TokioAgentRuntime, TokioAgentRuntimeBuildRequest};
-pub use marlin_agent_environment::{
-    WorkingCopyActiveBinding, WorkingCopyBaseRef, WorkingCopyBranchName,
-    WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandProjection,
-    WorkingCopyCommandReceipt, WorkingCopyCommandStatus, WorkingCopyCreateRequest,
-    WorkingCopyFanoutBenchmarkReceipt, WorkingCopyFinalizeBranchRequest, WorkingCopyGitTopLevel,
-    WorkingCopyHandle, WorkingCopyId, WorkingCopyIsolationOperationKind, WorkingCopyIsolationPlan,
-    WorkingCopyIsolationPlanStep, WorkingCopyIsolationProvider, WorkingCopyIsolationReceipt,
-    WorkingCopyIsolationRequest, WorkingCopyIsolationStatus, WorkingCopyParallelIsolationReceipt,
-    WorkingCopyPullRequestCheckoutRequest, WorkingCopyPullRequestNumber,
-    WorkingCopyRepositoryDiscoveryPath, WorkingCopyRetentionPolicy,
-    WorkingCopyRetentionSweepReceipt,
-};
 pub use marlin_agent_protocol::{
     AgentEvent as RuntimeEvent, GraphId, RunId, RuntimeEnvironment, SubAgentConfigSurface,
     SubAgentContextPolicy, SubAgentContextVisibility, SubAgentPerformanceBudget,

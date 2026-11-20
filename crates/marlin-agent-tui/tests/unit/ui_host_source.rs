@@ -68,11 +68,8 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
         "Scheme test window: 30 two-frame samples, p50={:?}, p95={:?}; debug scenario and Scheme assertions, excludes scenario creation",
         elapsed[15], elapsed[28]
     );
-    let package_module = marlin_agent_ui::UiModule::resolve(&runtime, root)
-        .unwrap()
-        .with_publication(load("test-publication"));
     let mut package_host = UiHost::from_module(
-        package_module,
+        marlin_agent_ui::UiModule::resolve(&runtime, root).unwrap(),
         &UiOpenFacts {
             model_label: "model",
             session_label: "session",
@@ -82,6 +79,13 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
         },
     )
     .unwrap();
+    package_host
+        .package_event(marlin_agent_ui::UiPackageEvent::Catalog {
+            directory: root,
+            module: ":marlin-tui-ui-test/catalog",
+            export: "test-catalog",
+        })
+        .unwrap();
     assert!(matches!(
         package_host
             .route_key(
@@ -371,6 +375,7 @@ fn terminal_checks_bar_segment_children_before_admission() {
             priority: 0,
             min_width: 0,
             condition: None,
+            command: None,
             child: Box::new(UiElement::Slot(
                 marlin_agent_ui::UiSlotSource::TransientHint,
             )),

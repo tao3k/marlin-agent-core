@@ -9,6 +9,10 @@
 Defines semantic status segments, priorities and Profile composition. The generic mapper
 clips them to terminal cells.
 
+Both profiles use the same Nerd Font glyphs for the brand, model, session,
+turn counter and activity states. Use Nerd Font Mono in the terminal.
+POO catalogs are in =objects.ss= and composition functions are in =funcs.ss=.
+
 * Interface and contracts
 
 =interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts

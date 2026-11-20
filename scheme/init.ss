@@ -7,15 +7,19 @@
 (import (only-in :tao3k/yuanxu/prelude yuanxu!))
 
 (yuanxu!
+  :build-roots ("interface")
   :load-modules "."
   mode: explicit
-  rename: Marlin
+  mount: Marlin
   :test-dir "./t"
-  (context +causal)
+  (context-system +causal)
+  (artifacts)
   (brief-to-draft)
   (ui-components)
   (ui-elements)
+  (ui-centaur-tabs)
   (ui-hydra)
+  (ui-meow)
   (ui-modeline)
   (ui-transcript)
   (ui-themes)
@@ -23,8 +27,11 @@
   (ui)
   (ui-tui)
   (tooling)
-  (hooks)
+  (agent-hooks)
+  (scheme-package-hooks)
   (policy)
-  (working-copy)
+  (gitops +worktrunk)
+  (envrc)
   (deck-runtime)
+  (bench)
   (c-abi))

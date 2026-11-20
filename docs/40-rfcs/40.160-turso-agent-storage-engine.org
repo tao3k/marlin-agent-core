@@ -716,10 +716,8 @@ Each operation can then choose the right Turso transaction mode and retry policy
 
 Observed packages:
 
-- =crates/marlin-workspace-query=
-- =crates/marlin-workspace-view=
+- =crates/marlin-workspace=
 - =crates/marlin-workspace-patch=
-- =crates/marlin-workspace-status=
 - =crates/marlin-git-utils=
 
 Current design implication:

@@ -7,8 +7,8 @@ use marlin_context_org_model::{
     OrgContractSeverity, OrgContractValidationReceipt, OrgContractValidationReport,
     OrgContractValidationStatus, OrgContractValidationTarget, OrgNode, OrgNodeId,
 };
-use marlin_workspace_status::WorkspaceTarget;
-use marlin_workspace_view::{RenderedContractFacts, RenderedContractFactsInput};
+use marlin_workspace::status::WorkspaceTarget;
+use marlin_workspace::view::{RenderedContractFacts, RenderedContractFactsInput};
 
 // The producer owns parsing and evaluation. This case tests only host fact
 // accumulation, including preservation of a failed producer receipt.

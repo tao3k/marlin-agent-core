@@ -3,7 +3,7 @@
 
 //! Generic Ratatui mapping for admitted Scheme UI elements.
 
-use super::geometry::{Extent, HitRegion, layout_scrolled_children};
+use super::geometry::{Extent, HitRegion, layout_scrolled_children, panel_areas};
 
 use marlin_agent_ui::{UiBackground, UiComponentId, UiElement, UiTemplateValue, UiTheme, UiTone};
 use ratatui::{
@@ -14,6 +14,22 @@ use ratatui::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
+
+pub(crate) fn fits_width(id: &UiComponentId, width: u16) -> Option<bool> {
+    fits_dimension(id, "width-at-least-", width)
+}
+
+pub(crate) fn fits_area(id: &UiComponentId, area: Rect) -> Option<bool> {
+    fits_width(id, area.width).or_else(|| fits_dimension(id, "height-at-least-", area.height))
+}
+
+fn fits_dimension(id: &UiComponentId, prefix: &str, cells: u16) -> Option<bool> {
+    id.as_str()
+        .strip_prefix(prefix)?
+        .parse::<u16>()
+        .ok()
+        .map(|minimum| cells >= minimum)
+}
 
 pub(crate) fn tone_color(tone: UiTone, theme: &UiTheme) -> Color {
     let color = match tone {
@@ -92,6 +108,17 @@ pub fn render_template(
     let background = background_color(*background, inputs.theme);
     let style = background.map_or(Style::default(), |color| Style::default().bg(color));
     frame.render_widget(Paragraph::new(Line::from(line)).style(style), area);
+}
+
+pub(crate) fn inline_text(element: &UiElement, inputs: &UiRenderInputs<'_>, width: u16) -> String {
+    let UiElement::Template { spans, .. } = resolve_choice(element, inputs.facts) else {
+        return String::new();
+    };
+    let mut text = String::new();
+    for span in spans {
+        text.push_str(&template_text(&span.value, inputs, width));
+    }
+    text
 }
 
 pub(super) fn template_text<'a>(
@@ -403,15 +430,17 @@ fn render_inner<'tree>(
             title,
             child,
         } => {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(tone_color(*border_tone, inputs.theme)));
-            let inner = block.inner(area);
-            frame.render_widget(block, area);
+            let (title_area, inner) = panel_areas(area, border_tone.is_some(), title.is_some());
+            if let Some(tone) = border_tone {
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(tone_color(*tone, inputs.theme)));
+                frame.render_widget(block, area);
+            }
             if let Some(title) = title {
                 let title = resolve_choice(title, inputs.facts);
                 if let UiElement::Template { spans, .. } = title {
-                    let available = area.width.saturating_sub(2);
+                    let available = title_area.width;
                     let width = spans
                         .iter()
                         .map(|span| {
@@ -423,7 +452,10 @@ fn render_inner<'tree>(
                         .min(usize::from(available)) as u16;
                     render_template(
                         frame,
-                        Rect::new(area.x.saturating_add(1), area.y, width, 1),
+                        Rect {
+                            width,
+                            ..title_area
+                        },
                         title,
                         inputs,
                     );
@@ -436,7 +468,7 @@ fn render_inner<'tree>(
         UiElement::Input { .. } => slots.renderer.input(frame, area, element, inputs),
         UiElement::Bar { .. } => {
             if skip == 0 {
-                super::widgets::render_bar(frame, area, element, inputs);
+                super::widgets::render_bar(frame, area, element, regions, inputs);
             }
         }
         UiElement::Slot(id) => {
@@ -477,11 +509,12 @@ fn render_inner<'tree>(
             }
         }
         UiElement::Prompt { field, template } => {
+            let value = inputs
+                .bindings
+                .iter()
+                .find_map(|(name, value)| (*name == field.as_str()).then_some(*value))
+                .unwrap_or("");
             if skip == 0
-                && let Some(value) = inputs
-                    .bindings
-                    .iter()
-                    .find_map(|(name, value)| (*name == field.as_str()).then_some(*value))
                 && let Some(cursor) =
                     render_prompt(frame, area, template, inputs, field.as_str(), value)
             {

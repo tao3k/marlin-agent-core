@@ -125,6 +125,9 @@ pub enum UiCommandCapability {
     SelectBuffer,
     EnterTransient,
     KillProcess,
+    Envrc,
     ToggleThinking,
     Clear,
+    /// A Scheme catalog entry awaiting publication admission.
+    Deferred,
 }

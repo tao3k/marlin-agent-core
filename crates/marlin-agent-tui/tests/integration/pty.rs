@@ -32,11 +32,20 @@ use std::{
 };
 use unicode_width::UnicodeWidthChar;
 
+#[path = "pty/envrc.rs"]
+#[cfg(feature = "linked-ui")]
+mod envrc;
+#[cfg(feature = "linked-ui")]
+#[path = "pty/git_context.rs"]
+mod git_context;
 #[path = "pty/live_provider.rs"]
 mod live_provider;
-#[path = "pty/minibuffer.rs"]
+#[path = "pty/minibuffer_commands.rs"]
 #[cfg(feature = "linked-ui")]
-mod minibuffer;
+mod minibuffer_commands;
+#[path = "pty/minibuffer_navigation.rs"]
+#[cfg(feature = "linked-ui")]
+mod minibuffer_navigation;
 #[path = "pty/scheme_package.rs"]
 #[cfg(feature = "linked-ui")]
 mod scheme_package;
@@ -322,6 +331,16 @@ impl Terminal {
         });
     }
 
+    fn enter_normal_mode(&mut self) {
+        self.send(b"\x1b");
+        self.wait_for(Duration::from_secs(15), "Normal Modeline", |output| {
+            screen_lines(output).iter().any(|line| {
+                (line.contains("MARLIN") || line.contains("marlin"))
+                    && (line.contains("NORMAL") || line.contains("[N]"))
+            })
+        });
+    }
+
     fn wait_text(&mut self, expected: &str) {
         self.wait_for(Duration::from_secs(15), expected, |output| {
             screen_lines(output)
@@ -395,11 +414,23 @@ impl Terminal {
     }
 
     fn assert_restored(&self) {
-        assert_eq!(
-            tcgetattr(&self.slave).unwrap(),
-            self.initial_mode,
-            "terminal mode not restored"
-        );
+        let observed = tcgetattr(&self.slave).unwrap();
+        let expected = self.initial_mode.clone();
+        #[cfg(target_os = "macos")]
+        let (observed, expected) = {
+            // Darwin can set this line discipline state when leaving raw mode.
+            // Compare every configured mode and control character as before.
+            let without_pending_input = |mode: nix::sys::termios::Termios| {
+                let mut raw: nix::libc::termios = mode.into();
+                raw.c_lflag &= !nix::libc::PENDIN;
+                nix::sys::termios::Termios::from(raw)
+            };
+            (
+                without_pending_input(observed),
+                without_pending_input(expected),
+            )
+        };
+        assert_eq!(observed, expected, "terminal mode not restored");
         for sequence in [
             b"\x1b[?1049h".as_slice(),
             b"\x1b[?1049l",
@@ -666,8 +697,10 @@ fn linked_ui_opens_without_a_gerbil_package_tree() {
         contains(output, b"\x1b[?1049h")
             && rows[29].contains("Message: Enter send")
             && rows[28].contains("openai/gpt-fixture")
-            && rows[0].trim().is_empty()
+            && rows[0].contains("Chat")
+            && rows[0].contains("Messages")
     });
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bx\x1b[B");
     terminal.wait_for(
         Duration::from_secs(5),
@@ -697,13 +730,37 @@ fn minibuffer_expands_on_hover_and_collapses_on_leave() {
     });
     terminal.send(b"\x1b[<35;1;30M");
     terminal.wait_for(Duration::from_secs(5), "expanded minibuffer", |output| {
-        screen_lines(output)[25].contains("MARLIN")
+        let rows = screen_lines(output);
+        rows[28].contains("MARLIN") && rows[28].contains("INSERT") && rows[29].trim().is_empty()
     });
     terminal.send(b"\x1b[<35;1;1M");
     terminal.wait_for(
         Duration::from_secs(5),
         "collapsed minibuffer again",
-        |output| screen_lines(output)[28].contains("MARLIN"),
+        |output| screen_lines(output)[29].contains("Message: Enter send"),
+    );
+    terminal.enter_normal_mode();
+    terminal.send(b"\t");
+    terminal.wait_status("Commands: Enter open");
+    terminal.send(b"i");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "keyboard opened inline input",
+        |output| {
+            let rows = screen_lines(output);
+            rows[28].contains("MARLIN") && rows[28].contains("INSERT") && rows[29].trim().is_empty()
+        },
+    );
+    terminal.send(b"typing in chat");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "input below the persistent Modeline",
+        |output| {
+            let rows = screen_lines(output);
+            rows[28].contains("MARLIN")
+                && rows[29].starts_with("typing in chat")
+                && rows[28].contains("INSERT")
+        },
     );
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
@@ -883,6 +940,7 @@ fn release_linked_ui_first_frame_without_a_gerbil_package_tree() {
         "release workbench ready after {:?}",
         terminal.start.elapsed()
     );
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bx\x1b[B");
     terminal.wait_for(Duration::from_secs(5), "release M-x first Down", |output| {
         let rows = screen_lines(output);

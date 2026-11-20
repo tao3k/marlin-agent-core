@@ -6,9 +6,9 @@
 
 use super::command::Command;
 use marlin_agent_ui::{
-    UiBrowseDirection, UiCommandName, UiEditorAction, UiEvent, UiIntent, UiKeyCommand, UiKeyMode,
-    UiModule, UiNativeSession, UiOpenFacts, UiProjectionError, UiTransient, UiTransientForeign,
-    UiTransientId, UiWorkbench,
+    UiBrowseDirection, UiCharacterSelection, UiCommandName, UiEditorAction, UiEvent, UiIntent,
+    UiKeyCommand, UiKeyMode, UiModule, UiNativeSession, UiOpenFacts, UiProjectionError,
+    UiTransient, UiTransientForeign, UiTransientId, UiWorkbench,
 };
 use std::collections::HashSet;
 use termion::event::Key;
@@ -23,10 +23,17 @@ pub(crate) enum UiKeyAction {
     OpenCommands,
     Cancel,
     Edit(UiEditorAction),
-    Mode { mode: UiKeyMode, cancel: bool },
+    Mode(UiKeyMode),
     InvokeCommand(UiCommandName),
     Scroll(bool),
     Unhandled,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KeySequenceState {
+    Pending,
+    Complete,
+    Undefined,
 }
 
 pub(crate) struct UiHost<'runtime> {
@@ -35,6 +42,9 @@ pub(crate) struct UiHost<'runtime> {
     view: UiWorkbench,
     admitted_commands: HashSet<UiCommandName>,
     key_prefix: Vec<String>,
+    completed_keys: Vec<String>,
+    completed_key_state: KeySequenceState,
+    pending_character: Option<UiCharacterSelection>,
     transient: Option<UiTransient>,
     transient_warning: bool,
 }
@@ -69,6 +79,9 @@ impl<'runtime> UiHost<'runtime> {
             view,
             admitted_commands,
             key_prefix: Vec::new(),
+            completed_keys: Vec::new(),
+            completed_key_state: KeySequenceState::Complete,
+            pending_character: None,
             transient: None,
             transient_warning: false,
         })
@@ -76,6 +89,42 @@ impl<'runtime> UiHost<'runtime> {
 
     pub(crate) fn view(&self) -> &UiWorkbench {
         &self.view
+    }
+
+    pub(crate) fn package_event(
+        &mut self,
+        event: marlin_agent_ui::UiPackageEvent<'_>,
+    ) -> Result<(), UiProjectionError> {
+        let session = self.module.package_event(&self.session, event)?;
+        let view = self.module.project(&session)?;
+        admit_terminal_view(&view)?;
+        self.admitted_commands = view
+            .commands()
+            .iter()
+            .map(|command| command.name.clone())
+            .collect();
+        self.session = session;
+        self.view = view;
+        Ok(())
+    }
+
+    pub(crate) fn key_feedback(&self) -> (&[String], KeySequenceState) {
+        if self.key_prefix.is_empty() {
+            (&self.completed_keys, self.completed_key_state)
+        } else {
+            (&self.key_prefix, KeySequenceState::Pending)
+        }
+    }
+
+    pub(crate) fn has_undefined_key_sequence(&self) -> bool {
+        self.completed_key_state == KeySequenceState::Undefined
+    }
+
+    pub(crate) fn retry_undefined_key_sequence(&mut self) {
+        if self.has_undefined_key_sequence() {
+            self.completed_keys.pop();
+            self.key_prefix = std::mem::take(&mut self.completed_keys);
+        }
     }
 
     pub(crate) fn tool_review_menu(
@@ -94,6 +143,20 @@ impl<'runtime> UiHost<'runtime> {
         })
     }
 
+    pub(crate) fn keypad_hint(
+        &self,
+        mode: UiKeyMode,
+    ) -> Option<(marlin_agent_ui::UiElement, std::time::Duration)> {
+        if self.key_prefix.is_empty() || self.pending_character.is_some() {
+            return None;
+        }
+        let keys: Vec<_> = self.key_prefix.iter().map(String::as_str).collect();
+        match self.view.key_command(&keys, Some(mode)) {
+            Some(UiKeyCommand::PrefixHint { view, delay }) => Some((*view, delay)),
+            _ => None,
+        }
+    }
+
     pub(crate) fn enter_transient(&mut self, id: &UiTransientId) -> Result<(), UiProjectionError> {
         let transient = self
             .view
@@ -106,6 +169,7 @@ impl<'runtime> UiHost<'runtime> {
         self.transient = Some(transient.clone());
         self.transient_warning = false;
         self.key_prefix.clear();
+        self.pending_character = None;
         Ok(())
     }
 
@@ -132,6 +196,14 @@ impl<'runtime> UiHost<'runtime> {
 
     pub(crate) fn accepts_text(&self, command_active: bool) -> bool {
         command_active || self.view.focus.as_str() == "composer"
+    }
+
+    pub(crate) fn focus_editor(&mut self) -> Result<(), UiProjectionError> {
+        if !self.accepts_text(false) {
+            let target = marlin_agent_ui::UiComponentId::new("composer")?;
+            self.dispatch(UiEvent::SelectFocus(target))?;
+        }
+        Ok(())
     }
 
     pub(crate) fn command_candidates(
@@ -230,7 +302,23 @@ impl<'runtime> UiHost<'runtime> {
         draft_is_command: bool,
         mode: UiKeyMode,
     ) -> Result<UiKeyAction, UiProjectionError> {
+        self.completed_keys.clear();
+        self.completed_key_state = KeySequenceState::Complete;
         let scope = (!command_active).then_some(mode);
+        if let Some(selection) = self.pending_character.take() {
+            let mut sequence = std::mem::take(&mut self.key_prefix);
+            if !command_active && self.accepts_text(false) {
+                return Ok(match key {
+                    Key::Char(target) if target == '\n' || !target.is_control() => {
+                        sequence.push(key_token(key).unwrap_or_else(|| target.to_string()));
+                        self.completed_keys = sequence;
+                        UiKeyAction::Edit(UiEditorAction::SelectCharacter { target, selection })
+                    }
+                    Key::Ctrl('q' | 'c') => UiKeyAction::Unhandled,
+                    _ => UiKeyAction::Handled,
+                });
+            }
+        }
         if let Some(transient) = &self.transient {
             self.transient_warning = false;
             if matches!(key, Key::Esc | Key::Ctrl('g')) {
@@ -260,24 +348,44 @@ impl<'runtime> UiHost<'runtime> {
         }
         if !self.key_prefix.is_empty() {
             let mut sequence = std::mem::take(&mut self.key_prefix);
+            match key {
+                Key::Esc | Key::Ctrl('g') => return Ok(UiKeyAction::Handled),
+                Key::Backspace => {
+                    sequence.pop();
+                    self.key_prefix = sequence;
+                    return Ok(UiKeyAction::Handled);
+                }
+                _ => {}
+            }
             if let Some(token) = key_token(key) {
                 sequence.push(token);
                 let keys: Vec<_> = sequence.iter().map(String::as_str).collect();
                 if let Some(command) = self.view.key_command(&keys, scope) {
-                    return Ok(self.key_command_action(command));
+                    return Ok(self.key_command_action(command, || sequence, true));
                 }
                 if self.view.key_prefix(&keys, scope) {
                     self.key_prefix = sequence;
-                    return Ok(UiKeyAction::Handled);
+                } else {
+                    self.completed_keys = sequence;
+                    self.completed_key_state = KeySequenceState::Undefined;
                 }
             }
+            return Ok(UiKeyAction::Handled);
         }
         if (matches!(key, Key::Ctrl(_) | Key::Alt(_))
             || (!command_active && (mode == UiKeyMode::Normal || key == Key::Esc)))
             && let Some(token) = key_token(key)
         {
             if let Some(command) = self.view.key_command(&[&token], scope) {
-                return Ok(self.key_command_action(command));
+                return Ok(self.key_command_action(command, || vec![token], false));
+            }
+            if command_active
+                && matches!(
+                    self.view.key_command(&[&token], Some(mode)),
+                    Some(UiKeyCommand::OpenCommands)
+                )
+            {
+                return Ok(UiKeyAction::OpenCommands);
             }
             if self.view.key_prefix(&[&token], scope) {
                 self.key_prefix = vec![token];
@@ -300,7 +408,9 @@ impl<'runtime> UiHost<'runtime> {
                 Ok(UiKeyAction::Handled)
             }
             Key::Char('\n') if command_active => Ok(UiKeyAction::Submit),
-            Key::Char('\n') if self.view.focus.as_str() == "commands" => {
+            Key::Char('\n')
+                if mode == UiKeyMode::Normal && self.view.focus.as_str() == "commands" =>
+            {
                 Ok(UiKeyAction::OpenCommands)
             }
             Key::Char('\n') if self.view.focus.as_str() == "composer" => {
@@ -327,14 +437,43 @@ impl<'runtime> UiHost<'runtime> {
         }
     }
 
-    fn key_command_action(&mut self, command: UiKeyCommand) -> UiKeyAction {
-        match command {
+    fn key_command_action(
+        &mut self,
+        command: UiKeyCommand,
+        keys: impl FnOnce() -> Vec<String>,
+        from_prefix: bool,
+    ) -> UiKeyAction {
+        let action = match command {
             UiKeyCommand::OpenCommands => UiKeyAction::OpenCommands,
             UiKeyCommand::Cancel => UiKeyAction::Cancel,
             UiKeyCommand::Edit(action) => UiKeyAction::Edit(action),
-            UiKeyCommand::Mode { mode, cancel } => UiKeyAction::Mode { mode, cancel },
+            UiKeyCommand::ReadCharacter(selection) => {
+                if self.accepts_text(false) {
+                    self.pending_character = Some(selection);
+                    self.key_prefix = keys();
+                }
+                return UiKeyAction::Handled;
+            }
+            UiKeyCommand::PrefixHint { .. } => {
+                self.key_prefix = keys();
+                return UiKeyAction::Handled;
+            }
+            UiKeyCommand::Mode(mode) => UiKeyAction::Mode(mode),
             UiKeyCommand::Invoke(name) => UiKeyAction::InvokeCommand(name),
+        };
+        if from_prefix {
+            self.completed_keys = keys();
         }
+        action
+    }
+
+    pub(crate) fn cancel_key_sequence(&mut self) -> bool {
+        if self.pending_character.take().is_none() && self.key_prefix.is_empty() {
+            return false;
+        }
+        self.key_prefix.clear();
+        self.completed_keys.clear();
+        true
     }
 
     /// Publish a successor only after its projection and intent agree.
@@ -372,11 +511,9 @@ fn key_token(key: Key) -> Option<String> {
         Key::Delete => Some("DELETE".into()),
         Key::Char('\n') => Some("RET".into()),
         Key::Char(' ') => Some("SPC".into()),
-        Key::Char('0') => Some("Digit0".into()),
-        Key::Char('$') => Some("Dollar".into()),
         Key::Ctrl(value) if value.is_ascii_alphanumeric() => Some(format!("C-{value}")),
-        Key::Alt(value) if value.is_ascii_alphanumeric() => Some(format!("M-{value}")),
-        Key::Char(value) if value.is_ascii_alphanumeric() => Some(value.to_string()),
+        Key::Alt(value) if value.is_ascii_graphic() => Some(format!("M-{value}")),
+        Key::Char(value) if value.is_ascii_graphic() => Some(value.to_string()),
         _ => None,
     }
 }

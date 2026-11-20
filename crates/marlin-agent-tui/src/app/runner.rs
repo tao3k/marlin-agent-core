@@ -5,18 +5,17 @@
 //! Terminal event loop and process entry.
 
 use super::{
-    AgentId, App, Arc, AtomicU64, CliAction, FrameSchedule, HistorySearch, INPUT_QUEUE_ITEMS,
-    InputDecoder, Instant, JournalGateway, Key, MessageEvent, MessageSeverity, MessageSource,
-    Ordering, ProjectId, QueuedReply, REPLY_BATCH_LIMIT, REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS,
-    RUNTIME_EVENT_BATCH_LIMIT, RuntimeEdgePolicy, RuntimeStreamGateway, ScrollAnchor,
-    SessionBrowser, SessionId, SharedGateway, SignalMonitor, TerminalInput, TerminalOwner,
-    TranscriptViewportCache, TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode,
+    AgentId, App, Arc, AtomicU64, FrameSchedule, HistorySearch, INPUT_QUEUE_ITEMS, InputDecoder,
+    Instant, JournalGateway, Key, MessageEvent, MessageSeverity, MessageSource, Ordering,
+    ProjectId, REPLY_BATCH_LIMIT, REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS, RUNTIME_EVENT_BATCH_LIMIT,
+    RuntimeEdgePolicy, RuntimeStreamGateway, ScrollAnchor, SessionBrowser, SessionId,
+    SharedGateway, SignalMonitor, TerminalInput, TerminalOwner, TranscriptViewportCache,
+    TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode,
     TursoOptimizationProfile, UiBrowseDirection, UiHost, UiKeyAction, UiOpenFacts,
-    WheelAccumulator, config, draw_with_snapshot, frame_snapshot, io, list_sessions, load_session,
-    mouse_over_minibuffer, mpsc, parse_cli, reply_channel, thread,
+    WheelAccumulator, config, draw_with_snapshot, frame_snapshot, io, load_session,
+    mouse_over_minibuffer, mpsc, publish_error, reply_channel, thread,
 };
-use marlin_agent_telemetry::{OpenTelemetry, TelemetryServiceName, TraceTarget};
-use marlin_agent_ui::UiEditorAction;
+use marlin_agent_ui::{UiEditorAction, UiPackageCommandSource};
 use std::{
     env,
     io::{IsTerminal, Write},
@@ -26,43 +25,13 @@ use std::{
 use super::runtime_probe::RuntimeProbe;
 use super::tool_review::{open_tool_review, poll_tool_review, submit_tool_review};
 use super::ui_events::{
-    apply_ui_request, browse_menu, command_menu_active, select_clicked_list_row,
+    activate_deferred_command, apply_editor_mode, apply_ui_request, browse_menu,
+    command_menu_active, release_interrupted_key_sequence, route_frame_click, route_terminal_key,
+    stage_ui_package,
 };
 use termion::input::TermReadEventsAndRaw;
 
-pub(crate) fn process_replies(
-    app: &mut App,
-    receiver: &mut tokio::sync::mpsc::Receiver<QueuedReply>,
-    limit: usize,
-) -> usize {
-    let mut processed = 0;
-    while processed < limit {
-        let Ok(event) = receiver.try_recv() else {
-            break;
-        };
-        let (id, reply) = event.into_parts();
-        app.receive(id, reply);
-        processed += 1;
-    }
-    processed
-}
-
-pub(super) fn publish_error(
-    app: &mut App,
-    source: MessageSource,
-    summary: &str,
-    error: &impl std::fmt::Display,
-) {
-    let detail = error.to_string();
-    app.publish_message(MessageEvent {
-        source,
-        severity: MessageSeverity::Error,
-        summary,
-        detail: &detail,
-    });
-}
-
-fn run(
+pub(super) fn run(
     path: PathBuf,
     selected_session: Option<SessionId>,
 ) -> Result<Option<i32>, Box<dyn std::error::Error>> {
@@ -76,6 +45,15 @@ fn run(
         return Err("marlin-tui requires a terminal on stdin and stdout".into());
     }
     let config = config::Config::load(&path)?;
+    #[cfg(feature = "linked-ui")]
+    let git_context_approval = config
+        .git_context
+        .as_ref()
+        .map(|approval| approval.repository.clone());
+    #[cfg(not(feature = "linked-ui"))]
+    if config.git_context.is_some() {
+        return Err("Git Context requires the linked Scheme programme".into());
+    }
     #[cfg(not(target_os = "macos"))]
     if config.process_budget.is_some() {
         return Err("process memory sampling is unavailable on this host".into());
@@ -85,8 +63,6 @@ fn run(
     }
     let (endpoint, catalog) = config.catalog()?;
     trace_startup("configuration");
-    // Package resolution uses SDK-owned process environment during startup;
-    // perform it before starting Tokio workers or the terminal input thread.
     let _ = writeln!(io::stderr(), "Starting interface…");
     #[cfg(feature = "linked-ui")]
     let scheme_runtime = super::super::linked_ui::initialize()?;
@@ -130,34 +106,15 @@ fn run(
     #[cfg(feature = "linked-ui")]
     // SAFETY: the binary links these exports from the archive built from the
     // same selected Scheme programme as `linked_ui::initialize`.
-    let mut ui_module = unsafe {
+    let ui_module = unsafe {
         marlin_agent_ui::UiModule::resolve_linked(
             &scheme_runtime,
             super::super::linked_ui::exports(),
         )?
     };
     #[cfg(not(feature = "linked-ui"))]
-    let mut ui_module = marlin_agent_ui::UiModule::resolve(&scheme_runtime, directory)?;
-    if let Some(package) = &config.tui_ui_package {
-        let module = scheme_runtime
-            .intern_identifier(gerbil_scheme::IdentifierKind::Symbol, &package.module)?;
-        let export = scheme_runtime
-            .intern_identifier(gerbil_scheme::IdentifierKind::Symbol, &package.export)?;
-        let directory = package
-            .directory
-            .to_str()
-            .ok_or("UI package path is not UTF-8")?;
-        #[cfg(feature = "linked-ui")]
-        let publication = super::super::linked_ui::package_publication(
-            &scheme_runtime,
-            directory,
-            &module,
-            &export,
-        )?;
-        #[cfg(not(feature = "linked-ui"))]
-        let publication = scheme_runtime.resolve_package_export(directory, &module, &export)?;
-        ui_module = ui_module.with_publication(publication);
-    }
+    let ui_module = marlin_agent_ui::UiModule::resolve(&scheme_runtime, directory)?;
+    let mut ui_package = config.tui_ui_package;
     let mut ui = UiHost::from_module(ui_module, &ui_facts)?;
     if let Some(status) = status.first()
         && !ui.view().regions.iter().any(|region| {
@@ -167,11 +124,16 @@ fn run(
         return Err("Scheme projection lost the Runtime budget status".into());
     }
     trace_startup("UI session projection");
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    trace_startup("Tokio runtime");
+    let directory = env::current_dir()?;
     #[cfg(feature = "linked-ui")]
     let tool_catalog = if config.session.is_some() {
         let declarations = super::super::linked_ui::tooling_declarations(&scheme_runtime)?;
         Some(Arc::new(
-            marlin_agent_tooling::catalog_from_declarations(declarations, env::current_dir()?)
+            marlin_agent_tooling::catalog_from_declarations(declarations, directory.clone())
                 .map_err(|error| format!("cannot bind Scheme tool catalog: {error:?}"))?,
         ))
     } else {
@@ -180,25 +142,25 @@ fn run(
     #[cfg(not(feature = "linked-ui"))]
     let tool_catalog: Option<Arc<marlin_agent_runtime::ModelToolCatalog>> = None;
     trace_startup("tool catalog binding");
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    trace_startup("Tokio runtime");
+    let envrc_discovery = marlin_agent_runtime::ProjectEnvrcDiscovery::pending();
+    let request = marlin_agent_runtime::TokioAgentRuntimeBuildRequest::runtime_root(64)
+        .with_project_envrc_discovery(envrc_discovery.clone());
     #[cfg(target_os = "macos")]
-    let mut app = if let Some(budget) = config.process_budget {
-        use marlin_agent_runtime::{TokioAgentRuntime, TokioAgentRuntimeBuildRequest};
-        let (owner, events) = TokioAgentRuntime::from_build_request(
-            TokioAgentRuntimeBuildRequest::runtime_root(64).with_process_budget(
-                budget,
-                Arc::new(marlin_agent_telemetry::MacOsProcessMemorySampler),
-            ),
-        );
-        App::with_runtime(endpoint, owner, events)
-    } else {
-        App::new(endpoint)
+    let request = match config.process_budget {
+        Some(budget) => request.with_process_budget(
+            budget,
+            Arc::new(marlin_agent_telemetry::MacOsProcessMemorySampler),
+        ),
+        None => request,
     };
-    #[cfg(not(target_os = "macos"))]
-    let mut app = App::new(endpoint);
+    let (owner, events) = marlin_agent_runtime::TokioAgentRuntime::from_build_request(request);
+    let mut app = App::with_runtime(endpoint, owner, events);
+    #[cfg(feature = "linked-ui")]
+    let launch_checkout = directory.clone();
+    let mut worktree_probe = Some(app.runtime_owner.spawn_on(&runtime, async move {
+        super::envrc::project(&directory).await
+    }));
+    let mut envrc_status = None;
     app.transcript_policy = Some(ui.view().layout.transcript_policy.clone());
     app.tool_offer_options = tool_catalog
         .as_ref()
@@ -338,12 +300,39 @@ fn run(
     let mut viewport_cache = TranscriptViewportCache::default();
     let mut scroll_anchor = ScrollAnchor::default();
     let mut painted_regions = Vec::new();
+    let mut layout_snapshot = None;
     let mut last_size = None;
     let mut first_frame_elapsed = None;
     let mut failed_ui_labels: Option<(String, String)> = None;
     let mut signal_exit = None;
+    #[cfg(feature = "linked-ui")]
+    let mut git_context: Option<super::git_context::GitContext<'_>> = None;
     let result = (|| -> io::Result<()> {
         loop {
+            if let Some(branch) = app.worktree_switch.take() {
+                #[cfg(feature = "linked-ui")]
+                if let Some(context) = git_context.as_mut() {
+                    context.switch(&mut app, &runtime, branch);
+                    schedule.mark_dirty();
+                    apply_ui_request(&mut app, &mut ui);
+                    continue;
+                }
+                let _ = branch;
+                app.publish_message(MessageEvent {
+                    source: MessageSource::Workspace,
+                    severity: MessageSeverity::Warning,
+                    summary: "Worktree switch unavailable",
+                    detail: "Configure an approved repository in [git_context].",
+                });
+                schedule.mark_dirty();
+            }
+            #[cfg(feature = "linked-ui")]
+            if git_context
+                .as_mut()
+                .is_some_and(|context| context.poll(&mut app, &runtime))
+            {
+                schedule.mark_dirty();
+            }
             app.workspace.pulse_host();
             #[cfg(target_os = "macos")]
             if let Some(pulse) = &host_pulse {
@@ -360,6 +349,9 @@ fn run(
                 app.command_selection_locked = false;
             }
             if app.command_draft.is_some() {
+                if stage_ui_package(&mut app, &mut ui, &mut ui_package) {
+                    schedule.mark_dirty();
+                }
                 if !app.command_query_is_current()
                     || app.command_candidates_pending != Some(app.pending.is_some())
                 {
@@ -410,10 +402,30 @@ fn run(
             if signal_exit.is_some() {
                 break;
             }
-            let processed = process_replies(&mut app, &mut reply_rx, REPLY_BATCH_LIMIT);
+            let processed = app.process_replies(&mut reply_rx, REPLY_BATCH_LIMIT);
             let tool_review_finished = poll_tool_review(&mut app, &gateway, &runtime, &reply_tx);
             let tool_review_opened = open_tool_review(&mut app, &ui);
             let runtime_processed = app.poll_runtime_events(RUNTIME_EVENT_BATCH_LIMIT);
+            if worktree_probe
+                .as_ref()
+                .is_some_and(|probe| probe.is_finished())
+            {
+                let probe = worktree_probe.take().expect("finished worktree discovery");
+                let binding = runtime.block_on(probe.join()).ok().flatten();
+                if let Some(binding) = &binding {
+                    let _entered = runtime.enter();
+                    super::envrc::submit(
+                        &app.runtime_owner,
+                        &scheme_runtime,
+                        binding,
+                        marlin_agent_runtime::EnvrcIntent::Activate,
+                    );
+                }
+                // Publish after setting Loading so waiting tools cannot
+                // mistake an undiscovered environment for an absent file.
+                envrc_discovery.complete(binding);
+            }
+            let envrc_changed = super::envrc::report_changes(&mut app, &mut envrc_status);
             let sessions_changed = app.poll_sessions();
             let workspace_health_changed = if let Some(report) = app.workspace.poll_health() {
                 use marlin_agent_runtime::process::ProcessHealthCondition;
@@ -470,6 +482,7 @@ fn run(
                 || tool_review_finished
                 || tool_review_opened
                 || runtime_processed > 0
+                || envrc_changed
                 || sessions_changed
                 || switched
                 || workspace_changed
@@ -479,6 +492,9 @@ fn run(
             {
                 schedule.mark_dirty();
             }
+            if app.update_minibuffer(Instant::now()) {
+                schedule.mark_dirty();
+            }
             let size = termion::terminal_size()?;
             if last_size != Some(size) {
                 last_size = Some(size);
@@ -486,7 +502,14 @@ fn run(
             }
             let mouse = mouse_position.load(Ordering::Relaxed);
             let area = ratatui::layout::Rect::new(0, 0, size.0, size.1);
-            let mut snapshot = frame_snapshot(&app, ui.view(), area);
+            // Idle polls and pointer hit checks can reuse the last layout.
+            let snapshot = if schedule.has_changes() || layout_snapshot.is_none() {
+                layout_snapshot.insert(frame_snapshot(&app, ui.view(), area))
+            } else {
+                layout_snapshot
+                    .as_mut()
+                    .expect("initial frame has a layout")
+            };
             let hovered = mouse_over_minibuffer(
                 &snapshot.regions,
                 ui.view()
@@ -498,7 +521,7 @@ fn run(
             );
             if hovered != app.minibuffer_hovered {
                 app.minibuffer_hovered = hovered;
-                snapshot = frame_snapshot(&app, ui.view(), area);
+                *snapshot = frame_snapshot(&app, ui.view(), area);
                 schedule.mark_dirty();
             }
             let now = Instant::now();
@@ -525,16 +548,16 @@ fn run(
                             &error,
                         );
                         failed_ui_labels = Some(attempted);
-                        snapshot = frame_snapshot(&app, ui.view(), area);
+                        *snapshot = frame_snapshot(&app, ui.view(), area);
                     } else {
                         failed_ui_labels = None;
-                        snapshot = frame_snapshot(&app, ui.view(), area);
+                        *snapshot = frame_snapshot(&app, ui.view(), area);
                     }
                 }
                 let mut effective_scroll = app.scroll_up;
                 terminal.active().draw(|frame| {
                     if snapshot.area != frame.area() {
-                        snapshot = frame_snapshot(&app, ui.view(), frame.area());
+                        *snapshot = frame_snapshot(&app, ui.view(), frame.area());
                     }
                     let painted = draw_with_snapshot(
                         frame,
@@ -542,15 +565,27 @@ fn run(
                         ui.view(),
                         &mut viewport_cache,
                         &mut scroll_anchor,
-                        &snapshot,
+                        snapshot,
                     );
                     effective_scroll = painted.scroll;
                     painted_regions = painted.regions;
                 })?;
                 app.set_effective_scroll(effective_scroll);
-                schedule.drawn(Instant::now());
+                let drawn = Instant::now();
+                schedule.drawn(drawn);
+                app.minibuffer_drawn(drawn);
                 if first_frame_elapsed.is_none() {
                     first_frame_elapsed = Some(startup.elapsed());
+                    #[cfg(feature = "linked-ui")]
+                    if let Some(approved) = git_context_approval.as_ref() {
+                        git_context = Some(super::git_context::GitContext::new(
+                            &scheme_runtime,
+                            approved.clone(),
+                            launch_checkout.clone(),
+                            &app,
+                            &runtime,
+                        ));
+                    }
                 }
             }
             let wait = if processed == REPLY_BATCH_LIMIT
@@ -640,15 +675,34 @@ fn run(
                 schedule.mark_dirty();
                 continue;
             }
-            if matches!(&received, Ok(Ok(_))) {
+            if let Ok(Ok(input)) = &received {
                 schedule.mark_dirty();
+                if matches!(
+                    input,
+                    TerminalInput::Key(_)
+                        | TerminalInput::Paste(_)
+                        | TerminalInput::PasteRejected
+                        | TerminalInput::MouseClick(_, _)
+                ) {
+                    app.echo_area.on_input();
+                }
             }
             if matches!(&received, Ok(Ok(input)) if !matches!(input, TerminalInput::Key(Key::Ctrl('c'))))
             {
                 app.disarm_exit();
             }
+            release_interrupted_key_sequence(
+                &mut app,
+                &mut ui,
+                received.as_ref().ok().and_then(|input| input.as_ref().ok()),
+            );
             if let Ok(Ok(TerminalInput::MouseClick(column, row))) = &received {
-                select_clicked_list_row(&mut app, &mut ui, *column, *row);
+                if route_frame_click(&mut app, &mut ui, &painted_regions, *column, *row)
+                    && activate_deferred_command(&mut app, &mut ui, UiPackageCommandSource::Command)
+                {
+                    app.submit(&gateway, &runtime, &reply_tx);
+                    apply_ui_request(&mut app, &mut ui);
+                }
                 continue;
             }
             if let Some(search) = app.history_search.as_mut() {
@@ -727,7 +781,13 @@ fn run(
                         app.selected_command(),
                     ) {
                         Ok(Some(completed)) => {
-                            if app.accept_command_completion(&completed) {
+                            if app.accept_command_completion(&completed)
+                                && activate_deferred_command(
+                                    &mut app,
+                                    &mut ui,
+                                    UiPackageCommandSource::Command,
+                                )
+                            {
                                 app.submit(&gateway, &runtime, &reply_tx);
                                 apply_ui_request(&mut app, &mut ui);
                             }
@@ -742,131 +802,67 @@ fn run(
                     }
                     continue;
                 }
-                let routed = ui.route_key(
-                    *key,
-                    app.command_draft.is_some(),
-                    app.command_draft.is_some(),
-                    app.key_mode,
-                );
-                app.transient_hint = ui.transient_hint().cloned();
+                let mut routed = route_terminal_key(&mut app, &mut ui, *key);
+                if ui_package.is_some()
+                    && app.command_draft.is_none()
+                    && (ui.has_undefined_key_sequence()
+                        || (matches!(routed, Ok(UiKeyAction::Unhandled))
+                            && matches!(key, Key::Alt(_))))
+                    && stage_ui_package(&mut app, &mut ui, &mut ui_package)
+                {
+                    // The built-in map has already declined the key. Replay
+                    // it with the same prefix in the declaration's keymap.
+                    ui.retry_undefined_key_sequence();
+                    routed = route_terminal_key(&mut app, &mut ui, *key);
+                }
                 match routed {
                     Ok(UiKeyAction::Handled) => continue,
                     Ok(UiKeyAction::Cancel) => {
+                        if app.command_draft.is_none()
+                            && ui.accepts_text(false)
+                            && app.composer.clear_selection()
+                        {
+                            app.composer.clamp_normal_cursor();
+                            continue;
+                        }
                         app.cancel();
                         apply_ui_request(&mut app, &mut ui);
                         continue;
                     }
-                    Ok(UiKeyAction::Mode { mode, cancel }) => {
-                        // Escape first preserves existing cancel/return behaviour.
-                        // Enter normal mode only from the idle conversation.
-                        let enter_mode = !cancel
-                            || (app.buffer_view == super::BufferView::Conversation
-                                && app.modeline_activity() == super::ModelineActivity::Idle);
-                        if cancel {
-                            app.cancel();
-                            apply_ui_request(&mut app, &mut ui);
-                        }
-                        if enter_mode {
-                            if mode == marlin_agent_ui::UiKeyMode::Normal
-                                && app.key_mode == marlin_agent_ui::UiKeyMode::Insert
-                            {
-                                app.composer.normal_cursor();
-                            }
-                            app.key_mode = mode;
-                        }
+                    Ok(UiKeyAction::Mode(mode)) => {
+                        apply_editor_mode(&mut app, &mut ui, mode);
                         continue;
                     }
                     Ok(UiKeyAction::Edit(action)) => {
-                        let accepts_text = ui.accepts_text(app.command_draft.is_some());
-                        let normal = app.key_mode == marlin_agent_ui::UiKeyMode::Normal
-                            && app.command_draft.is_none();
-                        match action {
-                            UiEditorAction::HistorySearch => app.start_history_search(),
-                            UiEditorAction::PreviousPrompt if accepts_text => {
-                                app.navigate_prompts(true)
-                            }
-                            UiEditorAction::NextPrompt if accepts_text => {
-                                app.navigate_prompts(false)
-                            }
-                            UiEditorAction::InsertNewline if accepts_text => {
-                                app.composer.insert('\n')
-                            }
-                            UiEditorAction::BackwardChar if accepts_text && normal => {
-                                app.composer.normal_left()
-                            }
-                            UiEditorAction::BackwardChar if accepts_text => app.composer.left(),
-                            UiEditorAction::ForwardChar if accepts_text && normal => {
-                                app.composer.normal_right()
-                            }
-                            UiEditorAction::ForwardChar if accepts_text => app.composer.right(),
-                            UiEditorAction::DeleteChar if accepts_text => {
-                                app.composer.delete();
-                                if normal {
-                                    app.composer.clamp_normal_cursor();
-                                }
-                            }
-                            UiEditorAction::PreviousLine if accepts_text => {
-                                app.composer.move_vertical(size.0.saturating_sub(2), false);
-                                if normal {
-                                    app.composer.clamp_normal_cursor();
-                                }
-                            }
-                            UiEditorAction::NextLine if accepts_text => {
-                                app.composer.move_vertical(size.0.saturating_sub(2), true);
-                                if normal {
-                                    app.composer.clamp_normal_cursor();
-                                }
-                            }
-                            UiEditorAction::PreviousLine => app.scroll(true),
-                            UiEditorAction::NextLine => app.scroll(false),
-                            UiEditorAction::NextWord if accepts_text => {
-                                app.composer.next_word();
-                                if normal {
-                                    app.composer.clamp_normal_cursor();
-                                }
-                            }
-                            UiEditorAction::PreviousWord if accepts_text => {
-                                app.composer.previous_word()
-                            }
-                            UiEditorAction::DeleteLine if accepts_text => {
-                                app.composer.delete_line();
-                                app.composer.clamp_normal_cursor();
-                            }
-                            UiEditorAction::Undo if accepts_text => {
-                                app.composer.undo();
-                                app.composer.clamp_normal_cursor();
-                            }
-                            UiEditorAction::AppendInsert if accepts_text => {
-                                app.composer.right();
-                                app.key_mode = marlin_agent_ui::UiKeyMode::Insert;
-                            }
-                            UiEditorAction::LineStart if accepts_text => app.composer.line_start(),
-                            UiEditorAction::LineEnd if accepts_text => {
-                                app.composer.line_end();
-                                if normal {
-                                    app.composer.clamp_normal_cursor();
-                                }
-                            }
-                            _ => {}
-                        }
+                        app.edit(
+                            action,
+                            snapshot.editor_width,
+                            ui.accepts_text(app.command_draft.is_some()),
+                        );
                         continue;
                     }
                     Ok(UiKeyAction::InvokeCommand(name)) => {
-                        if app.command_draft.is_none() {
-                            app.toggle_command();
+                        if app.prepare_bound_command(&name)
+                            && activate_deferred_command(
+                                &mut app,
+                                &mut ui,
+                                UiPackageCommandSource::KeyBinding,
+                            )
+                        {
+                            app.submit(&gateway, &runtime, &reply_tx);
+                            apply_ui_request(&mut app, &mut ui);
                         }
-                        app.command_menu = None;
-                        app.composer.take();
-                        app.composer.insert_text(name.as_str());
-                        app.command_selection = None;
-                        app.command_selection_locked = false;
-                        app.submit(&gateway, &runtime, &reply_tx);
-                        apply_ui_request(&mut app, &mut ui);
                         continue;
                     }
                     Ok(UiKeyAction::Submit) => {
-                        app.submit(&gateway, &runtime, &reply_tx);
-                        apply_ui_request(&mut app, &mut ui);
+                        if activate_deferred_command(
+                            &mut app,
+                            &mut ui,
+                            UiPackageCommandSource::Command,
+                        ) {
+                            app.submit(&gateway, &runtime, &reply_tx);
+                            apply_ui_request(&mut app, &mut ui);
+                        }
                         continue;
                     }
                     Ok(UiKeyAction::OpenCommands) => {
@@ -893,15 +889,23 @@ fn run(
                 Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() && accepts_text => {
                     app.composer.insert(c)
                 }
-                Ok(Ok(TerminalInput::Key(Key::Left))) if accepts_text => app.composer.left(),
-                Ok(Ok(TerminalInput::Key(Key::Right))) if accepts_text => app.composer.right(),
-                Ok(Ok(TerminalInput::Key(Key::Home))) if accepts_text => app.composer.line_start(),
-                Ok(Ok(TerminalInput::Key(Key::End))) if accepts_text => app.composer.line_end(),
+                Ok(Ok(TerminalInput::Key(Key::Left))) if accepts_text => {
+                    app.edit(UiEditorAction::BackwardChar, size.0, true)
+                }
+                Ok(Ok(TerminalInput::Key(Key::Right))) if accepts_text => {
+                    app.edit(UiEditorAction::ForwardChar, size.0, true)
+                }
+                Ok(Ok(TerminalInput::Key(Key::Home))) if accepts_text => {
+                    app.edit(UiEditorAction::LineStart, size.0, true)
+                }
+                Ok(Ok(TerminalInput::Key(Key::End))) if accepts_text => {
+                    app.edit(UiEditorAction::LineEnd, size.0, true)
+                }
                 Ok(Ok(TerminalInput::Key(Key::Up))) if accepts_text => {
-                    app.composer.move_vertical(size.0.saturating_sub(2), false)
+                    app.edit(UiEditorAction::PreviousLine, snapshot.editor_width, true)
                 }
                 Ok(Ok(TerminalInput::Key(Key::Down))) if accepts_text => {
-                    app.composer.move_vertical(size.0.saturating_sub(2), true)
+                    app.edit(UiEditorAction::NextLine, snapshot.editor_width, true)
                 }
                 Ok(Ok(TerminalInput::Key(Key::Backspace))) if accepts_text => {
                     app.composer.backspace()
@@ -923,20 +927,32 @@ fn run(
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 _ => {}
             }
+            if let Some(command) = app.envrc_command.take() {
+                super::envrc::apply(&mut app, &runtime, &scheme_runtime, command);
+                schedule.mark_dirty();
+            }
             apply_ui_request(&mut app, &mut ui);
         }
         Ok(())
     })();
     trace_startup("event loop exit");
+    #[cfg(feature = "linked-ui")]
+    drop(git_context);
     let terminal_result = terminal.suspend();
+    trace_startup("terminal restored");
     drop(signals);
+    // Startup discovery is no longer useful after terminal exit. Its Git
+    // child is killed on drop, and the tracked task joins the normal drain.
+    if let Some(probe) = worktree_probe {
+        probe.abort();
+    }
     #[cfg(target_os = "macos")]
     if let Some(task) = heartbeat_task {
         task.abort();
     }
     let shutdown_result = runtime.block_on(app.shutdown());
     drop(runtime_probe);
-    trace_startup("terminal restored");
+    trace_startup("Runtime tasks drained");
     if env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some()
         && let Some(elapsed) = first_frame_elapsed
     {
@@ -956,58 +972,4 @@ fn run(
     shutdown_result?;
     result?;
     Ok(signal_exit)
-}
-
-fn start_telemetry() -> Result<Option<OpenTelemetry>, Box<dyn std::error::Error>> {
-    let endpoint = match env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") {
-        Ok(endpoint) => endpoint,
-        Err(env::VarError::NotPresent) => return Ok(None),
-        Err(error) => return Err(error.into()),
-    };
-    let telemetry = OpenTelemetry::otlp_http(
-        TelemetryServiceName::new("marlin-tui"),
-        TraceTarget::new(marlin_agent_runtime::observability::TARGET_RUNTIME_SPAN),
-        &endpoint,
-    )?;
-    telemetry.install_global()?;
-    Ok(Some(telemetry))
-}
-
-/// Start the terminal client with the process argument list.
-pub fn run_cli() {
-    #[cfg(target_os = "macos")]
-    if marlin_agent_telemetry::run_host_observer_if_requested() {
-        return;
-    }
-    let args = match parse_cli(env::args_os().skip(1)) {
-        Ok(args) => args,
-        Err(error) => {
-            eprintln!("{error}");
-            std::process::exit(2);
-        }
-    };
-    let telemetry = match start_telemetry() {
-        Ok(telemetry) => telemetry,
-        Err(error) => {
-            eprintln!("marlin-tui: telemetry configuration: {error}");
-            std::process::exit(2);
-        }
-    };
-    let result = match args.action {
-        CliAction::Open { session } => run(args.config, session),
-        CliAction::List { after } => list_sessions(&args.config, after).map(|()| None),
-    };
-    if let Some(telemetry) = telemetry
-        && let Err(error) = telemetry.shutdown()
-    {
-        eprintln!("marlin-tui: telemetry shutdown: {error}");
-    }
-    match result {
-        Ok(Some(code)) => std::process::exit(code),
-        Ok(None) => {}
-        Err(error) => {
-            let _ = writeln!(io::stderr(), "marlin-tui: {error}");
-            std::process::exit(1);
-        }
-    }
 }

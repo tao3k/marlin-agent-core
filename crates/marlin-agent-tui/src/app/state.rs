@@ -4,6 +4,7 @@
 
 //! Terminal application state and transcript navigation.
 
+use super::echo_area::EchoArea;
 use super::{
     Arc, BufferView, Command, Composer, ContextBudget, ConversationTurnId, GatewayObservation,
     HistorySearch, JournalGateway, MAX_COMPLETION_HEAP_BYTES, MessageEvent, MessageSeverity,
@@ -12,6 +13,7 @@ use super::{
     SessionPageRequestError, SharedGateway, Transcript, TursoAgentStorage, UiBufferId, UiCommand,
     UiCommandName, UiContent, UiEvent, UiTranscriptPolicy, UiWorkbench, WorkspaceStatus,
 };
+use std::time::{Duration, Instant};
 
 pub(crate) const REPLY_BATCH_LIMIT: usize = 16;
 pub(crate) const REPLY_QUEUE_ITEMS: usize = 64;
@@ -47,6 +49,12 @@ pub(crate) struct CommandMenu {
     pub(crate) prompt: String,
 }
 
+pub(super) struct PendingKeyHint {
+    pub(super) view: marlin_agent_ui::UiElement,
+    pub(super) delay: Duration,
+    pub(super) show_at: Option<Instant>,
+}
+
 pub(crate) struct ToolReviewPrompt {
     pub(crate) key: marlin_agent_sessions::ConversationToolRequestKey,
     pub(crate) menu: marlin_agent_ui::UiToolReviewMenu,
@@ -60,7 +68,9 @@ pub(crate) struct App {
     pub(super) runtime_events: marlin_agent_runtime::RuntimeEventStream,
     pub(crate) composer: Composer,
     pub(crate) minibuffer_hovered: bool,
+    pub(crate) editor_keyboard_active: bool,
     pub(crate) key_mode: marlin_agent_ui::UiKeyMode,
+    pub(super) yank_register: String,
     pub(crate) gateway_observation: GatewayObservation,
     pub(super) prompt_history: PromptHistory,
     pub(crate) history_search: Option<HistorySearch>,
@@ -76,13 +86,18 @@ pub(crate) struct App {
     pub(crate) ui_request: Option<UiEvent>,
     pub(crate) command_history_request: Option<UiCommandName>,
     pub(crate) transient_request: Option<super::UiTransientId>,
+    pub(super) envrc_command: Option<crate::command::EnvrcCommand>,
+    pub(super) worktree_switch: Option<String>,
+    pub(super) context_worktree: Option<std::path::PathBuf>,
     pub(crate) quit_armed: bool,
     pub(crate) transcript: Transcript,
     pub(crate) transcript_policy: Option<UiTranscriptPolicy>,
     pub(crate) messages: Transcript,
     pub(crate) buffer_view: BufferView,
-    pub(crate) minibuffer_notice: Option<String>,
+    pub(crate) echo_area: EchoArea,
     pub(crate) transient_hint: Option<marlin_agent_ui::UiElement>,
+    pub(crate) keypad_open: bool,
+    pub(super) pending_key_hint: Option<PendingKeyHint>,
     pub(crate) history: Arc<Vec<ModelGatewayMessage>>,
     pub(crate) context_budget: ContextBudget,
     pub(super) endpoint: ModelEndpoint,
@@ -123,6 +138,23 @@ pub(crate) struct App {
 }
 
 impl App {
+    pub(crate) fn process_replies(
+        &mut self,
+        receiver: &mut tokio::sync::mpsc::Receiver<crate::event_queue::QueuedReply>,
+        limit: usize,
+    ) -> usize {
+        let mut processed = 0;
+        while processed < limit {
+            let Ok(event) = receiver.try_recv() else {
+                break;
+            };
+            let (id, reply) = event.into_parts();
+            self.receive(id, reply);
+            processed += 1;
+        }
+        processed
+    }
+
     pub(crate) fn new(endpoint: ModelEndpoint) -> Self {
         let (runtime_owner, runtime_events) = marlin_agent_runtime::TokioAgentRuntime::new(64);
         Self::with_runtime(endpoint, runtime_owner, runtime_events)
@@ -139,7 +171,9 @@ impl App {
             runtime_events,
             composer: Composer::default(),
             minibuffer_hovered: false,
+            editor_keyboard_active: false,
             key_mode: marlin_agent_ui::UiKeyMode::Insert,
+            yank_register: String::new(),
             gateway_observation: GatewayObservation::Unchecked,
             prompt_history: PromptHistory::default(),
             history_search: None,
@@ -155,13 +189,18 @@ impl App {
             ui_request: None,
             command_history_request: None,
             transient_request: None,
+            envrc_command: None,
+            worktree_switch: None,
+            context_worktree: None,
             quit_armed: false,
             transcript: Transcript::new(vec![]),
             transcript_policy: None,
             messages: Transcript::new(vec![]),
             buffer_view: BufferView::Conversation,
-            minibuffer_notice: None,
+            echo_area: EchoArea::default(),
             transient_hint: None,
+            keypad_open: false,
+            pending_key_hint: None,
             history: Arc::new(Vec::new()),
             context_budget: ContextBudget::default(),
             endpoint,
@@ -268,6 +307,7 @@ impl App {
                             descriptor.capability,
                             marlin_agent_ui::UiCommandCapability::ToggleThinking
                                 | marlin_agent_ui::UiCommandCapability::KillProcess
+                                | marlin_agent_ui::UiCommandCapability::Envrc
                         ) || (descriptor.capability
                             == marlin_agent_ui::UiCommandCapability::SelectBuffer
                             && descriptor.value.as_deref() == Some("processes")))
@@ -290,7 +330,13 @@ impl App {
     pub(crate) fn accept_command_completion(&mut self, completed: &str) -> bool {
         let runnable = self
             .command_descriptor(completed)
-            .is_some_and(|descriptor| Command::parse(descriptor, completed).is_some());
+            .is_some_and(|descriptor| {
+                if descriptor.capability == marlin_agent_ui::UiCommandCapability::Deferred {
+                    Command::arguments(descriptor, completed).is_some()
+                } else {
+                    Command::parse(descriptor, completed).is_some()
+                }
+            });
         let display = self
             .command_menu
             .as_ref()
@@ -474,6 +520,22 @@ impl App {
             return;
         }
         self.command_draft = Some(std::mem::take(&mut self.composer));
+    }
+
+    /// Begin an admitted action through the ordinary command submit path.
+    pub(super) fn prepare_bound_command(&mut self, name: &UiCommandName) -> bool {
+        if self.command_draft.is_none() {
+            self.toggle_command();
+        }
+        if self.command_draft.is_none() {
+            return false;
+        }
+        self.command_menu = None;
+        self.composer.take();
+        self.composer.insert_text(name.as_str());
+        self.command_selection = None;
+        self.command_selection_locked = false;
+        true
     }
 
     pub(super) fn show_sessions(&mut self, runtime: &tokio::runtime::Runtime, next: bool) {

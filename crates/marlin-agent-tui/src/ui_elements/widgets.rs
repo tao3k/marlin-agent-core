@@ -3,15 +3,19 @@
 
 //! Generic Ratatui input and panel mappings.
 
-use super::{UiRenderInputs, UiSlotRenderer, resolve_choice, terminal_text, tone_color};
+use super::{
+    HitRegion, UiRenderInputs, UiSlotRenderer, fits_width, resolve_choice, terminal_text,
+    tone_color,
+};
 use marlin_agent_ui::{UiBarSide, UiComponentId, UiContent, UiElement, UiTheme, UiTone};
 use ratatui::{
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 use std::collections::VecDeque;
+use std::ops::Range;
 use unicode_width::UnicodeWidthStr;
 
 /// Render a bounded flow without assigning meaning to individual segments.
@@ -19,6 +23,7 @@ pub(super) fn render_bar(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     element: &UiElement,
+    hits: &mut Vec<HitRegion>,
     inputs: &UiRenderInputs<'_>,
 ) {
     let UiElement::Bar {
@@ -34,14 +39,8 @@ pub(super) fn render_bar(
         return;
     }
     let right_budget = area.width / (*right_divisor).max(1);
-    let facts = |id: &UiComponentId| match id
-        .as_str()
-        .strip_prefix("width-at-least-")
-        .and_then(|v| v.parse::<u16>().ok())
-    {
-        Some(width) => area.width >= width,
-        None => (inputs.facts)(id),
-    };
+    let facts =
+        |id: &UiComponentId| fits_width(id, area.width).unwrap_or_else(|| (inputs.facts)(id));
     let extent = |id: &UiComponentId| {
         if id.as_str() == "bar-right-budget" {
             super::Extent::Cells(right_budget)
@@ -124,31 +123,59 @@ pub(super) fn render_bar(
         };
         let visible = width.min(cap.saturating_sub(*position));
         if visible > 0 {
-            super::render_template(
-                frame,
-                Rect::new(area.x + *position as u16, area.y, visible as u16, 1),
-                child,
-                &bound,
-            );
+            let rect = Rect::new(area.x + *position as u16, area.y, visible as u16, 1);
+            super::render_template(frame, rect, child, &bound);
+            if let Some(command) = &segment.command {
+                hits.push(HitRegion::command(command, rect));
+            }
             *position += visible;
         }
     }
 }
 
-/// Measure borders enclosing the selected input before measuring its text.
-pub fn input_border(element: &UiElement, facts: &dyn Fn(&UiComponentId) -> bool) -> Option<u16> {
+#[derive(Default)]
+pub(crate) struct InputInsets {
+    pub(crate) border: u16,
+    trailing: u16,
+}
+
+impl InputInsets {
+    pub(crate) fn text_width(&self, width: u16, bordered: bool) -> u16 {
+        let inside = width.saturating_sub(if bordered { self.border } else { 0 });
+        inside - adornment_width(self.trailing, inside)
+    }
+}
+
+fn adornment_width(cells: u16, width: u16) -> u16 {
+    cells.min(width / 3)
+}
+
+/// Find the selected input and measure the space reserved around its value.
+pub(crate) fn input_insets(
+    element: &UiElement,
+    facts: &dyn Fn(&UiComponentId) -> bool,
+) -> Option<InputInsets> {
     match element {
-        UiElement::Input { bordered, .. } => Some(if *bordered { 2 } else { 0 }),
-        UiElement::Choice { .. } => input_border(resolve_choice(element, facts), facts),
-        UiElement::Panel { child, .. } => {
-            input_border(child, facts).map(|size| size.saturating_add(2))
-        }
-        UiElement::Sized { child, .. } | UiElement::Region { child, .. } => {
-            input_border(child, facts)
-        }
-        UiElement::List { child, .. } => input_border(child, facts),
+        UiElement::Input {
+            bordered, trailing, ..
+        } => Some(InputInsets {
+            border: if *bordered { 2 } else { 0 },
+            trailing: trailing.as_ref().map_or(0, |adornment| adornment.cells),
+        }),
+        UiElement::Choice { .. } => input_insets(resolve_choice(element, facts), facts),
+        UiElement::Panel {
+            border_tone, child, ..
+        } => input_insets(child, facts).map(|mut insets| {
+            insets.border = insets
+                .border
+                .saturating_add(if border_tone.is_some() { 2 } else { 0 });
+            insets
+        }),
+        UiElement::Sized { child, .. }
+        | UiElement::Region { child, .. }
+        | UiElement::List { child, .. } => input_insets(child, facts),
         UiElement::Rows(children) | UiElement::Columns(children) => {
-            children.iter().find_map(|child| input_border(child, facts))
+            children.iter().find_map(|child| input_insets(child, facts))
         }
         UiElement::Text(_)
         | UiElement::Template { .. }
@@ -156,6 +183,19 @@ pub fn input_border(element: &UiElement, facts: &dyn Fn(&UiComponentId) -> bool)
         | UiElement::Slot(_)
         | UiElement::Bar { .. } => None,
     }
+}
+
+fn inline_width(element: &UiElement, inputs: &UiRenderInputs<'_>, width: u16) -> u16 {
+    let UiElement::Template { spans, .. } = element else {
+        return 0;
+    };
+    spans
+        .iter()
+        .map(|span| {
+            UnicodeWidthStr::width(super::core::template_text(&span.value, inputs, width).as_ref())
+        })
+        .sum::<usize>()
+        .min(usize::from(width)) as u16
 }
 
 /// One host-provided row and the named values used by its Scheme template.
@@ -423,13 +463,43 @@ pub fn render_content(
 }
 
 /// Render an admitted input component using a host-provided editable value.
-pub fn render_input(
+/// Visible input rows, cursor, and selected cell spans in row order.
+#[derive(Debug, PartialEq, Eq)]
+pub struct UiInputValue {
+    pub rows: Vec<String>,
+    pub cursor: (u16, u16),
+    pub selection: Vec<(u16, Range<u16>)>,
+    pub marks: Vec<UiInputMark>,
+}
+
+/// A cell annotation that occupies one complete visual grapheme.
+#[derive(Debug, PartialEq, Eq)]
+pub struct UiInputMark {
+    pub row: u16,
+    pub column: u16,
+    pub cells: u16,
+    pub label: char,
+    pub tone: UiTone,
+}
+
+impl From<(Vec<String>, (u16, u16))> for UiInputValue {
+    fn from((rows, cursor): (Vec<String>, (u16, u16))) -> Self {
+        Self {
+            rows,
+            cursor,
+            selection: Vec::new(),
+            marks: Vec::new(),
+        }
+    }
+}
+
+pub fn render_input<Value: Into<UiInputValue>>(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     element: &UiElement,
     inputs: &UiRenderInputs<'_>,
     show_cursor: bool,
-    value: impl FnOnce(u16, u16) -> Option<(Vec<String>, (u16, u16))>,
+    value: impl FnOnce(u16, u16) -> Option<Value>,
 ) {
     let element = resolve_choice(element, inputs.facts);
     let UiElement::Input {
@@ -438,6 +508,7 @@ pub fn render_input(
         prefix,
         title,
         active,
+        trailing,
     } = element
     else {
         return;
@@ -460,7 +531,8 @@ pub fn render_input(
             .fg(tone_color(UiTone::Normal, inputs.theme))
     });
     let mut content = area;
-    if *bordered {
+    // A border has no interior in a terminal allocation below three cells.
+    if *bordered && area.width > 2 && area.height > 2 {
         let title = title.as_ref().map(&binding).unwrap_or("");
         let block = Block::default()
             .borders(Borders::ALL)
@@ -475,32 +547,21 @@ pub fn render_input(
     } else {
         frame.render_widget(Paragraph::new("").style(style), area);
     }
+    let trailing_width = trailing.as_ref().map_or(0, |adornment| {
+        adornment_width(adornment.cells, content.width)
+    });
+    content.width -= trailing_width;
+    let mut trailing_row = content.bottom().saturating_sub(1);
     if let Some(prefix) = prefix {
-        let prefix_facts = |id: &UiComponentId| match id
-            .as_str()
-            .strip_prefix("width-at-least-")
-            .and_then(|width| width.parse::<u16>().ok())
-        {
-            Some(width) => content.width >= width,
-            None => (inputs.facts)(id),
+        let prefix_facts = |id: &UiComponentId| {
+            fits_width(id, content.width).unwrap_or_else(|| (inputs.facts)(id))
         };
         let prefix = resolve_choice(prefix, &prefix_facts);
-        let UiElement::Template { spans, .. } = prefix else {
-            return;
-        };
         let prefix_inputs = UiRenderInputs {
             facts: &prefix_facts,
             ..*inputs
         };
-        let width = spans
-            .iter()
-            .map(|span| {
-                UnicodeWidthStr::width(
-                    super::core::template_text(&span.value, &prefix_inputs, content.width).as_ref(),
-                )
-            })
-            .sum::<usize>()
-            .min(usize::from(content.width)) as u16;
+        let width = inline_width(prefix, &prefix_inputs, content.width);
         super::render_template(
             frame,
             Rect::new(content.x, content.y, width, 1),
@@ -513,10 +574,65 @@ pub fn render_input(
     if content.is_empty() {
         return;
     }
-    if let Some((rows, cursor)) = value(content.width, content.height) {
+    if let Some(value) = value(content.width, content.height) {
+        let UiInputValue {
+            rows,
+            cursor,
+            selection,
+            marks,
+        } = value.into();
         frame.render_widget(Paragraph::new(rows.join("\n")).style(style), content);
-        if show_cursor && cursor.0 < content.width && cursor.1 < content.height {
-            frame.set_cursor_position((content.x + cursor.0, content.y + cursor.1));
+        for (row, columns) in selection {
+            let end = columns.end.min(content.width);
+            if row < content.height && columns.start < end {
+                frame.buffer_mut().set_style(
+                    Rect::new(
+                        content.x + columns.start,
+                        content.y + row,
+                        end - columns.start,
+                        1,
+                    ),
+                    Style::default().add_modifier(Modifier::REVERSED),
+                );
+            }
         }
+        for mark in marks {
+            if mark.row >= content.height
+                || mark.column >= content.width
+                || mark.cells == 0
+                || !mark.label.is_ascii_graphic()
+            {
+                continue;
+            }
+            let x = content.x + mark.column;
+            let y = content.y + mark.row;
+            let style = Style::default()
+                .fg(tone_color(mark.tone, inputs.theme))
+                .add_modifier(Modifier::BOLD);
+            let buffer = frame.buffer_mut();
+            buffer[(x, y)].set_char(mark.label).set_style(style);
+            for column in 1..mark.cells.min(content.width - mark.column) {
+                buffer[(x + column, y)].set_char(' ').set_style(style);
+            }
+        }
+        if show_cursor && cursor.0 < content.width && cursor.1 < content.height {
+            trailing_row = content.y + cursor.1;
+            frame.set_cursor_position((content.x + cursor.0, trailing_row));
+        }
+    }
+    if let Some(trailing) = trailing {
+        let view = resolve_choice(&trailing.view, inputs.facts);
+        let width = inline_width(view, inputs, trailing_width);
+        super::render_template(
+            frame,
+            Rect::new(
+                content.right() + (trailing_width - width),
+                trailing_row,
+                width,
+                1,
+            ),
+            view,
+            inputs,
+        );
     }
 }

@@ -88,8 +88,8 @@ pub struct UiWindow {
 
 mod keymap;
 pub use keymap::{
-    UiEditorAction, UiKeyBinding, UiKeyCommand, UiKeyMode, UiKeyScope, UiKeyToken, UiTransient,
-    UiTransientForeign, UiTransientHead, UiTransientId,
+    UiCharacterSelection, UiEditorAction, UiKeyBinding, UiKeyCommand, UiKeyMode, UiKeyScope,
+    UiKeyToken, UiTransient, UiTransientForeign, UiTransientHead, UiTransientId,
 };
 
 /// Scheme-owned frame topology projected into a bounded native snapshot.
@@ -217,9 +217,31 @@ pub struct UiLayoutPolicy {
     pub max_chatbox_rows: u16,
     pub max_command_rows: u16,
     pub transcript_policy: UiTranscriptPolicy,
+    pub echo: UiEchoPolicy,
     /// Ordered frame regions, authored by the selected Scheme layout.
     pub frame_tree: crate::UiElement,
     pub regions: UiFrameRegions,
+}
+
+/// Scheme-selected transient feedback for the shared minibuffer surface.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiEchoPolicy {
+    pub view: crate::UiElement,
+    pub timeout: std::time::Duration,
+    pub clear_on_input: bool,
+}
+
+impl Default for UiEchoPolicy {
+    fn default() -> Self {
+        Self {
+            view: crate::UiElement::Template {
+                background: crate::UiBackground::None,
+                spans: Vec::new(),
+            },
+            timeout: std::time::Duration::ZERO,
+            clear_on_input: false,
+        }
+    }
 }
 
 /// A terminal mechanism, independent of the Scheme region that provides it.
@@ -425,8 +447,9 @@ impl UiWorkbench {
                     UiEvent::ScrollDown,
                     UiIntent::Scroll(UiScrollDirection::Down)
                 )
-        ) || (profile_change
-            && matches!(intent, UiIntent::Focus(id) if id == &self.focus))
+        ) || matches!((&event, intent), (UiEvent::SelectFocus(requested), UiIntent::Focus(id))
+            if requested == id)
+            || (profile_change && matches!(intent, UiIntent::Focus(id) if id == &self.focus))
             || (matches!(&event, UiEvent::RecordCommand(name) if self.commands().iter().any(|command| &command.name == name))
                 && matches!(intent, UiIntent::Focus(id) if id == &self.focus))
             || (buffer_change
@@ -556,6 +579,7 @@ fn profile_status_match(previous: &[UiStatusItem], next: &[UiStatusItem]) -> boo
 pub enum UiEvent {
     NextFocus,
     PreviousFocus,
+    SelectFocus(UiComponentId),
     Submit,
     Dismiss,
     ScrollUp,

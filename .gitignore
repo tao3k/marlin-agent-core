@@ -21,3 +21,4 @@
 .env
 
 scheme/manifest.ss
+crates/marlin-agent-tui/tests/fixtures/ui-extension/manifest.ss

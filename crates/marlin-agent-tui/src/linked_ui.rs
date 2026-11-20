@@ -5,7 +5,7 @@
 //! Process-owned Gerbil VM and its linked, Yuanxu-selected module graph.
 
 use gerbil_scheme::{
-    CollectionKind, GerbilRuntime, LinkedGerbilProgram, NativeError, RootedSchemeObject,
+    GerbilRuntime, LinkedGerbilProgram, NativeError, RootedCallError, RootedSchemeObject,
 };
 use gerbil_scheme_sys::{GerbilGlobalState, GerbilModuleOrLink};
 use marlin_agent_ui::UiLinkedExports;
@@ -16,7 +16,7 @@ use super::ui_host::UiHost as TestUiHost;
 unsafe extern "C" {
     fn ___LNK_marlin__tui(gs: *mut GerbilGlobalState) -> *mut GerbilModuleOrLink;
     fn marlin_ui_publication(root: i64) -> i64;
-    fn marlin_ui_package_publication(root: i64) -> i64;
+    fn marlin_ui_package_event(root: i64) -> i64;
     fn marlin_ui_open(root: i64) -> i64;
     fn marlin_ui_project_workbench(root: i64) -> i64;
     fn marlin_ui_dispatch_event(root: i64) -> i64;
@@ -25,6 +25,59 @@ unsafe extern "C" {
     fn marlin_ui_review_menu(root: i64) -> i64;
     fn marlin_ui_refresh_labels(root: i64) -> i64;
     fn marlin_tooling_project(root: i64) -> i64;
+    fn marlin_envrc_plan(root: i64) -> i64;
+    fn marlin_worktree_context_prepare(root: i64) -> i64;
+    fn marlin_worktree_context_deliver(root: i64) -> i64;
+    fn marlin_worktree_context_revoke(root: i64) -> i64;
+    fn marlin_worktree_provider(root: i64) -> i64;
+    fn gerbil_scheme_rust_take_call_error_raw() -> i64;
+}
+
+pub(crate) enum WorktreeOperation {
+    Prepare,
+    Deliver,
+    Revoke,
+    Provider,
+}
+
+pub(crate) fn worktree_call<'a>(
+    runtime: &'a GerbilRuntime,
+    operation: WorktreeOperation,
+    request: &RootedSchemeObject<'_>,
+) -> Result<RootedSchemeObject<'a>, RootedCallError> {
+    let export = match operation {
+        WorktreeOperation::Prepare => marlin_worktree_context_prepare,
+        WorktreeOperation::Deliver => marlin_worktree_context_deliver,
+        WorktreeOperation::Revoke => marlin_worktree_context_revoke,
+        WorktreeOperation::Provider => marlin_worktree_provider,
+    };
+    // SAFETY: these rooted exports belong to the linked programme above.
+    unsafe { runtime.bind_object_export(export) }?
+        .call(request)
+        .into_result()
+        .map_err(|source| RootedCallError {
+            source,
+            diagnostic: worktree_diagnostic(runtime, request),
+        })
+}
+
+fn worktree_diagnostic(
+    runtime: &GerbilRuntime,
+    request: &RootedSchemeObject<'_>,
+) -> Option<String> {
+    unsafe extern "C" fn take_error(_: i64) -> i64 {
+        // SAFETY: the VM owner consumes its last diagnostic.
+        unsafe { gerbil_scheme_rust_take_call_error_raw() }
+    }
+    // SAFETY: the getter belongs to this initialized VM.
+    let export = unsafe { runtime.bind_object_export(take_error) }.ok()?;
+    let bytes = export
+        .call(request)
+        .into_result()
+        .ok()?
+        .into_bytevector()
+        .ok()?;
+    String::from_utf8(bytes.to_vec().into_result().ok()?).ok()
 }
 
 pub(crate) fn initialize() -> Result<GerbilRuntime, NativeError> {
@@ -37,6 +90,7 @@ pub(crate) fn initialize() -> Result<GerbilRuntime, NativeError> {
 pub(crate) fn exports() -> UiLinkedExports {
     UiLinkedExports {
         publication: marlin_ui_publication,
+        package_event: marlin_ui_package_event,
         open: marlin_ui_open,
         project: marlin_ui_project_workbench,
         dispatch: marlin_ui_dispatch_event,
@@ -47,19 +101,13 @@ pub(crate) fn exports() -> UiLinkedExports {
     }
 }
 
-pub(crate) fn package_publication<'a>(
+pub(crate) fn envrc_plan<'a>(
     runtime: &'a GerbilRuntime,
-    directory: &str,
-    module: &RootedSchemeObject<'_>,
-    export: &RootedSchemeObject<'_>,
+    request: &RootedSchemeObject<'_>,
 ) -> Result<RootedSchemeObject<'a>, NativeError> {
-    let directory = runtime.string_from_utf8(directory)?.into_object();
-    let request = runtime
-        .collection_from_objects(CollectionKind::Vector, &[&directory, module, export])?
-        .into_object();
     // SAFETY: this strong-root export belongs to the initialized linked VM.
-    let loader = unsafe { runtime.bind_object_export(marlin_ui_package_publication) }?;
-    loader.call(&request).into_result()
+    let export = unsafe { runtime.bind_object_export(marlin_envrc_plan) }?;
+    export.call(request).into_result()
 }
 
 pub(crate) fn tooling_declarations(

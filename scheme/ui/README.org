@@ -15,6 +15,21 @@ dispatch, package contributions and workbench projection.
 and scope assembly. =UiScope= is the admitted value consumed by =session.ss=.
 An external package publishes its own scope using =make-ui-package=; it does
 not need to reconstruct the agent-wide =init.exports= publication.
+A package may supply its own =layout= using the same =UiLayoutScope= contract.
+=marlin-ui-layout-with-tab-bar= installs a =tab-bar-for= callback on the
+layout scope. It receives the admitted Buffer identities and the selected
+tab style, then returns a bar. An interactive segment names an existing
+zero-argument command from the package catalog.
+
+Use Yuanxu's =define-yuanxu-module-declaration= for the catalog and the
+implementation publication. The TUI reads the catalog before painting the
+command list. Its =module= and =export= slots locate the implementation.
+Its =commands=, =buffers= (identity,
+description and optional alias) and =keymap= slots are data used by completion
+and key dispatch. Keep the declaration's imports independent of the
+implementation and share that data with the implementation. Scheme resolves
+the publication on invocation and checks the advertised command descriptors
+against it before admitting the successor session.
 
 * Build and verification
 

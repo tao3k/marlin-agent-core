@@ -2,9 +2,25 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use super::*;
-use std::collections::{HashMap, VecDeque};
-use vm::{Completion, MessageId};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::{Arc, Mutex, atomic::AtomicBool},
+    time::Duration,
+};
+
+use marlin_agent_context::ContextAdmissionRequest;
+use tokio::{
+    sync::{mpsc, oneshot, watch},
+    time::Instant,
+};
+use tokio_util::sync::CancellationToken;
+
+use super::{
+    DeckModuleInstanceId, Job, ModuleState, Outcome, OwnerMessage, owner,
+    vm::{Completion, MessageId},
+    wake,
+};
+use crate::{DeckRuntime, DeckRuntimeMetrics, DeckRuntimeRejection};
 #[path = "context_fixture.rs"]
 mod context_fixture;
 
@@ -12,7 +28,7 @@ fn job(index: usize) -> (Job, oneshot::Receiver<Outcome>) {
     let (reply, result) = oneshot::channel();
     (
         Job {
-            module: super::DeckModuleInstanceId(std::num::NonZeroU64::MIN),
+            module: DeckModuleInstanceId(std::num::NonZeroU64::MIN),
             #[cfg(feature = "context-profiling")]
             enqueued_at: std::time::Instant::now(),
             request: context_fixture::request(&context_fixture::scope("source"), index),

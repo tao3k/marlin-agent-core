@@ -92,11 +92,15 @@ from first frame and painting so a cost in one path cannot hide in another.
 
 * Selecting a terminal package
 
-The current terminal selector is =[tui_ui_package]= with =directory=, =module=
-and =export= fields. It resolves a precompiled publication through the existing
-Scheme Rust SDK. The TUI configuration envelope is Rust-owned; the package's
-UI behavior is Scheme-owned. This terminal selector is separate from the
-general semantic package API and from any future GUI loader.
+The terminal selector =[tui_ui_package]= has =directory=, =module= and
+=export= fields pointing to a compiled Scheme declaration. The first frame
+uses the built-in UI. Opening =M-x= makes the declared commands visible with
+their descriptions. A shortcut can also discover the declaration and retry
+against its keymap. Confirming a declared command or using its bound key runs
+the Scheme loading hook. The publication must supply the advertised command
+descriptor before execution proceeds. Activation keeps the current Buffer,
+theme and command history. Individual package actions may use =yuanxu-autoload=
+to load their own modules on first invocation.
 
 A package using existing elements, facts and effects requires no Rust source
 change. New host effects or terminal primitives require an explicit typed

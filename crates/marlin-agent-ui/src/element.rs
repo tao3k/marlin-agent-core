@@ -7,7 +7,7 @@ use gerbil_scheme::{IdentifierBuffer, ObjectKind, RootedSchemeObject, SchemeScal
 use std::collections::HashSet;
 
 use crate::{
-    UiComponentId, UiProjectionError, UiScrollTarget,
+    UiCommandName, UiComponentId, UiProjectionError, UiScrollTarget,
     projection::{identifier, vector},
 };
 
@@ -17,9 +17,9 @@ pub enum UiElement {
     Text(Vec<UiSpan>),
     /// An opaque host-provided visual source selected by a Scheme component.
     Slot(UiSlotSource),
-    /// A bordered presentation around a host-backed visual source.
+    /// A titled presentation around a host-backed visual source.
     Panel {
-        border_tone: UiTone,
+        border_tone: Option<UiTone>,
         field_template: Box<UiElement>,
         title: Option<Box<UiElement>>,
         child: Box<UiElement>,
@@ -54,6 +54,7 @@ pub enum UiElement {
         prefix: Option<Box<UiElement>>,
         title: Option<UiComponentId>,
         active: UiComponentId,
+        trailing: Option<UiInputAdornment>,
     },
     Rows(Vec<UiElement>),
     Columns(Vec<UiElement>),
@@ -73,6 +74,13 @@ pub enum UiElement {
         scroll_target: Option<UiScrollTarget>,
         child: Box<UiElement>,
     },
+}
+
+/// A one-line view sharing the editable value's cursor row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiInputAdornment {
+    pub cells: u16,
+    pub view: Box<UiElement>,
 }
 
 /// A list's data source is independent of its widget identity.
@@ -118,6 +126,8 @@ pub struct UiBarSegment {
     pub min_width: u16,
     pub condition: Option<UiComponentId>,
     pub child: Box<UiElement>,
+    /// An existing command name activated by a click on the painted segment.
+    pub command: Option<UiComponentId>,
 }
 
 /// A fixed, flexible, or host-bound extent on the containing layout axis.
@@ -354,9 +364,31 @@ impl UiElement {
 
 struct Budget {
     nodes: usize,
-    spans: usize,
+    entries: usize,
     bytes: usize,
     regions: HashSet<UiComponentId>,
+}
+
+impl Budget {
+    fn take_nodes(&mut self, count: usize, error: &'static str) -> Result<(), UiProjectionError> {
+        self.nodes = self
+            .nodes
+            .checked_sub(count)
+            .ok_or(UiProjectionError::Invalid(error))?;
+        self.entries = self
+            .entries
+            .checked_sub(count)
+            .ok_or(UiProjectionError::Invalid(error))?;
+        Ok(())
+    }
+
+    fn take_spans(&mut self, count: usize) -> Result<(), UiProjectionError> {
+        self.entries = self
+            .entries
+            .checked_sub(count)
+            .ok_or(UiProjectionError::Invalid("UI span count exceeds limit"))?;
+        Ok(())
+    }
 }
 
 fn decode_size(
@@ -366,10 +398,10 @@ fn decode_size(
     budget: &mut Budget,
     names: &mut IdentifierBuffer,
 ) -> Result<UiSize, UiProjectionError> {
-    if depth >= 12 || budget.nodes == 0 {
+    if depth >= 12 {
         return Err(UiProjectionError::Invalid("UI size tree exceeds limit"));
     }
-    budget.nodes -= 1;
+    budget.take_nodes(1, "UI size tree exceeds limit")?;
     let kind = identifier(kind, names)?;
     match kind.as_str() {
         "cells" | "flex" => {
@@ -444,10 +476,10 @@ fn decode_size(
 /// Project a bounded UI tree through gerbil-scheme's rooted object API.
 pub fn decode_element(value: RootedSchemeObject<'_>) -> Result<UiElement, UiProjectionError> {
     let mut budget = Budget {
-        // The budget includes size expressions as well as inline bar choices.
-        // Keep the whole projection bounded while admitting a complete frame.
+        // Nodes, size expressions, row data and spans share one entry budget.
+        // Keep the tree depth, node count and text bytes independently bounded.
         nodes: 512,
-        spans: 256,
+        entries: 768,
         bytes: 32 * 1024,
         regions: HashSet::new(),
     };
@@ -486,13 +518,7 @@ fn decode_list_source(
             Some(id)
         };
         let fields = vector(row.element(1)?, 0, 16)?;
-        budget.nodes =
-            budget
-                .nodes
-                .checked_sub(fields.len() + 1)
-                .ok_or(UiProjectionError::Invalid(
-                    "UI list data exceeds node limit",
-                ))?;
+        budget.take_nodes(fields.len() + 1, "UI list data exceeds node limit")?;
         let mut keys = HashSet::new();
         let mut bindings = Vec::with_capacity(fields.len());
         for entry in 0..fields.len() {
@@ -524,10 +550,12 @@ fn decode(
     budget: &mut Budget,
     names: &mut IdentifierBuffer,
 ) -> Result<UiElement, UiProjectionError> {
-    if depth >= 12 || budget.nodes == 0 {
-        return Err(UiProjectionError::Invalid("UI element tree exceeds limit"));
+    if depth >= 12 {
+        return Err(UiProjectionError::Invalid(
+            "UI element nesting exceeds limit",
+        ));
     }
-    budget.nodes -= 1;
+    budget.take_nodes(1, "UI element tree exceeds limit")?;
     let node = vector(value, 2, 2)?;
     let kind = identifier(node.element(0)?, names)?;
     let values = vector(node.element(1)?, 0, 64)?;
@@ -549,7 +577,7 @@ fn decode(
             let entries = vector(values.element(2)?, 0, 32)?;
             let mut segments = Vec::with_capacity(entries.len());
             for index in 0..entries.len() {
-                let entry = vector(entries.element(index)?, 5, 5)?;
+                let entry = vector(entries.element(index)?, 5, 6)?;
                 let side = match identifier(entry.element(0)?, names)?.as_str() {
                     "left" => UiBarSide::Left,
                     "right" => UiBarSide::Right,
@@ -576,12 +604,22 @@ fn decode(
                 if !inline_template(&child) {
                     return Err(UiProjectionError::Invalid("invalid UI bar segment"));
                 }
+                let command = if entry.len() == 6 {
+                    let id = identifier(entry.element(5)?, names)?;
+                    if !UiCommandName::is_valid_prefix(id.as_str()) {
+                        return Err(UiProjectionError::Invalid("invalid UI bar command"));
+                    }
+                    Some(id)
+                } else {
+                    None
+                };
                 segments.push(UiBarSegment {
                     side,
                     priority,
                     min_width,
                     condition,
                     child: Box::new(child),
+                    command,
                 });
             }
             Ok(UiElement::Bar {
@@ -594,7 +632,15 @@ fn decode(
             if values.len() != 4 {
                 return Err(UiProjectionError::Invalid("invalid UI panel"));
             }
-            let border_tone = decode_tone(values.element(0)?, names)?;
+            let border_value = values.element(0)?;
+            let border_tone = if matches!(
+                border_value.as_ref().scalar(),
+                Ok(SchemeScalar::Boolean(false))
+            ) {
+                None
+            } else {
+                Some(decode_tone(border_value, names)?)
+            };
             let field_template = decode(values.element(1)?, depth + 1, budget, names)?;
             if !inline_template(&field_template) {
                 return Err(UiProjectionError::Invalid(
@@ -650,7 +696,7 @@ fn decode(
             })
         }
         "input" => {
-            if values.len() != 5 {
+            if !(5..=6).contains(&values.len()) {
                 return Err(UiProjectionError::Invalid("invalid UI input"));
             }
             let bordered = match values.element(0)?.as_ref().scalar()? {
@@ -688,12 +734,39 @@ fn decode(
             };
             let title = optional(3, names)?;
             let active = identifier(values.element(4)?, names)?;
+            let trailing = match (values.len() == 6).then(|| values.element(5)).transpose()? {
+                Some(value)
+                    if !matches!(value.as_ref().scalar(), Ok(SchemeScalar::Boolean(false))) =>
+                {
+                    let pair = vector(value, 2, 2)?;
+                    let cells = match pair.element(0)?.as_ref().scalar()? {
+                        SchemeScalar::Fixnum(cells) if (1..=64).contains(&cells) => cells as u16,
+                        _ => {
+                            return Err(UiProjectionError::Invalid(
+                                "invalid UI input adornment width",
+                            ));
+                        }
+                    };
+                    let view = decode(pair.element(1)?, depth + 1, budget, names)?;
+                    if !inline_template(&view) {
+                        return Err(UiProjectionError::Invalid(
+                            "invalid UI input adornment view",
+                        ));
+                    }
+                    Some(UiInputAdornment {
+                        cells,
+                        view: Box::new(view),
+                    })
+                }
+                _ => None,
+            };
             Ok(UiElement::Input {
                 bordered,
                 background,
                 prefix,
                 title,
                 active,
+                trailing,
             })
         }
         "sized" => {
@@ -732,10 +805,7 @@ fn decode(
                 _ => UiBackground::Tone(decode_tone(values.element(0)?, names)?),
             };
             let entries = vector(values.element(1)?, 0, 64)?;
-            if entries.len() > budget.spans {
-                return Err(UiProjectionError::Invalid("UI span count exceeds limit"));
-            }
-            budget.spans -= entries.len();
+            budget.take_spans(entries.len())?;
             let mut spans = Vec::with_capacity(entries.len());
             for index in 0..entries.len() {
                 let entry = vector(entries.element(index)?, 4, 5)?;
@@ -842,10 +912,7 @@ fn decode(
             Ok(UiElement::Choice { cases, fallback })
         }
         "text" => {
-            if values.len() > budget.spans {
-                return Err(UiProjectionError::Invalid("UI span count exceeds limit"));
-            }
-            budget.spans -= values.len();
+            budget.take_spans(values.len())?;
             let mut spans = Vec::with_capacity(values.len());
             for index in 0..values.len() {
                 let span = vector(values.element(index)?, 2, 2)?;
@@ -884,7 +951,7 @@ fn decode(
     }
 }
 
-fn inline_template(element: &UiElement) -> bool {
+pub(crate) fn inline_template(element: &UiElement) -> bool {
     match element {
         UiElement::Template { .. } => true,
         UiElement::Choice { cases, fallback } => {

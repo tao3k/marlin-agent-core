@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
+use marlin_agent_core::runtime::environment::{
+    RuntimeEnvironmentRequest, RuntimeEnvironmentResolver,
+};
 use marlin_agent_core::{
     AGENT_HARNESS_PERFORMANCE_EVIDENCE_KEYS, AgentExecutionTrace, AgentExecutionTraceSummary,
     AgentGraph, AgentGraphPlanningStatus, AgentGraphPlanningTarget, AgentHarnessEvidence,
@@ -9,13 +12,12 @@ use marlin_agent_core::{
     AgentTopologyPolicy, AgentTraceSpanRecord, GraphLoopEntryRef, GraphLoopExecutionStatus,
     GraphLoopGraphRef, GraphLoopNodeRef, HookDispatcher, HookRegistry, ModelEndpoint,
     ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayTransport,
-    RuntimeAgentGraphExecutionReadinessStatus, RuntimeEnvironmentRequest,
-    RuntimeEnvironmentResolver, RuntimeExecutionIdentity, agent_graph,
+    RuntimeAgentGraphExecutionReadinessStatus, RuntimeExecutionIdentity, agent_graph,
     check_agent_graph_execution_readiness, plan_agent_coordination, system_gateway_message,
 };
 
 #[test]
-fn core_facade_exposes_environment_resolver() {
+fn core_runtime_exposes_environment_resolver() {
     let environment = RuntimeEnvironmentResolver::new().resolve(
         RuntimeEnvironmentRequest::default()
             .with_custom_home("/tmp/marlin-home")

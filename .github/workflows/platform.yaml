@@ -69,6 +69,19 @@ jobs:
       - name: Install Protobuf compiler for Agent CORE App Server
         if: matrix.gate == 'check'
         run: sudo apt-get install -y protobuf-compiler
+      - name: Install direnv for Worktree activation tests
+        if: matrix.gate == 'test' || matrix.gate == 'tui'
+        shell: bash
+        run: |
+          if ! command -v direnv >/dev/null; then
+            if [[ "$RUNNER_OS" == macOS ]]; then
+              brew install direnv
+            else
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends direnv
+            fi
+          fi
+          direnv version
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
         if: matrix.gate == 'tui'
         with:

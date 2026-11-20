@@ -38,11 +38,10 @@ package MarlinDeclarativeUi {
                    drawing and for pointer routing. Ordered choices select
                    bounded Scheme-authored views from named host facts; the
                    same facts select painted and interactive branches. Scheme
-                   declares Mini Buffer status and search prompt precedence and
-                   text; a bounded prompt node identifies its trailing editable
-                   field, and the adapter maps its clipped text and cursor by
-                   cell width. Scheme selects the transient hint slot rather
-                   than replacing the Mini Buffer region in the terminal host.
+                   declares Minibuffer input and echo precedence and text.
+                   Select the echo once for the frame fact snapshot. A bounded
+                   prompt or input adornment maps clipped text and cursor by
+                   terminal cell width. Scheme selects the transient hint slot.
                    The terminal maps the whole selected frame tree in
                    one rendering traversal, so ordinary additional regions do
                    not require a Rust paint branch. The terminal host still
@@ -54,7 +53,9 @@ package MarlinDeclarativeUi {
                    candidates before dispatching Scheme navigation. Layout and
                    paint share a frame fact and metric snapshot; terminal size
                    changes or label refreshes rebuild it before painting, and
-                   wheel hits use the last painted regions. The derived editor
+                   wheel hits use the last painted regions. An idle poll reuses
+                   the previous layout until display facts or geometry change.
+                   Pointer hover can invalidate that layout. The derived editor
                    collapse observation is evaluated with a bounded three-pass
                    limit; an oscillating authored layout retains the final
                    coherent input snapshot rather than claiming convergence.
@@ -390,7 +391,8 @@ package MarlinDeclarativeUi {
                competing cold-copy trials; the pre-application launch diagnostic
                includes a fresh small-executable control for host variability.
                Do not infer VM cost
-               from time before application entry; measure shutdown
+               from time before Rust main. Record dyld's first image message
+               and Scheme VM initialization separately. Measure shutdown
                separately; do not promote an extended diagnostic window into
                a passing acceptance result. The VM owner and native roots must
                retire normally; suppressing cleanup is not an optimization. */
@@ -412,11 +414,12 @@ package MarlinDeclarativeUi {
                sources or writing a package root at runtime. Generated module
                identities and metadata must come from the same selected build
                specification; membership in a linker manifest alone does not
-               prove that the selected UI can be realized. An init-only runtime
-               import or a UI-family prefix selection can link a smaller
-               archive yet fail at selected UI publication; every closure
-               reduction must pass the source-free
-               first-frame and first-input gate before adoption. */
+               prove that the selected UI can be realized. The TUI entry's
+               compiler-resolved imports provide its startup closure. Optional
+               runtime roots remain available through Gerbil's on-demand loader.
+               The TUI plan excludes the whole-package init. Every closure
+               reduction must pass the source-free first-frame and first-input
+               gate before adoption. */
     }
     requirement <'MAR-UI-R10'> adaptiveModelineAndMiniBuffer {
         doc /* The selected Scheme module fixes semantic segment identity,
@@ -571,6 +574,25 @@ package MarlinDeclarativeUi {
                Measure first open, query edits and navigation separately from
                VM startup, including tail latency and large bounded catalogs. */
     }
+    requirement <'MAR-UI-R25'> sharedMinibufferEcho {
+        doc /* Scheme publishes one echo priority and timing policy. Modeline
+               owns durable window and mode status. The Minibuffer owns the
+               editable value and candidates. Echo may temporarily occupy the
+               idle surface or appear alongside input. It cannot edit a draft,
+               query or selection, log keystrokes, or append to conversation.
+               Pending key echo survives a timer tick. A queued Keypad hint
+               starts its delay only after a successful frame, and cancellation
+               discards the queued hint. Input dismisses temporary feedback
+               according to the admitted policy. The latest message survives
+               an older deadline, and dismissal never removes Messages history.
+               Typed admission rejects invalid echo and adornment values. The
+               generic mapping preserves cursor, input space, and cell clipping
+               on narrow terminals without calling Scheme per frame.
+               Verify the Scheme policy under combined facts, timer order in
+               Quint and the Rust boundary, and real delivery in a linked PTY.
+               Measure empty and populated input adornments independently of
+               command latency and the externally observed startup time. */
+    }
 
     allocation extensions allocate composableExtensions to engine.modulePublication;
     allocation specialization allocate composableExtensions to engine.functionalComposition;
@@ -606,6 +628,9 @@ package MarlinDeclarativeUi {
     allocation commandRanking allocate verticoCommandCompletion to engine.modulePublication;
     allocation rankedInput allocate verticoCommandCompletion to engine.nativeBoundary;
     allocation rankingEvidence allocate verticoCommandCompletion to engine.qualification;
+    allocation echoPolicy allocate sharedMinibufferEcho to engine.modulePublication;
+    allocation echoMapping allocate sharedMinibufferEcho to engine.terminalHost;
+    allocation echoEvidence allocate sharedMinibufferEcho to engine.qualification;
 
     attribute def BeginUpdate;
     attribute def CandidateReady;

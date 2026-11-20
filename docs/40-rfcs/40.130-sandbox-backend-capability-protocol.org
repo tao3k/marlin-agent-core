@@ -8,7 +8,7 @@
 * 40.130 Sandbox Backend Capability Protocol
 :PROPERTIES:
 :status: Active
-:owner-crates: marlin-agent-protocol, marlin-agent-runtime, marlin-agent-environment, marlin-agent-harness, marlin-agent-core, marlin-workspace-protocol
+:owner-crates: marlin-agent-protocol, marlin-agent-runtime, marlin-agent-harness, marlin-agent-core, marlin-workspace-protocol
 :END:
 
 ** Purpose
@@ -278,7 +278,7 @@ Native OS adapter target:
 
 =marlin-agent-runtime= owns backend adapter invocation, cancellation, process lifecycle, resource observation, and receipt emission.
 
-=marlin-agent-environment= owns local environment and service endpoint resolution, including binary discovery and host readiness checks.
+=marlin-agent-runtime= owns local environment and service endpoint resolution, including binary discovery and host readiness checks.
 
 =marlin-workspace-protocol= owns project/workspace/worktree provenance that sandbox receipts attach to.
 

@@ -3,7 +3,7 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 (import (only-in :clan/poo/object .cc)
-        (only-in :clan/poo/mop Fun Type.)
+        (only-in :clan/poo/type Fun Type.)
         (only-in :clan/poo/type Exactly Record))
 (export BriefToDraftScopeContract)
 
@@ -17,6 +17,7 @@
 (def BriefToDraftScopeContract
   (.cc (Record identity: [(Exactly 'marlin/brief-to-draft)]
                program-entry: [(Exactly 'marlin-agent-core/brief-to-draft/entry)]
+               program-runtime-imports: [(Exactly '())]
                validate-settings: [(Fun SettingsProjection <- SettingsInput)]
                propose: [(Fun ProposalResult <- ProposalInput)])
        identity: 'marlin/brief-to-draft))

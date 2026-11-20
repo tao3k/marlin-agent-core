@@ -17,6 +17,7 @@ fn generic_bar_respects_priority_alignment_and_unicode_tail() {
         priority,
         min_width: 0,
         condition: None,
+        command: Some(id(if priority == 0 { "chosen" } else { "optional" })),
         child: Box::new(UiElement::Template {
             background: UiBackground::None,
             spans: vec![UiTemplateSpan {
@@ -55,21 +56,21 @@ fn generic_bar_respects_priority_alignment_and_unicode_tail() {
         bindings: &[("value", "日本/critical")],
     };
     let mut terminal = Terminal::new(TestBackend::new(10, 1)).unwrap();
+    let mut hits = Vec::new();
     terminal
         .draw(|frame| {
-            crate::ui_elements::render_with_facts(
-                frame,
-                frame.area(),
-                &tree,
-                &mut Vec::new(),
-                &inputs,
-            )
+            crate::ui_elements::render_with_facts(frame, frame.area(), &tree, &mut hits, &inputs)
         })
         .unwrap();
     let row: String = (0..10)
         .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
         .collect();
     assert_eq!(row, "L    …ical");
+    let at =
+        |column| crate::ui_elements::hit_test_command(&hits, column, 0).map(UiComponentId::as_str);
+    assert_eq!(at(0), Some("chosen"));
+    assert_eq!(at(1), None);
+    assert_eq!(at(9), Some("optional"));
 }
 
 #[test]
@@ -461,7 +462,7 @@ fn template_binds_untrusted_values_as_literal_cells() {
 #[test]
 fn panel_maps_declared_tones_and_sanitizes_host_content() {
     let panel = UiElement::Panel {
-        border_tone: UiTone::Accent,
+        border_tone: Some(UiTone::Accent),
         field_template: Box::new(UiElement::Template {
             background: marlin_agent_ui::UiBackground::Bar,
             spans: vec![
@@ -614,6 +615,7 @@ fn input_component_uses_selected_presentation_and_literal_bindings() {
                 })),
                 title: None,
                 active: UiComponentId::new("focused").unwrap(),
+                trailing: None,
             },
         )],
         fallback: Box::new(UiElement::Input {
@@ -622,6 +624,7 @@ fn input_component_uses_selected_presentation_and_literal_bindings() {
             prefix: None,
             title: Some(UiComponentId::new("title").unwrap()),
             active: UiComponentId::new("focused").unwrap(),
+            trailing: None,
         }),
     };
     let theme = UiTheme::default();
@@ -677,6 +680,117 @@ fn input_component_uses_selected_presentation_and_literal_bindings() {
 }
 
 #[test]
+fn input_adornment_reserves_width_and_follows_the_cursor_row() {
+    use marlin_agent_ui::{UiBackground, UiInputAdornment};
+    let input = UiElement::Input {
+        bordered: false,
+        background: UiBackground::None,
+        prefix: None,
+        title: None,
+        active: UiComponentId::new("focused").unwrap(),
+        trailing: Some(UiInputAdornment {
+            cells: 12,
+            view: Box::new(UiElement::Template {
+                background: UiBackground::None,
+                spans: vec![UiTemplateSpan {
+                    value: UiTemplateValue::Literal("tail".into()),
+                    tone: UiTone::Muted,
+                    bold: false,
+                }],
+            }),
+        }),
+    };
+    let theme = UiTheme::default();
+    let inputs = UiRenderInputs {
+        theme: &theme,
+        offset: &|_| 0,
+        facts: &|_| false,
+        extent: &|_| Extent::Cells(0),
+        bindings: &[],
+    };
+    let mut terminal = Terminal::new(TestBackend::new(30, 3)).unwrap();
+    let insets = crate::ui_elements::input_insets(&input, inputs.facts).unwrap();
+    terminal
+        .draw(|frame| {
+            crate::ui_elements::render_input(
+                frame,
+                frame.area(),
+                &input,
+                &inputs,
+                true,
+                |width, _| {
+                    assert_eq!(width, insets.text_width(30, true));
+                    assert_eq!(width, 20);
+                    Some((vec!["first".into(), "second".into()], (3, 1)))
+                },
+            );
+        })
+        .unwrap();
+    assert_eq!(terminal.backend().buffer()[(26, 1)].symbol(), "t");
+    assert_eq!(terminal.backend().buffer()[(26, 0)].symbol(), " ");
+    assert_eq!(terminal.backend().buffer()[(26, 2)].symbol(), " ");
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config {
+        cases: 128,
+        rng_seed: proptest::test_runner::RngSeed::Fixed(42),
+        failure_persistence: None,
+        ..proptest::test_runner::Config::default()
+    })]
+
+    #[test]
+    fn input_adornment_keeps_wide_feedback_out_of_the_editable_cells(
+        width in 6u16..=160,
+        cells in 1u16..=64,
+        color in proptest::bool::ANY,
+    ) {
+        use marlin_agent_ui::{UiBackground, UiInputAdornment};
+        let input = UiElement::Input {
+            bordered: false,
+            background: if color { UiBackground::Bar } else { UiBackground::None },
+            prefix: None,
+            title: None,
+            active: UiComponentId::new("focused").unwrap(),
+            trailing: Some(UiInputAdornment {
+                cells,
+                view: Box::new(UiElement::Template {
+                    background: UiBackground::None,
+                    spans: vec![UiTemplateSpan {
+                        value: UiTemplateValue::Literal("界".repeat(40)),
+                        tone: UiTone::Muted,
+                        bold: false,
+                    }],
+                }),
+            }),
+        };
+        let theme = UiTheme::default();
+        let inputs = UiRenderInputs {
+            theme: &theme,
+            offset: &|_| 0,
+            facts: &|_| false,
+            extent: &|_| Extent::Cells(0),
+            bindings: &[],
+        };
+        let mut terminal = Terminal::new(TestBackend::new(width, 1)).unwrap();
+        let mut editable_width = 0;
+        terminal.draw(|frame| {
+            crate::ui_elements::render_input(frame, frame.area(), &input, &inputs, true, |width, _| {
+                editable_width = width;
+                Some((vec!["x".repeat(usize::from(width))], (0, 0)))
+            });
+        }).unwrap();
+        let measured = crate::ui_elements::input_insets(&input, inputs.facts).unwrap();
+        proptest::prop_assert_eq!(editable_width, measured.text_width(width, false));
+        proptest::prop_assert!(editable_width >= width - width / 3);
+        let buffer = terminal.backend().buffer();
+        proptest::prop_assert!((0..editable_width).all(|column| buffer[(column, 0)].symbol() == "x"));
+        proptest::prop_assert!((editable_width..width).all(|column| buffer[(column, 0)].symbol() != "x"));
+        proptest::prop_assert_ne!(buffer[(width - 1, 0)].symbol(), "界");
+    }
+}
+
+#[test]
 fn input_column_width_can_use_available_width_fact() {
     use marlin_agent_ui::{UiSize, UiTemplateSpan, UiTemplateValue};
     let width = UiSize::Choice {
@@ -702,6 +816,7 @@ fn input_column_width_can_use_available_width_fact() {
         })),
         title: None,
         active: UiComponentId::new("focused").unwrap(),
+        trailing: None,
     };
     let theme = UiTheme::default();
     let inputs = UiRenderInputs {
@@ -723,7 +838,7 @@ fn input_column_width_can_use_available_width_fact() {
                     false,
                     |available, _| {
                         assert_eq!(available, expected);
-                        None
+                        None::<crate::ui_elements::UiInputValue>
                     },
                 )
             })

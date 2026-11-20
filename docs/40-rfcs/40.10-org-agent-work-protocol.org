@@ -43,9 +43,8 @@ The work protocol is split across small crates:
 |-------+-----------------------|
 | =marlin-org-model= | Typed Org node, source span, link, task, block, and table records |
 | =marlin-org-workspace= | =orgize=-backed document loading and AST projection |
-| =marlin-workspace-query= | Query scopes, selectors, filters, and results |
+| =marlin-workspace= | Query, status, and view contracts |
 | =marlin-workspace-patch= | Typed mutation operations and validation receipts |
-| =marlin-workspace-view= | Rendered workspace view specs and results |
 | =marlin-org-memory= | In-memory =AgentWorkspace= backend over Org records |
 | =marlin-org-patch= | Source-aware text edit planning and in-memory application |
 | =marlin-workspace-protocol= | Public =AgentWorkspace= facade and native type exports |

@@ -70,7 +70,7 @@ impl App {
             }
             return;
         }
-        if self.submit_process_command() {
+        if self.submit_runtime_command() {
             return;
         }
         if self.pending.is_some() {
@@ -141,6 +141,12 @@ impl App {
             match parsed {
                 Some(Command::Sessions(next)) => self.show_sessions(runtime, next),
                 Some(Command::Models) => self.show_models(),
+                Some(Command::Workspace {
+                    mode: "worktree-switch",
+                    arguments: Some(branch),
+                }) => {
+                    self.worktree_switch = Some(branch.trim().to_owned());
+                }
                 Some(Command::Workspace { mode, arguments }) => {
                     let query_text = match arguments {
                         Some(arguments) => format!("{mode} {arguments}"),
@@ -148,7 +154,11 @@ impl App {
                     };
                     let (severity, message) = match parse_query(&query_text) {
                         Err(error) => (MessageSeverity::Warning, error.to_owned()),
-                        Ok(query) => match env::current_dir() {
+                        Ok(query) => match self
+                            .context_worktree
+                            .clone()
+                            .map_or_else(env::current_dir, Ok)
+                        {
                             Ok(path) => {
                                 let session = self.runtime_session_id();
                                 if self.workspace.start(runtime, &session, path, query) {
@@ -229,8 +239,8 @@ impl App {
                 }
                 Some(Command::SelectUi(event)) => self.ui_request = Some(event),
                 Some(Command::EnterTransient(id)) => self.transient_request = Some(id),
-                Some(Command::KillProcess(_)) => {
-                    unreachable!("process command handled at admission")
+                Some(Command::KillProcess(_) | Command::Envrc(_)) => {
+                    unreachable!("runtime command handled at admission")
                 }
                 Some(Command::OpenMenu(prefix)) => {
                     self.command_draft = Some(std::mem::take(&mut self.composer));
@@ -830,7 +840,7 @@ impl App {
 }
 
 impl App {
-    fn submit_process_command(&mut self) -> bool {
+    fn submit_runtime_command(&mut self) -> bool {
         let Some(_) = self.command_draft else {
             return false;
         };
@@ -850,13 +860,14 @@ impl App {
                 self.refresh_process_content();
             }
             Some(Command::KillProcess(generation)) => self.stop_process(generation),
+            Some(Command::Envrc(command)) => self.envrc_command = Some(command),
             _ => return false,
         }
         self.command_history_request = descriptor.map(|item| item.name);
         self.composer = self
             .command_draft
             .take()
-            .expect("process command has a saved draft");
+            .expect("runtime command has a saved draft");
         self.command_menu = None;
         true
     }

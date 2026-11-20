@@ -444,6 +444,10 @@ fn worktrunk_pull_request_checkout(
     if !repository.is_valid() {
         return Err(WorkingCopyCommandProjectionError::InvalidGitHubRepository);
     }
+    #[cfg(feature = "worktrunk")]
+    let prefix = worktrunk::git::RefType::Pr.syntax();
+    #[cfg(not(feature = "worktrunk"))]
+    let prefix = "pr:";
     let mut command =
         WorkingCopyCommandInvocation::new(WorkingCopyCommandProgram::Worktrunk, git_toplevel)
             .with_args([
@@ -452,7 +456,7 @@ fn worktrunk_pull_request_checkout(
                 "--no-hooks".to_owned(),
                 "--format".to_owned(),
                 "json".to_owned(),
-                format!("pr:{pull_request}"),
+                format!("{prefix}{pull_request}"),
             ])
             .with_expected_working_copy(working_copy.clone());
     command.github_repository = Some(repository.clone());

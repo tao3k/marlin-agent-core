@@ -3,25 +3,28 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 ;;; Component probes call the existing Lab and Marlin operations unchanged.
-package: marlin-benchmark
 (import (only-in :marlin-agent-core/interface LabContext)
         (only-in :clan/poo/object .get .call)
-        (only-in :clan/poo/mop validate)
-        (only-in :marlin-benchmark/compiler-roots compiler-roots-snapshot)
-        (only-in :marlin-benchmark/mailbox mailbox-clock-ns)
+        (only-in :clan/poo/type validate)
+        (only-in "./compiler-roots.ss" compiler-roots-snapshot)
+        (only-in "./mailbox.ss" mailbox-clock-ns)
+        (only-in :tao3k/yuanxu/prelude yuanxu-build-autoloads)
+        (for-syntax :gerbil/expander
+          (only-in :marlin-agent-core/c-abi/build Build)))
 
-        (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
+(yuanxu-build-autoloads Build deck)
+(yuanxu-build-autoloads Build context)
 
 (export run-context-profile run-context-retention-profile)
 (extern context-profile-phase!)
 (begin-foreign
-  (namespace ("marlin-benchmark/context-profile#" context-profile-phase!))
+  (namespace ("marlin-agent-core/bench/context-profile#" context-profile-phase!))
   (c-declare "unsigned int marlin_context_profile_phase = 0;
 static void marlin_context_set_phase(int phase) { marlin_context_profile_phase = (unsigned)phase; }")
   (define context-profile-phase! (c-lambda (int) void "marlin_context_set_phase")))
 
 (def (run-context-profile batches)
-  (def context (.get marlin-agent-core.init.exports Marlin context))
+  (def context (context-scope))
   (def decode (.get context bridge decode-batch))
   (def encode (.get context bridge encode-scopes))
   (def admit (.get context admit-scope))
@@ -68,7 +71,7 @@ static void marlin_context_set_phase(int phase) { marlin_context_profile_phase =
   (def rechecked (validate (.get LabContext admission-type) admit))
   (let (inputs (prepare))
     (measure 7 (lambda () (map-rows rechecked inputs))))
-  (def deck ((.get marlin-agent-core.init.exports Marlin deck-runtime open) admit encode))
+  (def deck ((.get (deck-scope) open) admit encode))
   (def actor-output
     (measure 8 (lambda ()
       (vector-map (lambda (rows)
@@ -142,9 +145,9 @@ static void marlin_context_set_phase(int phase) { marlin_context_profile_phase =
   (def lab (.get LabContext admission-type))
   (context-profile-phase! 0)
   (snapshot)
-  (def context (.get marlin-agent-core.init.exports Marlin context))
+  (def context (context-scope))
   (snapshot)
-  (def published (.get marlin-agent-core.init.exports Marlin deck-runtime))
+  (def published (deck-scope))
   (snapshot)
   (def runtime ((.get published open) (.get context admit-scope) (.get context bridge encode-scopes)))
   (snapshot)

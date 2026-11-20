@@ -5,7 +5,9 @@
 ;;; Operations provided by the Policy module.
 
 (import (only-in :clan/poo/object .o)
-        "./func.ss")
+        (only-in "./projection/graph/routing.ss" marlin-agent-policy-routing-project-poo-policy)
+        (only-in "./projection/graph/topology.ss" marlin-deck-runtime-compile-loop-graph)
+        (only-in "./projection/graph/continuation.ss" marlin-graph-loop-continuation-next-action))
 
 (export PolicyOperations)
 

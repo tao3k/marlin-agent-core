@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / GitOps
+#+language: en
+
+Marlin composes the GitOps scope, contract and Features exposed by =LabGitOps=
+in the shared [[file:../interface.ss][interface]]. Select =(gitops +worktrunk)= in [[file:../init.ss][init.ss]] to admit the
+Worktrunk provider into Marlin's policy. Extend the selected policy with
+POO refinement for Marlin-specific requirements.
+
+[[file:bridge.ss][bridge.ss]] converts the host's observed provider availability and
+preference into inputs for the selected policy. Rust owns working-copy
+requests, execution and receipts. The Cargo feature
+=marlin-agent-gitops/worktrunk= links Worktrunk's Rust library for pull
+request reference syntax. GitOps applies plans through =wt=.
+
+* TUI Git Context
+
+In a trusted TUI configuration, approve one Git repository by the absolute
+path to one of its checkouts.
+
+#+begin_src toml
+[git_context]
+repository = "/absolute/path/to/repository"
+#+end_src
+
+The linked TUI observes the launch checkout after painting its first frame.
+Lab admits the committed =index.org= and =topology.org= after checking the
+repository binding. The Messages buffer shows the admitted commit and both
+Org source digests. The =worktree-switch= command takes a local branch
+name. Before asking Worktrunk to switch, Marlin retires any pending read's
+Lab display grants and drops its delivery ticket. Lab rejects a revoked
+delivery before parsing or admitting its Org payloads. Marlin changes its
+current Context only after Worktrunk returns the observed checkout.
+
+* Cross-repository integration test
+
+[[file:../t/gitops-cross-repo-test.ss][The GitOps suites]] run through standard
+=gerbil test= using the selected Lab source and compiled libraries. The
+[[file:../t/fixtures/gitops-context/run.py][Python fixture]] verifies the two
+original PR #34 blobs, prepares both local repositories through the Rust
+Worktrunk test, and supplies the Git observations to the Scheme suite.
+This focused integration requires a real Worktrunk executable and two
+fixture repositories.
+
+From the workspace root, prebuild the provider test. Use the executable Cargo
+reports as =$provider=. Set =$design= to the original =index.org= and
+=topology.org= directory, =$lab= to the matching Lab source, and =$output= to
+an empty directory. Use the corresponding =GERBIL_PATH= and
+=GERBIL_LOADPATH= for the compiled Lab and dependency products.
+
+#+begin_src sh
+cargo test --locked -p marlin-agent-gitops \
+  --features worktrunk --test gitops_context_worktrunk --no-run
+timeout --signal=TERM --kill-after=5s 120s \
+  python3 scheme/t/fixtures/gitops-context/run.py "$design" "$lab" "$output" "$provider"
+#+end_src
+
+The default =gitops-inflight-test= runs the delivery acceptance under a
+120-second deadline and a 2 GiB Gerbil heap cap. Select
+=--suite gitops-cross-repo-test= for the baseline Org and pre-open controls
+with the same fixture and limits. Git traces corroborate permission
+refusals before opening. Two
+additional cases revoke one side after both Git children start delivering
+payloads. The caller checks both late payloads against their committed
+digests, discards them, and verifies Lab's retained sources and query
+history together with its own warm cache. Restoring a grant requires fresh
+physical reads. See the [[file:../../docs/40-rfcs/40.182-gitops-context-discovery.org::*PR #34 cross-Repo acceptance][acceptance record]].

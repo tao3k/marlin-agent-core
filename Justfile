@@ -7,6 +7,8 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 # Bound native Scheme builds to the available processors unless the caller
 # has selected a smaller budget.
 export GERBIL_BUILD_CORES := env_var_or_default("GERBIL_BUILD_CORES", num_cpus())
+gerbil_prefix := env_var_or_default("GERBIL_PATH", justfile_directory() / "scheme" / ".gerbil")
+export GERBIL_LOADPATH := env_var_or_default("GERBIL_LOADPATH", gerbil_prefix / "lib")
 
 default:
   @just --list
@@ -20,7 +22,7 @@ rust-dev-gate:
   cargo test --locked -p marlin-rust-project-harness-policy --test workspace_policy
 
 # Authored Quint models and reproducible trace checks.
-property-model-gate: app-server-model-gate
+property-model-gate: app-server-model-gate gitops-context-model-gate
   quint typecheck dev/quint/host-observer.qnt
   quint run dev/quint/host-observer.qnt --seed=42 --max-samples=100 --max-steps=8 --invariant=safe --verbosity=1
   @output=$(quint run dev/quint/host-observer.qnt --step=badStep --invariant=safe --seed=42 --max-samples=100 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in host exit negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
@@ -35,9 +37,7 @@ property-model-gate: app-server-model-gate
   quint run dev/quint/event-bus.qnt --main=eventBus --seed=42 --max-samples=1000 --max-steps=10 --invariant=safe --verbosity=1
   @output=$(quint run dev/quint/event-bus.qnt --main=eventBus --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=10 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in event bus negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
   @test_binary=$(mktemp -t marlin-event-bus-test.XXXXXX); trap 'rm -f "$test_binary"' EXIT; rustc --edition=2024 --test dev/verification/event_bus_contract.rs -o "$test_binary"; "$test_binary"
-  quint typecheck dev/quint/tui-minibuffer.qnt
-  quint test dev/quint/tui-minibuffer.qnt --max-samples=100
-  quint run dev/quint/tui-minibuffer.qnt --seed=42 --max-samples=1000 --max-steps=30 --invariant=stateSafe --verbosity=1
+  just tui-model-gate
   quint typecheck dev/quint/model-tool-review.qnt
   quint test dev/quint/model-tool-review.qnt --main=modelToolReview --max-samples=100
   quint run dev/quint/model-tool-review.qnt --main=modelToolReview --seed=42 --max-samples=1000 --max-steps=10 --invariant=safe --verbosity=1
@@ -60,6 +60,15 @@ property-model-gate: app-server-model-gate
   quint run dev/quint/process-quota.qnt --main=processQuota --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1
   @output=$(quint run dev/quint/process-quota.qnt --main=processQuota --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in process quota negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
 
+# MAR-UI-R10/R11/R25. Layout and echo share the same TUI property entry.
+tui-model-gate:
+  quint typecheck dev/quint/tui-minibuffer.qnt
+  quint test dev/quint/tui-minibuffer.qnt --main=tuiMinibuffer --max-samples=100
+  quint run dev/quint/tui-minibuffer.qnt --main=tuiMinibuffer --seed=42 --max-samples=1000 --max-steps=30 --invariant=stateSafe --verbosity=1
+  quint test dev/quint/tui-minibuffer.qnt --main=minibufferEcho --max-samples=100
+  quint run dev/quint/tui-minibuffer.qnt --main=minibufferEcho --seed=42 --max-samples=1000 --max-steps=30 --invariant=safe --verbosity=1
+  @output=$(quint run dev/quint/tui-minibuffer.qnt --main=minibufferEcho --step=badStep --seed=42 --max-samples=100 --max-steps=4 --invariant=safe --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in echo timing negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+
 # Run only inside a disposable, root-owned delegated Linux systemd scope.
 strict-linux-os-qualification:
   python3 dev/verification/linux_cgroup_qualification.py
@@ -69,6 +78,35 @@ app-server-model-gate:
   quint typecheck dev/quint/app-server-turn.qnt
   quint test dev/quint/app-server-turn.qnt --max-samples=100
   quint run dev/quint/app-server-turn.qnt --seed=42 --max-samples=1000 --max-steps=30 --invariant=safe --verbosity=1
+
+# MAR-GCTX: versioned source admission, retirement and custody.
+gitops-context-model-gate:
+  quint typecheck dev/quint/gitops-context.qnt
+  quint test dev/quint/gitops-context.qnt --main=gitopsContextAdmission
+  quint test dev/quint/gitops-context.qnt --main=gitopsContextRetention
+  quint test dev/quint/gitops-context.qnt --main=gitopsOrgLinkEvidence
+  quint test dev/quint/gitops-context.qnt --main=gitopsCrossRepoPublication
+  quint test dev/quint/gitops-context.qnt --main=gitopsWorkingCopyPolicy
+  quint run dev/quint/gitops-context.qnt --main=gitopsContextAdmission --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/gitops-context.qnt --main=gitopsContextRetention --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/gitops-context.qnt --main=gitopsOrgLinkEvidence --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/gitops-context.qnt --main=gitopsCrossRepoPublication --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/gitops-context.qnt --main=gitopsWorkingCopyPolicy --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  @for control in gitopsContextAdmission:foreignCloneMutation gitopsContextAdmission:stalePublicationMutation gitopsContextAdmission:cursorMutation gitopsContextRetention:mergeMutation gitopsContextRetention:custodyMutation gitopsOrgLinkEvidence:attachmentMutation gitopsOrgLinkEvidence:crossRepoMutation gitopsCrossRepoPublication:latePublicationMutation gitopsCrossRepoPublication:preOpenMutation gitopsCrossRepoPublication:lateCacheMutation gitopsWorkingCopyPolicy:missingCoreMutation; do result=0; output=$(quint run dev/quint/gitops-context.qnt --main="${control%:*}" --step="${control#*:}" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
+
+# The offline CLI checks Quint IR without starting an RPC server.
+gitops-context-symbolic-gate apalache="apalache-mc":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  model_path="$PWD/dev/quint/gitops-context.qnt"
+  proof_dir="$PWD/target/quint/gitops-context-verification"
+  mkdir -p "$proof_dir"
+  cd "$proof_dir"
+  for module in gitopsContextAdmission gitopsContextRetention gitopsOrgLinkEvidence gitopsCrossRepoPublication gitopsWorkingCopyPolicy; do
+    quint compile "$model_path" --main="$module" --invariant=safe --target=json > "$module.qnt.json"
+    {{ quote(apalache) }} check --init=init --next=step --inv=safe --length=16 "$module.qnt.json" > "$module-apalache.log" 2>&1 || { tail -n 30 "$module-apalache.log"; exit 1; }
+    rg "Checker reports no error up to computation length 16" "$module-apalache.log"
+  done
 
 # One project gate: architecture, model, native Scheme PBT and Rust properties.
 property-gate: sysml-check property-model-gate scheme-property-gate
@@ -80,14 +118,19 @@ property-gate: sysml-check property-model-gate scheme-property-gate
   cargo test --locked -p marlin-agent-gitops
   cargo test --locked -p marlin-agent-runtime --lib confirmed_process_does_not_release_until_pipe_endpoint_is_dropped
   cargo test --locked -p marlin-agent-kernel --test unit_test strict_tree_
-  python3 dev/verification/process_quota_gate.py
+  just process-quota-gate
   cargo test --locked -p marlin-agent-tui --no-default-features --lib
   cargo test --locked -p marlin-agent-ui --test ui_native_projection
   if [[ $(uname -s) == Darwin ]]; then just tui-runtime-gate; fi
 
+process-quota-gate:
+  cargo test --locked -p marlin-agent-runtime --test process_quota_gate -- --ignored --nocapture
+
 # Real linked macOS TUI: override MARLIN_TUI_SOAK_SECONDS for longer runs.
 tui-runtime-gate:
   just scheme-build
+  cargo test --locked -p marlin-agent-tui --test pty
+  cargo test --locked -p marlin-agent-tui --test pty streaming_command_navigation_stays_within_admitted_candidates -- --ignored --nocapture
   MARLIN_TUI_SOAK_SECONDS="${MARLIN_TUI_SOAK_SECONDS:-30}" cargo test --locked -p marlin-agent-tui --test pty repeated_stream_cancellation_soak -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty workspace_tool_cancel_reaps_process -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty workspace_tool_shutdown_reaps_after_exit -- --ignored --nocapture
@@ -148,7 +191,13 @@ scheme-package-gate:
   just scheme-test
 
 # Build the init-selected Scheme graph through the package Builder.
-scheme-build:
+scheme-build: (_scheme-package "build")
+
+# Remove the init-selected Scheme build and link products.
+scheme-clean: (_scheme-package "clean")
+
+[private]
+_scheme-package action:
   #!/usr/bin/env bash
   set -euo pipefail
   if [[ "$(uname -s)" == Darwin ]]; then
@@ -156,7 +205,7 @@ scheme-build:
     export PATH="${GERBIL_PREFIX:+$GERBIL_PREFIX/bin:}/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
   fi
   cd scheme
-  gerbil build
+  gerbil {{ quote(action) }}
 
 # Run the fixed full Context workload after provisioning the paired Scheme package.
 context-latency-gate:
@@ -215,14 +264,28 @@ tui-ui-mapping-bench: scheme-build
 
 # Keep interaction latency, first-copy startup, and source-free release
 # qualification in one reproducible command. Build time is not a sample.
-tui-performance-bench: tui-aot-debug tui-aot-build
-  cargo test --locked -p marlin-agent-tui --test launch linked_debug_pre_ui_launch_pair -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test launch linked_release_pre_ui_launch_pair -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty first_mx_arrow_is_not_lost_before_the_menu_frame
-  cargo test --locked -p marlin-agent-tui --test pty mx_navigation_pty_latency -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty debug_linked_fresh_copy_startup_pair -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty release_linked_fresh_copy_startup_pair -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty release_linked_ui_first_frame_without_a_gerbil_package_tree -- --ignored --nocapture
+tui-performance-bench: tui-ui-mapping-bench
+  #!/usr/bin/env bash
+  set -euo pipefail
+  artifacts=$(mktemp)
+  trap 'rm -f "$artifacts"' EXIT
+  # Cargo's test build can replace target/debug/marlin-tui with a different artifact.
+  cargo test --locked -p marlin-agent-tui --test launch --test pty --no-run --message-format=json > "$artifacts"
+  test_binary() {
+    jq -er --arg name "$1" 'select(.reason == "compiler-artifact" and .target.name == $name and .executable != null) | .executable' "$artifacts"
+  }
+  launch=$(test_binary launch)
+  pty=$(test_binary pty)
+  cargo build --locked -p marlin-agent-tui --bin marlin-tui
+  cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --release
+  "$launch" linked_debug_pre_ui_launch_pair --ignored --nocapture
+  "$launch" linked_release_pre_ui_launch_pair --ignored --nocapture
+  "$pty" first_mx_arrow_is_not_lost_before_the_menu_frame
+  "$pty" mx_navigation_pty_latency --ignored --nocapture
+  "$pty" debug_linked_fresh_copy_startup_pair --ignored --nocapture
+  "$pty" release_linked_fresh_copy_startup_pair --ignored --nocapture
+  "$pty" release_linked_ui_first_frame_without_a_gerbil_package_tree --ignored --nocapture
+  "$pty" idle_output_probe --ignored --nocapture
   cargo bench --locked -p marlin-agent-runtime --bench runtime_events
 
 # Diagnose whether the size-oriented profile improves a source-matched linked

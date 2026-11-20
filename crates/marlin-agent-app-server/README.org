@@ -327,7 +327,7 @@ the draft, projection and applied cursor. An external application can use the
 same RPCs over HTTP/2. The local Weaver candidates use these Session
 operations for Marlin-backed A2A and ACP requests.
 [[file:../../dev/sysml/app-server.sysml][GPUI message flow model]] ·
-[[file:tests/session.rs][HTTP/2 fixture]]
+[[file:tests/integration/session/main.rs][HTTP/2 fixture]]
 
 * Recoverable Session interactions
 :PROPERTIES:

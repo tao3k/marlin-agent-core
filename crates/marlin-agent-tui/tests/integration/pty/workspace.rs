@@ -30,7 +30,7 @@ fn mx_diff_and_status_use_the_entire_launch_worktree() {
     fs::write(root.join("untracked.txt"), "new file\n").unwrap();
 
     let mut terminal = Terminal::start_in(&config, &[], &[], 30, 100, &nested);
-    terminal.wait_status("Message: Enter send");
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bxstatus\r");
     terminal.wait_for(Duration::from_secs(5), "whole worktree status", |output| {
         let rows = screen_lines(output);

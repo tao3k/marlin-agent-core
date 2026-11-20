@@ -16,10 +16,11 @@ readme = "README.org"
 gerbil-scheme-abi = ["dep:gerbil-scheme"]
 # Package-host Context operations include the typed ABI.
 gerbil = ["gerbil-scheme-abi"]
+artifacts = ["gerbil", "dep:marlin-agent-gitops", "dep:sha2", "dep:tempfile"]
 org-source = [
     "dep:marlin-gerbil-ir",
     "dep:marlin-context-org-model",
-    "dep:marlin-workspace-status",
+    "dep:marlin-workspace",
     "dep:serde",
     "dep:serde_json",
 ]
@@ -27,8 +28,6 @@ org-workflow = ["org-source"]
 org-memory = [
     "org-source",
     "dep:marlin-agent-graph",
-    "dep:marlin-workspace-query",
-    "dep:marlin-workspace-view",
     "dep:parking_lot",
 ]
 
@@ -36,19 +35,21 @@ org-memory = [
 marlin-agent-graph = { workspace = true, optional = true }
 marlin-gerbil-ir = { workspace = true, optional = true }
 marlin-context-org-model = { workspace = true, optional = true }
-marlin-workspace-query = { workspace = true, optional = true }
-marlin-workspace-status = { workspace = true, optional = true }
-marlin-workspace-view = { workspace = true, optional = true }
+marlin-workspace = { workspace = true, optional = true }
 parking_lot = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 gerbil-scheme = { workspace = true, optional = true }
 marlin-agent-protocol.workspace = true
+marlin-agent-gitops = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [dev-dependencies]
 marlin-context-org-model.workspace = true
 criterion.workspace = true
+tokio.workspace = true
 
 [[bench]]
 name = "scope_batch"

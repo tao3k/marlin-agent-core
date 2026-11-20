@@ -4,7 +4,8 @@
 
 //! One working-copy-bound input and its runtime environment.
 
-use super::{RuntimeEnvironment, WorkingCopyIsolationReceipt};
+use super::RuntimeEnvironment;
+use marlin_agent_gitops::working_copy::WorkingCopyIsolationReceipt;
 
 /// One working-copy-bound sub-agent spawn in a runtime fanout.
 #[derive(Clone, Debug)]

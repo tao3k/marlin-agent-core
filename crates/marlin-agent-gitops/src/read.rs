@@ -11,7 +11,8 @@ use tokio::{io::AsyncReadExt, process::Command};
 
 pub(crate) const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(10);
-pub(crate) const DISABLED_HOOKS: &str = if cfg!(windows) {
+/// Process-local Git configuration for operations that must not run repository hooks.
+pub const DISABLED_HOOKS: &str = if cfg!(windows) {
     "core.hooksPath=NUL"
 } else {
     "core.hooksPath=/dev/null"
@@ -48,6 +49,10 @@ pub enum GitReadError {
     MissingOutput,
     #[error("git returned an invalid repository root")]
     InvalidRepositoryRoot,
+    #[error("git returned an invalid commit object ID")]
+    InvalidCommit,
+    #[error("the worktree HEAD changed while capturing its Context patch")]
+    ContextCommitChanged,
     #[error("target is not a worktree of the selected Git repository: {0:?}")]
     UnrelatedWorktree(std::path::PathBuf),
     #[error("git returned invalid fetch remote URLs")]

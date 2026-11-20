@@ -48,3 +48,11 @@ tonic-prost-build = { version = "=0.14.6", optional = true }
 marlin-agent-storage = { workspace = true, features = ["turso"] }
 tempfile.workspace = true
 tokio-stream = { workspace = true, features = ["net"] }
+
+[[test]]
+name = "grpc"
+path = "tests/integration/grpc.rs"
+
+[[test]]
+name = "session"
+path = "tests/integration/session/main.rs"

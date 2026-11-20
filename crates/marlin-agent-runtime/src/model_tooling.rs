@@ -158,11 +158,26 @@ impl ToolRuntime for ShellToolHandler {
                 .as_str()
                 .expect("admitted string command");
             let script = format!("exec 2>&1\n{command}");
+            let workspace = if let Some(binding) = context.active_working_copy() {
+                binding.working_copy.path.clone()
+            } else {
+                match tokio::time::timeout(declaration.timeout, context.project_envrc()).await {
+                    Ok(Ok(Some(envrc))) if workspace.starts_with(envrc.root()) => {
+                        envrc.root().to_path_buf()
+                    }
+                    Ok(Ok(_)) => workspace,
+                    Ok(Err(error)) => return ModelToolOutcome::Failed(error.to_string()),
+                    Err(_) => {
+                        return ModelToolOutcome::Failed("worktree discovery timed out".into());
+                    }
+                }
+            };
             let executor = ManagedProcessExecutor::new(
                 context,
                 RuntimeProcessKind::Tool,
                 RuntimeOperationId::new("model.tool.shell"),
-            );
+            )
+            .with_project_envrc();
             let request = BoundedProcessRequest {
                 program: "/bin/bash".into(),
                 arguments: vec![

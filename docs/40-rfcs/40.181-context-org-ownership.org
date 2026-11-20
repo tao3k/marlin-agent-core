@@ -21,7 +21,7 @@ module loading.
 * Implemented boundary
 
 The [[file:../../scheme/interface.ss][dependency interface]] retains the selected Lab objects. The
-[[file:../../scheme/context/objects.ss][Context scope]] exposes scope admission, Contract source cuts and a
+[[file:../../scheme/context-system/objects.ss][Context scope]] exposes scope admission, Contract source cuts and a
 source-backed Element graph through [[file:../../scheme/c-abi/context.ss][typed Scheme ABI procedures]].
 The [[file:../../crates/marlin-agent-context/src/gerbil_org.rs][Rust Org boundary]] accepts an explicit owning VM and preserves rooted
 source values; runtime-internal values never cross as Scheme-authored text

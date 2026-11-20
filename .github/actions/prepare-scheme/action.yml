@@ -48,10 +48,13 @@ runs:
           )
         }
         seed_revision "$lab_repo" "$lab_revision"
+        git -C "$GERBIL_PATH/pkg/$lab_repo" submodule update --init --checkout core
         orgize_revision=$(git -C "$GERBIL_PATH/pkg/$lab_repo" show "$lab_revision:gerbil.pkg" |
           sed -nE 's/.*"github\.com\/tao3k\/orgize@([0-9a-f]{40})".*/\1/p')
         [[ "$orgize_revision" =~ ^[0-9a-f]{40}$ ]]
         seed_revision "$orgize_repo" "$orgize_revision"
+        # Orgize's C bindings stage the parser with this build-only package.
+        gerbil pkg install github.com/tao3k/gerbil-scheme-rust@dfe8b62b5dc64de88f8d70a77059a1741218ef80
         if [[ "$TRACE_DEPENDENCY_CRASH" == true && "$RUNNER_OS" == Linux ]]; then
           command -v gdb >/dev/null || sudo apt-get install -y gdb
           crash_dir=$(mktemp -d "$RUNNER_TEMP/marlin-gerbil-crash.XXXXXX")

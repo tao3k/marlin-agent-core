@@ -2,8 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use super::super::{DeckModuleInstanceId, DeckTimerId, DeckTimerReceipt};
-use super::*;
+use super::{Controls, DeckModuleInstanceId, DeckTimerId, DeckTimerReceipt, TimerSlot};
 use std::num::NonZeroU64;
 fn module(id: u64) -> DeckModuleInstanceId {
     DeckModuleInstanceId(NonZeroU64::new(id).unwrap())

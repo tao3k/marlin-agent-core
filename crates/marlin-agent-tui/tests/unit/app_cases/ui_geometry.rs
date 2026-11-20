@@ -68,7 +68,8 @@ fn conditional_region_paint_and_hit_use_the_same_frame_facts() {
     };
     use ratatui::{Terminal, backend::TestBackend, layout::Rect};
     let mut app = App::new(ModelEndpoint::new("provider", "model"));
-    app.minibuffer_notice = Some("notice".into());
+    app.echo_area
+        .set_message("notice".into(), std::time::Instant::now());
     let mut view = UiWorkbench {
         model_label: "model".into(),
         session_label: "session".into(),
@@ -85,7 +86,10 @@ fn conditional_region_paint_and_hit_use_the_same_frame_facts() {
             0,
             UiElement::Sized {
                 size: UiSize::Choice {
-                    cases: vec![(UiComponentId::new("notice").unwrap(), UiSize::Cells(1))],
+                    cases: vec![(
+                        UiComponentId::new("binding-present/notice").unwrap(),
+                        UiSize::Cells(1),
+                    )],
                     fallback: Box::new(UiSize::Cells(0)),
                 },
                 child: Box::new(UiElement::Region {
@@ -93,7 +97,7 @@ fn conditional_region_paint_and_hit_use_the_same_frame_facts() {
                     scroll_target: None,
                     child: Box::new(UiElement::Choice {
                         cases: vec![(
-                            UiComponentId::new("notice").unwrap(),
+                            UiComponentId::new("binding-present/notice").unwrap(),
                             UiElement::Text(vec![UiSpan {
                                 text: "visible".into(),
                                 tone: UiTone::Normal,

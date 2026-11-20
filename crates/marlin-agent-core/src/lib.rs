@@ -11,12 +11,6 @@ mod release;
 pub use marlin_agent_app_server as app_server;
 
 pub use marlin_agent_context as context;
-pub use marlin_agent_environment as environment;
-pub use marlin_agent_environment::{
-    PROJECT_CONFIG_PRECEDENCE, RuntimeEnvironmentError, RuntimeEnvironmentRequest,
-    RuntimeEnvironmentResolver, SESSION_FLAGS_CONFIG_PRECEDENCE, SUB_AGENT_CONFIG_PRECEDENCE,
-    SYSTEM_CONFIG_PRECEDENCE, SubAgentEnvironmentRequest, USER_CONFIG_PRECEDENCE,
-};
 pub use marlin_agent_graph::{
     self as agent_graph, AgentCapability, AgentCoordinationDecision, AgentCoordinationEvidenceKind,
     AgentCoordinationEvidenceRef, AgentCoordinationPlan, AgentCoordinationReceipt, AgentDelegation,
@@ -153,7 +147,7 @@ pub use marlin_gerbil_scheme::{
     project_gerbil_loop_graph_continuation_abi_action,
     project_gerbil_loop_graph_continuation_action,
 };
-pub use marlin_workspace_status::{
+pub use marlin_workspace::status::{
     ReleaseGateReceipt, ReleaseGateState, ReleaseGateStatus, ReleaseLandingReport, ReleaseStatus,
     ReleaseVisibilityStatus,
 };

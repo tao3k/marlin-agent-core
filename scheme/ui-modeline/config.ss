@@ -2,12 +2,11 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-(import (only-in :clan/poo/object .o)
-        (only-in :clan/poo/mop validate)
-        "./objects.ss" "./types.ss")
+(import (only-in :clan/poo/mop .new/checked)
+        "./funcs.ss" "./types.ss")
 (export UiModelineScope)
 
 (def UiModelineScope
-  (validate UiModelineScopeContract
-            (.o identity: 'marlin/ui-modeline nodes: marlin-ui-modeline-nodes
-                nodes-for: marlin-ui-modeline-nodes-for bar-for: marlin-ui-modeline-bar-for)))
+  (.new/checked UiModelineScopeContract
+    identity: 'marlin/ui-modeline nodes: marlin-ui-modeline-nodes
+    nodes-for: marlin-ui-modeline-nodes-for bar-for: marlin-ui-modeline-bar-for))

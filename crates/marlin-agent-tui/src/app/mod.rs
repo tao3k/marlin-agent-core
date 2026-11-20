@@ -16,13 +16,12 @@ use std::{
 };
 
 use super::{
-    cli::{CliAction, list_sessions, parse_cli},
     command::Command,
     composer::Composer,
     config,
     context_budget::ContextBudget,
     edge_gateway::{RuntimeStreamGateway, SharedGateway},
-    event_queue::{QueuedReply, Reply, ReplyError, ReplySender, reply_channel},
+    event_queue::{Reply, ReplyError, ReplySender, reply_channel},
     frame_schedule::FrameSchedule,
     input::{BracketedPaste, InputDecoder, MouseMotion, TerminalInput, WheelAccumulator},
     journal_gateway::JournalGateway,
@@ -56,6 +55,14 @@ use marlin_agent_ui::{
 };
 use termion::event::Key;
 
+mod echo_area;
+#[path = "editor.rs"]
+mod editor;
+mod entry;
+#[path = "envrc.rs"]
+mod envrc;
+#[cfg(feature = "linked-ui")]
+mod git_context;
 #[path = "presentation.rs"]
 mod presentation;
 #[path = "restore.rs"]
@@ -75,15 +82,8 @@ mod turn;
 #[path = "ui_events.rs"]
 mod ui_events;
 
-#[cfg(test)]
-#[cfg_attr(test, allow(unused_imports))]
-pub(crate) use runner::process_replies;
-// The standalone unit harness imports this module without the binary facade.
-#[cfg_attr(test, allow(unused_imports))]
-pub use runner::run_cli;
-
-#[cfg(test)]
-#[cfg_attr(test, allow(unused_imports))]
+pub use entry::run_cli;
+use presentation::publish_error;
 pub(crate) use presentation::safe_text;
 pub(crate) use presentation::{
     BufferView, GatewayObservation, MessageEvent, MessageSeverity, MessageSource, ModelineActivity,
