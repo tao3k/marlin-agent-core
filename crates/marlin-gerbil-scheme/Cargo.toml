@@ -13,6 +13,8 @@ license.workspace = true
 readme = "README.org"
 publish = false
 
+[features]
+external-program = ["gerbil-scheme/external-program"]
 
 [dependencies]
 marlin-agent-harness-types.workspace = true

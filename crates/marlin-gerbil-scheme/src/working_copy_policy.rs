@@ -4,6 +4,7 @@
 
 //! Typed bridge from Scheme workspace policy into working-copy requests.
 
+#[cfg(not(feature = "external-program"))]
 use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
     RootedSchemeObject, SchemeScalar,
@@ -18,18 +19,21 @@ use marlin_agent_gitops::working_copy::{
 };
 
 /// Select a provider on the existing Gerbil owner, then keep the Rust request typed.
+#[cfg(not(feature = "external-program"))]
 pub struct GerbilWorkingCopyPolicy<'runtime> {
     runtime: &'runtime GerbilRuntime,
     select: RootedSchemeObject<'runtime>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(not(feature = "external-program"))]
 pub struct WorkingCopyProviderAvailability {
     pub git_worktree: bool,
     pub worktrunk: bool,
 }
 
 #[derive(Debug)]
+#[cfg(not(feature = "external-program"))]
 pub enum GerbilWorkingCopyPolicyError {
     PackagePath,
     Bridge(gerbil_scheme::NativeError),
@@ -37,12 +41,14 @@ pub enum GerbilWorkingCopyPolicyError {
     InvalidProvider,
 }
 
+#[cfg(not(feature = "external-program"))]
 impl From<gerbil_scheme::NativeError> for GerbilWorkingCopyPolicyError {
     fn from(error: gerbil_scheme::NativeError) -> Self {
         Self::Bridge(error)
     }
 }
 
+#[cfg(not(feature = "external-program"))]
 impl std::fmt::Display for GerbilWorkingCopyPolicyError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -58,8 +64,10 @@ impl std::fmt::Display for GerbilWorkingCopyPolicyError {
     }
 }
 
+#[cfg(not(feature = "external-program"))]
 impl std::error::Error for GerbilWorkingCopyPolicyError {}
 
+#[cfg(not(feature = "external-program"))]
 impl<'runtime> GerbilWorkingCopyPolicy<'runtime> {
     /// Resolve the bridge to the GitOps policy selected by the Marlin package.
     pub fn load(runtime: &'runtime GerbilRuntime) -> Result<Self, GerbilWorkingCopyPolicyError> {

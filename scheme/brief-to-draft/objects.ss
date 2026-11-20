@@ -9,5 +9,6 @@
 (def BriefToDraftOperations
   (.o identity: 'marlin/brief-to-draft
       program-entry: 'marlin-agent-core/brief-to-draft/entry
+      program-runtime-imports: '()
       validate-settings: project-settings
       propose: project-proposal))

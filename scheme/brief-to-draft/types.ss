@@ -17,6 +17,7 @@
 (def BriefToDraftScopeContract
   (.cc (Record identity: [(Exactly 'marlin/brief-to-draft)]
                program-entry: [(Exactly 'marlin-agent-core/brief-to-draft/entry)]
+               program-runtime-imports: [(Exactly '())]
                validate-settings: [(Fun SettingsProjection <- SettingsInput)]
                propose: [(Fun ProposalResult <- ProposalInput)])
        identity: 'marlin/brief-to-draft))
