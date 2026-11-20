@@ -91,11 +91,44 @@ impl<'runtime> UiHost<'runtime> {
         &self.view
     }
 
+    pub(crate) fn activate_publication(
+        &mut self,
+        directory: &str,
+        module: &str,
+        export: &str,
+    ) -> Result<(), UiProjectionError> {
+        let publication = self.module.load_publication(directory, module, export)?;
+        let session = self
+            .module
+            .activate_publication(&self.session, &publication)?;
+        let view = self.module.project(&session)?;
+        admit_terminal_view(&view)?;
+        self.admitted_commands = view
+            .commands()
+            .iter()
+            .map(|command| command.name.clone())
+            .collect();
+        self.session = session;
+        self.view = view;
+        Ok(())
+    }
+
     pub(crate) fn key_feedback(&self) -> (&[String], KeySequenceState) {
         if self.key_prefix.is_empty() {
             (&self.completed_keys, self.completed_key_state)
         } else {
             (&self.key_prefix, KeySequenceState::Pending)
+        }
+    }
+
+    pub(crate) fn has_undefined_key_sequence(&self) -> bool {
+        self.completed_key_state == KeySequenceState::Undefined
+    }
+
+    pub(crate) fn retry_undefined_key_sequence(&mut self) {
+        if self.has_undefined_key_sequence() {
+            self.completed_keys.pop();
+            self.key_prefix = std::mem::take(&mut self.completed_keys);
         }
     }
 

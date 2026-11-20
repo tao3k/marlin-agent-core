@@ -62,8 +62,6 @@ pub(super) fn run(
     }
     let (endpoint, catalog) = config.catalog()?;
     trace_startup("configuration");
-    // Package resolution uses SDK-owned process environment during startup;
-    // perform it before starting Tokio workers or the terminal input thread.
     let _ = writeln!(io::stderr(), "Starting interface…");
     #[cfg(feature = "linked-ui")]
     let scheme_runtime = super::super::linked_ui::initialize()?;
@@ -107,34 +105,15 @@ pub(super) fn run(
     #[cfg(feature = "linked-ui")]
     // SAFETY: the binary links these exports from the archive built from the
     // same selected Scheme programme as `linked_ui::initialize`.
-    let mut ui_module = unsafe {
+    let ui_module = unsafe {
         marlin_agent_ui::UiModule::resolve_linked(
             &scheme_runtime,
             super::super::linked_ui::exports(),
         )?
     };
     #[cfg(not(feature = "linked-ui"))]
-    let mut ui_module = marlin_agent_ui::UiModule::resolve(&scheme_runtime, directory)?;
-    if let Some(package) = &config.tui_ui_package {
-        let module = scheme_runtime
-            .intern_identifier(gerbil_scheme::IdentifierKind::Symbol, &package.module)?;
-        let export = scheme_runtime
-            .intern_identifier(gerbil_scheme::IdentifierKind::Symbol, &package.export)?;
-        let directory = package
-            .directory
-            .to_str()
-            .ok_or("UI package path is not UTF-8")?;
-        #[cfg(feature = "linked-ui")]
-        let publication = super::super::linked_ui::package_publication(
-            &scheme_runtime,
-            directory,
-            &module,
-            &export,
-        )?;
-        #[cfg(not(feature = "linked-ui"))]
-        let publication = scheme_runtime.resolve_package_export(directory, &module, &export)?;
-        ui_module = ui_module.with_publication(publication);
-    }
+    let ui_module = marlin_agent_ui::UiModule::resolve(&scheme_runtime, directory)?;
+    let mut ui_package = config.tui_ui_package;
     let mut ui = UiHost::from_module(ui_module, &ui_facts)?;
     if let Some(status) = status.first()
         && !ui.view().regions.iter().any(|region| {
@@ -369,6 +348,9 @@ pub(super) fn run(
                 app.command_selection_locked = false;
             }
             if app.command_draft.is_some() {
+                if activate_ui_package(&mut app, &mut ui, &mut ui_package) {
+                    schedule.mark_dirty();
+                }
                 if !app.command_query_is_current()
                     || app.command_candidates_pending != Some(app.pending.is_some())
                 {
@@ -811,7 +793,19 @@ pub(super) fn run(
                     }
                     continue;
                 }
-                let routed = route_terminal_key(&mut app, &mut ui, *key);
+                let mut routed = route_terminal_key(&mut app, &mut ui, *key);
+                if ui_package.is_some()
+                    && app.command_draft.is_none()
+                    && (ui.has_undefined_key_sequence()
+                        || (matches!(routed, Ok(UiKeyAction::Unhandled))
+                            && matches!(key, Key::Alt(_))))
+                    && activate_ui_package(&mut app, &mut ui, &mut ui_package)
+                {
+                    // The built-in map has already declined the key. Replay
+                    // it with the same prefix in the newly admitted map.
+                    ui.retry_undefined_key_sequence();
+                    routed = route_terminal_key(&mut app, &mut ui, *key);
+                }
                 match routed {
                     Ok(UiKeyAction::Handled) => continue,
                     Ok(UiKeyAction::Cancel) => {
@@ -957,4 +951,35 @@ pub(super) fn run(
     shutdown_result?;
     result?;
     Ok(signal_exit)
+}
+
+fn activate_ui_package(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    pending: &mut Option<config::TuiUiPackageConfig>,
+) -> bool {
+    let Some(package) = pending.take() else {
+        return false;
+    };
+    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let directory = package
+            .directory
+            .to_str()
+            .ok_or("UI package path is not UTF-8")?;
+        ui.activate_publication(directory, &package.module, &package.export)?;
+        app.sync_window(ui.view())?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        publish_error(
+            app,
+            MessageSource::Ui,
+            "UI package activation failed",
+            &error,
+        );
+        return false;
+    }
+    app.set_commands(ui.view());
+    app.transcript_policy = Some(ui.view().layout.transcript_policy.clone());
+    true
 }

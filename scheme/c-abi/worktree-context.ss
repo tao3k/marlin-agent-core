@@ -3,10 +3,12 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 (import (only-in :marlin-agent-core/c-abi/roots marlin-rooted-call)
-        (only-in :marlin-agent-core/context-system/worktree prepare-worktree-context deliver-worktree-context)
+        (only-in :tao3k/yuanxu/prelude yuanxu-build-autoloads)
         (for-syntax :gerbil/expander
           (only-in :clan/poo/object .call)
           (only-in "./build.ss" Build)))
+
+(yuanxu-build-autoloads Build worktree-context)
 
 ;; Compile the capability from the admitted GitOps Feature. The host checks
 ;; executable availability when the user requests a switch.
@@ -22,11 +24,11 @@
   (c-define (worktree-prepare root) (int64) int64
     "marlin_worktree_context_prepare" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root
-      marlin-agent-core/context-system/worktree#prepare-worktree-context))
+      marlin-agent-core/c-abi/worktree-context#prepare-context))
   (c-define (worktree-deliver root) (int64) int64
     "marlin_worktree_context_deliver" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root
-      marlin-agent-core/context-system/worktree#deliver-worktree-context))
+      marlin-agent-core/c-abi/worktree-context#deliver-context))
   (c-define (worktree-provider root) (int64) int64
     "marlin_worktree_provider" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root

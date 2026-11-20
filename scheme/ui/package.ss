@@ -21,7 +21,7 @@
         (only-in "./config.ss" make-ui-scope))
 (export UiPackage. make-ui-package marlin-ui-load-publication)
 
-;;; Explicit startup operation on the existing VM and package environment.
+;;; Explicit package activation on the existing VM and package environment.
 ;;; Use Gerbil's import/export semantics, including renamed/re-exported values;
 ;;; neither Rust nor this module maintains an alternate module registry/path.
 (def (marlin-ui-load-publication input)

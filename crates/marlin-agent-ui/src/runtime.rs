@@ -72,6 +72,7 @@ pub struct UiNativeSession<'runtime> {
 pub struct UiModule<'runtime> {
     runtime: &'runtime GerbilRuntime,
     publication: RootedSchemeObject<'runtime>,
+    load_publication: UiCallable<'runtime>,
     open: UiCallable<'runtime>,
     project: UiCallable<'runtime>,
     dispatch: UiCallable<'runtime>,
@@ -107,6 +108,7 @@ impl<'runtime> UiCallable<'runtime> {
 #[derive(Clone, Copy)]
 pub struct UiLinkedExports {
     pub publication: unsafe extern "C" fn(i64) -> i64,
+    pub load_publication: unsafe extern "C" fn(i64) -> i64,
     pub open: unsafe extern "C" fn(i64) -> i64,
     pub project: unsafe extern "C" fn(i64) -> i64,
     pub dispatch: unsafe extern "C" fn(i64) -> i64,
@@ -117,12 +119,6 @@ pub struct UiLinkedExports {
 }
 
 impl<'runtime> UiModule<'runtime> {
-    /// Select a package-composed publication in this module's VM. The ordinary
-    /// open/project admission gates still validate every returned value.
-    pub fn with_publication(mut self, publication: RootedSchemeObject<'runtime>) -> Self {
-        self.publication = publication;
-        self
-    }
     /// Resolve the declared publication and UI procedure exports in one VM.
     #[cfg(not(feature = "linked-ui"))]
     pub fn resolve(
@@ -161,6 +157,7 @@ impl<'runtime> UiModule<'runtime> {
         )?;
         trace("UI scope");
         let ui = ":marlin-agent-core/ui/session";
+        let load_publication = export(runtime, directory, ui, "marlin-ui-load-publication")?;
         let open = export(runtime, directory, ui, "marlin-ui-session-open")?;
         trace("session open");
         let project = export(runtime, directory, ui, "marlin-ui-session-project")?;
@@ -181,6 +178,7 @@ impl<'runtime> UiModule<'runtime> {
         let refresh_labels = export(runtime, directory, ui, "marlin-ui-session-refresh-labels")?;
         trace("label refresh");
         for procedure in [
+            &load_publication,
             &open,
             &project,
             &dispatch,
@@ -196,6 +194,7 @@ impl<'runtime> UiModule<'runtime> {
         Ok(Self {
             runtime,
             publication,
+            load_publication: UiCallable::Dynamic(load_publication),
             open: UiCallable::Dynamic(open),
             project: UiCallable::Dynamic(project),
             dispatch: UiCallable::Dynamic(dispatch),
@@ -228,6 +227,7 @@ impl<'runtime> UiModule<'runtime> {
         Ok(Self {
             runtime,
             publication,
+            load_publication: bind(exports.load_publication)?,
             open: bind(exports.open)?,
             project: bind(exports.project)?,
             dispatch: bind(exports.dispatch)?,
@@ -310,6 +310,43 @@ impl<'runtime> UiModule<'runtime> {
     ) -> Result<UiNativeSession<'runtime>, UiProjectionError> {
         open_session_with(self.runtime, &self.publication, facts, |request| {
             self.open.call(self.runtime, request)
+        })
+    }
+
+    /// Load the configured module on demand, using the same Scheme loader in
+    /// both runtime modes. The result remains rooted in the VM owner.
+    pub fn load_publication(
+        &self,
+        directory: &str,
+        module: &str,
+        export: &str,
+    ) -> Result<RootedSchemeObject<'runtime>, UiProjectionError> {
+        let directory = self.runtime.string_from_utf8(directory)?.into_object();
+        let module = self
+            .runtime
+            .intern_identifier(IdentifierKind::Symbol, module)?;
+        let export = self
+            .runtime
+            .intern_identifier(IdentifierKind::Symbol, export)?;
+        let request = self
+            .runtime
+            .collection_from_objects(CollectionKind::Vector, &[&directory, &module, &export])?
+            .into_object();
+        self.load_publication.call(self.runtime, &request)
+    }
+
+    /// Extend an open session with a package publication from the same VM.
+    pub fn activate_publication(
+        &self,
+        current: &UiNativeSession<'_>,
+        publication: &RootedSchemeObject<'_>,
+    ) -> Result<UiNativeSession<'runtime>, UiProjectionError> {
+        let request = self
+            .runtime
+            .collection_from_objects(CollectionKind::Vector, &[publication, &current.root])?
+            .into_object();
+        Ok(UiNativeSession {
+            root: self.open.call(self.runtime, &request)?,
         })
     }
 

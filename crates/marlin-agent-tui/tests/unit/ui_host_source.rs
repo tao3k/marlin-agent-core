@@ -68,11 +68,8 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
         "Scheme test window: 30 two-frame samples, p50={:?}, p95={:?}; debug scenario and Scheme assertions, excludes scenario creation",
         elapsed[15], elapsed[28]
     );
-    let package_module = marlin_agent_ui::UiModule::resolve(&runtime, root)
-        .unwrap()
-        .with_publication(load("test-publication"));
     let mut package_host = UiHost::from_module(
-        package_module,
+        marlin_agent_ui::UiModule::resolve(&runtime, root).unwrap(),
         &UiOpenFacts {
             model_label: "model",
             session_label: "session",
@@ -82,6 +79,9 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
         },
     )
     .unwrap();
+    package_host
+        .activate_publication(root, ":marlin-tui-ui-test/fixture", "test-publication")
+        .unwrap();
     assert!(matches!(
         package_host
             .route_key(

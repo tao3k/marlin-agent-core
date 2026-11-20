@@ -70,6 +70,11 @@
                     (marlin-ui-buffer-tabs buffers '((notes "Lab Notes" packages)) style)))
         method-factories: (vector make-package-methods))))
 
+(let (receipt (getenv "MARLIN_TEST_UI_PUBLICATION_RECEIPT" #f))
+  (when receipt
+    (call-with-output-file (list path: receipt append: #t)
+      (lambda (port) (display "UI-PUBLICATION-LOADED\n" port)))))
+
 ;;; A bounded frame dialogue: assertions stay in this independently compiled
 ;;; package; the native test window returns the actual Ratatui screen rows.
 (def (make-test-window _seed)
@@ -79,10 +84,18 @@
     (lambda (screen)
       (case step
         ((0)
-         (let* ((view (marlin-ui-session-project state))
-                (base-session (marlin-ui-session-open
+         (let* ((base-session (marlin-ui-session-open
                                 (vector UiScope #("model" "session" #() #()) #())))
-                (base (marlin-ui-session-project base-session)))
+                (base (marlin-ui-session-project base-session))
+                (resumed (vector-ref (marlin-ui-session-dispatch
+                                       (vector base-session 'select-buffer 'messages)) 0))
+                (activated (marlin-ui-session-project
+                             (marlin-ui-session-open (vector test-publication resumed))))
+                (frame (vector-ref activated 6))
+                (window (vector-ref (vector-ref frame 1) 0))
+                (view (marlin-ui-session-project state)))
+           (unless (eq? (vector-ref window 1) 'messages)
+             (error "package activation changed the selected Buffer"))
            (unless (and (memq 'notes (vector->list (vector-ref (vector-ref view 6) 4)))
                         (not (memq 'notes (vector->list (vector-ref (vector-ref base 6) 4))))
                         (member '#(global #(M-z) open-notes)

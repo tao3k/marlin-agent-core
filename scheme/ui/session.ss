@@ -73,14 +73,38 @@
          (ui (.get current ui)))
     ((.get ui review-menu) (vector-ref input 1))))
 
-(def (marlin-ui-session-open input)
-  (unless (and (vector? input) (= (vector-length input) 3))
-    (error "invalid UI native scope, facts and method factories"))
+(def (open-session input)
   (let* ((ui (vector-ref input 0))
-         (_admission (unless (element? UiScopeContract ui) (error "invalid UI scope")))
          (workbench ((.get ui workbench) (marlin-ui-native-facts (vector-ref input 1))))
          (generic ((.get ui make-dispatch) (vector-ref input 2))))
     (session ui generic workbench 'composer ((.get ui make-frame)) '())))
+
+;;; A configured package extends the built-in session. Keep the selected
+;;; Buffer, theme, focus and command ranking when admitting its publication.
+(def (activate-publication ui current)
+  (let* ((old-workbench (.get current workbench))
+         (old-frame (.get current frame))
+         (facts (profile-facts old-workbench old-frame))
+         (workbench ((.get ui profile-workbench) facts
+                     (.get old-workbench theme-profile) (.get old-workbench tab-style)))
+         (selected (.get old-frame selected-window))
+         (window (find (lambda (item) (eq? (.get item identity) selected))
+                       (.get old-frame windows)))
+         (frame ((.get ui select-buffer) ((.get ui make-frame))
+                 (.get window buffer identity)))
+         (focus (.get current focus)))
+    (unless (memq focus (.get workbench focus-order))
+      (error "UI package removed the current focus"))
+    (session ui ((.get ui make-dispatch) #()) workbench focus frame
+             (.get current command-history))))
+
+(def (marlin-ui-session-open input)
+  (unless (and (vector? input) (<= 2 (vector-length input) 3)
+               (element? UiScopeContract (vector-ref input 0)))
+    (error "invalid UI session publication request"))
+  (if (= (vector-length input) 2)
+    (activate-publication (vector-ref input 0) (checked-session (vector-ref input 1)))
+    (open-session input)))
 
 (def (marlin-ui-session-project input)
   (let* ((current (checked-session input))

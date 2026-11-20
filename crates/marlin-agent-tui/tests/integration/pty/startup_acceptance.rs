@@ -79,6 +79,12 @@ fn linked_fresh_copy_startup_pair(binary: &std::path::Path, profile: &str) {
             .iter()
             .all(|row| row["module"] != "marlin-agent-core/init")
     );
+    assert!(
+        modules.iter().any(|row| {
+            row["module"] == "marlin-agent-core/context-system/worktree" && row["deferred"] == true
+        }),
+        "linked Worktree Context must remain available for deferred activation"
+    );
     let binary_time = fs::metadata(binary).unwrap().modified().unwrap();
     let manifest_time = fs::metadata(&manifest).unwrap().modified().unwrap();
     assert!(

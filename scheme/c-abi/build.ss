@@ -19,5 +19,10 @@
         '("context" "deck-runtime" "ui" "tooling" "envrc" "context-admission" "worktree-context")))
   .worktree-provider:
   (lambda () (and (module-build-feature-selected? 'gitops 'worktrunk) 'worktrunk))
+  autoload:
+  (.o worktree-context:
+      (.o module: ':marlin-agent-core/context-system/worktree
+          exports: (.o prepare-context: 'prepare-worktree-context
+                       deliver-context: 'deliver-worktree-context)))
   with-link:
   (lambda () ["-ld-options" (pkg-config-libs "openssl" "zlib" "sqlite3")]))

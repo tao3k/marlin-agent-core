@@ -93,10 +93,14 @@ from first frame and painting so a cost in one path cannot hide in another.
 * Selecting a terminal package
 
 The current terminal selector is =[tui_ui_package]= with =directory=, =module=
-and =export= fields. It resolves a precompiled publication through the existing
-Scheme Rust SDK. The TUI configuration envelope is Rust-owned; the package's
-UI behavior is Scheme-owned. This terminal selector is separate from the
-general semantic package API and from any future GUI loader.
+and =export= fields. The first frame uses the built-in publication. Opening
+=M-x= needs the full command catalog, so the host loads and admits the
+configured package's UI through Yuanxu. A Meta shortcut or prefix sequence
+that the built-in map cannot resolve also triggers admission and retries the
+same key. Activation keeps the current Buffer, theme and command history.
+Individual package actions may use =yuanxu-autoload= to load their own
+modules on first invocation. Rust owns the configuration envelope and
+Scheme owns the package's UI behavior.
 
 A package using existing elements, facts and effects requires no Rust source
 change. New host effects or terminal primitives require an explicit typed
