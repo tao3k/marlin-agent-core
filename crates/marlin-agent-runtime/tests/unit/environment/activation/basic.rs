@@ -4,13 +4,13 @@
 
 use std::{collections::BTreeMap, path::PathBuf};
 
-use marlin_agent_runtime::environment::{
-    RuntimeEnvironmentActivationError, RuntimeEnvironmentActivationRequest,
-    RuntimeEnvironmentActivator,
-};
 use marlin_agent_protocol::{
     RuntimeEnvironment, RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationStatus,
     RuntimeShellIsolationPolicy,
+};
+use marlin_agent_runtime::environment::{
+    RuntimeEnvironmentActivationError, RuntimeEnvironmentActivationRequest,
+    RuntimeEnvironmentActivator,
 };
 
 use super::FakeDirenvRunner;

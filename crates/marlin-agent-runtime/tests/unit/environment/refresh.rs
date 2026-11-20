@@ -8,14 +8,14 @@ use std::{
 };
 
 use async_trait::async_trait;
-use marlin_agent_runtime::environment::{
-    DirenvCommandRunner, RuntimeEnvironmentActivationError, RuntimeEnvironmentRefreshRequest,
-    RuntimeEnvironmentRefresher,
-};
 use marlin_agent_protocol::{
     RuntimeEnvironment, RuntimeEnvironmentActivationAction, RuntimeEnvironmentActivationPolicy,
     RuntimeEnvironmentRefreshCachePolicy, RuntimeEnvironmentRefreshExecution,
     RuntimeEnvironmentRefreshStatus,
+};
+use marlin_agent_runtime::environment::{
+    DirenvCommandRunner, RuntimeEnvironmentActivationError, RuntimeEnvironmentRefreshRequest,
+    RuntimeEnvironmentRefresher,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]

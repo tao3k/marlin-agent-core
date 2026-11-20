@@ -4,15 +4,15 @@
 
 use std::path::PathBuf;
 
-use marlin_agent_runtime::environment::{
-    HOST_HOME_ENV_VAR, PROJECT_CONFIG_PRECEDENCE, RuntimeEnvironmentRequest,
-    RuntimeEnvironmentResolver, SESSION_FLAGS_CONFIG_PRECEDENCE, SYSTEM_CONFIG_PRECEDENCE,
-    USER_CONFIG_PRECEDENCE,
-};
 use marlin_agent_protocol::{
     MARLIN_HOME_ENV_VAR, MARLIN_SESSION_ID_ENV_VAR, RuntimeConfigLayerSource, RuntimeHomeSource,
     RuntimeSandboxPolicy, RuntimeSessionIdSource, RuntimeStateDirectoryKind,
     RuntimeStateStorageStatus,
+};
+use marlin_agent_runtime::environment::{
+    HOST_HOME_ENV_VAR, PROJECT_CONFIG_PRECEDENCE, RuntimeEnvironmentRequest,
+    RuntimeEnvironmentResolver, SESSION_FLAGS_CONFIG_PRECEDENCE, SYSTEM_CONFIG_PRECEDENCE,
+    USER_CONFIG_PRECEDENCE,
 };
 
 #[test]

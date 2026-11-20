@@ -2,11 +2,11 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use marlin_agent_runtime::environment::{RuntimeEnvironmentRequest, RuntimeEnvironmentResolver};
 use marlin_agent_protocol::{
     RuntimeEnvironmentActivation, RuntimeEnvironmentActivationPolicy,
     RuntimeEnvironmentActivationStatus, RuntimeEnvrcPolicy, RuntimeShellIsolationPolicy,
 };
+use marlin_agent_runtime::environment::{RuntimeEnvironmentRequest, RuntimeEnvironmentResolver};
 
 #[test]
 fn resolver_preserves_environment_activation_policy() {

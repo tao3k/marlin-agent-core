@@ -4,10 +4,10 @@
 
 use std::sync::Arc;
 
-use marlin_agent_runtime::environment::{RuntimeEnvironmentRequest, RuntimeEnvironmentResolver};
 use marlin_agent_protocol::{
     RuntimeEnvironmentActivationPolicy, RuntimeHome, RuntimeSandboxPolicy, RuntimeWorkspaceProject,
 };
+use marlin_agent_runtime::environment::{RuntimeEnvironmentRequest, RuntimeEnvironmentResolver};
 use marlin_agent_runtime::{
     CancellationToken, HookRuntime, RuntimeContext, RuntimeEnvironment, RuntimeExecutionIdentity,
     RuntimeFuture, SubAgentRuntime, TokioAgentRuntime, observability, process,

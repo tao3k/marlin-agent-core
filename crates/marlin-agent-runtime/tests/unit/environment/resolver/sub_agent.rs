@@ -4,14 +4,14 @@
 
 use std::path::PathBuf;
 
+use marlin_agent_protocol::{
+    RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeEnvironmentActivationPolicy,
+    RuntimeHomeSource, RuntimeSessionIdSource, RuntimeShellIsolationPolicy,
+};
 use marlin_agent_runtime::environment::{
     RuntimeEnvironmentError, RuntimeEnvironmentRequest, RuntimeEnvironmentResolver,
     SESSION_FLAGS_CONFIG_PRECEDENCE, SUB_AGENT_CONFIG_PRECEDENCE, SubAgentEnvironmentRequest,
     USER_CONFIG_PRECEDENCE,
-};
-use marlin_agent_protocol::{
-    RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeEnvironmentActivationPolicy,
-    RuntimeHomeSource, RuntimeSessionIdSource, RuntimeShellIsolationPolicy,
 };
 
 #[test]

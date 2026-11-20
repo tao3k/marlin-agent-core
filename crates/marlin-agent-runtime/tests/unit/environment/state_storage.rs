@@ -9,8 +9,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use marlin_agent_runtime::environment::RuntimeStateStorageInitializer;
 use marlin_agent_protocol::{RuntimeHome, RuntimeStateDirectoryKind, RuntimeStateStorageStatus};
+use marlin_agent_runtime::environment::RuntimeStateStorageInitializer;
 
 #[test]
 fn state_storage_initializer_creates_standard_runtime_home_directories() {

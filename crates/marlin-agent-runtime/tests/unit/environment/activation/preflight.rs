@@ -8,11 +8,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use marlin_agent_runtime::environment::{RuntimeEnvironmentActivationRequest, RuntimeEnvironmentActivator};
 use marlin_agent_protocol::{
     RuntimeEnvironment, RuntimeEnvironmentActivationAction,
     RuntimeEnvironmentActivationActionStatus, RuntimeEnvironmentActivationPolicy,
     RuntimeEnvironmentActivationStatus,
+};
+use marlin_agent_runtime::environment::{
+    RuntimeEnvironmentActivationRequest, RuntimeEnvironmentActivator,
 };
 
 use super::RecordingDirenvRunner;

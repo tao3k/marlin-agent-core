@@ -4,6 +4,7 @@
 
 //! Controlled harness runtime for scenario execution and evidence capture.
 
+use marlin_agent_gitops::working_copy::{WorkingCopyCommandStatus, WorkingCopyIsolationReceipt};
 use marlin_agent_kernel::{GraphLoopController, GraphLoopKernel};
 use marlin_agent_protocol::{
     AgentEvent, AgentEventTopic, AgentExecutionTrace, AgentSpanName, AgentTraceSpanRecord,
@@ -11,7 +12,6 @@ use marlin_agent_protocol::{
     GraphLoopIterationReport, GraphLoopNextAction, GraphLoopRunRequest, GraphLoopStrategyId,
     GraphPolicyProposalReceipt, GraphPolicyProposalStatus, RuntimePlanSnapshot,
 };
-use marlin_agent_gitops::working_copy::{WorkingCopyCommandStatus, WorkingCopyIsolationReceipt};
 use marlin_agent_runtime::{
     CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
 };

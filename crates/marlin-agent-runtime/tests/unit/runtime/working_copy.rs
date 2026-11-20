@@ -5,8 +5,9 @@
 use std::sync::Arc;
 
 use marlin_agent_gitops::working_copy::{
-    WorkingCopyActiveBinding, WorkingCopyCreateRequest, WorkingCopyHandle, WorkingCopyIsolationProvider,
-    WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest, WorkingCopyIsolationStatus,
+    WorkingCopyActiveBinding, WorkingCopyCreateRequest, WorkingCopyHandle,
+    WorkingCopyIsolationProvider, WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest,
+    WorkingCopyIsolationStatus,
 };
 use marlin_agent_runtime::{
     CancellationToken, RuntimeContext, RuntimeEnvironment, RuntimeFanoutJoinPolicy,
