@@ -116,8 +116,13 @@ jobs:
         if: ${{ !cancelled() && steps.compiler.outcome == 'success' }}
         id: linked-build
         run: |
+          receipt="$RUNNER_TEMP/deck-test-build.jsonl"
           cargo test --locked -p marlin-deck-runtime --features actor-runtime --no-run \
-            --message-format=json > "$RUNNER_TEMP/deck-test-build.jsonl"
+            --message-format=json > "$receipt" || {
+              result=$?
+              jq -r 'select(.reason == "compiler-message") | .message.rendered // empty' "$receipt" >&2
+              exit "$result"
+            }
           cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector --no-run
 
       - name: Run linked-selector tests
