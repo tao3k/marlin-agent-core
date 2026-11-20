@@ -3,8 +3,9 @@
 
 ;;; A package extends the selected scopes using ordinary POO values. There is
 ;;; no process-global registry: each publication retains its own catalogs.
-(import (only-in :clan/poo/object .call .def .get .o)
+(import (only-in :clan/poo/object .def .get .o)
         (only-in "../scheme-package-hooks/config.ss" SchemePackageHooksScope)
+        (only-in "../scheme-package-hooks/funcs.ss" run-ui-package-hooks)
         (only-in :std/list/list duplicates)
         (only-in "../ui-components/bounds.ss" marlin-ui-bounded-list?)
         (only-in "../ui-components/commands.ss" marlin-ui-command-entries?)
@@ -29,10 +30,9 @@
                (symbol? (vector-ref input 1)) (symbol? (vector-ref input 2))
                (symbol? (vector-ref input 3)))
     (error "invalid UI package publication request"))
-  (or (.call SchemePackageHooksScope .run (vector-ref input 3)
-        (.o directory: (vector-ref input 0) module: (vector-ref input 1)
-            export: (vector-ref input 2)) #f)
-      (error "no Scheme package hook handled the UI demand" (vector-ref input 3))))
+  (run-ui-package-hooks SchemePackageHooksScope (vector-ref input 3)
+    (.o directory: (vector-ref input 0) module: (vector-ref input 1)
+        export: (vector-ref input 2) trigger: (vector-ref input 3))))
 
 (.def UiPackage.
   buffers: '()

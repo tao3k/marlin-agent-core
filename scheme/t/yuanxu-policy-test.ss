@@ -5,6 +5,8 @@
 ;;; Exercise Marlin's publications through the selected package entry.
 
 (import (only-in :marlin-agent-core/interface LabContext)
+        (only-in :marlin-agent-core/scheme-package-hooks/funcs run-ui-package-hooks)
+        (only-in :tao3k/yuanxu/module-system/module-hooks ModuleHook. make-module-hooks)
         (only-in :clan/poo/object .call .get .o)
         (only-in :clan/poo/type TypeError?)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
@@ -36,3 +38,15 @@
 (let (package-hooks (.get marlin-agent-core.init.exports Marlin scheme-package-hooks))
   (unless (eq? (.call package-hooks .run 'unrelated-scene (.o) 'untouched) 'untouched)
     (error "an unrelated scene must leave the Scheme package result alone")))
+
+(let* ((hooks
+         (make-module-hooks
+           (.o fixture: (.o (:: @ ModuleHook.) on: '(ui-command-catalog)
+                            .run: (lambda (_request _result) 'publication))
+               customize: (.o (:: @ ModuleHook.) on: '(ui-package-loaded)
+                              .run: (lambda (request publication)
+                                      (list (.get request trigger) publication))))))
+       (result (run-ui-package-hooks hooks 'ui-command-catalog
+                 (.o trigger: 'ui-command-catalog))))
+  (unless (equal? result '(ui-command-catalog publication))
+    (error "post-load hooks did not receive the publication and its demand" result)))
