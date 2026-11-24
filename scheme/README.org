@@ -61,6 +61,21 @@ Native fixtures under =t/= are test inputs. CI supplies the selected Lab
 test dependencies with the same installed package environment used for the
 build.
 
+** Linked development dependencies
+
+After updating a linked checkout, rebuild the package that owns any changed
+exports. A linked source can already contain a binding while Gerbil still
+loads the interface compiled from the previous revision. When Yuanxu and Lab
+are both linked, rebuild them in dependency order before cleaning Marlin.
+
+Run these commands from =scheme/=.
+
+#+begin_src sh
+gerbil pkg build github.com/tao3k/gebril-yuanxu github.com/tao3k/agentic-ai-lab
+gerbil clean
+gerbil build
+#+end_src
+
 * Rust and Scheme
 
 Cargo pins the Scheme SDK at the Rust boundary. Gerbil compiles the selected

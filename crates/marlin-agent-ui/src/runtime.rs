@@ -131,6 +131,7 @@ pub enum UiPackageEvent<'a> {
     },
 }
 
+/// Identifies the UI surface that invoked a Scheme package command.
 #[derive(Clone, Copy)]
 pub enum UiPackageCommandSource {
     Command,

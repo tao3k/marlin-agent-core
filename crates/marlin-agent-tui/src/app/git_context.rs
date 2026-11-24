@@ -4,11 +4,18 @@
 
 //! Worktree I/O runs on the managed host. The terminal thread owns admission.
 
-use std::path::{Path, PathBuf};
+use std::{
+    env,
+    ffi::OsStr,
+    path::{Path, PathBuf},
+};
 
 use gerbil_scheme::{CollectionKind, GerbilRuntime, ObjectKind, RootedSchemeObject};
+use marlin_agent_context::artifacts::{
+    ArtifactRestore, VerifiedArtifactRestore, WorkspaceArtifacts,
+};
 use marlin_agent_gitops::{
-    CommittedCheckout, ContextDocument, GitOperations,
+    CommittedCheckout, ContextDocument, EnrolledRepository, GitOperations,
     working_copy::{
         WorkingCopyActiveBinding, WorkingCopyBranchName, WorkingCopyHandle,
         WorkingCopyIsolationDriver, WorkingCopyIsolationProvider, WorkingCopyIsolationRequest,
@@ -19,16 +26,27 @@ use marlin_agent_runtime::RuntimeTask;
 use tokio::runtime::Runtime;
 
 use super::{App, MessageEvent, MessageSeverity, MessageSource};
-use crate::linked_ui::{WorktreeOperation, worktree_call};
+use crate::linked_ui::{WorktreeOperation, artifacts_exchange, worktree_call};
 
 type Completion<T> = RuntimeTask<Result<T, String>>;
 
 enum Pending<'vm> {
-    Observe(Completion<(PathBuf, CommittedCheckout)>),
+    Observe(Completion<(String, CommittedCheckout)>),
     Read(
         Completion<[String; 2]>,
         RootedSchemeObject<'vm>,
         CommittedCheckout,
+        String,
+    ),
+    OpenArtifacts(
+        Completion<Option<ArtifactRestore>>,
+        CommittedCheckout,
+        String,
+    ),
+    VerifyArtifacts(
+        Completion<VerifiedArtifactRestore>,
+        CommittedCheckout,
+        String,
     ),
     Switch(Completion<PathBuf>),
 }
@@ -38,6 +56,8 @@ impl Pending<'_> {
         match self {
             Self::Observe(task) => task.is_finished(),
             Self::Read(task, ..) => task.is_finished(),
+            Self::OpenArtifacts(task, ..) => task.is_finished(),
+            Self::VerifyArtifacts(task, ..) => task.is_finished(),
             Self::Switch(task) => task.is_finished(),
         }
     }
@@ -46,6 +66,8 @@ impl Pending<'_> {
         match self {
             Self::Observe(task) => task.abort(),
             Self::Read(task, ..) => task.abort(),
+            Self::OpenArtifacts(task, ..) => task.abort(),
+            Self::VerifyArtifacts(task, ..) => task.abort(),
             Self::Switch(task) => task.abort(),
         }
     }
@@ -89,7 +111,13 @@ impl<'vm> GitContext<'vm> {
                     GitOperations::committed_checkout(&path),
                 )
                 .map_err(|error| error.to_string())?;
-                Ok((owner, checkout))
+                if owner != checkout.owner {
+                    return Err(
+                        "The checkout does not belong to the repository approved in git_context"
+                            .into(),
+                    );
+                }
+                Ok((repository_binding(&owner)?, checkout))
             },
         )));
     }
@@ -120,7 +148,7 @@ impl<'vm> GitContext<'vm> {
         // the next checkout can be observed.
         if let Some(old) = self.pending.take() {
             let revoked = match &old {
-                Pending::Read(_, permit, _) => {
+                Pending::Read(_, permit, ..) => {
                     worktree_call(self.scheme, WorktreeOperation::Revoke, permit).map(|_| ())
                 }
                 _ => Ok(()),
@@ -156,6 +184,7 @@ impl<'vm> GitContext<'vm> {
                 {
                     return Err("Select an existing local branch of the approved repository".into());
                 }
+                repository_binding(&approved_owner)?;
                 let project = checkout
                     .owner
                     .to_str()
@@ -196,11 +225,37 @@ impl<'vm> GitContext<'vm> {
             return false;
         }
         let pending = self.pending.take().expect("finished Context task");
+        let error_summary = match &pending {
+            Pending::OpenArtifacts(..) | Pending::VerifyArtifacts(..) => {
+                "Git Artifacts unavailable"
+            }
+            _ => "Git Context unavailable",
+        };
         let result = match pending {
             Pending::Observe(task) => joined(runtime, task)
-                .and_then(|(owner, checkout)| self.read(app, runtime, &owner, checkout)),
-            Pending::Read(task, permit, checkout) => joined(runtime, task)
-                .and_then(|sources| self.deliver(app, permit, &checkout, &sources)),
+                .and_then(|(owner, checkout)| self.read(app, runtime, owner, checkout)),
+            Pending::Read(task, permit, checkout, owner) => {
+                joined(runtime, task).and_then(|sources| {
+                    self.deliver(app, permit, &checkout, &owner, &sources)?;
+                    self.open_artifacts(app, runtime, checkout, owner);
+                    Ok(())
+                })
+            }
+            Pending::OpenArtifacts(task, checkout, owner) => joined(runtime, task)
+                .and_then(|restore| self.verify_artifacts(app, runtime, checkout, owner, restore)),
+            Pending::VerifyArtifacts(task, checkout, owner) => {
+                joined(runtime, task).and_then(|verified| {
+                    check_repository_binding(&checkout.owner, &owner)?;
+                    let projection = verified.publish().map_err(|error| error.to_string())?;
+                    publish(
+                        app,
+                        MessageSeverity::Info,
+                        "Git Artifacts restored",
+                        &format!("{} verified file(s)", projection.files.len()),
+                    );
+                    Ok(())
+                })
+            }
             Pending::Switch(task) => match joined(runtime, task) {
                 Ok(path) => {
                     self.catalog = None;
@@ -218,21 +273,81 @@ impl<'vm> GitContext<'vm> {
             },
         };
         if let Err(error) = result {
-            publish(
-                app,
-                MessageSeverity::Warning,
-                "Git Context unavailable",
-                &error,
-            );
+            publish(app, MessageSeverity::Warning, error_summary, &error);
         }
         true
+    }
+
+    fn open_artifacts(
+        &mut self,
+        app: &App,
+        runtime: &Runtime,
+        checkout: CommittedCheckout,
+        owner: String,
+    ) {
+        let selected = checkout.clone();
+        let approved = owner.clone();
+        let task = app.runtime_owner.spawn_on(runtime, async move {
+            check_repository_binding(&selected.owner, &approved)?;
+            let Some(workspace) = WorkspaceArtifacts::discover(selected.root.as_path())
+                .await
+                .map_err(|error| error.to_string())?
+            else {
+                return Ok(None);
+            };
+            if !workspace.matches_checkout(&selected) {
+                return Err("Checkout changed while opening Git Artifacts".into());
+            }
+            workspace
+                .prepare_restore()
+                .map_err(|error| error.to_string())
+        });
+        self.pending = Some(Pending::OpenArtifacts(task, checkout, owner));
+    }
+
+    fn verify_artifacts(
+        &mut self,
+        app: &App,
+        runtime: &Runtime,
+        checkout: CommittedCheckout,
+        owner: String,
+        restore: Option<ArtifactRestore>,
+    ) -> Result<(), String> {
+        let Some(restore) = restore else {
+            return Ok(());
+        };
+        check_repository_binding(&checkout.owner, &owner)?;
+        let draft = restore
+            .project(self.scheme, |request| {
+                Ok(artifacts_exchange(self.scheme, request)?)
+            })
+            .map_err(|error| error.to_string())?;
+        let selected = checkout.clone();
+        let task = app.runtime_owner.spawn_on(runtime, async move {
+            // A cancelled hash worker can only finish reading. Its result is
+            // published exclusively by the terminal holding the current slot.
+            let verified = tokio::task::spawn_blocking(move || {
+                draft.verify().map_err(|error| error.to_string())
+            })
+            .await
+            .map_err(|error| error.to_string())??;
+            let observed = GitOperations::committed_checkout(selected.root.as_path())
+                .await
+                .map_err(|error| error.to_string())?;
+            if observed != selected {
+                return Err("Checkout changed during Git Artifacts restore".into());
+            }
+            Ok(verified)
+        });
+        self.pending = Some(Pending::VerifyArtifacts(task, checkout, owner));
+        Ok(())
     }
 
     fn read(
         &mut self,
         app: &mut App,
         runtime: &Runtime,
-        owner: &Path,
+        owner: String,
         checkout: CommittedCheckout,
     ) -> Result<(), String> {
         let worktree = format!(
@@ -240,12 +355,7 @@ impl<'vm> GitContext<'vm> {
             utf8(&checkout.git_directory)?,
             checkout.reference.as_str()
         );
-        let inputs = [
-            utf8(owner)?,
-            utf8(&checkout.owner)?,
-            &worktree,
-            checkout.commit.as_str(),
-        ];
+        let inputs = [&owner, &owner, &worktree, checkout.commit.as_str()];
         let arguments = roots(self.scheme, &inputs)?;
         let request = self
             .scheme
@@ -264,7 +374,9 @@ impl<'vm> GitContext<'vm> {
         }
         app.context_worktree = Some(checkout.root.as_path().to_owned());
         let bound = checkout.clone();
+        let read_owner = owner.clone();
         let read = app.runtime_owner.spawn_on(runtime, async move {
+            check_repository_binding(&bound.owner, &read_owner)?;
             let (index, topology) = tokio::try_join!(
                 bound.read_context_document(ContextDocument::Index),
                 bound.read_context_document(ContextDocument::Topology),
@@ -281,7 +393,7 @@ impl<'vm> GitContext<'vm> {
                 String::from_utf8(topology).map_err(|e| e.to_string())?,
             ])
         });
-        self.pending = Some(Pending::Read(read, permit, checkout));
+        self.pending = Some(Pending::Read(read, permit, checkout, owner));
         Ok(())
     }
 
@@ -290,8 +402,10 @@ impl<'vm> GitContext<'vm> {
         app: &mut App,
         permit: RootedSchemeObject<'vm>,
         checkout: &CommittedCheckout,
+        owner: &str,
         sources: &[String; 2],
     ) -> Result<(), String> {
+        check_repository_binding(&checkout.owner, owner)?;
         let inputs = roots(
             self.scheme,
             &[checkout.commit.as_str(), &sources[0], &sources[1]],
@@ -310,7 +424,7 @@ impl<'vm> GitContext<'vm> {
             .into_collection(CollectionKind::Vector)
             .map_err(|e| e.to_string())?;
         let mut detail = format!(
-            "{} @ {}",
+            "{} @ {}\nRepository {owner}",
             checkout.reference.as_str(),
             checkout.commit.as_str()
         );
@@ -360,6 +474,24 @@ impl<'vm> GitContext<'vm> {
         }
         Ok(WorkingCopyIsolationProvider::Worktrunk)
     }
+}
+
+fn repository_binding(owner: &Path) -> Result<String, String> {
+    if env::var_os("MARLIN_AGENT_CORE_DEV").as_deref() == Some(OsStr::new("1")) {
+        return Ok(utf8(owner)?.to_owned());
+    }
+    let home = env::var_os("HOME").ok_or("HOME is not set")?;
+    EnrolledRepository::load(Path::new(&home), owner)
+        .map_err(|error| error.to_string())?
+        .map(|record| record.instance().as_str().to_owned())
+        .ok_or_else(|| "Enroll the approved Git repository with --enroll-context".into())
+}
+
+fn check_repository_binding(directory: &Path, expected: &str) -> Result<(), String> {
+    if repository_binding(directory)? != expected {
+        return Err("Repository enrollment changed during Git Context read".into());
+    }
+    Ok(())
 }
 
 impl Drop for GitContext<'_> {

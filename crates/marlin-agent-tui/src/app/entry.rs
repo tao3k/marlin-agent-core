@@ -52,6 +52,10 @@ pub fn run_cli() {
     let result = match args.action {
         CliAction::Open { session } => runner::run(args.config, session),
         CliAction::List { after } => list_sessions(&args.config, after).map(|()| None),
+        #[cfg(unix)]
+        CliAction::EnrollContext { remote } => {
+            crate::cli::enroll_context(&args.config, remote).map(|()| None)
+        }
     };
     if let Some(telemetry) = telemetry
         && let Err(error) = telemetry.shutdown()

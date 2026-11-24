@@ -40,10 +40,33 @@
   (Record decode-batch: [(Fun ContextProjectionRows <- ContextProjectionRows)]
           encode-scopes: [(Fun ContextProjectionBytes <- ContextProjectionRows)]))
 
+(def ContextProgressiveContract
+  (Record element-graph: [(Fun Object <- Object)]
+          select-elements: [(Fun Object <- Object)]
+          dispatch: [(Fun Object <- Object)]
+          repair-org: [(Fun Object <- Object)]
+          babel-upsert: [(Fun String <- Object)]
+          checklist-set: [(Fun String <- Object)]
+          headline-set-todo: [(Fun String <- Object)]
+          fission-subtree: [(Fun Object <- Object)]))
+
+(def ContextOrchestratorContract
+  (Record derive-worktree: [(Fun Object <- Object)]
+          derive-task: [(Fun Object <- Object)]
+          orchestrate-task: [(Fun Object <- Object)]
+          replan-epoch: [(Fun Object <- Object)]
+          record-cas!: [(Fun Object <- Object)]
+          recover-task: [(Fun Object <- Object)]
+          commit-auto-archive!: [(Fun Object <- Object)]
+          reopen-task!: [(Fun Object <- Object)]
+          project-workbench-tabs: [(Fun Object <- Object)]))
+
 (def MarlinContextSystemContract
   (.cc (Record admit-scope: [(.get LabContext admission-type)] bridge: [ContextBridgeContract]
                org-contract-source: [(Fun ContextOrgContractSource <- ContextOrgContractRequest)]
-               org-source-graph: [(Fun ContextOrgSourceGraph <- String)])
+               org-source-graph: [(Fun ContextOrgSourceGraph <- String)]
+               progressive: [ContextProgressiveContract]
+               orchestrator: [ContextOrchestratorContract])
        identity: 'marlin/context))
 
 (def ContextCausalContract

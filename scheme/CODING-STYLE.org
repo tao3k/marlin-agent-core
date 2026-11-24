@@ -71,6 +71,33 @@ it for execution.
 
 [[https://github.com/tao3k/gebril-yuanxu/blob/689db1886e8efdb04accd3c15dc2dc6140e14eeb/t/module-testing-compiled-test.ss#L28-L33][Yuanxu compiled-module fixture]]
 
+** Lexical constant slots vs receiver-computed slots
+
+Gerbil-POO distinguishes constant lexical capture (corresponding to POOF's
+=$slot=) from receiver/inheritance computations (corresponding to POOF's
+=$slot-compute= and =$slot-gen=). [[https://github.com/metareflection/poof/blob/59cecf050c8f2fab480175278c439410f3151cd6/poof-code-only.rkt#L21-L48][POOF slot constructors]]
+
+- *Same-name lexical capture*: write =slot-name= (or =(slot-name)=) when a
+  surrounding lexical variable already carries the exact slot name. Do not
+  invent artificial =-value= / =-input= suffixes merely to avoid =CyclicSlot=
+  shadowing.
+- *Explicit constant capture*: write =(slot-name := expression)= when
+  evaluating an expression once in the surrounding lexical scope before
+  receiver slot bindings are installed. The captured value never allocates a
+  per-read =self= closure and remains available to descendants through ordinary
+  inheritance.
+- *Receiver and inherited computation*: reserve =slot-name: expr=,
+  =(slot-name expr)=, =(slot-name => fn ...)=, and =(slot-name =>.+ proto)= for
+  slots that genuinely depend on final =self= or the inherited =super= thunk.
+
+#+begin_src scheme
+;; Capture boundary values once in lexical scope; no `-value` renaming needed.
+(.o (:: @ ClosClass.)
+    (identity := (string-copy identity-value))
+    (generation := generation-value)
+    complete?)
+#+end_src
+
 * File roles
 
 | File | Responsibility |

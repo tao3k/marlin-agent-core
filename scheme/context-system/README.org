@@ -6,7 +6,10 @@
 
 * Responsibility
 
-Adapts Lab Context, Org source and causal evidence to Marlin's Context System.
+Adapts Lab Context, Org source, Org Elements -> ISO GQL queries, ASCENT
+progressive disclosure (`L0..L3` + dynamic Flash facets), two-stage AST/Flash
+Org repair, declarative C4 POO + FunFlow CAS DAG + Durable orchestration
+(=orchestrator.ss=), and causal evidence to Marlin's Context System.
 
 * Interface and contracts
 

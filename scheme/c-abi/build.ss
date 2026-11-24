@@ -16,7 +16,8 @@
         (cond-expand
           (darwin '((gxc: "roots" "-ld-options" "-Wl,-undefined,dynamic_lookup")))
           (else '("roots")))
-        '("context" "deck-runtime" "ui" "tooling" "envrc" "context-admission" "worktree-context")))
+        '("context" "deck-runtime" "ui" "tooling" "envrc" "context-admission"
+          "worktree-context" "artifacts")))
   .worktree-provider:
   (lambda () (and (module-build-feature-selected? 'gitops 'worktrunk) 'worktrunk))
   autoload:
@@ -26,6 +27,9 @@
       context:
       (.o module: ':marlin-agent-core/context-system/config
           exports: (.o context-scope: 'context-scope))
+      artifacts:
+      (.o module: ':marlin-agent-core/artifacts/funcs
+          exports: (.o exchange: 'artifacts-exchange))
       worktree-context:
       (.o module: ':marlin-agent-core/context-system/worktree
           exports: (.o prepare-context: 'prepare-worktree-context

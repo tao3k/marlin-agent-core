@@ -2,16 +2,27 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-#![cfg(feature = "artifacts")]
+#![cfg(all(feature = "artifacts", unix))]
 
 use std::{env, fs, path::Path, process::Command};
 
 use gerbil_scheme::GerbilRuntime;
 use marlin_agent_context::artifacts::{ArtifactKind, WorkspaceArtifacts};
+use marlin_agent_gitops::{EnrolledRepository, GitOperations};
 
 #[test]
 #[ignore = "requires the compiled Marlin Scheme package"]
 fn linked_worktree_restores_shared_org_after_restart() {
+    verify_restore(true);
+}
+
+#[test]
+#[ignore = "requires the compiled Marlin Scheme package"]
+fn home_enrollment_restores_shared_org_after_restart() {
+    verify_restore(false);
+}
+
+fn verify_restore(development: bool) {
     let fixture = tempfile::tempdir().unwrap();
     let primary = fixture.path().join("primary");
     let branch = fixture.path().join("branch");
@@ -38,12 +49,29 @@ fn linked_worktree_restores_shared_org_after_restart() {
         &["worktree", "add", "--detach", branch.to_str().unwrap()],
     );
     fs::write(branch.join("file"), "updated\n").unwrap();
+    let root = if development {
+        primary.join(".data/marlin")
+    } else {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let context = GitOperations::context(&primary).await.unwrap();
+            EnrolledRepository::enroll(fixture.path(), &context, None)
+                .await
+                .unwrap()
+                .root()
+                .to_owned()
+        })
+    };
     let run = |directory: &Path, action: &str| {
         let output = Command::new(env::current_exe().unwrap())
             .args(["--exact", "artifact_process", "--ignored", "--nocapture"])
             .env("MARLIN_ARTIFACT_TEST_DIRECTORY", directory)
             .env("MARLIN_ARTIFACT_TEST_ACTION", action)
-            .env("MARLIN_AGENT_CORE_DEV", "1")
+            .env("HOME", fixture.path())
+            .env("MARLIN_AGENT_CORE_DEV", if development { "1" } else { "" })
             .output()
             .unwrap();
         assert!(
@@ -56,11 +84,14 @@ fn linked_worktree_restores_shared_org_after_restart() {
     run(&branch, "record");
     git(&branch, &["add", "file"]);
     git(&branch, &["commit", "-qm", "updated"]);
-    let org = primary.join(".data/marlin/context.org");
+    let org = root.join("context.org");
     let before = fs::read_to_string(&org).unwrap();
     assert!(before.contains(source_commit.trim()));
     assert!(!before.contains(git(&branch, &["rev-parse", "HEAD"]).trim()));
     assert!(!branch.join(".data/marlin").exists());
+    if !development {
+        assert!(!primary.join(".data").exists());
+    }
     // Simulate loss of the materialized projection after committing the journal.
     fs::remove_file(&org).unwrap();
     run(&primary, "restore");

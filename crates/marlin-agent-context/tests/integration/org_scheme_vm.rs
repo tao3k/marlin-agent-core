@@ -10,19 +10,32 @@ use marlin_agent_context::gerbil_org::{
     OrgFieldValue, OrgSourceGeneration,
 };
 use std::path::Path;
+use std::time::Instant;
 
 #[test]
 #[ignore = "requires the selected Marlin Scheme package and complete Lab module closure"]
 fn selected_lab_org_graph_preserves_source_and_utf8_byte_spans() {
+    let start = Instant::now();
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
         .unwrap();
     let runtime = GerbilRuntime::initialize().unwrap();
+    eprintln!("Org ABI runtime initialized after {:?}", start.elapsed());
     let module = ContextOrgModule::resolve(&runtime, root.to_str().unwrap()).unwrap();
+    eprintln!("Org ABI exports resolved after {:?}", start.elapsed());
+    verify_org_source(&module, start);
+    drop(module);
+    eprintln!("Org ABI roots released after {:?}", start.elapsed());
+    drop(runtime);
+    eprintln!("Org ABI runtime cleaned up after {:?}", start.elapsed());
+}
+
+fn verify_org_source(module: &ContextOrgModule<'_>, start: Instant) {
     let text = "* TODO Open :work:\n:PROPERTIES:\n:ID: stable\n:END:\n正文 中文\n* DONE Closed\n#+begin_src text\n* TODO not a headline\n#+end_src\n";
     let source = module.open(text).unwrap();
     let graph = module.project(&source).unwrap();
+    eprintln!("Org ABI source projected after {:?}", start.elapsed());
     assert_eq!(graph.source, text);
     let headlines: Vec<_> = graph
         .elements
@@ -104,6 +117,7 @@ fn selected_lab_org_graph_preserves_source_and_utf8_byte_spans() {
     );
     assert!(module.open(&"x".repeat(1024 * 1024 + 1)).is_err());
     assert_eq!(module.project(&source).unwrap(), graph);
+    eprintln!("Org ABI field bounds verified after {:?}", start.elapsed());
 
     // The selected Orgize implementation rejects an oversized graph while
     // preserving the prior rooted source. This exercises its parser limit.
@@ -119,6 +133,7 @@ fn selected_lab_org_graph_preserves_source_and_utf8_byte_spans() {
         "{failure:?}"
     );
     assert_eq!(module.project(&source).unwrap(), graph);
+    eprintln!("Org ABI graph bound verified after {:?}", start.elapsed());
 
     let contract_text = "#+title: Evidence\n:PROPERTIES:\n:ID: root\n:CONTRACT_ID: example.v1\n:CONTRACT_REVISION: 1\n:END:\n* TODO Work\n:PROPERTIES:\n:ID: work\n:END:\n完整中文内容\n";
     let identity = OrgContractSourceId::new("source-a").unwrap();
@@ -156,13 +171,12 @@ fn selected_lab_org_graph_preserves_source_and_utf8_byte_spans() {
     assert!(module.open_contract(&identity, OrgSourceGeneration::new(1).unwrap(),
         ":PROPERTIES:\n:ID: same\n:CONTRACT_ID: c\n:CONTRACT_REVISION: 1\n:END:\n* TODO X\n:PROPERTIES:\n:ID: same\n:END:\n").is_err());
     assert!(OrgSourceGeneration::new(0).is_err());
+    eprintln!("Org ABI contract verified after {:?}", start.elapsed());
 }
 
 #[test]
 #[ignore = "diagnostic: requires the selected Marlin Scheme package and complete Lab module closure"]
 fn org_field_batch_cost_diagnostic() {
-    use std::time::Instant;
-
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()

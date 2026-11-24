@@ -5,14 +5,14 @@
 // An owner generation stands for changes to selected bytes or their binding.
 module gitopsContextAdmission {
   type State = {
-    repo: int, generation: int, indexedGeneration: int, cursor: int,
+    repo: int, generation: int, indexedGeneration: int, cursor: int, frontier: int,
     grant: bool, grantEpoch: int, requestedRepo: int, requestedCut: int,
     requestedGrant: int, read: bool, visible: bool, forbiddenRead: bool
   }
   var s: State
 
   action init = s' = {
-    repo: 1, generation: 1, indexedGeneration: 1, cursor: 1,
+    repo: 1, generation: 1, indexedGeneration: 1, cursor: 1, frontier: 1,
     grant: true, grantEpoch: 1, requestedRepo: 0, requestedCut: 0,
     requestedGrant: 0, read: false, visible: false, forbiddenRead: false
   }
@@ -20,7 +20,7 @@ module gitopsContextAdmission {
   def requestCurrent = all {
     s.repo == 1, s.requestedRepo == s.repo, s.requestedCut == s.generation,
     s.requestedGrant == s.grantEpoch, s.grant,
-    s.indexedGeneration == s.generation, s.cursor == s.generation
+    s.indexedGeneration == s.generation, s.cursor == s.generation, s.cursor == s.frontier
   }
   action requestRestore = s' = s
     .with("requestedRepo", s.repo).with("requestedCut", s.indexedGeneration)
@@ -32,7 +32,18 @@ module gitopsContextAdmission {
     s.generation < 3,
     s' = s.with("generation", s.generation + 1).with("visible", false)
   }
-  action replayOwnerDelta = s' = s
+  action observeGap = all {
+    s.generation > s.cursor + 1,
+    s' = s.with("frontier", s.generation)
+  }
+  action applyNext = all {
+    s.cursor < s.generation,
+    val nextCursor = s.cursor + 1
+    val nextFrontier = if (nextCursor > s.frontier) nextCursor else s.frontier
+    s' = s.with("indexedGeneration", nextCursor).with("cursor", nextCursor)
+      .with("frontier", nextFrontier)
+  }
+  action reconcileOwner = s' = s.with("frontier", s.generation)
     .with("indexedGeneration", s.generation).with("cursor", s.generation)
   action revoke = all {
     s.grant, s.grantEpoch == 1, s' = s.with("grant", false)
@@ -48,11 +59,11 @@ module gitopsContextAdmission {
     s.read, requestCurrent, s' = s.with("visible", true)
   }
   action step = any {
-    requestRestore, switchClone, editBytes, replayOwnerDelta, revoke, grantAgain,
+    requestRestore, switchClone, editBytes, observeGap, applyNext, reconcileOwner, revoke, grantAgain,
     readSource, publish
   }
   def safe = all {
-    s.indexedGeneration == s.cursor, s.cursor <= s.generation,
+    s.indexedGeneration == s.cursor, s.cursor <= s.frontier, s.frontier <= s.generation,
     not(s.forbiddenRead), s.visible implies (s.read and requestCurrent)
   }
 
@@ -77,10 +88,15 @@ module gitopsContextAdmission {
     .then(grantAgain).expect(safe and not(requestCurrent))
   run newBytesRequireReplayAndNewRequestTest = init.then(requestRestore)
     .then(readSource).then(editBytes).expect(safe and not(requestCurrent))
-    .then(replayOwnerDelta).expect(safe and not(requestCurrent))
+    .then(reconcileOwner).expect(safe and not(requestCurrent))
     .then(requestRestore).then(readSource).then(publish).expect(safe and s.visible)
   run sameUrlCloneCannotReuseOwnerTest = init.then(switchClone)
     .then(requestRestore).expect(safe and not(requestCurrent))
+  run replayGapKeepsCoverageIncompleteTest = init.then(editBytes).then(editBytes)
+    .then(observeGap).expect(safe and s.cursor < s.frontier)
+    .then(applyNext).then(requestRestore).expect(safe and s.cursor < s.frontier and not(requestCurrent))
+    .then(applyNext).then(requestRestore).then(readSource).then(publish)
+    .expect(safe and s.cursor == s.frontier and s.visible)
 }
 
 // MAR-GCTX-R04. One owned Git retention ref or one captured object.

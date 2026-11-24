@@ -53,8 +53,6 @@ runs:
           sed -nE 's/.*"github\.com\/tao3k\/orgize@([0-9a-f]{40})".*/\1/p')
         [[ "$orgize_revision" =~ ^[0-9a-f]{40}$ ]]
         seed_revision "$orgize_repo" "$orgize_revision"
-        # Orgize's C bindings stage the parser with this build-only package.
-        gerbil pkg install github.com/tao3k/gerbil-scheme-rust@dfe8b62b5dc64de88f8d70a77059a1741218ef80
         if [[ "$TRACE_DEPENDENCY_CRASH" == true && "$RUNNER_OS" == Linux ]]; then
           command -v gdb >/dev/null || sudo apt-get install -y gdb
           crash_dir=$(mktemp -d "$RUNNER_TEMP/marlin-gerbil-crash.XXXXXX")
@@ -62,23 +60,29 @@ runs:
           trap 'sudo sysctl -q -w "kernel.core_pattern=$core_pattern"' EXIT
           sudo sysctl -q -w "kernel.core_pattern=$crash_dir/core.%e.%p"
           ulimit -c unlimited
-          cat > "$crash_dir/grammar-global.gdb" <<'GDB'
+          export ORGIZE_NATIVE_TRACE='orgize/[^ ]*/(grammar|expectation-grammar|graph-shape)~[0-9]+[.]o[0-9]+'
+          cat > "$crash_dir/orgize-global.gdb" <<'GDB'
         python
         import gdb
+        import os
         import re
         import subprocess
 
         try:
             pc = int(gdb.parse_and_eval("$pc"))
             module = gdb.solib_name(pc) or ""
-            if re.search(r"orgize/.*/(?:grammar|expectation-grammar)~0[.]o1$", module):
-                # On this x86-64 crash, a RIP-relative load fetches the global
-                # cell immediately before dereferencing its unbound value.
-                assembly = gdb.execute("disassemble /r $pc-10,$pc", to_string=True)
-                slot = re.search(r"# (0x[0-9a-f]+) <___glotbl\+(\d+)>", assembly)
+            if re.search(os.environ["ORGIZE_NATIVE_TRACE"] + "$", module):
+                # Decode from the function entry so x86-64 instructions start
+                # on their real boundaries. The graph-shape load is at PC-14.
+                assembly = gdb.execute("disassemble /r $pc", to_string=True)
+                loads = re.finditer(
+                    r"(0x[0-9a-f]+)[^\n]*# (0x[0-9a-f]+) <___glotbl\+(\d+)>",
+                    assembly,
+                )
+                slot = next((load for load in loads if 0 < pc - int(load[1], 16) <= 24), None)
                 if slot is None:
-                    raise ValueError("fault does not match the observed global load")
-                slot_address, byte_offset = int(slot[1], 16), int(slot[2])
+                    raise ValueError("no nearby load from the Gambit global table")
+                slot_address, byte_offset = int(slot[2], 16), int(slot[3])
                 pointer_size = gdb.lookup_type("void").pointer().sizeof
                 if byte_offset % pointer_size:
                     raise ValueError("unaligned global table slot")
@@ -88,9 +92,9 @@ runs:
                 name_slot = slot_address + offsets["___glo_names"] - offsets["___glotbl"]
                 name = gdb.parse_and_eval("*(char **)" + hex(name_slot)).string()
                 value = gdb.parse_and_eval("**(long **)" + hex(slot_address))
-                print(f"Orgize grammar fault global {name!r}, slot {byte_offset // pointer_size}, value {int(value)}")
+                print(f"Orgize fault global {name!r}, slot {byte_offset // pointer_size}, value {int(value)}")
         except Exception as failure:
-            print(f"Orgize grammar fault global unavailable: {failure}")
+            print(f"Orgize fault global unavailable: {failure}")
         end
         GDB
           export MARLIN_TRACE_GXTAGS="$(command -v gxtags)"
@@ -135,9 +139,9 @@ runs:
               gdb --batch --nx -iex 'set auto-load off' \
                 -ex 'set print frame-arguments none' -ex 'thread apply all bt' \
                 -ex 'info registers' -ex 'disassemble /r $pc-32,$pc+48' \
-                -x "$crash_dir/grammar-global.gdb" \
+                -x "$crash_dir/orgize-global.gdb" \
                 "$executable" "$dump" 2>&1 | tee "$backtrace" || true
-              if grep -Eq 'orgize/[^ ]*/(grammar|expectation-grammar)~0[.]o1' "$backtrace"; then
+              if grep -Eq "$ORGIZE_NATIVE_TRACE" "$backtrace"; then
                 orgize_crashed=true
               fi
             done
@@ -178,19 +182,23 @@ runs:
                   tail -n 12 "$crash_dir/$worker_pid.$scope.log"
                 done
               done
-              for module in org-parser/grammar org-contract/expectation-grammar; do
+              for module in org-parser/grammar org-contract/expectation-grammar org-elements/graph-shape; do
                 import_status=0
                 tag_status=0
-                binding=org-mode-language-grammar
-                if [[ "$module" == org-contract/expectation-grammar ]]; then
-                  binding=org-expectation-language-grammar
-                fi
+                case "$module" in
+                  org-parser/grammar) binding=org-mode-language-grammar ;;
+                  org-contract/expectation-grammar) binding=org-expectation-language-grammar ;;
+                  org-elements/graph-shape) binding=org-graph-shape ;;
+                esac
                 (cd "$GERBIL_PATH/pkg" && timeout 120s gxi -e \
                   "(import :orgize/languages/org/modules/$module)
                    (unless $binding (error \"missing Org grammar\"))") || import_status=$?
                 (cd "$GERBIL_PATH/pkg" && timeout 120s gxtags --global-env --jobs 1 \
                   -o "$crash_dir/${module##*/}.tags" \
-                  "$orgize_checkout/languages/org/modules/$module.ss") || tag_status=$?
+                  "$orgize_repo/languages/org/modules/$module.ss") || tag_status=$?
+                if [[ "$tag_status" == 0 && ! -s "$crash_dir/${module##*/}.tags" ]]; then
+                  tag_status=empty
+                fi
                 printf 'Orgize %s direct import status %s, single-file index status %s\n' \
                   "$module" "$import_status" "$tag_status"
               done

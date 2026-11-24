@@ -75,6 +75,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 tower = { version = "0.5.3", features = ["limit", "load-shed", "timeout", "util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
+url = "2.5.8"
 wiremock = "0.6.5"
 worktrunk = { version = "=0.58.0", default-features = false }
 marlin-agent-app-server = { path = "crates/marlin-agent-app-server", version = "0.1.0" }

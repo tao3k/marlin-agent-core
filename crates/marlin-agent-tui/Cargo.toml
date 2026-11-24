@@ -34,10 +34,11 @@ required-features = ["linked-ui"]
 
 [features]
 default = ["linked-ui"]
-linked-ui = ["dep:gerbil-scheme-sys", "dep:gerbil-scheme-aot-build", "dep:marlin-agent-tooling", "gerbil-scheme/external-program", "marlin-agent-ui/linked-ui"]
+linked-ui = ["dep:gerbil-scheme-sys", "dep:gerbil-scheme-aot-build", "dep:marlin-agent-context", "dep:marlin-agent-tooling", "gerbil-scheme/external-program", "marlin-agent-ui/linked-ui"]
 
 [dependencies]
 async-stream = "0.3.6"
+marlin-agent-context = { workspace = true, features = ["artifacts-abi"], optional = true }
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-agent-telemetry.workspace = true

@@ -35,6 +35,7 @@ package MarlinAgentCORE {
     dependency contextOrgDesign from project to MarlinTuiArchitecture::target::contextOrgAuthority;
     dependency contextOrgLifecycle from project to MarlinContextOrgLifecycle::OrgTurnLifecycle;
     dependency gitOpsContextDesign from project to MarlinGitOpsContext::target;
+    dependency sharedOrgSessionDesign from project to MarlinOrgBabelSession::target;
     dependency tuiTurnLifecycle from project to MarlinTuiLifecycle::TurnLifecycle;
 
     view projectStructure {
@@ -121,5 +122,20 @@ package MarlinAgentCORE {
 
     view gitOpsContextOrgLink : StandardViewDefinitions::ActionFlowView {
         expose MarlinGitOpsContext::QualifyOrgLink;
+    }
+
+    view sharedOrgContextArchitecture {
+        expose MarlinOrgBabelSession::target;
+        expose MarlinOrgBabelSession::orgFileAsSharedContext;
+        expose MarlinOrgBabelSession::orgElementsToGqlMapping;
+        expose MarlinOrgBabelSession::ascentProgressiveDisclosureAndDynamicFacets;
+        expose MarlinOrgBabelSession::threeTierEngineeringDecoupling;
+        expose MarlinOrgBabelSession::twoStageAstAndFlashRepair;
+        expose MarlinOrgBabelSession::zeroCompactionEvolutionAndDirectRendering;
+        expose MarlinOrgBabelSession::declarativeInterfaceAndPooDerivation;
+        expose MarlinOrgBabelSession::durableOrchestratorAndPlanAIndex;
+        expose MarlinOrgBabelSession::taskAsTabAutoArchiveProjection;
+        expose MarlinOrgBabelSession::funflowCasDagAndGovernanceScopeIsolation;
+        render asTreeDiagram;
     }
 }

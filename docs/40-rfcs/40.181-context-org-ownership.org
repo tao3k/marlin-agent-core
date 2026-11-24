@@ -85,7 +85,7 @@ This remaining type-layout issue does not justify retaining a Rust parser.
 * Verification
 
 Use the official Gerbil test entry for Scheme semantics and the production VM
-boundary for integration. [[file:../../crates/marlin-agent-context/tests/org_scheme_vm.rs][The native Org suite]] checks source preservation,
+boundary for integration. [[file:../../crates/marlin-agent-context/tests/integration/org_scheme_vm.rs][The native Org suite]] checks source preservation,
 Unicode spans, field bounds, cross-source ID refusal and upstream size
 rejection. The host cache tests consume typed facts directly and preserve
 producer validation outcomes rather than evaluating assertions again.

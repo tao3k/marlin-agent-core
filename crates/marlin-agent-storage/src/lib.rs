@@ -8,6 +8,8 @@
 //! and future Turso-backed projections. Domain crates should depend on these
 //! typed operations instead of embedding SQL or backend-specific conflict rules.
 
+#[cfg(all(unix, feature = "context-index"))]
+pub mod context_index;
 mod memory;
 mod records;
 #[cfg(feature = "turso")]

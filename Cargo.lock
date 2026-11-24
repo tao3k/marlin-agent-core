@@ -2791,6 +2791,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "url",
  "worktrunk",
 ]
 
@@ -2937,6 +2938,7 @@ version = "0.1.0"
 dependencies = [
  "asp-rust",
  "marlin-agent-context",
+ "marlin-agent-gitops",
  "marlin-agent-protocol",
  "marlin-agent-sessions",
  "mrr-data-backend",
@@ -3027,6 +3029,7 @@ dependencies = [
  "gerbil-scheme-aot-build",
  "gerbil-scheme-sys",
  "libc",
+ "marlin-agent-context",
  "marlin-agent-gitops",
  "marlin-agent-protocol",
  "marlin-agent-runtime",

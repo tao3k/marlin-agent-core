@@ -22,6 +22,14 @@ pub struct GitOperations;
 pub struct GitCommitId(String);
 
 impl GitCommitId {
+    /// Admit a full object identifier carried by a persisted Git receipt.
+    pub fn parse(oid: &str) -> Result<Self, GitReadError> {
+        if !matches!(oid.len(), 40 | 64) || !oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(GitReadError::InvalidCommit);
+        }
+        Ok(Self(oid.to_ascii_lowercase()))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -305,10 +313,7 @@ impl WorkspaceProjectGitHubRepository {
 fn commit_id(output: &[u8]) -> Result<GitCommitId, GitReadError> {
     let text = std::str::from_utf8(output).map_err(|_| GitReadError::InvalidCommit)?;
     let oid = text.strip_suffix('\n').ok_or(GitReadError::InvalidCommit)?;
-    if !matches!(oid.len(), 40 | 64) || !oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(GitReadError::InvalidCommit);
-    }
-    Ok(GitCommitId(oid.to_ascii_lowercase()))
+    GitCommitId::parse(oid)
 }
 
 async fn common_directory(root: &Path) -> Result<PathBuf, GitReadError> {

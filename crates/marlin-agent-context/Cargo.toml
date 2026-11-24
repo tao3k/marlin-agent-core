@@ -16,7 +16,8 @@ readme = "README.org"
 gerbil-scheme-abi = ["dep:gerbil-scheme"]
 # Package-host Context operations include the typed ABI.
 gerbil = ["gerbil-scheme-abi"]
-artifacts = ["gerbil", "dep:marlin-agent-gitops", "dep:sha2", "dep:tempfile"]
+artifacts-abi = ["gerbil-scheme-abi", "dep:marlin-agent-gitops", "dep:sha2", "dep:tempfile"]
+artifacts = ["artifacts-abi", "gerbil"]
 org-source = [
     "dep:marlin-gerbil-ir",
     "dep:marlin-context-org-model",
@@ -54,3 +55,31 @@ tokio.workspace = true
 [[bench]]
 name = "scope_batch"
 harness = false
+
+[[test]]
+name = "artifacts_workspace"
+path = "tests/integration/artifacts_workspace.rs"
+
+[[test]]
+name = "batch"
+path = "tests/unit/batch.rs"
+
+[[test]]
+name = "org_context_query"
+path = "tests/integration/org_context_query.rs"
+
+[[test]]
+name = "org_scheme_vm"
+path = "tests/integration/org_scheme_vm.rs"
+
+[[test]]
+name = "org_store_test"
+path = "tests/unit/org_store_test.rs"
+
+[[test]]
+name = "org_workflow_test"
+path = "tests/unit/org_workflow_test.rs"
+
+[[test]]
+name = "governance_async_mediation"
+path = "tests/unit/governance_async_mediation.rs"

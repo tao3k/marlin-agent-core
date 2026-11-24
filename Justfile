@@ -258,6 +258,30 @@ tui-aot-debug: scheme-build
 tui-aot-build: scheme-build
   cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --release
 
+# Stage the linked Release with filesystem compression where Darwin supports it.
+tui-stage-release directory binary="target/release/marlin-tui":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  binary={{ quote(binary) }}
+  directory={{ quote(directory) }}
+  if [[ ! -f "$binary" || ! -x "$binary" ]]; then
+    printf 'Expected a built executable at %s\n' "$binary" >&2
+    exit 1
+  fi
+  mkdir -p -- "$directory"
+  destination="$directory/marlin-tui"
+  if [[ -d "$destination" ]]; then
+    printf 'Expected an executable path at %s\n' "$destination" >&2
+    exit 1
+  fi
+  staging=$(mktemp -d "$directory/.marlin-tui.XXXXXX")
+  trap 'rm -f -- "$staging/marlin-tui"; rmdir -- "$staging"' EXIT
+  case "$(uname -s)" in
+    Darwin) /usr/bin/ditto --hfsCompression "$binary" "$staging/marlin-tui" ;;
+    *) install -m 0755 -- "$binary" "$staging/marlin-tui" ;;
+  esac
+  mv -f -- "$staging/marlin-tui" "$destination"
+
 # Build the same linked binary as distribution while measuring Rust UI mapping.
 tui-ui-mapping-bench: scheme-build
   cargo bench --locked -p marlin-agent-tui --bench ui_mapping

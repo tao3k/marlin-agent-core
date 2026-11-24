@@ -3,7 +3,11 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use super::{Command, Duration, Instant, Terminal, fs, screen_lines};
-use std::{os::unix::fs::PermissionsExt, path::Path, thread};
+use std::{
+    env,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+};
 
 fn git(root: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
@@ -68,6 +72,121 @@ fn configure_context(config: &Path, approved: &Path) {
     .unwrap();
 }
 
+fn enroll(config: &Path, home: &Path) -> String {
+    enroll_with(Path::new(env!("CARGO_BIN_EXE_marlin-tui")), config, home)
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn enroll_with(binary: &Path, config: &Path, home: &Path) -> PathBuf {
+    let output = Command::new(binary)
+        .args([config.as_os_str(), "--enroll-context".as_ref()])
+        .env("HOME", home)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let root = String::from_utf8(output.stdout).unwrap();
+    let path = Path::new(root.trim());
+    assert!(path.starts_with(home.join("marlin-ai/repos")));
+    path.to_owned()
+}
+
+#[test]
+#[ignore = "requires the dynamic artifacts_workspace producer and a compiled Scheme package"]
+fn linked_terminal_recovers_and_verifies_artifacts_without_a_scheme_install() {
+    verify_linked_artifacts(false);
+}
+
+#[test]
+#[ignore = "requires the dynamic artifacts_workspace producer and the linked DEV Scheme programme"]
+fn linked_dev_terminal_recovers_primary_worktree_artifacts() {
+    verify_linked_artifacts(true);
+}
+
+fn verify_linked_artifacts(development: bool) {
+    let seed = env::var_os("MARLIN_ARTIFACT_FIXTURE_PRODUCER").expect("producer test binary");
+    let binary = env::var_os("MARLIN_ARTIFACT_FIXTURE_TUI")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_marlin-tui")));
+    let fixture = tempfile::tempdir().unwrap();
+    let home = fixture.path().canonicalize().unwrap();
+    let primary = home.join("primary");
+    let branch = home.join("branch");
+    fs::create_dir(&primary).unwrap();
+    git(&primary, &["init", "-q", "--initial-branch", "main"]);
+    fs::write(primary.join("file"), "base\n").unwrap();
+    git(&primary, &["add", "file"]);
+    let commit = commit_context(&primary, "main");
+    git(
+        &primary,
+        &["worktree", "add", "--detach", branch.to_str().unwrap()],
+    );
+    fs::write(branch.join("file"), "updated\n").unwrap();
+    let config = home.join("tui.toml");
+    configure_context(&config, &primary);
+    let root = if development {
+        primary.join(".data/marlin")
+    } else {
+        enroll_with(&binary, &config, &home)
+    };
+    let mode = if development { "1" } else { "" };
+
+    let output = Command::new(seed)
+        .args(["--exact", "artifact_process", "--ignored", "--nocapture"])
+        .env("MARLIN_ARTIFACT_TEST_DIRECTORY", &branch)
+        .env("MARLIN_ARTIFACT_TEST_ACTION", "record")
+        .env("HOME", &home)
+        .env("MARLIN_AGENT_CORE_DEV", mode)
+        .env("GAMBOPT", "max-heap=2G,debug=q")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let org = root.join("context.org");
+    let original = fs::read(&org).unwrap();
+    fs::remove_file(&org).unwrap();
+
+    let absent = home.join("no-gerbil-install").display().to_string();
+    let variables = [
+        ("GAMBOPT", "max-heap=2G,debug=q".to_owned()),
+        ("HOME", home.display().to_string()),
+        ("MARLIN_AGENT_CORE_DEV", mode.to_owned()),
+        ("GERBIL_HOME", absent.clone()),
+        ("GERBIL_LOADPATH", absent.clone()),
+        ("GERBIL_PATH", absent),
+    ];
+    let mut terminal =
+        Terminal::start_in_binary(&binary, &config, &[], &variables, 30, 100, &primary);
+    messages(&mut terminal);
+    context_ready(&mut terminal, "main", &commit);
+    terminal.wait_text("Git Artifacts restored");
+    terminal.wait_text("2 verified file(s)");
+    assert_eq!(fs::read(&org).unwrap(), original);
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+
+    let artifact = fs::read_dir(root.join("artifacts"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    fs::write(artifact, "corrupted payload").unwrap();
+    let mut terminal =
+        Terminal::start_in_binary(&binary, &config, &[], &variables, 30, 100, &branch);
+    messages(&mut terminal);
+    context_ready(&mut terminal, "main", &commit);
+    terminal.wait_text("Git Artifacts unavailable");
+    terminal.wait_text("Context artifact digest mismatch");
+    assert_eq!(fs::read(org).unwrap(), original);
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+}
+
 #[test]
 fn unapproved_clone_is_refused_before_opening_context_blobs() {
     let fixture = tempfile::tempdir().unwrap();
@@ -92,8 +211,21 @@ fn unapproved_clone_is_refused_before_opening_context_blobs() {
     configure_context(&config, &approved);
     let variables = [
         ("GAMBOPT", "max-heap=2G,debug=q".to_owned()),
+        ("HOME", directory.display().to_string()),
+        ("MARLIN_AGENT_CORE_DEV", String::new()),
         ("GIT_TRACE2_EVENT", trace.display().to_string()),
     ];
+    let mut terminal = Terminal::start_in(&config, &[], &variables, 30, 100, &approved);
+    messages(&mut terminal);
+    terminal.wait_text("Git Context unavailable");
+    terminal.wait_text("--enroll-context");
+    assert!(!directory.join("marlin-ai").exists());
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+    let owner = enroll(&config, &directory);
+    assert_eq!(enroll(&config, &directory), owner);
+
     let mut terminal = Terminal::start_in(&config, &[], &variables, 30, 100, &clone);
     messages(&mut terminal);
     terminal.wait_text("Git Context unavailable");
@@ -147,11 +279,15 @@ fn committed_worktree_context_restores_and_fences_a_late_read() {
     let base = [
         ("GAMBOPT", "max-heap=2G,debug=q".to_owned()),
         ("WORKTRUNK_CONFIG_PATH", prefs.display().to_string()),
+        ("HOME", directory.display().to_string()),
+        ("MARLIN_AGENT_CORE_DEV", String::new()),
     ];
+    let owner = enroll(&config, &directory);
     for _ in 0..2 {
         let mut terminal = Terminal::start_in(&config, &[], &base, 30, 100, &nested);
         messages(&mut terminal);
         context_ready(&mut terminal, "start", &first);
+        terminal.wait_text(&owner);
         terminal.send(b"\x11");
         terminal.wait_exit(Duration::from_secs(5));
         terminal.assert_restored();
@@ -174,16 +310,20 @@ fn committed_worktree_context_restores_and_fences_a_late_read() {
 import os, pathlib, subprocess, sys, time
 git = {git:?}
 argv = sys.argv[1:]
+# Apple's /usr/bin/git may look up Git through PATH.
+environment = os.environ.copy()
+environment["PATH"] = {search:?}
 if argv[-3:] == ["cat-file", "blob", {request:?}]:
-    output = subprocess.check_output([git, *argv])
+    output = subprocess.check_output([git, *argv], env=environment)
     pathlib.Path({started:?}).touch()
     while not pathlib.Path({release:?}).exists():
         time.sleep(0.01)
     sys.stdout.buffer.write(output)
 else:
-    os.execv(git, [git, *argv])
+    os.execve(git, [git, *argv], environment)
 "#,
             git = real_git.to_str().unwrap(),
+            search = search.to_str().unwrap(),
             request = format!("{first}:index.org"),
             started = started.to_str().unwrap(),
             release = release.to_str().unwrap()
@@ -193,21 +333,15 @@ else:
     fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
     let search =
         std::env::join_paths(std::iter::once(tool).chain(std::env::split_paths(&search))).unwrap();
-    let timed = [
-        base[0].clone(),
-        base[1].clone(),
-        ("PATH", search.into_string().unwrap()),
-    ];
+    let mut timed = base.into_iter().collect::<Vec<_>>();
+    timed.push(("PATH", search.into_string().unwrap()));
     let mut terminal = Terminal::start_in(&config, &[], &timed, 30, 100, &nested);
     messages(&mut terminal);
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while !started.exists() {
-        assert!(Instant::now() < deadline, "old committed read never opened");
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_for_git_read(&mut terminal, &started, "old committed Git read");
     terminal.send(b"\x1bxworktree-switch review\r");
     context_ready(&mut terminal, "review", &second);
-    fs::write(release, "").unwrap();
+    terminal.wait_text(&owner);
+    fs::write(&release, "").unwrap();
     terminal.send(b"\x1bxstatus\r");
     terminal.wait_text("Worktree clean");
     assert!(
@@ -218,4 +352,30 @@ else:
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
     terminal.assert_restored();
+
+    fs::remove_file(&started).unwrap();
+    fs::remove_file(&release).unwrap();
+    let mut terminal = Terminal::start_in(&config, &[], &timed, 30, 100, &nested);
+    messages(&mut terminal);
+    wait_for_git_read(&mut terminal, &started, "Git read at the revocation fence");
+    fs::remove_file(repo.join(".git/marlin-owner-ref")).unwrap();
+    fs::write(release, "").unwrap();
+    terminal.wait_text("Git Context unavailable");
+    terminal.wait_text("--enroll-context");
+    let rows = screen_lines(&terminal.output).join("\n");
+    assert!(!rows.contains("Git Context ready"));
+    assert!(!rows.contains("context.start.index.v1"));
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+}
+
+fn wait_for_git_read(terminal: &mut Terminal, started: &Path, description: &str) {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !started.exists() {
+        if Instant::now() >= deadline {
+            terminal.fail_wait(description, "Git fixture did not observe a committed read");
+        }
+        terminal.pump(Duration::from_millis(20));
+    }
 }

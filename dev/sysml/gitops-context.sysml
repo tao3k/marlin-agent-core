@@ -205,7 +205,10 @@ package MarlinGitOpsContext {
                locator index from owner evidence. DEV=1 selects the isolated
                repository development scope; ordinary mode uses the user's
                marlin-ai root. Publish atomic index deltas with owner cursors.
-               Cursor gaps report incomplete coverage until reconciled. */
+               Persist the latest observed frontier across restart. A cursor
+               below this frontier reports incomplete coverage for that owner
+               until contiguous replay reaches it or a complete owner
+               inventory reconciles at or beyond it. */
     }
     requirement <'MAR-GCTX-R03'> contextAdmission {
         doc /* Narrow by declared repository relationships and consumer scope.
@@ -220,7 +223,9 @@ package MarlinGitOpsContext {
                or an admitted exact-tip rewrite merge receipt. Acquire the
                resource hold before publishing a reference. Keep original
                bytes by default. Expiry, absence of holds, producer generation
-               and known coverage must coincide at fenced disposal. */
+               and known coverage must coincide at fenced disposal. Compare
+               the private Git pin, hold ledger and deleted branch together
+               when authorizing removal of a pin from a deleted cut. */
     }
     requirement <'MAR-GCTX-R05'> incrementalQualification {
         doc /* A qualified warm restore reads index metadata and matching

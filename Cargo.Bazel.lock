@@ -1,5 +1,5 @@
 {
-  "checksum": "d32611b462228cc0cb6f65706b085486ce67d57d5fb763b74309813d2f3bc75a",
+  "checksum": "e17e41ca6668fb41a86e0666e5fa770e4ecf5f7db7c4195677c58ce9b384a46b",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -702,10 +702,6 @@
               "target": "anstyle_query"
             },
             {
-              "id": "anstyle-wincon 3.0.11",
-              "target": "anstyle_wincon"
-            },
-            {
               "id": "colorchoice 1.0.5",
               "target": "colorchoice"
             },
@@ -718,7 +714,14 @@
               "target": "utf8parse"
             }
           ],
-          "selects": {}
+          "selects": {
+            "x86_64-pc-windows-msvc": [
+              {
+                "id": "anstyle-wincon 3.0.11",
+                "target": "anstyle_wincon"
+              }
+            ]
+          }
         },
         "edition": "2021",
         "version": "1.0.0"
@@ -7975,10 +7978,22 @@
         ],
         "crate_features": {
           "common": [
-            "default",
             "std"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "default"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "default"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "default"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "default"
+            ]
+          }
         },
         "deps": {
           "common": [],
@@ -15423,6 +15438,8 @@
         ],
         "crate_features": {
           "common": [
+            "artifacts-abi",
+            "gerbil-scheme-abi",
             "org-memory",
             "org-source",
             "org-workflow"
@@ -15431,6 +15448,10 @@
         },
         "deps": {
           "common": [
+            {
+              "id": "gerbil-scheme 0.1.0",
+              "target": "gerbil_scheme"
+            },
             {
               "id": "parking_lot 0.12.5",
               "target": "parking_lot"
@@ -15442,6 +15463,14 @@
             {
               "id": "serde_json 1.0.154",
               "target": "serde_json"
+            },
+            {
+              "id": "sha2 0.10.9",
+              "target": "sha2"
+            },
+            {
+              "id": "tempfile 3.27.0",
+              "target": "tempfile"
             },
             {
               "id": "thiserror 2.0.21",
@@ -15615,21 +15644,20 @@
               "target": "serde_json"
             },
             {
+              "id": "tempfile 3.27.0",
+              "target": "tempfile"
+            },
+            {
               "id": "thiserror 2.0.21",
               "target": "thiserror"
             },
             {
               "id": "tokio 1.53.1",
               "target": "tokio"
-            }
-          ],
-          "selects": {}
-        },
-        "deps_dev": {
-          "common": [
+            },
             {
-              "id": "tempfile 3.27.0",
-              "target": "tempfile"
+              "id": "url 2.5.8",
+              "target": "url"
             }
           ],
           "selects": {}
@@ -31240,10 +31268,6 @@
               "target": "bytes"
             },
             {
-              "id": "libc 0.2.191",
-              "target": "libc"
-            },
-            {
               "id": "mio 1.2.4",
               "target": "mio"
             },
@@ -31254,21 +31278,82 @@
             {
               "id": "pin-project-lite 0.2.17",
               "target": "pin_project_lite"
-            },
-            {
-              "id": "signal-hook-registry 1.4.8",
-              "target": "signal_hook_registry"
-            },
-            {
-              "id": "socket2 0.6.5",
-              "target": "socket2"
-            },
-            {
-              "id": "windows-sys 0.61.2",
-              "target": "windows_sys"
             }
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              },
+              {
+                "id": "signal-hook-registry 1.4.8",
+                "target": "signal_hook_registry"
+              },
+              {
+                "id": "socket2 0.6.5",
+                "target": "socket2"
+              }
+            ],
+            "aarch64-unknown-linux-gnu": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              },
+              {
+                "id": "signal-hook-registry 1.4.8",
+                "target": "signal_hook_registry"
+              },
+              {
+                "id": "socket2 0.6.5",
+                "target": "socket2"
+              }
+            ],
+            "wasm32-wasip1": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              }
+            ],
+            "x86_64-pc-windows-msvc": [
+              {
+                "id": "socket2 0.6.5",
+                "target": "socket2"
+              },
+              {
+                "id": "windows-sys 0.61.2",
+                "target": "windows_sys"
+              }
+            ],
+            "x86_64-unknown-linux-gnu": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              },
+              {
+                "id": "signal-hook-registry 1.4.8",
+                "target": "signal_hook_registry"
+              },
+              {
+                "id": "socket2 0.6.5",
+                "target": "socket2"
+              }
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              },
+              {
+                "id": "signal-hook-registry 1.4.8",
+                "target": "signal_hook_registry"
+              },
+              {
+                "id": "socket2 0.6.5",
+                "target": "socket2"
+              }
+            ]
+          }
         },
         "edition": "2021",
         "proc_macro_deps": {
@@ -31899,11 +31984,26 @@
         "crate_features": {
           "common": [
             "alloc",
-            "default",
             "serde",
             "std"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "default"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "default"
+            ],
+            "x86_64-pc-windows-msvc": [
+              "default"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "default"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "default"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -32022,10 +32122,25 @@
         "crate_features": {
           "common": [
             "alloc",
-            "default",
             "std"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "default"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "default"
+            ],
+            "x86_64-pc-windows-msvc": [
+              "default"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "default"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "default"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -38181,15 +38296,49 @@
           "**"
         ],
         "crate_features": {
-          "common": [
-            "alloc",
-            "ascii",
-            "binary",
-            "default",
-            "parser",
-            "std"
-          ],
-          "selects": {}
+          "common": [],
+          "selects": {
+            "aarch64-apple-darwin": [
+              "alloc",
+              "ascii",
+              "binary",
+              "default",
+              "parser",
+              "std"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "alloc",
+              "ascii",
+              "binary",
+              "default",
+              "parser",
+              "std"
+            ],
+            "x86_64-pc-windows-msvc": [
+              "alloc",
+              "ascii",
+              "binary",
+              "default",
+              "parser",
+              "std"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "alloc",
+              "ascii",
+              "binary",
+              "default",
+              "parser",
+              "std"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "alloc",
+              "ascii",
+              "binary",
+              "default",
+              "parser",
+              "std"
+            ]
+          }
         },
         "edition": "2021",
         "version": "1.0.5"
@@ -39663,6 +39812,7 @@
     "serde_json 1.0.154",
     "sha2 0.10.9",
     "sysinfo 0.39.6",
+    "tempfile 3.27.0",
     "termion 4.0.6",
     "thiserror 2.0.21",
     "tokio 1.53.1",
@@ -39675,6 +39825,7 @@
     "tracing-subscriber 0.3.23",
     "unicode-segmentation 1.13.3",
     "unicode-width 0.2.3",
+    "url 2.5.8",
     "weaver-llm 0.1.0",
     "wiremock 0.6.5"
   ],
@@ -39689,7 +39840,6 @@
     "prost 0.14.4",
     "reqwest 0.13.5",
     "static_assertions 1.1.0",
-    "tempfile 3.27.0",
     "turso 0.8.3"
   ],
   "unused_patches": []

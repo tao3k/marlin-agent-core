@@ -808,7 +808,7 @@ fn ctrl_z_restores_terminal_before_suspend_and_reopens_after_continue() {
         }
     };
     wait_stopped();
-    assert_eq!(tcgetattr(&terminal.slave).unwrap(), terminal.initial_mode);
+    terminal.assert_restored();
     let before_resume = terminal.output.len();
     kill(pid, Signal::SIGCONT).unwrap();
     terminal.wait_for(
@@ -830,7 +830,7 @@ fn ctrl_z_restores_terminal_before_suspend_and_reopens_after_continue() {
         |output| contains(&output[before_external_stop..], b"\x1b[?1049l"),
     );
     wait_stopped();
-    assert_eq!(tcgetattr(&terminal.slave).unwrap(), terminal.initial_mode);
+    terminal.assert_restored();
     let before_external_resume = terminal.output.len();
     kill(pid, Signal::SIGCONT).unwrap();
     terminal.wait_for(

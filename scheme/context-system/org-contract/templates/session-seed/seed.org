@@ -1,0 +1,54 @@
+:PROPERTIES:
+:ID: 019a4f10-0001-7000-8000-000000000001
+:CONTRACT_ID: context.session.seed.v1
+:CONTRACT_REVISION: 1
+:GITOPS_PROJECT: marlin-agent-core
+:GITOPS_WORKTREE: main
+:GITOPS_SOURCE_CUT: 0123456789abcdef0123456789abcdef01234567
+:SESSION_ID: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+:END:
+#+title: Session Stream Seed
+#+language: en
+
+* Contract
+:PROPERTIES:
+:CONTRACT_ID: context.session.seed.v1
+:CONTRACT_SCOPE: document
+:END:
+
+#+begin_src scheme :org-contract
+(assert-org-element "seed.file-contract" error
+  (bindings
+   (bind file-properties (org-elements property-drawer (child-of scope))))
+  (org-elements node-property (child-of file-properties)
+                (property key "CONTRACT_ID")
+                (property value "context.session.seed.v1"))
+  (expect exactly 1))
+
+(assert-org-element "seed.gitops-project" error
+  (bindings
+   (bind file-properties (org-elements property-drawer (child-of scope))))
+  (org-elements node-property (child-of file-properties)
+                (property key "GITOPS_PROJECT"))
+  (expect exactly 1))
+#+end_src
+
+* Turn 1
+:PROPERTIES:
+:ID: 019a4f10-0001-7000-8000-000000000010
+:END:
+
+#+NAME: turn-1
+#+BEGIN_SRC llm :model deepseek-flash :thinking low :results drawer replace
+Initial user prompt. Additional Org facets (`TODO`, `SCHEDULED:`, checklists,
+`:ATTACH:` links, competing hypotheses, or GitOps splits) are synthesized
+on demand by ASCENT rules and Flash rather than hardcoded static templates.
+#+END_SRC
+
+#+RESULTS: turn-1
+:RESULTS:
+#+BEGIN_THINKING
+Evaluating initial case scope and progressive disclosure level L0.
+#+END_THINKING
+Stream initialized.
+:END:

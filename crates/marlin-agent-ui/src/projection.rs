@@ -181,14 +181,19 @@ fn decode_keymap(value: RootedSchemeObject<'_>) -> Result<Vec<UiKeyBinding>, UiP
             command,
         });
     }
+    let continuations: HashSet<_> = result
+        .iter()
+        .filter(|binding| !matches!(binding.command, UiKeyCommand::PrefixHint { .. }))
+        .flat_map(|binding| {
+            (1..binding.sequence.len())
+                .map(move |length| (binding.scope, &binding.sequence[..length]))
+        })
+        .collect();
     for (index, binding) in result.iter().enumerate() {
+        let prefix = binding.sequence.as_slice();
         if matches!(binding.command, UiKeyCommand::PrefixHint { .. })
-            && !result.iter().any(|candidate| {
-                !matches!(candidate.command, UiKeyCommand::PrefixHint { .. })
-                    && (candidate.scope == binding.scope || candidate.scope == UiKeyScope::Global)
-                    && candidate.sequence.len() > binding.sequence.len()
-                    && candidate.sequence.starts_with(&binding.sequence)
-            })
+            && !continuations.contains(&(binding.scope, prefix))
+            && !continuations.contains(&(UiKeyScope::Global, prefix))
         {
             return Err(UiProjectionError::Invalid("key hint has no continuation"));
         }
@@ -566,12 +571,10 @@ fn decode_frame_regions(
     for index in 0..bindings.len() {
         let binding = vector(bindings.element(index)?, 2, 2)?;
         let name = identifier(binding.element(0)?, &mut names)?;
-        let role = UiFrameRole::ALL
-            .iter()
-            .position(|role| role.as_str() == name.as_str())
+        let role = UiFrameRole::from_name(name.as_str())
             .ok_or(UiProjectionError::Invalid("unknown frame role"))?;
         let id = identifier(binding.element(1)?, &mut names)?;
-        if ids[role].replace(id).is_some() {
+        if ids[role as usize].replace(id).is_some() {
             return Err(UiProjectionError::Invalid("duplicate frame role"));
         }
     }

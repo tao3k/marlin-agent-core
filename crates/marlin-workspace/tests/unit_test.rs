@@ -4,7 +4,7 @@
 
 #[path = "unit/contract_facts.rs"]
 mod contract_facts;
-#[path = "unit/report/mod.rs"]
+#[path = "unit/report.rs"]
 mod report;
 #[path = "unit/spec.rs"]
 mod spec;

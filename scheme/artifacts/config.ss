@@ -8,4 +8,14 @@
 
 (def ArtifactsScope
   (validate ArtifactsContract
-    (.o kinds: ArtifactKinds exchange: artifacts-exchange)))
+    (.o prototypes: ArtifactPrototypes
+        kinds: ArtifactKinds
+        organization: DefaultArtifactOrganization
+        catalog: DefaultArtifactCatalog
+        admit-record: artifacts-admit-record
+        project-context-org: artifacts-project-context-org
+        inspect-context-org: artifacts-inspect-context-org
+        plan-artifact-directory: artifacts-plan-artifact-directory
+        materialize-artifact-directory!: artifacts-materialize-artifact-directory!
+        validate-artifact-directory: artifacts-validate-artifact-directory
+        exchange: artifacts-exchange)))

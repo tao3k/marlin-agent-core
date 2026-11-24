@@ -75,6 +75,14 @@ In DEV the enrolled primary Worktree root or bare root owns the records.
 Traversal of those owner roots rebuilds the selected index scope. Locators
 refer to the owner records and payload by identity.
 
+In the ordinary single-repository path, =marlin-tui <config.toml>
+--enroll-context= writes =owner.json= under the selected Repo route and
+publishes a relative =marlin-owner-ref= in the Git common directory. Startup
+validates the owner record against the observed common directory before
+issuing a read permit. The terminal validates the same enrollment again
+before passing the read result to Lab. The Git reference locates the owner
+record directly, including when the configured remote changes.
+
 ** Top-level locator index
 
 The first backend is the Turso driver already selected by Marlin. The
@@ -86,6 +94,13 @@ Use that driver and a Marlin-owned locator schema. Locator indexes are
 derived, so one transaction advances affected source membership and its owner
 change cursor together. Crash recovery consumes owner records after that
 cursor. A cursor gap marks that scope incomplete until reconciled.
+
+The Turso projection persists each owner's applied cursor and observed
+frontier. A contiguous delta changes only the named cut. An owner inventory
+can replace that owner's projection after reaching the recorded frontier.
+Replacing a projection leaves other owners' rows untouched. Retirement checks
+the indexed tip and records its reason. Git and the producer retain physical
+custody of the original object.
 
 The lookup key starts with storage scope, repo instance, and ref cut or
 detached commit. A row identifies a source, generation, owning locator and
@@ -328,6 +343,31 @@ maintenance. Missing or ambiguous provider custody is reported as unavailable.
 These operations leave user branches and Worktree files under their existing
 Git owners. See [[https://git-scm.com/docs/git-update-ref][Git ref updates]]
 and [[https://git-scm.com/docs/git-gc][Git reachability and GC]].
+
+The Git custody service keeps one private commit reference per retained tip.
+A separate reference points to a blob containing the hold ledger. The blob
+has no Git reachability edge to the original Org. A single Git ref
+transaction compares the previous ledger and pin before changing either.
+The index checks the selected locator before acquiring a hold and again
+before handing out a historical receipt. If the locator changed during
+acquisition, the holder stays in the producer ledger for reconciliation.
+Disposal after branch deletion verifies the branch's absence in the same
+ref transaction. The policy owner still provides expiry and coverage.
+
+** Git and Jujutsu library boundary
+
+Worktrunk supplies Git worktree operations. A Context read against an
+ordinary Git checkout must preserve the repository's existing refs and
+object lifetimes. In a scratch Git repository, =jj-lib= 0.47.1
+=GitBackend::init_external= created =git_target= and an =extra= metadata
+store. Its first =read_commit= of an unimported commit created a
+=refs/jj/keep/<commit>= ref in the source repository. That ref changes Git
+reachability independently of Marlin's hold ledger. A separate =gix= 0.90.0
+fixture admitted an ordinary merge and rejected both a squash with an
+identical tree and a source branch that advanced after merging. The query
+left every Git ref unchanged and created no =.jj= directory. Use =jj-lib=
+when consuming Jujutsu's own Change IDs, bookmarks or operation history
+from a Jujutsu workspace.
 
 * Production entry-point research
 

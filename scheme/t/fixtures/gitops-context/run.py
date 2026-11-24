@@ -178,7 +178,8 @@ def verify_pack_reads(output: Path, blobs: dict[str, tuple[Path, str]], attempts
             print(f"GIT-PACK-OID-OK {attempt} {side} {oid} offset={offset}", flush=True)
 
 
-def main(design_dir: Path, lab: Path, output: Path, provider: Path, suite_name: str) -> None:
+def main(design_dir: Path, lab: Path, output: Path, provider: Path, suite_name: str,
+         locator_check: Path | None) -> None:
     started = time.monotonic()
     design = {}
     for name, expected in DESIGN_BLOBS.items():
@@ -220,6 +221,14 @@ def main(design_dir: Path, lab: Path, output: Path, provider: Path, suite_name: 
         require(any(line.startswith(marker) for line in log.splitlines()), f"missing Lab receipt {marker}")
     require(log.splitlines()[-1] == "OK", "missing final Lab success receipt")
     verify_pack_reads(output, blobs, attempts)
+    if locator_check is not None:
+        test = "index_replays_the_real_worktrunk_publications"
+        locator_log = run_logged(
+            [locator_check, "--ignored", "--exact", test, "--nocapture"],
+            output / "locator.log", cwd=output, env=env,
+        )
+        require(f"test {test} ... ok" in locator_log.splitlines(),
+                "the locator index did not verify the admitted publications")
     print(f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
 
 
@@ -229,6 +238,8 @@ if __name__ == "__main__":
         parser.add_argument(directory, type=Path)
     parser.add_argument("--suite", choices=("gitops-inflight-test", "gitops-cross-repo-test"),
                         default="gitops-inflight-test")
+    parser.add_argument("--locator-check", type=Path)
     arguments = parser.parse_args()
     main(*(getattr(arguments, name).resolve(strict=True)
-           for name in ("design_dir", "lab", "output", "provider")), arguments.suite)
+           for name in ("design_dir", "lab", "output", "provider")), arguments.suite,
+         arguments.locator_check and arguments.locator_check.resolve(strict=True))

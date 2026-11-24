@@ -4,8 +4,12 @@
 
 //! Scheme command descriptors and finite human-review menu values.
 
-use super::{UiCommandName, UiProjectionError};
+use super::UiProjectionError;
 use marlin_agent_protocol::HumanDecision;
+
+/// A displayable command name; this value does not authorize a handler.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UiCommandName(String);
 
 impl UiCommandName {
     /// Check a partial command without scanning past the admitted name limit.

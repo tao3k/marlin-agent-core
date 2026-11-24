@@ -30,6 +30,7 @@ unsafe extern "C" {
     fn marlin_worktree_context_deliver(root: i64) -> i64;
     fn marlin_worktree_context_revoke(root: i64) -> i64;
     fn marlin_worktree_provider(root: i64) -> i64;
+    fn marlin_context_artifacts_exchange(root: i64) -> i64;
     fn gerbil_scheme_rust_take_call_error_raw() -> i64;
 }
 
@@ -51,20 +52,32 @@ pub(crate) fn worktree_call<'a>(
         WorktreeOperation::Revoke => marlin_worktree_context_revoke,
         WorktreeOperation::Provider => marlin_worktree_provider,
     };
-    // SAFETY: these rooted exports belong to the linked programme above.
+    call_context(runtime, export, request)
+}
+
+pub(crate) fn artifacts_exchange<'a>(
+    runtime: &'a GerbilRuntime,
+    request: &RootedSchemeObject<'_>,
+) -> Result<RootedSchemeObject<'a>, RootedCallError> {
+    call_context(runtime, marlin_context_artifacts_exchange, request)
+}
+
+fn call_context<'a>(
+    runtime: &'a GerbilRuntime,
+    export: unsafe extern "C" fn(i64) -> i64,
+    request: &RootedSchemeObject<'_>,
+) -> Result<RootedSchemeObject<'a>, RootedCallError> {
+    // SAFETY: the private callers select C exports from this linked program.
     unsafe { runtime.bind_object_export(export) }?
         .call(request)
         .into_result()
         .map_err(|source| RootedCallError {
             source,
-            diagnostic: worktree_diagnostic(runtime, request),
+            diagnostic: context_diagnostic(runtime, request),
         })
 }
 
-fn worktree_diagnostic(
-    runtime: &GerbilRuntime,
-    request: &RootedSchemeObject<'_>,
-) -> Option<String> {
+fn context_diagnostic(runtime: &GerbilRuntime, request: &RootedSchemeObject<'_>) -> Option<String> {
     unsafe extern "C" fn take_error(_: i64) -> i64 {
         // SAFETY: the VM owner consumes its last diagnostic.
         unsafe { gerbil_scheme_rust_take_call_error_raw() }
