@@ -113,11 +113,11 @@ async fn mygo_bridge_enforces_ui_slots_one_shot_gates_signed_panels_and_device_o
         .workbench
         .unwrap();
     assert_eq!(wb.generation, 1);
-    assert!(
-        wb.slots
-            .iter()
-            .any(|s| s.slot_id == "approval.gate" && !s.allow_untrusted_plugin)
-    );
+    assert!(wb.slots.iter().any(|s| {
+        s.slot_id == "approval.gate"
+            && s.fallback_renderer == "host.gate"
+            && !s.allow_untrusted_plugin
+    }));
 
     // Stale generation dispatch must be denied.
     let stale = ui_client

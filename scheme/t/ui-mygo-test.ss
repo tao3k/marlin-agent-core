@@ -16,7 +16,7 @@
 (def ui-mygo-test
   (test-suite "Marlin Scheme ui-mygo Target Profile Overlays & Slot Admission"
 
-    (test-case "Desktop vs iOS/Android overlays inherit base slots and specialize runtimes + native protocols"
+    (test-case "Desktop vs iOS/Android overlays inherit base slots and specialize runtimes + device protocols"
       (let ((mac ((.get ui-mygo profile-for) 'desktop-macos))
             (ios ((.get ui-mygo profile-for) 'mobile-ios))
             (android ((.get ui-mygo profile-for) 'mobile-android)))
@@ -29,10 +29,10 @@
         ;; Mobile overlays enforce App Store / Play Store declarative-only packs
         (check-equal? (.get ios allowed-runtimes) '(declarative))
         (check-equal? (.get android allowed-runtimes) '(declarative))
-        ;; Native OS protocol families stay target-specific via POO inheritance
-        (check-equal? (and (memq 'ios.photos (.get ios device-protocols)) #t) #t)
-        (check-equal? (and (memq 'ios.share-extension (.get ios device-protocols)) #t) #t)
-        (check-equal? (and (memq 'android.content-resolver (.get android device-protocols)) #t) #t)))
+        ;; Device protocol families stay target-specific via POO inheritance
+        (check-equal? (and (memq 'device.ios.photos (.get ios device-protocols)) #t) #t)
+        (check-equal? (and (memq 'device.ios.share-extension (.get ios device-protocols)) #t) #t)
+        (check-equal? (and (memq 'device.android.content-resolver (.get android device-protocols)) #t) #t)))
 
     (test-case "Slot admission enforces both restricted approval.gate trust and mobile App Store runtime rules"
       (let ((admit? (.get ui-mygo admit-plugin-slot?)))
@@ -43,7 +43,7 @@
         (check-equal? (admit? 'desktop-macos 'approval.gate 'webview-untrusted #f) #f)
         (check-equal? (admit? 'desktop-macos 'approval.gate 'declarative #f) #f)
         (check-equal? (admit? 'mobile-ios 'approval.gate 'declarative #f) #f)
-        ;; Host-trusted native.gate renderer IS admitted in approval.gate
+        ;; Host-trusted host.gate renderer IS admitted in approval.gate
         (check-equal? (admit? 'desktop-macos 'approval.gate 'declarative #t) #t)
         ;; iOS admits declarative packs in workbench.main, but rejects executable webview/wasm plugins
         (check-equal? (admit? 'mobile-ios 'workbench.main 'declarative #f) #t)
@@ -52,7 +52,7 @@
         ;; Unknown target kind raises POO TypeError
         (check-exception ((.get ui-mygo profile-for) 'smart-fridge) TypeError?)))
 
-    (test-case "MyGo layouts compose seamlessly into standard UiScope and project native Scheme vectors"
+    (test-case "MyGo layouts compose seamlessly into standard UiScope and project Scheme vectors"
       (let* ((mac-ui ((.get ui-mygo make-mygo-ui-scope) 'desktop-macos))
              (ios-ui ((.get ui-mygo make-mygo-ui-scope) 'mobile-ios))
              (facts (.o model: "claude-sonnet" session: "mygo-dev" contributions: '() extensions: '()))
@@ -61,15 +61,16 @@
              (mac-proj ((.get mac-ui project-workbench) mac-wb))
              (ios-proj ((.get ios-ui project-workbench) ios-wb))
              (overlay-vec ((.get ui-mygo project-profile-overlay) 'mobile-ios)))
-        ;; Both desktop & mobile MyGo UiScopes project valid 5-field native workbench vectors
+        ;; Both desktop & mobile MyGo UiScopes project valid 5-field workbench vectors
         (check-equal? (vector-length mac-proj) 5)
         (check-equal? (vector-length ios-proj) 5)
-        ;; Overlay native vector carries exact target, layout, runtimes, protocols, and 4 slots
+        ;; Overlay vector carries exact target, layout, runtimes, protocols, and 4 slots
         (check-equal? (vector-ref overlay-vec 0) 'mygo-profile-overlay)
         (check-equal? (vector-ref overlay-vec 1) 'mobile-ios)
         (check-equal? (vector-ref overlay-vec 2) 'mobile-stack)
         (check-equal? (vector-ref overlay-vec 3) '#(declarative))
         (check-equal? (vector-length (vector-ref overlay-vec 5)) 4)
-        ;; Fourth slot is approval.gate with allow-untrusted = #f
+        ;; Fourth slot is approval.gate owned by host.gate with allow-untrusted = #f
         (check-equal? (vector-ref (vector-ref (vector-ref overlay-vec 5) 3) 0) 'approval.gate)
+        (check-equal? (vector-ref (vector-ref (vector-ref overlay-vec 5) 3) 2) 'host.gate)
         (check-equal? (vector-ref (vector-ref (vector-ref overlay-vec 5) 3) 3) #f)))))

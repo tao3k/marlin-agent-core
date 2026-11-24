@@ -30,10 +30,10 @@
           (allow-untrusted-plugin? := allow-untrusted-plugin?)))))
 
 (def MygoBaseSlots
-  (list (make-slot 'workbench.main 'single 'native.main #t)
-        (make-slot 'workbench.inspector 'single 'native.inspector #t)
-        (make-slot 'workbench.tool-card 'keyed 'native.tool-card #t)
-        (make-slot 'approval.gate 'single 'native.gate #f)))
+  (list (make-slot 'workbench.main 'single 'host.main #t)
+        (make-slot 'workbench.inspector 'single 'host.inspector #t)
+        (make-slot 'workbench.tool-card 'keyed 'host.tool-card #t)
+        (make-slot 'approval.gate 'single 'host.gate #f)))
 
 (.def MygoBaseProfile.
   target-kind: 'remote-headless
@@ -46,7 +46,7 @@
   target-kind: 'desktop-macos
   layout-kind: 'desktop-split
   allowed-runtimes: '(declarative webview-untrusted wasm-ui-ir mygo-js-wasm)
-  device-protocols: '(desktop.clipboard desktop.notifications desktop.files-picker))
+  device-protocols: '(device.desktop.clipboard device.desktop.notifications device.desktop.files-picker))
 
 (.def (MygoDesktopLinuxProfile. @ MygoDesktopMacosProfile.)
   target-kind: 'desktop-linux)
@@ -55,19 +55,19 @@
   target-kind: 'desktop-windows)
 
 ;;; iOS Personal Assistant Overlay: App Store compliant (declarative packs only)
-;;; with compiled //mygo:native Swift protocol families + remote gRPC mirroring.
+;;; with compiled platform.ios device protocol providers + remote gRPC mirroring.
 (.def (MygoIosPersonalProfile. @ MygoBaseProfile.)
   target-kind: 'mobile-ios
   layout-kind: 'mobile-stack
   allowed-runtimes: '(declarative)
-  device-protocols: '(ios.photos ios.eventkit ios.contacts ios.app-intents ios.share-extension))
+  device-protocols: '(device.ios.photos device.ios.eventkit device.ios.contacts device.ios.voice device.ios.share-extension))
 
-;;; Android Personal Assistant Overlay: Play Store safe declarative packs + Kotlin protocols.
+;;; Android Personal Assistant Overlay: Play Store safe declarative packs + platform.android device protocols.
 (.def (MygoAndroidPersonalProfile. @ MygoBaseProfile.)
   target-kind: 'mobile-android
   layout-kind: 'mobile-stack
   allowed-runtimes: '(declarative)
-  device-protocols: '(android.content-resolver android.notifications android.intents))
+  device-protocols: '(device.android.content-resolver device.android.notifications device.android.intents))
 
 (.def (MygoRemoteHeadlessProfile. @ MygoBaseProfile.)
   target-kind: 'remote-headless

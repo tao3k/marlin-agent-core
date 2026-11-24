@@ -223,25 +223,25 @@ fn default_slots() -> Vec<SlotDeclaration> {
         SlotDeclaration {
             slot_id: "workbench.main".to_owned(),
             cardinality: SlotCardinality::Single as i32,
-            fallback_renderer: "native.main".to_owned(),
+            fallback_renderer: "host.main".to_owned(),
             allow_untrusted_plugin: true,
         },
         SlotDeclaration {
             slot_id: "workbench.inspector".to_owned(),
             cardinality: SlotCardinality::Single as i32,
-            fallback_renderer: "native.inspector".to_owned(),
+            fallback_renderer: "host.inspector".to_owned(),
             allow_untrusted_plugin: true,
         },
         SlotDeclaration {
             slot_id: "workbench.tool-card".to_owned(),
             cardinality: SlotCardinality::Keyed as i32,
-            fallback_renderer: "native.tool-card".to_owned(),
+            fallback_renderer: "host.tool-card".to_owned(),
             allow_untrusted_plugin: true,
         },
         SlotDeclaration {
             slot_id: "approval.gate".to_owned(),
             cardinality: SlotCardinality::Single as i32,
-            fallback_renderer: "native.gate".to_owned(),
+            fallback_renderer: "host.gate".to_owned(),
             allow_untrusted_plugin: false,
         },
     ]
