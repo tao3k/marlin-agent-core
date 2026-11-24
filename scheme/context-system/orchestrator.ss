@@ -6,12 +6,11 @@
 ;;; Consumes Lab FunFlow CAS DAG and Durable Orchestrator strictly through
 ;;; :marlin-agent-core/interface.
 
-(import (only-in :clan/poo/object .o .ref .slot? object?)
+(import (only-in :clan/poo/object .def .o .ref .slot? object?)
         (only-in :marlin-agent-core/interface
                  LabFunflow LabDurableOrchestrator
                  DurableTaskPolicy. RepoNode. WorktreeNode. TaskNode.
-                 DurableGovernedStrategy.
-                 define-repo! define-worktree! define-durable-task!))
+                 DurableGovernedStrategy.))
 
 (export MarlinRepo.
         MarlinWorktree.
@@ -19,13 +18,25 @@
         marlin-derive-task
         marlin-orchestrate-task
         marlin-replan-task-epoch
+        marlin-admit-node-effect
+        marlin-envelope-meet
+        marlin-invalidate-premises
+        marlin-workspace-plan
+        marlin-apply-org-overlay
+        marlin-reanchor-mainline
+        marlin-reconcile-detour-exit
+        marlin-perceive-claims
+        marlin-assert-write-owner
+        marlin-claim-node!
+        marlin-extend-node!
+        marlin-handover-node!
         marlin-record-task-cas!
         marlin-recover-task
         marlin-commit-auto-archive!
         marlin-reopen-task!
         marlin-project-workbench-tabs)
 
-(define-repo! MarlinRepo.
+(.def (MarlinRepo. @ RepoNode.)
   repo-id: "marlin-agent-core"
   topology-path: "topology.org"
   index-path: "index.org"
@@ -36,7 +47,7 @@
               max-concurrency: 4)
   strategy: DurableGovernedStrategy.)
 
-(define-worktree! MarlinWorktree. MarlinRepo.
+(.def (MarlinWorktree. @ [MarlinRepo. WorktreeNode.])
   worktree: "main"
   branch: "main"
   source-cut: "HEAD")
@@ -144,3 +155,88 @@
    (opt-ref request 'journal-state (.o))
    (opt-ref request 'peek-set '())
    (opt-ref request 'focused-task-id #f)))
+
+(def (marlin-admit-node-effect request)
+  ((.ref (.ref LabFunflow 'durable-dag) 'admit-node-effect)
+   (.ref request 'node)
+   effect-class: (opt-ref request 'effect-class #f)
+   envelope: (opt-ref request 'envelope (.o))))
+
+(def (marlin-envelope-meet request)
+  ((.ref (.ref LabFunflow 'durable-dag) 'envelope-meet)
+   (.ref request 'parent)
+   (.ref request 'overlay)))
+
+(def (marlin-invalidate-premises request)
+  ((.ref (.ref LabFunflow 'durable-dag) 'invalidate-premises)
+   (.ref request 'dag)
+   (opt-ref request 'live-premises '())))
+
+(def (marlin-workspace-plan request)
+  ((.ref (.ref LabFunflow 'durable-dag) 'workspace-plan)
+   (.ref request 'topology)
+   remote-heads: (opt-ref request 'remote-heads '())))
+
+(def (marlin-apply-org-overlay request)
+  ((.ref LabDurableOrchestrator 'apply-org-overlay)
+   (.ref request 'task)
+   (.ref request 'overlay)))
+
+(def (marlin-reanchor-mainline request)
+  ((.ref LabDurableOrchestrator 'reanchor-mainline)
+   (.ref request 'task)
+   (.ref request 'source)
+   mainline-core: (opt-ref request 'mainline-core '())
+   max-detour-depth: (opt-ref request 'max-detour-depth 2)))
+
+(def (marlin-reconcile-detour-exit request)
+  ((.ref LabDurableOrchestrator 'reconcile-detour-exit)
+   (.ref request 'detour)
+   (.ref request 'exit-state)
+   (.ref request 'anchor)))
+
+(def (marlin-perceive-claims request)
+  ((.ref LabDurableOrchestrator 'perceive-claims)
+   (.ref request 'source)))
+
+(def (marlin-assert-write-owner request)
+  ((.ref LabDurableOrchestrator 'assert-write-owner)
+   (.ref request 'source)
+   (.ref request 'node-id)
+   (.ref request 'actor)))
+
+(def (marlin-claim-node! request)
+  ((.ref LabDurableOrchestrator 'claim!)
+   (opt-ref request 'journal #f)
+   (.ref request 'task-id)
+   (.ref request 'node-id)
+   (.ref request 'actor)
+   worktree: (opt-ref request 'worktree "main")
+   scope-digest: (opt-ref request 'scope-digest "")
+   now: (opt-ref request 'now 0)
+   ttl: (opt-ref request 'ttl 120)
+   org-source: (.ref request 'source)))
+
+(def (marlin-extend-node! request)
+  ((.ref LabDurableOrchestrator 'extend!)
+   (opt-ref request 'journal #f)
+   (.ref request 'task-id)
+   (.ref request 'parent-node-id)
+   (.ref request 'new-node-id)
+   (.ref request 'actor)
+   (.ref request 'title)
+   body: (opt-ref request 'body "")
+   role: (opt-ref request 'role "extension")
+   now: (opt-ref request 'now 0)
+   org-source: (.ref request 'source)))
+
+(def (marlin-handover-node! request)
+  ((.ref LabDurableOrchestrator 'handover!)
+   (opt-ref request 'journal #f)
+   (.ref request 'task-id)
+   (.ref request 'node-id)
+   (.ref request 'next-actor)
+   now: (opt-ref request 'now 0)
+   force-explicit?: (opt-ref request 'force-explicit? #f)
+   custody-oid: (opt-ref request 'custody-oid #f)
+   org-source: (.ref request 'source)))

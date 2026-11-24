@@ -32,6 +32,18 @@
                         derive-task: marlin-derive-task
                         orchestrate-task: marlin-orchestrate-task
                         replan-epoch: marlin-replan-task-epoch
+                        admit-node-effect: marlin-admit-node-effect
+                        envelope-meet: marlin-envelope-meet
+                        invalidate-premises: marlin-invalidate-premises
+                        workspace-plan: marlin-workspace-plan
+                        apply-org-overlay: marlin-apply-org-overlay
+                        reanchor-mainline: marlin-reanchor-mainline
+                        reconcile-detour-exit: marlin-reconcile-detour-exit
+                        perceive-claims: marlin-perceive-claims
+                        assert-write-owner: marlin-assert-write-owner
+                        claim-node!: marlin-claim-node!
+                        extend-node!: marlin-extend-node!
+                        handover-node!: marlin-handover-node!
                         record-cas!: marlin-record-task-cas!
                         recover-task: marlin-recover-task
                         commit-auto-archive!: marlin-commit-auto-archive!

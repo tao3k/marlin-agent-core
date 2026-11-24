@@ -10,7 +10,10 @@
         (only-in :std/io/tempfile make-temporary-file-name)
         (only-in :std/string/misc string-contains)
         (only-in :clan/poo/object .get .o .ref)
-        (only-in :marlin-agent-core/interface LabDurableJournal DurableTaskPolicy.)
+        (only-in :marlin-agent-core/interface
+                 LabDurableJournal DurableTaskPolicy.
+                 PureCAS. FencedEffect.
+                 BlockerDetourNode. CancelledExit. MainlineStepAnchor.)
         (only-in :marlin-agent-core/context-system/config MarlinContextSystemScope))
 
 (export context-durable-orchestrator-test)
@@ -211,4 +214,46 @@
                 (check-equal? (and (string-contains (.ref reopened 'next-task-org) "* TODO") #t) #t))))
           (lambda ()
             ((.ref LabDurableJournal 'close!) journal)
-            (when (file-exists? jpath) (delete-file jpath))))))))
+            (when (file-exists? jpath) (delete-file jpath))))))
+
+    (test-case "Marlin orchestrator enforces Slice 49 CLOS effect gate, detour re-anchoring, and Zero-SubAgent Extend-Never-Overwrite"
+      (let* ((wt ((.ref orch 'derive-worktree) (.o bind-these: #f worktree: "wt/shared-ctx" source-cut: "sha256:cut-s49")))
+             (task ((.ref orch 'derive-task) (.o bind-these: #f worktree-node: wt task-id: "task-s49"
+                                                 restriction-envelope: (.o bind-these: #f trust-ceiling: 2 lease-start: 0 lease-end: 100 can-write?: #t can-push?: #f))))
+             (overlaid ((.ref orch 'apply-org-overlay)
+                        (.o bind-these: #f task: task
+                            overlay: (.o bind-these: #f restriction-envelope: (.o bind-these: #f trust-ceiling: 4 can-push?: #t)))))
+             (detour (.o (:: @ BlockerDetourNode.) bind-these: #f return-anchor: "step-scheme"))
+             (anchor (.o (:: @ MainlineStepAnchor.) bind-these: #f anchor-id: "step-scheme"
+                         mainline-counterexample-core: '("prior-defeater")))
+             (cancelled ((.ref orch 'reconcile-detour-exit)
+                         (.o bind-these: #f detour: detour
+                             exit-state: (.o (:: @ CancelledExit.) bind-these: #f defeat-conditions: '("new-defeater"))
+                             anchor: anchor)))
+             (claimed ((.ref orch 'claim-node!)
+                       (.o bind-these: #f task-id: "task-orch-01" node-id: "step-scheme" actor: "agent:builder"
+                           now: 10 ttl: 30 source: marlin-task-active-org)))
+             (org1 (.ref claimed 'next-org-source))
+             (peer-write ((.ref orch 'assert-write-owner)
+                          (.o bind-these: #f source: org1 node-id: "step-scheme" actor: "human:guangtao")))
+             (extended ((.ref orch 'extend-node!)
+                        (.o bind-these: #f task-id: "task-orch-01" parent-node-id: "step-scheme"
+                            new-node-id: "step-scheme-steering" actor: "human:guangtao"
+                            title: "Steer without overwrite" role: "human-steering"
+                            now: 15 source: org1)))
+             (org2 (.ref extended 'next-org-source))
+             (claims ((.ref orch 'perceive-claims) (.o bind-these: #f source: org2)))
+             (handover ((.ref orch 'handover-node!)
+                        (.o bind-these: #f task-id: "task-orch-01" node-id: "step-scheme"
+                            next-actor: "human:guangtao" now: 45 custody-oid: "custody:m1" source: org2))))
+        (check-equal? (.ref (.ref overlaid 'restriction-envelope) 'trust-ceiling) 2)
+        (check-equal? (.ref (.ref overlaid 'restriction-envelope) 'can-push?) #f)
+        (check-equal? (.ref cancelled 'admitted?) #t)
+        (check-equal? (length (.ref cancelled 'next-counterexample-core)) 2)
+        (check-equal? (.ref claimed 'claimed?) #t)
+        (check-equal? (.ref peer-write 'admitted?) #f)
+        (check-equal? (.ref peer-write 'reason) 'non-owner-overwrite-forbidden)
+        (check-equal? (.ref extended 'extended?) #t)
+        (check-equal? (length claims) 2)
+        (check-equal? (.ref handover 'handed-over?) #t)
+        (check-equal? (.ref handover 'claim-lease-epoch) 2)))))

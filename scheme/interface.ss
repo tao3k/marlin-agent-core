@@ -6,11 +6,15 @@
         (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/interface Context)
         (only-in :tao3k/agentic-ai-lab/modules/funflow/interface Funflow)
         (only-in :tao3k/agentic-ai-lab/modules/funflow/durable-dag
+                 FunflowNode. EffectClass. PureCAS. VerifiedEpistemic. FencedEffect.
+                 WorkspaceTopology.
                  OrchestratorStrategy. ParallelFrontierStrategy.
                  TieredModelStrategy. DurableGovernedStrategy.)
         (only-in :tao3k/agentic-ai-lab/modules/durable/orchestrator
                  DurableTaskPolicy. RepoNode. WorktreeNode. TaskNode. SubTaskNode.
-                 define-repo! define-worktree! define-durable-task! define-orchestrator-strategy!
+                 DetourNode. BlockerDetourNode. SideQuestDetourNode.
+                 DetourExitState. CompletedExit. ParkedExit. CancelledExit. PromotedToTaskExit.
+                 AnchorKind. MainlineStepAnchor. InvariantGateAnchor.
                  DurableOrchestratorExports)
         (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/interface TemporalCausality)
         (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/runtime/durable-journal
@@ -27,10 +31,14 @@
                  agentic-ai-lab-module-validation-receipts))
 (export LabContext LabFunflow LabDurableOrchestrator
         LabTemporal LabGitOps LabDurableJournal LabOrgDirectory
+        FunflowNode. EffectClass. PureCAS. VerifiedEpistemic. FencedEffect.
+        WorkspaceTopology.
         DurableTaskPolicy. RepoNode. WorktreeNode. TaskNode. SubTaskNode.
+        DetourNode. BlockerDetourNode. SideQuestDetourNode.
+        DetourExitState. CompletedExit. ParkedExit. CancelledExit. PromotedToTaskExit.
+        AnchorKind. MainlineStepAnchor. InvariantGateAnchor.
         OrchestratorStrategy. ParallelFrontierStrategy.
         TieredModelStrategy. DurableGovernedStrategy.
-        define-repo! define-worktree! define-durable-task! define-orchestrator-strategy!
         yuanxu-module-interface agentic-ai-lab-modules
         agentic-ai-lab-module-closure agentic-ai-lab-module-names
         agentic-ai-lab-module-option-schemas

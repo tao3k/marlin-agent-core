@@ -225,83 +225,116 @@ selection), **declarativity is the core contract of the Interface layer**:
    =FunFlow= DAG/CAS, =Governance= isolation, =durable-journal=, =policy-clock=,
    =agenda=, recovery, AST repair). Engine internals never hardcode repository
    paths, tab presentation, or archive UX.
-2. **Declarative Interface Plane (=interface.ss= + Hygienic Macros + POO)**:
-   Exposes compile-time hygienic Scheme macros (e.g., =define-repo!=,
-   =define-worktree!=, =define-durable-task!=, =define-orchestrator-strategy!=)
-   and composable POO prototypes with =+feature= flags (=+plan-a-index=,
-   =+funflow-dag=, =+cas-resume=, =+durable-agenda=, =+auto-archive=,
-   =+progressive-l0-l3=, =+two-stage-repair=, =+worktrunk=). Macros expand
-   statically into validated POO values with zero runtime =eval=.
-3. **Thin User / Repository Config Plane**: Both Scheme repository declarations
-   and inert Org configuration blocks (such as =:org-progressive-rules=) parse
-   and validate onto the **exact same POO =Type.= policy contracts**, inherited
-   uniformly via C4 linearization. Changing one slot at the declarative
-   interface keeps =GQL=, =ASCENT=, =FunFlow=, =Governance=, =Durable=
-   scheduling, Plan-A =index.org= sync, and TUI tab visibility in lockstep.
+2. **POO-Constrained Macro Governance & Orthogonal Dispatch (=45-40-10=)**:
+   - While inspired by Doom Emacs's declarative lifecycle ergonomics, Marlin
+     and Lab **strictly reject Doom-style macro proliferation** (arbitrary AST
+     rewriting, hidden global mutable registries, and imperative =!= config
+     macros). Following Yuanxu's POO-constrained macro governance
+     (=45-40-10-poo-constrained-gerbil-macro-governance.org= and
+     =02-poo-dispatch-and-extension.org=), abstractions follow a closed
+     four-tier ladder:
+     1. **Pure functions** own deterministic algorithms (=funflow-dag-build=,
+        =funflow-resume-plan=, =funflow-replan-epoch=, =task-reanchor-mainline=,
+        =restriction-meet=, =project-workbench-tabs=).
+     2. **Value-first =gerbil-poo= prototypes, POOF constant slots
+        =(slot := expr)=, runtime lexical slot references, ==>= / ==>.+=
+        refinements, and single-axis MOP =.defgeneric=** own entity modeling
+        and inheritance (=WorkspaceTopology.=, =RepoNode.=, =WorktreeNode.=,
+        =TaskNode.=, =DetourNode.=, =OrchestratorStrategy.=) — removing ad-hoc
+        business =define-*!= wrapper macros.
+     3. **CLOS multi-methods (=.defgeneric= + =.defmethod= + atomic
+        =.defmethod-bundle=, fail-closed base)** own genuine multi-axis
+        crossings: =(admit-node-effect node effect-class governance-envelope)=
+        and =(reconcile-detour-exit detour exit-state mainline-anchor)=.
+     4. **Declarative =define-type= / =ObjectContract=** owns boundary
+        admission with call-site source diagnostics; macros remain closed to
+        RFC-reviewed phase primitives (=yuanxu!=, =:yuanxu/syntax/path-slots=).
+3. **Thin User / Repository Config Plane**: Both value-first Scheme repository
+   declarations and inert Org configuration blocks (=:org-progressive-rules=
+   and epoch =OrgOverlay(g)= properties) parse and validate onto the **exact
+   same POO =ObjectContract= policy contracts**, inherited uniformly via C4
+   linearization with zero runtime =eval=.
 
-*** 7.3 =gerbil-poo= C4 Linearization (=A -> B -> C -> D=): Objectified Tasks, Shared Context, and Override/Extension
+*** 7.3 =gerbil-poo= C4 Linearization (=Workspace -> Repo -> Worktree -> Task -> Detour/SubTask -> OrgOverlay(g)=)
 
-Rather than copying configuration or re-parsing Org files per agent, every
-repository, worktree, task, sub-task, and orchestration strategy is a
-first-class **POO prototype object** composed via **`gerbil-poo`'s C4
-linearization algorithm** (deterministic precedence linearization with full
-Override and =super= Extension support across multi-prototype mixins):
+Rather than copying configuration or re-parsing Org files per actor, every
+multi-repo workspace topology, repository, worktree, task, detour/sub-task, and
+orchestration strategy is a first-class **POO prototype object** composed via
+**=gerbil-poo='s C4 linearization algorithm** with runtime lexical slot
+references, Override, and ==>= / ==>.+= Extension:
 
-- **=A= (=Repo.= — Root Prototype)**: One Git repository forms the first root
-  node =A= of the C4 derivation chain, owning the shared parsed
-  =OrgElementGraph= reference, authoritative =index.org=, =topology.org=,
-  =ArtifactCatalog=, organization/SoD roles, default =DurableTaskPolicy.=, and
-  default =OrchestratorStrategy.=.
-- **=B= (=Worktree.= = =(:: @ A)=)**: A GitOps worktree derives directly from
-  =A=, inheriting the shared context graph, =index.org= authority, and defaults
-  while overriding only =worktree=, =branch=, =source-cut=, local sandbox/envrc
-  bindings, and worktree write grants.
-- **=C= (=Task.= = =(:: @ B OrgTaskBase.)=)**: Every managed task is a POO
-  object parsed symmetrically from (and projected back to) its Plan-A Org
-  document. It inherits =A='s shared context object and =B='s worktree bounds
-  with zero copy, adding its =task-id=, =ContextScope=, =RestrictionEnvelope=,
+- **=WorkspaceTopology.= (Multi-Repo DAG Root)**: Composes multiple =RepoNode.=
+  instances with explicit Pin dependency edges (e.g., =gebril-yuanxu ->
+  agentic-ai-lab (core submodule) -> marlin-agent-core (gerbil.pkg pin)=),
+  a =PreFlightRemoteDriftProbe= (=PureCAS=) to detect remote head drift before
+  push waves, and mandatory 3-party SoD =DeclassificationCert= for any
+  cross-repository context transfer.
+- **=A= (=RepoNode.= — Repository Prototype)**: One Git repository forms the
+  repository root =A=, owning the shared parsed =OrgElementGraph= reference,
+  authoritative =index.org=, =topology.org=, =ArtifactCatalog=,
+  organization/SoD roles, default =DurableTaskPolicy.=, and default
+  =OrchestratorStrategy.=.
+- **=B= (=WorktreeNode.= = =(:: @ [WorktreeNode. A])=)**: Derives from =A=,
+  inheriting the shared context graph and defaults while overriding only
+  =worktree=, =branch=, =source-cut=, sandbox/envrc bindings, and worktree
+  write grants.
+- **=C= (=TaskNode.= = =(:: @ [TaskNode. B])=)**: Every managed task is a POO
+  object projected symmetrically from its Plan-A Org document. It inherits
+  =A='s shared context object and =B='s worktree bounds with zero copy, adding
+  its =task-id=, =ContextScope=, 6-tuple =RestrictionEnvelope=,
   =context-selectors=, and child =FunFlow= DAG specification.
-- **=D= (=SubTask.= / =Extension.= = =(:: @ C Mixin...)=)**: Sub-tasks and
-  policy refinements derive from =C= (and arbitrary mixins such as
-  =StrictSodReviewMixin.= or =IsolatedSandboxMixin.=) under C4 linearization:
-  - **Override**: Specialize =model-tier= (=architect= / =builder= / =flash=),
-    =needs=, or =disclosure-depth= locally without mutating =C=.
-  - **Extension (=super=)**: Layer additional checks onto =.verify=,
-    =.admit-node=, or =.archive-guard= cleanly atop inherited behavior.
-  - **Shared Object-Level Context + Governance Isolation**: All sibling objects
-    =D1, D2, D3= share one in-VM parsed =OrgElementGraph= reference while each
-    object carries its own =ContextScope= and 6-tuple =RestrictionEnvelope=
-    (enforced via lower-semilattice =meet=), guaranteeing zero cross-scope
-    leakage and disjoint =:ID:= write leases.
+- **=D= (=SubTaskNode.= / =DetourNode.= = =(:: @ [DetourNode. C Mixin...])=)**:
+  Sub-tasks and scoped detours derive from =C= under C4 linearization. Their
+  effective =RestrictionEnvelope= is **monotonically narrowed** via
+  lower-semilattice =restriction-meet= — a descendant or detour can never
+  escalate privileges beyond its parent =Task Scope=.
+- **Bidirectional Lens — Dynamic Top Mixin =OrgOverlay(g)=**:
+  - Whitelisted =:PROPERTIES:= and =:DEPENDS_ON:= edits inside Task Org at
+    Epoch =g= validate through =OrgOverlayContract= (never =eval=) and compose
+    as the top C4 mixin:
+    =EffectiveTask(g) = C4(OrgOverlay(g) > SubTask/Detour > Task > Worktree > Repo)=.
+  - POO runtime lexical slot references propagate hot overrides (=retry-budget=,
+    =max-parallel=, =model-tier=) to inner pipelines without restart while
+    =RestrictionEnvelope= remains monotonically non-escalating (=restriction-meet=).
 
-*** 7.4 Tweag-Inspired =FunFlow= DAG: Static Inspection, CAS Resumability, and Epoch-Bounded Replanning
+*** 7.4 Tweag-Inspired =FunFlow= DAG: Three-State Effect Algebra, CAS Resumability, and Premise Invalidation
 
 Inspired by Tweag's Haskell =FunFlow= (Arrow static inspectability,
 content-addressed store caching, and crash resumability) and owned directly by
 =tao3k/agentic-ai-lab/modules/funflow/= (=durable-dag.ss=, =dependency-graph=,
 =scc=, =job-graph=, =after-start= finalizers, =flow-compose=, =strategy=),
-complex tasks execute as **isomorphic Org AST <-> FunFlow POO DAGs**:
+complex tasks execute as **isomorphic Org AST <-> FunFlow POO DAGs** with a
+**Three-State Effect Algebra** dispatched via CLOS =(admit-node-effect ...)=:
 
-1. **1-to-1 Org <-> FunFlow Isomorphism**:
-   - Each child headline with =:ID:= and =:DEPENDS_ON:= projects to a POO
-     =FunFlow= task node (=needs:=) whose late-bound =.run= slot automatically
-     specializes to its C4-derived =Worktree= =B=.
-   - Cleanup/rollback sub-headlines project to =FunFlow= exceptional-exit
-     =after-start= finalizers.
+1. **Three-State Effect Classification**:
+   - **=PureCAS.= (Deterministic)**: =orgize= parse, =ASCENT= solve, =GQL=
+     query, =sysml -strict=, =cargo test=, Nix build. Pure input-fingerprint
+     CAS hit skips execution at 0 cost; crash replay is trivially idempotent.
+   - **=VerifiedEpistemic.= (Stochastic Generation + Deterministic Verifier)**:
+     LLM code synthesis, Flash facet generation, Stage-2 Org repair. Uses
+     **Semantic CAS**: once output binds to live =source-cut= and carries a
+     passing Verifier Receipt or non-self-endorsing =EndorsementReceipt=
+     (=proposer != endorser=), subsequent epochs skip redundant LLM calls
+     until a bound premise drifts or a defeater arrives.
+   - **=FencedEffect.= (Irreversible External Side-Effect)**: =git push=, PR
+     mutation, deployment, destructive cleanup, or atomic Auto-Archive. Never
+     silently replayed on crash recovery; requires one-shot
+     =AuthorizedEffectToken= + unique =idempotency-key=, =after-start=
+     compensation finalizer, =admit-security-branch= asymmetric gate
+     (=claims-exhaustive?: #t=), and =needs_reconciliation= probing on restart.
 2. **Arrow-Style Static Pre-Execution Analysis (0 LLM Tokens)**:
    - Before spending any model token, =FunFlow= runs Tarjan =scc= cycle
      detection, verifies =:DEPENDS_ON:= closure and finalizer admissibility,
-     and validates every node's =ContextScope=, =RestrictionEnvelope=, and
-     =UseGrant= statically (failing closed on violation).
-3. **Content-Addressed Caching & Crash Resumability (CAS + =durable-journal=)**:
+     and validates every node's =ContextScope=, =RestrictionEnvelope= meet,
+     and =UseGrant= statically (failing closed on violation).
+3. **Content-Addressed Caching & Epistemic Premise Invalidation**:
    - Every DAG node carries a deterministic content fingerprint
-     =sha256(source-cut, input-org-slice-digest, node-contract-digest, policy-digest)=
+     =sha256(source-cut, input-org-slice-digest, node-contract-digest, policy-digest, premise-digests)=
      recorded in =durable-journal= and =ArtifactCatalog=.
-   - Pure deterministic steps (AST repair, GQL query, ASCENT solve, build/test
-     gates) hit CAS and skip at zero cost; verified LLM steps whose outputs
-     passed =OrgContract= and were frozen into =#+RESULTS:= + journal are
-     likewise skipped on crash recovery or re-run, saving 100% of prior LLM
-     tokens.
+   - When a concurrent peer or detour advances =source-cut= or invalidates a
+     bound premise, zero-token =ASCENT= =assumption_invalidated(NodeId, PremiseId)=
+     marks only nodes whose =premise-digests= drifted as =stale-premise=,
+     preserving unaffected CAS nodes across =funflow-replan-epoch (g -> g+1)=.
 4. **Parallel Frontier Waves with Disjoint Org Leases**:
    - All =indegree == 0= =TODO= nodes form a ready frontier wave; nodes whose
      Org =:ID:= byte spans are disjoint (admitted by =funs-subtree-mediation=
@@ -387,15 +420,96 @@ Extensible MOP =.defgeneric= protocols published at the Interface plane:
 - =(project-workbench-tabs repo-or-wt journal-state peek-set)= — pure pinned
   =Index= + dynamic =Active Task Tabs= projection.
 
+*** 7.7 Scoped Detours, 0-Token Org-Elements Re-Anchoring, and Four Exit States
+
+Complex engineering tasks routinely require mid-flight detours (side-quests,
+blockers, dependency refactors). Rather than polluting an open-loop chat log
+and suffering Goal Drift, every detour executes **strictly inside the parent
+=Task Scope=** as a C4-derived =DetourNode.= subtree in the shared Task Org:
+
+- **Structured Detour Anchoring**: Each detour carries =:ROLE: detour=,
+  =:DETOUR_KIND: blocker | side-quest=, and =:RETURN_ANCHOR: <mainline-id>=.
+  A =blocker= detour adds a =:DEPENDS_ON:= edge into Epoch =g -> g+1=; a
+  =side-quest= runs concurrently on a disjoint byte span. Progressive
+  disclosure keeps the active detour at =L2/L3= while keeping the mainline
+  Goal spine and =:RETURN_ANCHOR:= pinned at =L0/L1= (~50–100 tokens).
+- **Zero-Token Org-Elements Re-Anchoring (=task-reanchor-mainline=)**: As soon
+  as a detour's checklist hits =[N/N]= or transitions to =DONE= / =PARKED= /
+  =CANCELLED=, =orgize= + ISO =GQL= + =ASCENT= deterministically inspects all
+  Org Elements at **0 LLM tokens** to emit =MainlineAlignmentSnapshot=
+  (=mainline_progress=, =unblocked_mainline=, =unsatisfied_invariants=,
+  =scope_drift_alert=, =return_focus=). Auto-Archive is strictly blocked while
+  any =blocker= detour or mainline invariant remains open.
+- **Four Fail-Closed CLOS Exit Reconcilers (=(reconcile-detour-exit detour exit-state anchor)=)**:
+  1. **=CompletedExit.=**: Passes =admit-consolidation= (verifying
+     =outcome-receipt-digest= + =defeat-conditions=), promotes receipts and
+     counterexamples to =:RETURN_ANCHOR:=, folds the detour to =L0=, and
+     unblocks mainline nodes.
+  2. **=ParkedExit.=**: Snapshots partial dirty worktree edits into GitOps
+     =custody= (=crates/marlin-agent-gitops/src/retention/custody.rs=) +
+     =org-attach= (=:CUSTODY_OID:=), restores a clean worktree at =source-cut=,
+     leaves non-blocking mainlines unencumbered, and supports one-step
+     =Reopen=.
+  3. **=CancelledExit.=**: Discards dirty code edits while **mandatorily
+     preserving =defeat-conditions=** into the mainline Non-Droppable
+     Counterexample Core so no future actor repeats the dead end.
+  4. **=PromotedToTaskExit.=**: When =ASCENT= detects =detour_depth >
+     max_detour_depth= or cross-scope permission requirements,
+     =fission-subtree= atomically promotes the detour into an independent
+     top-level Task Tab in =index.org=, leaving a single cross-task
+     =:DEPENDS_ON:= reference on the mainline anchor.
+
+*** 7.8 Zero-SubAgent Concurrent Shared Context & Per-=:ID:= Ownership (Extend, Never Overwrite)
+
+Mainstream "SubAgent" architectures fail on complex tasks because spawning an
+isolated child chat forces $O(K \cdot N)$ context re-reading, destroys shared
+state visibility, and creates uncoordinated overwrites. Marlin and Lab
+**eliminate the isolated SubAgent model**: sequential or concurrent, Humans
+and multiple peer Agents operate symmetrically over **one live Shared Org
+Context** in which **both information and task execution state reside**:
+
+1. **Per-=:ID:= Governance Ownership in =:PROPERTIES:=**:
+   - Every working table, task, or subtree =:ID:= declares its live ownership
+     directly in Org =:PROPERTIES:= (=:OWNER_ACTOR:=, =:CLAIM_STATE:=
+     (=unclaimed= | =claimed-active= | =handed-off= | =parked-custody= |
+     =completed=), =:CLAIM_LEASE_EPOCH:=, =:CLAIM_SCOPE_DIGEST:=,
+     =:CLAIM_WORKTREE:=), fenced by =durable-journal= and Rust
+     =OrgGovernanceLedger=.
+2. **Ambient Cross-Actor Perception (Zero Re-Read, Zero Duplicate Work)**:
+   - Because state lives in Shared Context rather than private chat threads,
+     the instant Agent =A= (or a Human) writes =:OWNER_ACTOR: agent:a= and
+     =:CLAIM_STATE: claimed-active= on =:ID: X=, every concurrent peer Agent
+     =B, C= and Human immediately perceives that claim at =L0/L1= via
+     zero-token Org Elements.
+3. **Extend-Never-Overwrite Invariant (=single_active_owner= & =extend_not_overwrite=)**:
+   - When =:ID: X= is =claimed-active= by actor =A=, any peer actor =B != A=
+     (whether Agent or Human) **MUST NOT overwrite** =:ID: X=.
+   - Instead, =B= contributes by **extending on top of =:ID: X=** through a
+     fresh disjoint child/steering subtree =:ID: Y= (=:ROLE: extension |
+     human-steering | detour=, =:EXTENDS_ID: X=, disjoint byte span rebased
+     cleanly by =funs-subtree-mediation= + =funs-delta= + Rust
+     =OrgGovernanceLedger=), which =A= perceives automatically at its next
+     epoch boundary without losing CAS or crashing in-flight work.
+   - Explicit takeover requires a fenced **Handover** incrementing
+     =:CLAIM_LEASE_EPOCH:= (invalidating =A='s stale write token) and
+     preserving =A='s partial work in GitOps =custody=.
+
 ** 8. Qualification Plan
 :PROPERTIES:
 :CUSTOM_ID: qualification-plan
 :END:
 
-1. **Formal Specification Gate**:
+1. **Formal Specification & Proof Chain Gate**:
    - =dev/sysml/org-babel-session.sysml= passes =sysml -strict -validate -self-check=
-     with zero errors and zero warnings (=MAR-ORG-P01..P11=, =MAR-ORG-L01..L05=,
-     =MAR-ORG-R01..R10=).
+     with zero errors and zero warnings (=MAR-ORG-P01..P13=, =MAR-ORG-L01..L07=,
+     =MAR-ORG-R01..R14=).
+   - Lab Formal Proof Chain Slice 49
+     (=49-scoped-detour-funflow-concurrent-shared-context.{org,sysml,lean,qnt}=)
+     passes OpenSysML v2 strict validation, Lean 4 =lake build= +
+     =ContextGovernanceAxioms.lean= (zero =sorry=, standard axioms only), and
+     Quint =typecheck= / =test= / =run= (including negative-control
+     counterexamples for non-owner overwrite, unexhaustive =FencedEffect=, and
+     premature archive with open blocker detour).
    - =dev/quint/org-babel-fission.qnt= passes =quint typecheck=, =quint test=,
      =quint run=, and negative-control mutation falsification.
 2. **Seed Contract Gate**:

@@ -50,6 +50,16 @@ package MarlinOrgBabelSession {
     attribute def ArchivedTaskPeeked;
     attribute def PeekDismissed;
     attribute def ArchivedTaskReopened;
+    attribute def DetourSpawned;
+    attribute def DetourChecklistCompleted;
+    attribute def DetourParkedToCustody;
+    attribute def DetourCancelledWithDefeaters;
+    attribute def DetourPromotedToTaskTab;
+    attribute def MainlineReanchored;
+    attribute def NodeClaimedByActor;
+    attribute def PeerExtensionAppended;
+    attribute def OwnershipHandedOver;
+    attribute def ClaimReleased;
 
     part target {
         part <'MAR-ORG-P01'> sharedOrgContext {
@@ -103,20 +113,23 @@ package MarlinOrgBabelSession {
         }
 
         part <'MAR-ORG-P09'> declarativeInterfacePlane {
-            doc /* Doom-Emacs-style declarative Scheme Interface layer (`interface.ss` +
-                   hygienic macros + `gerbil-poo` C4 linearization + MOP `.defgeneric` +
-                   `+feature` flags) modeling objectified `Repo` (`A`) -> `Worktree` (`B`)
-                   -> `Task` (`C`) -> `SubTask`/`Extension` (`D`) derivation with Override
-                   and `super` Extension, plus C4-derivable `OrchestratorStrategy.`. */
+            doc /* Value-first POO Declarative Interface plane (`interface.ss` + `gerbil-poo`
+                   C4 linearization + POOF constant slots `(slot := expr)` + runtime lexical
+                   slot references + `ObjectContract` admission + fail-closed CLOS
+                   `.defmethod-bundle` for multi-axis crossings + closed RFC-reviewed syntax
+                   lowering under `45-40-10`, rejecting Doom-style `!` macro proliferation)
+                   modeling `WorkspaceTopology.` -> `RepoNode.` -> `WorktreeNode.` ->
+                   `TaskNode.` -> `DetourNode.`/`SubTaskNode.` -> `OrgOverlay(g)`. */
         }
 
         part <'MAR-ORG-P10'> durableTaskOrchestrator {
-            doc /* Tweag-inspired `FunFlow` DAG engine (`scc`, static pre-check, CAS
-                   fingerprinting/skip, `after-start` finalizers, epoch-bounded dynamic
-                   replanning) + Governance scope isolation (`ContextScope`, 6-tuple
-                   `RestrictionEnvelope` meet, `TrustLattice`, `AuthorizedEffectToken`) +
-                   Lab `Durable` engine (`durable-journal`, `policy-clock`, `agenda`,
-                   crash recovery) owning Plan-A `index.org` sync and atomic Auto-Archive. */
+            doc /* Tweag-inspired `FunFlow` DAG engine (`PureCAS.`, `VerifiedEpistemic.`,
+                   `FencedEffect.` three-state effect algebra, `scc` static pre-check, CAS
+                   fingerprinting/skip, `premise-digests` invalidation, `after-start`
+                   finalizers, epoch-bounded dynamic replanning) + Governance scope isolation
+                   (`ContextScope`, `RestrictionEnvelope` meet, `TrustLattice`,
+                   `admit-security-branch`, `AuthorizedEffectToken`) + Lab `Durable` engine
+                   owning Plan-A `index.org` sync and atomic Auto-Archive. */
         }
 
         part <'MAR-ORG-P11'> taskWorkbenchProjection {
@@ -126,6 +139,24 @@ package MarlinOrgBabelSession {
                    supporting peek-until-edit recall from `Index`). */
         }
 
+        part <'MAR-ORG-P12'> scopedDetourReanchorEngine {
+            doc /* Zero-token Org-Elements + GQL + ASCENT engine managing scoped detours
+                   (`:ROLE: detour`, `:DETOUR_KIND: blocker|side-quest`, `:RETURN_ANCHOR:`),
+                   emitting `MainlineAlignmentSnapshot`, enforcing `max_detour_depth` guards,
+                   and dispatching fail-closed CLOS `(reconcile-detour-exit ...)` across
+                   `CompletedExit.`, `ParkedExit.` (GitOps custody), `CancelledExit.`
+                   (preserving Counterexample Core), and `PromotedToTaskExit.`. */
+        }
+
+        part <'MAR-ORG-P13'> sharedContextOwnershipRegistry {
+            doc /* Zero-SubAgent concurrent shared-context ownership plane: records live
+                   per-`:ID:` ownership claims (`:OWNER_ACTOR:`, `:CLAIM_STATE:`,
+                   `:CLAIM_LEASE_EPOCH:`, `:CLAIM_SCOPE_DIGEST:`, `:CLAIM_WORKTREE:`)
+                   directly in Org `:PROPERTIES:` fenced by `durable-journal` and Rust
+                   `OrgGovernanceLedger`, giving Humans and peer Agents ambient L0/L1
+                   awareness and enforcing Extend-Never-Overwrite on active claims. */
+        }
+
         dependency bridgeIndexesOrg from orgElementsGqlBridge to sharedOrgContext;
         dependency ascentEvaluatesGraph from ascentDisclosureAndFacetEngine to orgElementsGqlBridge;
         dependency interfaceConfiguresOrchestrator from declarativeInterfacePlane to durableTaskOrchestrator;
@@ -133,6 +164,11 @@ package MarlinOrgBabelSession {
         dependency orchestratorUsesAscent from durableTaskOrchestrator to ascentDisclosureAndFacetEngine;
         dependency orchestratorSynchronizesOrg from durableTaskOrchestrator to sharedOrgContext;
         dependency orchestratorCustodiesArtifacts from durableTaskOrchestrator to gitOpsStorage;
+        dependency detourUsesAscent from scopedDetourReanchorEngine to ascentDisclosureAndFacetEngine;
+        dependency detourReanchorsOrchestrator from scopedDetourReanchorEngine to durableTaskOrchestrator;
+        dependency detourCustodiesDirtyWork from scopedDetourReanchorEngine to gitOpsStorage;
+        dependency ownershipGovernsSharedOrg from sharedContextOwnershipRegistry to sharedOrgContext;
+        dependency orchestratorEnforcesOwnership from durableTaskOrchestrator to sharedContextOwnershipRegistry;
         dependency workbenchProjectsOrchestrator from taskWorkbenchProjection to durableTaskOrchestrator;
         dependency windowDisplaysProjectedTabs from orgStreamWindow to taskWorkbenchProjection;
         dependency architectAuthorsOrg from architectModelTier to sharedOrgContext;
@@ -235,6 +271,51 @@ package MarlinOrgBabelSession {
         transition reopenFromIndex first archivedInIndex accept ArchivedTaskReopened then activeTaskTab;
     }
 
+    state def <'MAR-ORG-L06'> ScopedDetourAndReanchorLifecycle {
+        doc /* Scoped Detour lifecycle inside a parent Task Scope with four fail-closed
+               CLOS exit reconcilers (`CompletedExit.`, `ParkedExit.` via GitOps custody,
+               `CancelledExit.` preserving defeat-conditions into Counterexample Core, and
+               `PromotedToTaskExit.` via `fission-subtree`) and 0-token Org-Elements
+               re-anchoring back to `:RETURN_ANCHOR:`. */
+        first start then mainlineActive;
+        state mainlineActive;
+        state detourActive;
+        state detourCompletedReanchoring;
+        state detourParkedInCustody;
+        state detourCancelledDefeatersKept;
+        state promotedToIndependentTaskTab;
+
+        transition openDetour first mainlineActive accept DetourSpawned then detourActive;
+        transition finishDetour first detourActive accept DetourChecklistCompleted then detourCompletedReanchoring;
+        transition parkDetour first detourActive accept DetourParkedToCustody then detourParkedInCustody;
+        transition cancelDetour first detourActive accept DetourCancelledWithDefeaters then detourCancelledDefeatersKept;
+        transition promoteDetour first detourActive accept DetourPromotedToTaskTab then promotedToIndependentTaskTab;
+        transition snapBackFromCompleted first detourCompletedReanchoring accept MainlineReanchored then mainlineActive;
+        transition snapBackFromParked first detourParkedInCustody accept MainlineReanchored then mainlineActive;
+        transition snapBackFromCancelled first detourCancelledDefeatersKept accept MainlineReanchored then mainlineActive;
+        transition snapBackFromPromoted first promotedToIndependentTaskTab accept MainlineReanchored then mainlineActive;
+    }
+
+    state def <'MAR-ORG-L07'> SharedContextIdClaimLifecycle {
+        doc /* Zero-SubAgent concurrent Shared Context ownership lifecycle per `:ID:`:
+               peer Agents and Humans claim work in `:PROPERTIES:`, peers perceive live
+               claims at L0/L1 and contribute via disjoint child extensions (Extend, Never
+               Overwrite), or transition explicitly via fenced lease-epoch handover. */
+        first start then unclaimed;
+        state unclaimed;
+        state claimedActive;
+        state peerExtended;
+        state handedOffCustody;
+        state claimCompleted;
+
+        transition claimNode first unclaimed accept NodeClaimedByActor then claimedActive;
+        transition extendByPeer first claimedActive accept PeerExtensionAppended then peerExtended;
+        transition incorporateExtension first peerExtended accept MainlineReanchored then claimedActive;
+        transition handoverClaim first claimedActive accept OwnershipHandedOver then handedOffCustody;
+        transition resumeAfterHandover first handedOffCustody accept NodeClaimedByActor then claimedActive;
+        transition completeClaim first claimedActive accept ClaimReleased then claimCompleted;
+    }
+
     requirement <'MAR-ORG-R01'> orgFileAsSharedContext {
         doc /* Represent live dialogue, multimodal attachments, and organically grown
                facets in standard Org files (`org-babel`, `org-attach`, `org-agenda`)
@@ -271,20 +352,23 @@ package MarlinOrgBabelSession {
     }
 
     requirement <'MAR-ORG-R07'> declarativeInterfaceAndPooDerivation {
-        doc /* Expose a Doom-Emacs-style declarative Scheme Interface plane (hygienic
-               macros, `gerbil-poo` C4 linearization, MOP `.defgeneric`, and `+feature`
-               flags) unifying objectified `Repo` (`A`) -> `Worktree` (`B`) -> `Task` (`C`)
-               -> `SubTask`/`Extension` (`D`) derivation, `OrchestratorStrategy.` overrides,
-               and zero-copy shared Org context with zero runtime `eval`. */
+        doc /* Expose a POO-constrained declarative Scheme Interface plane (value-first
+               `gerbil-poo` C4 linearization, POOF constant slots `(slot := expr)`,
+               runtime lexical slot references, `ObjectContract` boundary admission,
+               fail-closed CLOS `.defmethod-bundle`, and closed RFC-reviewed syntax
+               lowering under `45-40-10`, rejecting Doom-style `!` macro proliferation)
+               unifying `WorkspaceTopology.` -> `RepoNode.` -> `WorktreeNode.` ->
+               `TaskNode.` -> `DetourNode.`/`SubTaskNode.` -> `OrgOverlay(g)` with
+               zero runtime `eval`. */
     }
 
     requirement <'MAR-ORG-R08'> durableOrchestratorAndPlanAIndex {
         doc /* Bind Lab's `Durable` engine (`durable-journal`, `policy-clock`, `agenda`,
                crash recovery) declaratively to Org Elements/GQL and ASCENT over Plan-A
                authoritative `index.org` + `ArtifactCatalog` Task Org documents, committing
-               Auto-Archive atomically only when every reachable FunFlow DAG node and child
-               TODO/checklist is DONE, no finalizer is pending, and journal in-flight
-               attempts are quiescent. */
+               Auto-Archive atomically only when every reachable FunFlow DAG node, blocker
+               detour, mainline invariant, and child TODO/checklist is DONE, no finalizer
+               is pending, and journal in-flight attempts are quiescent. */
     }
 
     requirement <'MAR-ORG-R09'> taskAsTabAutoArchiveProjection {
@@ -296,10 +380,44 @@ package MarlinOrgBabelSession {
 
     requirement <'MAR-ORG-R10'> funflowCasDagAndGovernanceScopeIsolation {
         doc /* Compile complex Org task trees 1-to-1 into Tweag-inspired `FunFlow` DAGs
-               with static `scc` pre-check, content-addressed caching and crash resumability,
-               epoch-bounded dynamic replanning, and Governance scope isolation
-               (`ContextScope`, `RestrictionEnvelope` meet, `TrustLattice`, disjoint `:ID:`
-               write leases, and one-shot `AuthorizedEffectToken`). */
+               with Three-State Effect Algebra (`PureCAS.`, `VerifiedEpistemic.`,
+               `FencedEffect.`), static `scc` pre-check, content-addressed caching and
+               premise invalidation, epoch-bounded dynamic replanning, and Governance
+               scope isolation (`ContextScope`, monotonic `RestrictionEnvelope` meet,
+               `TrustLattice`, asymmetric `admit-security-branch`, and one-shot
+               `AuthorizedEffectToken`). */
+    }
+
+    requirement <'MAR-ORG-R11'> pooConstrainedMacroGovernanceAndClosDispatch {
+        doc /* Enforce Yuanxu `45-40-10` macro governance: pure functions own algorithms,
+               value-first POO prototypes own entity inheritance and slot algebra,
+               `define-type`/`ObjectContract` owns boundary validation (including
+               monotonically non-escalating `OrgOverlay(g)`), and fail-closed CLOS
+               multi-methods own multi-axis crossings (`admit-node-effect`,
+               `reconcile-detour-exit`) without ad-hoc business `define-*!` macros. */
+    }
+
+    requirement <'MAR-ORG-R12'> scopedDetourReanchorAndFourExitStates {
+        doc /* Keep all mid-flight detours inside parent `Task Scope` with `:ROLE: detour`,
+               `:DETOUR_KIND:`, and `:RETURN_ANCHOR:`, re-anchoring back to mainline via
+               zero-token Org Elements + ASCENT `MainlineAlignmentSnapshot` and four
+               fail-closed CLOS exit reconcilers (`CompletedExit.`, `ParkedExit.` via
+               GitOps custody, `CancelledExit.` preserving `defeat-conditions` into
+               Counterexample Core, and `PromotedToTaskExit.`). */
+    }
+
+    requirement <'MAR-ORG-R13'> zeroSubAgentConcurrentSharedContextOwnership {
+        doc /* Reject isolated SubAgent context silos: concurrent peer Agents and Humans
+               share one live Org Context where both information and task state reside,
+               recording per-`:ID:` `:OWNER_ACTOR:`, `:CLAIM_STATE:`, and
+               `:CLAIM_LEASE_EPOCH:` directly in `:PROPERTIES:` for zero-re-read ambient
+               awareness and enforcing Extend-Never-Overwrite on active claims. */
+    }
+
+    requirement <'MAR-ORG-R14'> multiRepoWorkspaceTopologyAndPinPropagation {
+        doc /* Model cross-repository workspaces as `WorkspaceTopology.` C4 roots with
+               explicit Pin dependency edges, `PreFlightRemoteDriftProbe` drift detection,
+               and mandatory 3-party SoD `DeclassificationCert` for cross-domain transfers. */
     }
 
     satisfy orgFileAsSharedContext by target::sharedOrgContext;
@@ -316,4 +434,8 @@ package MarlinOrgBabelSession {
     satisfy durableOrchestratorAndPlanAIndex by target::durableTaskOrchestrator;
     satisfy taskAsTabAutoArchiveProjection by target::taskWorkbenchProjection;
     satisfy funflowCasDagAndGovernanceScopeIsolation by target::durableTaskOrchestrator;
+    satisfy pooConstrainedMacroGovernanceAndClosDispatch by target::declarativeInterfacePlane;
+    satisfy scopedDetourReanchorAndFourExitStates by target::scopedDetourReanchorEngine;
+    satisfy zeroSubAgentConcurrentSharedContextOwnership by target::sharedContextOwnershipRegistry;
+    satisfy multiRepoWorkspaceTopologyAndPinPropagation by target::declarativeInterfacePlane;
 }
