@@ -137,7 +137,10 @@
         (check-equal? (and (member '#(normal #(SPC o t) task-switch) keys) #t) #t)
         (check-equal? (and (member '#(normal #(SPC o p) task-peek) keys) #t) #t)
         (check-equal? (and (member '#(normal #(SPC o r) task-reopen) keys) #t) #t)
-        (check-equal? (and (member (vector 'normal (vector 'SPC 'o #\2) 'task-drill-l2) keys) #t) #t)
+        (check-equal? (and (member (vector 'normal (vector 'SPC 'o (string->symbol "0")) 'task-drill-l0) keys) #t) #t)
+        (check-equal? (and (member (vector 'normal (vector 'SPC 'o (string->symbol "1")) 'task-drill-l1) keys) #t) #t)
+        (check-equal? (and (member (vector 'normal (vector 'SPC 'o (string->symbol "2")) 'task-drill-l2) keys) #t) #t)
+        (check-equal? (and (member (vector 'normal (vector 'SPC 'o (string->symbol "3")) 'task-drill-l3) keys) #t) #t)
         ;; Progressive disclosure validator accepts L0..L3 and rejects invalid levels
         (check-equal? (marlin-task-workbench-next-disclosure 'L1 'L3) 'L3)
         (check-exception (marlin-task-workbench-next-disclosure 'L1 'L9) TypeError?)))))
