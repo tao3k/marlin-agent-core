@@ -14,7 +14,7 @@
         :marlin-agent-core/context-system/orchestrator
         :marlin-agent-core/context-system/evidence)
 
-(export MarlinContextSystemOperations EnableCausalEvidence)
+(export MarlinContextSystemOperations EnableCausalEvidence EnableDurableOrchestration)
 
 (def MarlinContextSystemOperations
   (.o admit-scope: (.get LabContext admit-scope)
@@ -28,27 +28,6 @@
                        checklist-set: marlin-context-checklist-set
                        headline-set-todo: marlin-context-headline-set-todo
                        fission-subtree: marlin-context-fission-subtree)
-      orchestrator: (.o derive-worktree: marlin-derive-worktree
-                        derive-task: marlin-derive-task
-                        orchestrate-task: marlin-orchestrate-task
-                        replan-epoch: marlin-replan-task-epoch
-                        admit-node-effect: marlin-admit-node-effect
-                        envelope-meet: marlin-envelope-meet
-                        invalidate-premises: marlin-invalidate-premises
-                        workspace-plan: marlin-workspace-plan
-                        apply-org-overlay: marlin-apply-org-overlay
-                        reanchor-mainline: marlin-reanchor-mainline
-                        reconcile-detour-exit: marlin-reconcile-detour-exit
-                        perceive-claims: marlin-perceive-claims
-                        assert-write-owner: marlin-assert-write-owner
-                        claim-node!: marlin-claim-node!
-                        extend-node!: marlin-extend-node!
-                        handover-node!: marlin-handover-node!
-                        record-cas!: marlin-record-task-cas!
-                        recover-task: marlin-recover-task
-                        commit-auto-archive!: marlin-commit-auto-archive!
-                        reopen-task!: marlin-reopen-task!
-                        project-workbench-tabs: marlin-project-workbench-tabs)
       bridge: (.o decode-batch: marlin-context-batch-requests
                   encode-scopes: marlin-context-scopes->bytes)))
 
@@ -56,3 +35,27 @@
   (.o (:: self inherited)
       reason-causally: context-reason-causally
       replay-causal-answer: context-replay-causal-answer))
+
+(def (EnableDurableOrchestration inherited)
+  (.o (:: self inherited)
+      durable: (.o derive-worktree: marlin-derive-worktree
+                   derive-task: marlin-derive-task
+                   orchestrate-task: marlin-orchestrate-task
+                   replan-epoch: marlin-replan-task-epoch
+                   admit-node-effect: marlin-admit-node-effect
+                   envelope-meet: marlin-envelope-meet
+                   invalidate-premises: marlin-invalidate-premises
+                   workspace-plan: marlin-workspace-plan
+                   apply-org-overlay: marlin-apply-org-overlay
+                   reanchor-mainline: marlin-reanchor-mainline
+                   reconcile-detour-exit: marlin-reconcile-detour-exit
+                   perceive-claims: marlin-perceive-claims
+                   assert-write-owner: marlin-assert-write-owner
+                   claim-node!: marlin-claim-node!
+                   extend-node!: marlin-extend-node!
+                   handover-node!: marlin-handover-node!
+                   record-cas!: marlin-record-task-cas!
+                   recover-task: marlin-recover-task
+                   commit-auto-archive!: marlin-commit-auto-archive!
+                   reopen-task!: marlin-reopen-task!
+                   project-workbench-tabs: marlin-project-workbench-tabs)))

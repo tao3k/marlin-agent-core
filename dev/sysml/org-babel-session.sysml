@@ -123,13 +123,13 @@ package MarlinOrgBabelSession {
         }
 
         part <'MAR-ORG-P10'> durableTaskOrchestrator {
-            doc /* Tweag-inspired `FunFlow` DAG engine (`PureCAS.`, `VerifiedEpistemic.`,
-                   `FencedEffect.` three-state effect algebra, `scc` static pre-check, CAS
-                   fingerprinting/skip, `premise-digests` invalidation, `after-start`
-                   finalizers, epoch-bounded dynamic replanning) + Governance scope isolation
-                   (`ContextScope`, `RestrictionEnvelope` meet, `TrustLattice`,
-                   `admit-security-branch`, `AuthorizedEffectToken`) + Lab `Durable` engine
-                   owning Plan-A `index.org` sync and atomic Auto-Archive. */
+            doc /* Pure, domain-agnostic Lab `Durable` Work Engine Core (`modules/durable/work`:
+                   ZERO `orgize`, ZERO `ai-agentic-context`) built over `FunFlow` Three-State
+                   Effect DAG (`PureCAS.`, `VerifiedEpistemic.`, `FencedEffect.`), `ASCENT`
+                   4-predicate scheduler, and fenced `durable-journal`, extended via Yuanxu
+                   Feature System: `(durable +org)` (`modules/durable/features/org`) for Org
+                   codec projection, `(ai-agentic-context +durable)` in Lab, and
+                   `(context-system +causal +durable)` in Marlin `scheme/init.ss`. */
         }
 
         part <'MAR-ORG-P11'> taskWorkbenchProjection {
@@ -420,6 +420,18 @@ package MarlinOrgBabelSession {
                and mandatory 3-party SoD `DeclassificationCert` for cross-domain transfers. */
     }
 
+    requirement <'MAR-ORG-R15'> parserOwnedStructuralEditBoundary {
+        doc /* Enforce a strict three-layer engineering boundary for Org structural I/O:
+               Layer 0 (`gerbil-parser/graph-support/edit`) owns language-neutral UTF-8
+               byte-span `SpanEdit` algebra with fail-closed re-parse verification;
+               Layer 1 (`orgize/org-elements` + `orgize/org-edit`) owns typed `property:*`
+               element queries, canonical Org formatting, and parser-span-driven structural
+               rewrites (`set-todo`, `add-tag`, `set-planning`, `upsert-properties`,
+               `set-checkbox`, `upsert-babel-results`, `upsert-section`, `extract-subtree`);
+               Layer 2 (`agentic-ai-lab` `durable/+org` and `ai-agentic-context`) remains
+               a thin declarative schema codec with zero manual string or `:END:` slicing. */
+    }
+
     satisfy orgFileAsSharedContext by target::sharedOrgContext;
     satisfy orgElementsToGqlMapping by target::orgElementsGqlBridge;
     satisfy ascentProgressiveDisclosureAndDynamicFacets by target::ascentDisclosureAndFacetEngine;
@@ -438,4 +450,5 @@ package MarlinOrgBabelSession {
     satisfy scopedDetourReanchorAndFourExitStates by target::scopedDetourReanchorEngine;
     satisfy zeroSubAgentConcurrentSharedContextOwnership by target::sharedContextOwnershipRegistry;
     satisfy multiRepoWorkspaceTopologyAndPinPropagation by target::declarativeInterfacePlane;
+    satisfy parserOwnedStructuralEditBoundary by target::orgElementsGqlBridge;
 }

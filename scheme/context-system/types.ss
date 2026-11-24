@@ -11,7 +11,7 @@
         (only-in :clan/poo/type Record String Exactly Or)
         (only-in :gerbil-ascent/temporal/lens temporal-answer?))
 
-(export MarlinContextSystemContract ContextCausalContract)
+(export MarlinContextSystemContract ContextCausalContract ContextDurableContract)
 
 (def CausalExchange
   (Record kind: [(Exactly 'agentic-ai-lab.ascent-exchange.v1)]))
@@ -77,11 +77,14 @@
   (.cc (Record admit-scope: [(.get LabContext admission-type)] bridge: [ContextBridgeContract]
                org-contract-source: [(Fun ContextOrgContractSource <- ContextOrgContractRequest)]
                org-source-graph: [(Fun ContextOrgSourceGraph <- String)]
-               progressive: [ContextProgressiveContract]
-               orchestrator: [ContextOrchestratorContract])
+               progressive: [ContextProgressiveContract])
        identity: 'marlin/context))
 
 (def ContextCausalContract
   (.cc (Record reason-causally: [(Fun CausalAnswer <- CausalReasonRequest)]
                replay-causal-answer: [(Fun CausalReplayVerdict <- CausalReplayRequest)])
        identity: 'marlin/context/causal))
+
+(def ContextDurableContract
+  (.cc (Record durable: [ContextOrchestratorContract])
+       identity: 'marlin/context/durable))

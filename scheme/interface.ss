@@ -10,12 +10,14 @@
                  WorkspaceTopology.
                  OrchestratorStrategy. ParallelFrontierStrategy.
                  TieredModelStrategy. DurableGovernedStrategy.)
-        (only-in :tao3k/agentic-ai-lab/modules/durable/orchestrator
-                 DurableTaskPolicy. RepoNode. WorktreeNode. TaskNode. SubTaskNode.
+        (only-in :tao3k/agentic-ai-lab/modules/durable/work
+                 DurableWorkPolicy. RepoNode. WorktreeNode. TaskNode. SubTaskNode.
                  DetourNode. BlockerDetourNode. SideQuestDetourNode.
                  DetourExitState. CompletedExit. ParkedExit. CancelledExit. PromotedToTaskExit.
                  AnchorKind. MainlineStepAnchor. InvariantGateAnchor.
-                 DurableOrchestratorExports)
+                 DurableWorkExports)
+        (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/features/durable/objects
+                 ContextDurableExports)
         (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/interface TemporalCausality)
         (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/runtime/durable-journal
                  journal-open journal-close! journal-receive! journal-begin! journal-commit!
@@ -29,11 +31,11 @@
                  agentic-ai-lab-module-closure agentic-ai-lab-module-names
                  agentic-ai-lab-module-option-schemas
                  agentic-ai-lab-module-validation-receipts))
-(export LabContext LabFunflow LabDurableOrchestrator
+(export LabContext LabFunflow LabDurableWork LabContextDurable
         LabTemporal LabGitOps LabDurableJournal LabOrgDirectory
         FunflowNode. EffectClass. PureCAS. VerifiedEpistemic. FencedEffect.
         WorkspaceTopology.
-        DurableTaskPolicy. RepoNode. WorktreeNode. TaskNode. SubTaskNode.
+        DurableWorkPolicy. RepoNode. WorktreeNode. TaskNode. SubTaskNode.
         DetourNode. BlockerDetourNode. SideQuestDetourNode.
         DetourExitState. CompletedExit. ParkedExit. CancelledExit. PromotedToTaskExit.
         AnchorKind. MainlineStepAnchor. InvariantGateAnchor.
@@ -46,7 +48,8 @@
 
 (def LabContext (.get Context core exports))
 (def LabFunflow (.get Funflow core exports))
-(def LabDurableOrchestrator DurableOrchestratorExports)
+(def LabDurableWork DurableWorkExports)
+(def LabContextDurable ContextDurableExports)
 (def LabTemporal (.get TemporalCausality core exports))
 
 (def LabDurableJournal

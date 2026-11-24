@@ -9,16 +9,17 @@
 (import :std/test
         (only-in :std/io/tempfile make-temporary-file-name)
         (only-in :std/string/misc string-contains)
-        (only-in :clan/poo/object .get .o .ref)
+        (only-in :clan/poo/object .get .o .ref .slot?)
+        (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
         (only-in :marlin-agent-core/interface
-                 LabDurableJournal DurableTaskPolicy.
+                 LabDurableJournal DurableWorkPolicy.
                  PureCAS. FencedEffect.
                  BlockerDetourNode. CancelledExit. MainlineStepAnchor.)
         (only-in :marlin-agent-core/context-system/config MarlinContextSystemScope))
 
 (export context-durable-orchestrator-test)
 
-(def orch (.get MarlinContextSystemScope orchestrator))
+(def orch (.get marlin-agent-core.init.exports Marlin context-system durable))
 
 (def marlin-task-active-org
   (string-append
@@ -119,7 +120,12 @@
    ":END:\n"))
 
 (def context-durable-orchestrator-test
-  (test-suite "Marlin Declarative Durable Orchestrator and Task-as-Tab Projection"
+  (test-suite "Marlin ContextSystem +durable Feature and Task-as-Tab Projection"
+
+    (test-case "Feature System boundary: pure ContextSystem core excludes durable until +durable is selected"
+      (check-equal? (.slot? MarlinContextSystemScope 'durable) #f)
+      (check-equal? (.slot? MarlinContextSystemScope 'orchestrator) #f)
+      (check-equal? (.slot? (.get marlin-agent-core.init.exports Marlin context-system) 'durable) #t))
 
     (test-case "C4 worktree/task derivation, CAS epoch replanning, atomic Auto-Archive, and Tab projection"
       (let* ((wt ((.ref orch 'derive-worktree)
@@ -127,7 +133,7 @@
                       worktree: "wt/task-tabs"
                       branch: "feat/task-tabs"
                       source-cut: "sha256:marlin-cut-1"
-                      policy: (.o (:: @ DurableTaskPolicy.)
+                      policy: (.o (:: @ DurableWorkPolicy.)
                                   require-sod-reviewer: #t
                                   focused-tab-archive: 'on-blur))))
              (task ((.ref orch 'derive-task)

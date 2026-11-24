@@ -220,11 +220,62 @@ Following Doom Emacs's strict separation between stable engine mechanisms and
 thin declarative configuration (aligned with =scheme/init.ss= =(module +flag)=
 selection), **declarativity is the core contract of the Interface layer**:
 
-1. **Core Engine Plane (Lab + Yuanxu)**: Implements pure functional mechanisms
-   and MOP =.defgeneric= dispatch protocols (=Org Elements -> GQL=, =ASCENT=,
-   =FunFlow= DAG/CAS, =Governance= isolation, =durable-journal=, =policy-clock=,
-   =agenda=, recovery, AST repair). Engine internals never hardcode repository
-   paths, tab presentation, or archive UX.
+1. **Core Engine Plane (Pure Lab + Yuanxu Feature System)**:
+   - =modules/durable= Core (=modules/durable/work.ss= + =work/{contracts,entities,scheduler,detour-engine,claims-engine}.ss=)
+     is a **100% pure, domain-agnostic Durable Work Engine** with **zero
+     =orgize= and zero =ai-agentic-context= imports** — operating solely over
+     typed POO =WorkSnapshot=, =ClaimTable=, =FunFlow= Three-State Effect DAGs,
+     =ASCENT= 4-predicate scheduling, fail-closed CLOS detour exit reconcilers,
+     and fenced =durable-journal= WAL receipts.
+   - **Two-Tier Configurable Interface & Ownership Direction (Yuanxu Design 165)**:
+     - **Target ownership**: =modules/durable= remains 100% pure with zero Org
+       features (=features: '()=); the thin =Org <-> Durable= bridge belongs
+       exclusively under =ai-agentic-context/features/durable= (Context owns
+       Org, never =(durable +org)=).
+     - **Pure POO Convergent Triad (zero synthetic DSLs, zero magic keywords)**:
+       - =Tags= (*WHO/WHAT*): inert classification labels on modules/features
+         for discovery and =by-tag= targeting (never carry config values);
+       - =Profiles= (*HOW*, **always plural**): the single reusable POO
+         configuration mixin unit (=:profiles (P1. P2. ...)= globally,
+         =profiles: (L1. L2. ...)= per module, or derived);
+       - =Native POO Dotted Paths & .o Dispatch Tables= (*WHEN*): zero
+         synthetic =when-slot= / =case= boilerplate — cross-module bridging is
+         a single dotted path (=enabled?: durable.enabled?=), and conditional
+         Profile derivation is a plain POO =.o= dispatch table keyed by typed
+         Interface slot paths (=profiles: (.o env.mode: (.o ci-hermetic: ...)
+         durable.detour-state: (.o blocker-active: ...))=), directly extensible
+         via POO path assignment (=profiles.env.mode.staging: ...=) and
+         validated statically against =ObjectContract= + =slot-observation=,
+         with CLOS =.defmethod= reserved for multi-axis crossings.
+     - **Tier 1 (=yuanxu!= in =init.ss=)**: Ultra-restrained system-wide
+       assembly surface owning only explicit module closure, plural Global
+       =:profiles=, and per-module =+feat= / =-feat= / plural =profiles:=.
+     - **Tier 2 (per-module =interface.ss=)**: Autonomous =tags:=, typed state
+       slots & contracts, native POO =enabled?: durable.enabled?= auto-bridging,
+       and =profiles: (.o ...)= dispatch tables — composed via native POO C4
+       precedence bands (=CoreDefaults < ImpliedBridge < ExplicitFeature <
+       DerivedProfiles < GlobalProfiles < ModuleProfiles < GovernanceFloor=)
+       and contract-owned combiners (=exclusive= / =refine= / =union= / =meet=)
+       with zero Nix-style magic priority integers.
+   - Org-mode structural I/O obeys the strict three-layer parser/language boundary:
+     - **Layer 0 (=tao3k/gerbil-parser/graph-support/edit=)**: Language-neutral
+       UTF-8 byte-span structural edit algebra (=SpanEdit=,
+       =apply-span-edits/verified=) enforcing disjointness and fail-closed
+       re-parse verification.
+     - **Layer 1 (=tao3k/orgize= — =org-elements= + =org-edit=)**: Owns Org
+       typed structural projection (including =property:*= query fields,
+       headline =level=, checklist statistics, and drawer/planning/item spans),
+       the canonical Org syntax emitter (=emit.ss=), and parser-span-driven
+       structural edit primitives + hygienic =(org-edit ...)= DSL.
+     - **Layer 2 (=tao3k/agentic-ai-lab= — Context =+durable= & =ai-agentic-context=)**:
+       Maps domain schemas onto =org-elements= reads and =(org-edit ...)= writes
+       with zero manual =string-split=, =string-find-substr=, or =:END:= slicing.
+   - Context integration attaches strictly as a Yuanxu **Feature** on both
+     sides: Lab =(ai-agentic-context +memory +durable)=
+     (=modules/ai-agentic-context/features/durable=) and Marlin
+     =(context-system +causal +durable)= in =scheme/init.ss=
+     (=EnableDurableOrchestration= + =ContextDurableContract=). Engine
+     internals never hardcode repository paths, Org parsing, or TUI presentation.
 2. **POO-Constrained Macro Governance & Orthogonal Dispatch (=45-40-10=)**:
    - While inspired by Doom Emacs's declarative lifecycle ergonomics, Marlin
      and Lab **strictly reject Doom-style macro proliferation** (arbitrary AST

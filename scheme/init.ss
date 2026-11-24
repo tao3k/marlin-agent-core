@@ -12,7 +12,7 @@
   mode: explicit
   mount: Marlin
   :test-dir "./t"
-  (context-system +causal)
+  (context-system +causal +durable)
   (artifacts)
   (brief-to-draft)
   (ui-components)

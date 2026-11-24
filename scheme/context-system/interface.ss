@@ -6,12 +6,13 @@
 
 (import (only-in :clan/poo/object .def .o)
         (only-in "./config.ss" MarlinContextSystemScope)
-        (only-in "./objects.ss" EnableCausalEvidence)
-        (only-in "./types.ss" MarlinContextSystemContract ContextCausalContract))
+        (only-in "./objects.ss" EnableCausalEvidence EnableDurableOrchestration)
+        (only-in "./types.ss" MarlinContextSystemContract ContextCausalContract ContextDurableContract))
 (export ContextSystem)
 
 (.def ContextSystem
   identity: 'context-system
   core: (.o scope-contract: MarlinContextSystemContract
             exports: MarlinContextSystemScope)
-  features: (.o causal: (.o refine: EnableCausalEvidence contract: ContextCausalContract)))
+  features: (.o causal: (.o refine: EnableCausalEvidence contract: ContextCausalContract)
+                durable: (.o refine: EnableDurableOrchestration contract: ContextDurableContract)))

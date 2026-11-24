@@ -2,14 +2,15 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-;;; Marlin declarative Durable Task Orchestrator and pure WorkbenchTabProjection.
-;;; Consumes Lab FunFlow CAS DAG and Durable Orchestrator strictly through
-;;; :marlin-agent-core/interface.
+;;; Marlin `+durable` Feature implementation for `context-system`:
+;;; Consumes Lab Pure Durable Work Engine (`LabDurableWork`) and
+;;; Context `+durable` Feature (`LabContextDurable`) strictly through
+;;; `:marlin-agent-core/interface`.
 
 (import (only-in :clan/poo/object .def .o .ref .slot? object?)
         (only-in :marlin-agent-core/interface
-                 LabFunflow LabDurableOrchestrator
-                 DurableTaskPolicy. RepoNode. WorktreeNode. TaskNode.
+                 LabFunflow LabDurableWork LabContextDurable
+                 DurableWorkPolicy. RepoNode. WorktreeNode. TaskNode.
                  DurableGovernedStrategy.))
 
 (export MarlinRepo.
@@ -40,7 +41,7 @@
   repo-id: "marlin-agent-core"
   topology-path: "topology.org"
   index-path: "index.org"
-  policy: (.o (:: @ DurableTaskPolicy.)
+  policy: (.o (:: @ DurableWorkPolicy.)
               focused-tab-archive: 'on-blur
               scratch-promotion: 'on-plan
               reopen-mode: 'peek-until-edit
@@ -95,7 +96,7 @@
   (let ((task (.ref request 'task))
         (org-text (.ref request 'source))
         (jstate (opt-ref request 'journal-state (.o))))
-    ((.ref LabDurableOrchestrator 'task-orchestration-plan) task org-text jstate)))
+    ((.ref LabContextDurable 'orchestration-plan) task org-text jstate)))
 
 (def (marlin-replan-task-epoch request)
   (let* ((task (.ref request 'task))
@@ -104,7 +105,7 @@
          (completed-cas (opt-ref request 'completed-cas #f))
          (in-flight (opt-ref request 'in-flight-ids '()))
          (ctx (opt-ref request 'governance-context (.o)))
-         (dag-fn (.ref LabDurableOrchestrator 'task-funflow-dag))
+         (dag-fn (.ref LabContextDurable 'funflow-dag))
          (replan-fn (.ref (.ref LabFunflow 'durable-dag) 'replan-epoch))
          (prior-dag (.ref (dag-fn task prior-source) 'dag))
          (next-dag (.ref (dag-fn task next-source) 'dag)))
@@ -115,7 +116,7 @@
                context: ctx)))
 
 (def (marlin-record-task-cas! request)
-  ((.ref LabDurableOrchestrator 'record-cas!)
+  ((.ref LabDurableWork 'record-cas!)
    (.ref request 'journal)
    (.ref request 'task-id)
    (.ref request 'node-id)
@@ -123,7 +124,7 @@
    (.ref request 'result-digest)))
 
 (def (marlin-recover-task request)
-  ((.ref LabDurableOrchestrator 'recover)
+  ((.ref LabContextDurable 'recover)
    (.ref request 'journal)
    (.ref request 'task)
    (.ref request 'source)
@@ -132,7 +133,7 @@
    governance-context: (opt-ref request 'governance-context (.o))))
 
 (def (marlin-commit-auto-archive! request)
-  ((.ref LabDurableOrchestrator 'commit-archive!)
+  ((.ref LabContextDurable 'commit-archive!)
    (.ref request 'journal)
    (.ref request 'task)
    (.ref request 'source)
@@ -141,7 +142,7 @@
    (opt-ref request 'timestamp "2026-11-24 Tue 00:00")))
 
 (def (marlin-reopen-task! request)
-  ((.ref LabDurableOrchestrator 'reopen!)
+  ((.ref LabContextDurable 'reopen!)
    (.ref request 'journal)
    (.ref request 'task)
    (.ref request 'source)
@@ -149,7 +150,7 @@
    (opt-ref request 'timestamp "2026-11-24 Tue 00:00")))
 
 (def (marlin-project-workbench-tabs request)
-  ((.ref LabDurableOrchestrator 'project-workbench-tabs)
+  ((.ref LabDurableWork 'project-workbench-tabs)
    (opt-ref request 'owner MarlinWorktree.)
    (.ref request 'tasks)
    (opt-ref request 'journal-state (.o))
@@ -178,35 +179,35 @@
    remote-heads: (opt-ref request 'remote-heads '())))
 
 (def (marlin-apply-org-overlay request)
-  ((.ref LabDurableOrchestrator 'apply-org-overlay)
+  ((.ref LabDurableWork 'apply-overlay)
    (.ref request 'task)
    (.ref request 'overlay)))
 
 (def (marlin-reanchor-mainline request)
-  ((.ref LabDurableOrchestrator 'reanchor-mainline)
+  ((.ref LabContextDurable 'reanchor-mainline)
    (.ref request 'task)
    (.ref request 'source)
    mainline-core: (opt-ref request 'mainline-core '())
    max-detour-depth: (opt-ref request 'max-detour-depth 2)))
 
 (def (marlin-reconcile-detour-exit request)
-  ((.ref LabDurableOrchestrator 'reconcile-detour-exit)
+  ((.ref LabDurableWork 'reconcile-detour-exit)
    (.ref request 'detour)
    (.ref request 'exit-state)
    (.ref request 'anchor)))
 
 (def (marlin-perceive-claims request)
-  ((.ref LabDurableOrchestrator 'perceive-claims)
+  ((.ref LabContextDurable 'perceive-claims)
    (.ref request 'source)))
 
 (def (marlin-assert-write-owner request)
-  ((.ref LabDurableOrchestrator 'assert-write-owner)
+  ((.ref LabContextDurable 'assert-write-owner)
    (.ref request 'source)
    (.ref request 'node-id)
    (.ref request 'actor)))
 
 (def (marlin-claim-node! request)
-  ((.ref LabDurableOrchestrator 'claim!)
+  ((.ref LabContextDurable 'claim!)
    (opt-ref request 'journal #f)
    (.ref request 'task-id)
    (.ref request 'node-id)
@@ -218,7 +219,7 @@
    org-source: (.ref request 'source)))
 
 (def (marlin-extend-node! request)
-  ((.ref LabDurableOrchestrator 'extend!)
+  ((.ref LabContextDurable 'extend!)
    (opt-ref request 'journal #f)
    (.ref request 'task-id)
    (.ref request 'parent-node-id)
@@ -231,7 +232,7 @@
    org-source: (.ref request 'source)))
 
 (def (marlin-handover-node! request)
-  ((.ref LabDurableOrchestrator 'handover!)
+  ((.ref LabContextDurable 'handover!)
    (opt-ref request 'journal #f)
    (.ref request 'task-id)
    (.ref request 'node-id)
