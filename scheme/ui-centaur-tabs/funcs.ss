@@ -3,13 +3,15 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 ;;; Compose a bounded bar from the admitted buffer catalog.
-(import (only-in :clan/poo/object .get .o)
+(import (only-in :clan/poo/object .get .o .ref .slot? object?)
         (only-in :std/list/list delete-duplicates/hash filter filter-map)
         (only-in "../ui-components/buffers.ss" marlin-ui-buffer-command-name)
         (only-in "../ui-elements/funcs.ss" ui-bar ui-choice ui-template)
         "./objects.ss")
 (export marlin-ui-buffer-tabs marlin-ui-tabs-for-style
-        marlin-ui-default-tab-style marlin-ui-tab-style? marlin-ui-tab-style-commands)
+        marlin-ui-default-tab-style marlin-ui-tab-style? marlin-ui-tab-style-commands
+        marlin-ui-task-tab-identity marlin-ui-task-tab-declarations
+        marlin-ui-task-tabs marlin-ui-task-tab-bar-for)
 
 (def tab-styles (.get TabStyles. entries))
 (def marlin-ui-default-tab-style (caar tab-styles))
@@ -146,3 +148,78 @@
 
 (def (marlin-ui-tabs-for-style buffers style)
   (marlin-ui-buffer-tabs buffers '() style))
+
+;;; ---------------------------------------------------------------------------
+;;; Task-as-Tab Workbench Projection (RFC 40.183 §7.6)
+;;; Pure functional projection of Durable `WorkbenchTabProjection`:
+;;; Left Pinned Group (`Index`, non-closable) + Right Dynamic Group (`Active Task Tabs`).
+;;; ---------------------------------------------------------------------------
+
+(def (task-opt-ref obj key default)
+  (if (and (object? obj) (.slot? obj key))
+    (.ref obj key)
+    default))
+
+(def (marlin-ui-task-tab-identity raw-id)
+  (cond
+   ((symbol? raw-id) raw-id)
+   ((string? raw-id) (string->symbol raw-id))
+   (else (error "invalid task tab identity" raw-id))))
+
+(def (truncate-tab-label text limit)
+  (if (<= (string-length text) limit)
+    text
+    (string-append (substring text 0 (max 1 (- limit 1))) "…")))
+
+(def (task-tab-entry-declaration tab-obj group-id)
+  (let* ((id (marlin-ui-task-tab-identity (.ref tab-obj 'id)))
+         (raw-label (task-opt-ref tab-obj 'label (symbol->string id)))
+         (kind (task-opt-ref tab-obj 'kind 'task))
+         (mode (task-opt-ref tab-obj 'mode 'active))
+         (status (task-opt-ref tab-obj 'status 'todo))
+         (done-c (task-opt-ref tab-obj 'checklist-done 0))
+         (total-c (task-opt-ref tab-obj 'checklist-total 0))
+         (mode-suffix (or (let ((p (assq mode (.get TaskTabBadges. mode-suffix))))
+                            (and p (cdr p)))
+                          ""))
+         (status-prefix (if (eq? kind 'index)
+                          ""
+                          (or (let ((p (assq status (.get TaskTabBadges. status-mark))))
+                                (and p (cdr p)))
+                              "")))
+         (cookie (if (and (not (eq? kind 'index)) (integer? total-c) (> total-c 0))
+                   (string-append " [" (number->string done-c) "/" (number->string total-c) "]")
+                   ""))
+         (full-label (if (eq? kind 'index)
+                       raw-label
+                       (string-append status-prefix
+                                      (truncate-tab-label raw-label 22)
+                                      cookie
+                                      mode-suffix)))
+         (short-text (if (eq? kind 'index)
+                       "Idx"
+                       (string-append (truncate-tab-label raw-label 10) mode-suffix))))
+    (list id full-label group-id short-text)))
+
+(def (marlin-ui-task-tab-declarations projection)
+  (let* ((pinned (task-opt-ref projection 'pinned-tabs '()))
+         (dynamic (task-opt-ref projection 'dynamic-tabs '()))
+         (pinned-decls (map (lambda (t) (task-tab-entry-declaration t 'task-index)) pinned))
+         (dynamic-decls
+          (map (lambda (t)
+                 (let ((mode (task-opt-ref t 'mode 'active)))
+                   (task-tab-entry-declaration
+                    t (if (eq? mode 'peek-readonly) 'peek-tasks 'active-tasks))))
+               dynamic)))
+    (append pinned-decls dynamic-decls)))
+
+(def (marlin-ui-task-tabs projection
+                          (style-id marlin-ui-default-tab-style)
+                          nerd-icons?: (nerd-icons? #t))
+  (let* ((declarations (marlin-ui-task-tab-declarations projection))
+         (identities (map car declarations)))
+    (marlin-ui-buffer-tabs identities declarations style-id nerd-icons?: nerd-icons?)))
+
+(def (marlin-ui-task-tab-bar-for projection nerd-icons?: (nerd-icons? #t))
+  (lambda (_buffer-identities style-id)
+    (marlin-ui-task-tabs projection style-id nerd-icons?: nerd-icons?)))

@@ -3,7 +3,7 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 (import (only-in :clan/poo/object .def))
-(export BuiltinTabs. NerdTabIcons. TabStyles.)
+(export BuiltinTabs. NerdTabIcons. TabStyles. TaskTabBadges.)
 
 (.def BuiltinTabs.
   entries: '((conversation "Chat" session "Chat")
@@ -19,7 +19,18 @@
              (sessions #xf017 success)
              (models #xf1b3 accent)
              (processes #xf085 info)
-             (help #xf059 warning)))
+             (help #xf059 warning)
+             (index #xf022 accent)))
+
+(.def TaskTabBadges.
+  mode-suffix: '((active . "")
+                 (peek-readonly . " [peek]")
+                 (archived-focused-until-blur . " [arch]"))
+  status-mark: '((todo . "○ ")
+                 (in-progress . "◐ ")
+                 (blocked . "⊘ ")
+                 (review . "◈ ")
+                 (done . "● ")))
 
 (.def BarTabs.
   selected-background: 'canvas

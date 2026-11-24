@@ -13,12 +13,21 @@
         "./projection.ss"
         (only-in "./package-types.ss" UiPackageEventInput)
         (only-in "./package.ss" UiPackage. make-ui-package marlin-ui-package-catalog
-                 marlin-ui-package-preview marlin-ui-package-publication marlin-ui-package-check-commands))
+                 marlin-ui-package-preview marlin-ui-package-publication marlin-ui-package-check-commands)
+        (only-in "./task-workbench.ss"
+                 make-marlin-task-workbench-package
+                 marlin-task-workbench-peek-set-add
+                 marlin-task-workbench-peek-set-remove
+                 marlin-task-workbench-next-disclosure))
 (export marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch
         marlin-ui-session-browse-command
         marlin-ui-session-command-candidates
         marlin-ui-session-review-menu
-        marlin-ui-session-refresh-labels UiPackage. make-ui-package marlin-ui-session-package-event)
+        marlin-ui-session-refresh-labels UiPackage. make-ui-package marlin-ui-session-package-event
+        make-marlin-task-workbench-package
+        marlin-task-workbench-peek-set-add
+        marlin-task-workbench-peek-set-remove
+        marlin-task-workbench-next-disclosure)
 
 ;;; Each event returns a successor; older frames keep their own rooted state.
 (.def UiNativeSession.)

@@ -9,4 +9,6 @@
 (def UiCentaurTabsScope
   (.new/checked UiCentaurTabsScopeContract
     identity: 'marlin/ui-centaur-tabs
-    bar-for: marlin-ui-tabs-for-style))
+    bar-for: marlin-ui-tabs-for-style
+    task-tabs-for: marlin-ui-task-tabs
+    task-bar-for: marlin-ui-task-tab-bar-for))

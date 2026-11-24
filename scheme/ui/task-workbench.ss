@@ -1,0 +1,153 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+;;; Pure functional Task-as-Tab Workbench Package (RFC 40.183 §7.6):
+;;; Projects Durable `WorkbenchTabProjection` (Left Pinned `Index` + Right Dynamic
+;;; `Active Task Tabs` / `Peek` tabs + Progressive `L0..L3` Disclosure commands)
+;;; into a standard checked Marlin `UiScope` via `UiPackage.` and `marlin-ui-layout-with-tab-bar`.
+
+(import (only-in :clan/poo/object .o .ref .slot? .get object?)
+        (only-in :clan/poo/type define-type Enum validate)
+        (only-in :std/list/list filter take)
+        (only-in "../ui-centaur-tabs/funcs.ss"
+                 marlin-ui-task-tab-identity marlin-ui-task-tab-bar-for)
+        (only-in "../ui-elements/funcs.ss" ui-rows ui-text)
+        (only-in "../ui-layout/config.ss" marlin-ui-layout-with-tab-bar)
+        (only-in "../ui-meow/interface.ss" define-key-bindings meow-normal)
+        (only-in "./package.ss" UiPackage. make-ui-package))
+
+(export TaskDisclosureLevel
+        TaskWorkbenchKeymap.
+        marlin-task-workbench-commands
+        marlin-task-workbench-buffers
+        marlin-task-workbench-peek-set-add
+        marlin-task-workbench-peek-set-remove
+        marlin-task-workbench-next-disclosure
+        make-marlin-task-workbench-package)
+
+(define-type TaskDisclosureLevel (Enum L0 L1 L2 L3))
+
+(def (opt-ref obj key default)
+  (if (and (object? obj) (.slot? obj key))
+    (.ref obj key)
+    default))
+
+;;; Doom/Meow-style Task Workbench keybindings under `SPC o` (Org/Task workbench),
+;;; strictly disjoint from `UiMeowScope` (`SPC x`, `SPC b`, `SPC t`, `SPC h`, `SPC r`, `SPC m`).
+(define-key-bindings TaskWorkbenchKeymap.
+  (meow-normal
+    ((SPC o i) task-index "Open pinned Task Index")
+    ((SPC o t) task-switch "Switch active Task tab")
+    ((SPC o p) task-peek "Peek archived Task read-only")
+    ((SPC o r) task-reopen "Reopen archived Task into active tabs")
+    ((SPC o #\0) task-drill-l0 "Fold Org disclosure to L0 Skeleton")
+    ((SPC o #\1) task-drill-l1 "Expand Org disclosure to L1 Checklist")
+    ((SPC o #\2) task-drill-l2 "Expand Org disclosure to L2 Synthesis Body")
+    ((SPC o #\3) task-drill-l3 "Expand Org disclosure to L3 Full Evidence")))
+
+(def (marlin-task-workbench-commands)
+  '(("task-index" "Focus pinned Task Index buffer" none select-buffer "index")
+    ("task-switch" "Switch among visible active Task tabs" none workspace "task-switch")
+    ("task-peek" "Peek an archived Task in read-only mode" optional inspect "task-peek")
+    ("task-reopen" "Durably reopen an archived Task into active tabs" optional workspace "task-reopen")
+    ("task-drill-l0" "Set progressive Org disclosure to L0 Skeleton" none inspect "L0")
+    ("task-drill-l1" "Set progressive Org disclosure to L1 Contract & Checklist" none inspect "L1")
+    ("task-drill-l2" "Set progressive Org disclosure to L2 Synthesis Body" none inspect "L2")
+    ("task-drill-l3" "Set progressive Org disclosure to L3 Full Evidence" none inspect "L3")))
+
+(def (task-summary-line tab-obj)
+  (let ((tid (symbol->string (marlin-ui-task-tab-identity (.ref tab-obj 'id))))
+        (label (opt-ref tab-obj 'label ""))
+        (status (symbol->string (opt-ref tab-obj 'status 'todo)))
+        (mode (symbol->string (opt-ref tab-obj 'mode 'active)))
+        (wt (opt-ref tab-obj 'worktree "main"))
+        (done-c (opt-ref tab-obj 'checklist-done 0))
+        (total-c (opt-ref tab-obj 'checklist-total 0)))
+    (string-append tid "  [" status "/" mode "]  " label
+                   "  (" (number->string done-c) "/" (number->string total-c) ")  wt:" wt)))
+
+(def (archived-summary-line rec)
+  (let ((tid (opt-ref rec 'task-id "unknown"))
+        (title (opt-ref rec 'title ""))
+        (wt (opt-ref rec 'worktree "main")))
+    (string-append tid "  [ARCHIVED]  " title "  wt:" wt)))
+
+(def (make-index-buffer-entry projection disclosure-level)
+  (let* ((dynamic (opt-ref projection 'dynamic-tabs '()))
+         (archived (opt-ref projection 'archived-index '()))
+         (header (string-append "Task Index · Active: " (number->string (length dynamic))
+                                " · Archived: " (number->string (length archived))
+                                " · Disclosure: " (symbol->string disclosure-level)))
+         (lines (append
+                 (list (cons 'accent header))
+                 (if (null? dynamic)
+                   (list (cons 'muted "  (no active tasks)"))
+                   (map (lambda (t) (cons 'normal (string-append "  " (task-summary-line t))))
+                        (take dynamic (min 6 (length dynamic)))))
+                 (map (lambda (a) (cons 'muted (string-append "  " (archived-summary-line a))))
+                      (take archived (min 4 (length archived)))))))
+    (list 'index
+          "Pinned Plan-A Task Index"
+          (list "*Index*" (ui-rows (list (ui-text lines))))
+          #f)))
+
+(def (make-task-buffer-entry tab-obj disclosure-level)
+  (let* ((id (marlin-ui-task-tab-identity (.ref tab-obj 'id)))
+         (label (opt-ref tab-obj 'label (symbol->string id)))
+         (mode (opt-ref tab-obj 'mode 'active))
+         (status (opt-ref tab-obj 'status 'todo))
+         (wt (opt-ref tab-obj 'worktree "main"))
+         (done-c (opt-ref tab-obj 'checklist-done 0))
+         (total-c (opt-ref tab-obj 'checklist-total 0))
+         (title (string-append "*Task: " label "*"))
+         (lines
+          (list (cons 'accent (string-append "Task: " (symbol->string id) " · " label))
+                (cons 'info (string-append "Status: " (symbol->string status)
+                                           " · Mode: " (symbol->string mode)
+                                           " · Worktree: " wt))
+                (cons 'normal (string-append "Checklist: [" (number->string done-c)
+                                             "/" (number->string total-c) "]"
+                                             " · Disclosure: " (symbol->string disclosure-level)))
+                (cons 'muted (if (eq? mode 'peek-readonly)
+                               "Read-only peek mode (SPC o r to reopen durably)"
+                               "SPC o i Index · SPC o 0..3 Disclosure L0..L3")))))
+    (list id
+          (string-append "Task buffer: " label)
+          (list title (ui-rows (list (ui-text lines))))
+          #f)))
+
+;;; Produce bounded static buffer declarations for `make-ui-package` (max 8 buffers:
+;;; 1 pinned `index` + up to 7 visible dynamic tasks).
+(def (marlin-task-workbench-buffers projection (disclosure-level 'L1))
+  (validate TaskDisclosureLevel disclosure-level)
+  (let* ((dynamic (opt-ref projection 'dynamic-tabs '()))
+         (bounded-dynamic (take dynamic (min 7 (length dynamic)))))
+    (cons (make-index-buffer-entry projection disclosure-level)
+          (map (lambda (t) (make-task-buffer-entry t disclosure-level))
+               bounded-dynamic))))
+
+;;; Pure functional state transitions (caller owns next state).
+(def (marlin-task-workbench-peek-set-add peek-set task-id)
+  (if (member task-id peek-set)
+    peek-set
+    (cons task-id peek-set)))
+
+(def (marlin-task-workbench-peek-set-remove peek-set task-id)
+  (filter (lambda (id) (not (equal? id task-id))) peek-set))
+
+(def (marlin-task-workbench-next-disclosure _current-level target-level)
+  (validate TaskDisclosureLevel target-level))
+
+;;; Compose a full checked Marlin `UiScope` bound to a live `WorkbenchTabProjection`.
+(def (make-marlin-task-workbench-package projection
+                                         disclosure-level: (disclosure-level 'L1)
+                                         nerd-icons?: (nerd-icons? #t))
+  (validate TaskDisclosureLevel disclosure-level)
+  (make-ui-package
+    (.o (:: @ UiPackage.)
+        buffers: (marlin-task-workbench-buffers projection disclosure-level)
+        commands: (marlin-task-workbench-commands)
+        keymap: (.get TaskWorkbenchKeymap. bindings)
+        layout: (marlin-ui-layout-with-tab-bar
+                  (marlin-ui-task-tab-bar-for projection nerd-icons?: nerd-icons?)))))
