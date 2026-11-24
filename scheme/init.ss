@@ -26,6 +26,7 @@
   (ui-layout)
   (ui)
   (ui-tui)
+  (ui-mygo)
   (tooling)
   (agent-hooks)
   (scheme-package-hooks)

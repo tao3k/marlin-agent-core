@@ -1,0 +1,123 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+syntax = "proto3";
+
+package marlin.gate.v1;
+
+import "marlin/app/v1/app_server.proto";
+import "marlin/common/v1/common.proto";
+
+// Authoritative approval gate boundary mapping MAR-UI-T14 / MAR-UI-R20 /
+// MAR-UI-R22 to desktop, mobile, and remote clients.
+// Decisions are one-shot claims bound to source turn, call/gate ID, and
+// runtime policy. No client presentation event can forge a receipt.
+service ApprovalGateService {
+  rpc ListPendingGates(ListPendingGatesRequest) returns (ListPendingGatesResponse);
+  rpc WatchPendingGates(WatchPendingGatesRequest) returns (stream WatchPendingGatesResponse);
+  rpc SubmitToolReviewDecision(SubmitToolReviewDecisionRequest) returns (SubmitToolReviewDecisionResponse);
+  rpc SubmitGraphHumanDecision(SubmitGraphHumanDecisionRequest) returns (SubmitGraphHumanDecisionResponse);
+  rpc GetGateReceipt(GetGateReceiptRequest) returns (GetGateReceiptResponse);
+}
+
+enum GateKind {
+  GATE_KIND_UNSPECIFIED = 0;
+  GATE_KIND_MODEL_TOOL_REVIEW = 1;
+  GATE_KIND_GRAPH_HUMAN_GATE = 2;
+  GATE_KIND_DEVICE_CAPABILITY = 3;
+}
+
+// Mirrors crates/marlin-agent-ui/src/model/commands.rs::UiToolReviewDecision.
+enum ToolReviewDecision {
+  TOOL_REVIEW_DECISION_UNSPECIFIED = 0;
+  TOOL_REVIEW_DECISION_APPROVE_ONCE = 1;
+  TOOL_REVIEW_DECISION_REJECT = 2;
+}
+
+// Mirrors marlin_agent_protocol::HumanDecision for suspended graph runs.
+enum GraphHumanDecision {
+  GRAPH_HUMAN_DECISION_UNSPECIFIED = 0;
+  GRAPH_HUMAN_DECISION_APPROVE = 1;
+  GRAPH_HUMAN_DECISION_REJECT = 2;
+  GRAPH_HUMAN_DECISION_ASK_QUESTION = 3;
+  GRAPH_HUMAN_DECISION_REQUEST_PATCH = 4;
+}
+
+message GateChoicePresentation {
+  string selection_id = 1;
+  string label = 2;
+  string description = 3;
+}
+
+message PendingGate {
+  string gate_id = 1;
+  GateKind kind = 2;
+  marlin.app.v1.SessionTurnRef turn = 3;
+  optional string call_id = 4;
+  string tool_or_node_name = 5;
+  string prompt = 6;
+  string details_heading = 7;
+  repeated GateChoicePresentation choices = 8;
+  optional marlin.app.v1.ToolCard card = 9;
+  uint64 created_at_unix_ms = 10;
+  optional uint64 expires_at_unix_ms = 11;
+}
+
+message ListPendingGatesRequest {
+  optional string session_id = 1;
+}
+
+message ListPendingGatesResponse {
+  repeated PendingGate gates = 1;
+}
+
+message WatchPendingGatesRequest {
+  optional string session_id = 1;
+}
+
+message SubmitToolReviewDecisionRequest {
+  marlin.app.v1.SessionTurnRef turn = 1;
+  string gate_id = 2;
+  string call_id = 3;
+  ToolReviewDecision decision = 4;
+  // Client-generated idempotency key (1-128 ASCII) for safe retries.
+  string idempotency_key = 5;
+  optional string rationale = 6;
+}
+
+message SubmitGraphHumanDecisionRequest {
+  marlin.app.v1.SessionTurnRef turn = 1;
+  string gate_id = 2;
+  GraphHumanDecision decision = 3;
+  string idempotency_key = 4;
+  optional string note = 5;
+}
+
+message GetGateReceiptRequest {
+  string gate_id = 1;
+}
+
+message GateDecisionReceipt {
+  string gate_id = 1;
+  GateKind kind = 2;
+  bool claimed = 3;
+  optional marlin.common.v1.ReceiptRef receipt = 4;
+  optional marlin.common.v1.TypedDenial denial = 5;
+}
+
+message WatchPendingGatesResponse {
+  PendingGate gate = 1;
+}
+
+message SubmitToolReviewDecisionResponse {
+  GateDecisionReceipt receipt = 1;
+}
+
+message SubmitGraphHumanDecisionResponse {
+  GateDecisionReceipt receipt = 1;
+}
+
+message GetGateReceiptResponse {
+  GateDecisionReceipt receipt = 1;
+}

@@ -1,0 +1,151 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+syntax = "proto3";
+
+package marlin.device.v1;
+
+import "marlin/common/v1/common.proto";
+
+// Reverse native-protocol bridge connecting platform-specific MyGo native
+// modules (iOS Swift PhotoKit/Contacts/AppIntents, Android Kotlin MediaStore/
+// Intents, Desktop OS APIs) into Marlin's Rust capability catalog and Scheme
+// Target Profile Overlays.
+service DeviceBridgeService {
+  rpc RegisterDeviceNode(RegisterDeviceNodeRequest) returns (RegisterDeviceNodeResponse);
+  // Bidirectional stream: client advertises OS-authorized capabilities and
+  // executes host-approved invocations carrying Rust-issued gate receipts.
+  rpc OpenDeviceChannel(stream OpenDeviceChannelRequest) returns (stream OpenDeviceChannelResponse);
+  // Push proactive user captures (e.g. iOS Back-Tap screenshot AppIntent,
+  // Share Extension queue, desktop clipboard) into an authorized Session.
+  rpc IngestCapture(IngestCaptureRequest) returns (IngestCaptureResponse);
+  rpc UploadArtifact(stream UploadArtifactRequest) returns (UploadArtifactResponse);
+  rpc DownloadArtifact(DownloadArtifactRequest) returns (stream DownloadArtifactResponse);
+}
+
+enum OsPermissionState {
+  OS_PERMISSION_STATE_UNSPECIFIED = 0;
+  OS_PERMISSION_STATE_GRANTED = 1;
+  OS_PERMISSION_STATE_LIMITED = 2;
+  OS_PERMISSION_STATE_PROMPT = 3;
+  OS_PERMISSION_STATE_DENIED = 4;
+  OS_PERMISSION_STATE_UNSUPPORTED = 5;
+}
+
+message DeviceCapabilityDescriptor {
+  // Dot-separated semantic ID, e.g. "ios.photos.recent", "android.intent.share".
+  string capability_id = 1;
+  // Coarse protocol family: "photos", "pim", "capture", "actions", "files".
+  string protocol_family = 2;
+  OsPermissionState permission = 3;
+  string input_schema_id = 4;
+  string output_schema_id = 5;
+  bool read_only = 6;
+}
+
+message RegisterDeviceNodeRequest {
+  string device_id = 1;
+  string display_name = 2;
+  marlin.common.v1.TargetKind target_kind = 3;
+  string os_version = 4;
+  string app_version = 5;
+  repeated DeviceCapabilityDescriptor capabilities = 6;
+}
+
+message RegisterDeviceNodeResponse {
+  string lease_id = 1;
+  uint64 lease_ttl_ms = 2;
+  // Scheme profile overlay selected by the host for this target.
+  string active_profile_overlay = 3;
+}
+
+message OpenDeviceChannelRequest {
+  oneof frame {
+    DeviceCapabilityUpdate capability_update = 1;
+    DeviceInvocationResult invocation_result = 2;
+    DeviceHeartbeat heartbeat = 3;
+  }
+}
+
+message OpenDeviceChannelResponse {
+  oneof frame {
+    DeviceInvocationRequest invocation_request = 1;
+    DeviceInvocationCancel invocation_cancel = 2;
+    DeviceHeartbeat heartbeat = 3;
+  }
+}
+
+message DeviceCapabilityUpdate {
+  string lease_id = 1;
+  repeated DeviceCapabilityDescriptor capabilities = 2;
+}
+
+message DeviceInvocationRequest {
+  string invocation_id = 1;
+  string session_id = 2;
+  string capability_id = 3;
+  // Mandatory when the Scheme governance policy requires human approval.
+  optional marlin.common.v1.ReceiptRef gate_receipt = 4;
+  bytes args_json = 5;
+  uint32 timeout_ms = 6;
+}
+
+message DeviceInvocationCancel {
+  string invocation_id = 1;
+  string reason = 2;
+}
+
+message DeviceInvocationResult {
+  string invocation_id = 1;
+  bool ok = 2;
+  bytes result_json = 3;
+  repeated marlin.common.v1.ArtifactRef artifacts = 4;
+  optional marlin.common.v1.TypedDenial denial = 5;
+}
+
+message DeviceHeartbeat {
+  uint64 unix_ms = 1;
+}
+
+message IngestCaptureRequest {
+  string session_id = 1;
+  string device_id = 2;
+  // E.g. "ios.app-intent.screenshot", "ios.share-extension", "macos.clipboard".
+  string source_channel = 3;
+  optional string text = 4;
+  optional string on_device_ocr_text = 5;
+  repeated marlin.common.v1.ArtifactRef attachments = 6;
+  map<string, string> metadata = 7;
+  string idempotency_key = 8;
+}
+
+message IngestCaptureResponse {
+  bool accepted = 1;
+  optional string capture_id = 2;
+  optional marlin.common.v1.ReceiptRef receipt = 3;
+  optional marlin.common.v1.TypedDenial denial = 4;
+}
+
+message UploadArtifactRequest {
+  string mime_type = 1;
+  uint64 offset = 2;
+  bytes data = 3;
+  bool eof = 4;
+}
+
+message UploadArtifactResponse {
+  marlin.common.v1.ArtifactRef artifact = 1;
+}
+
+message DownloadArtifactRequest {
+  string artifact_id = 1;
+  uint64 offset = 2;
+  uint64 max_bytes = 3;
+}
+
+message DownloadArtifactResponse {
+  uint64 offset = 1;
+  bytes data = 2;
+  bool eof = 3;
+}

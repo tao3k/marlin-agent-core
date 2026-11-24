@@ -77,6 +77,10 @@ impl TryFrom<String> for PluginVersion {
 pub struct BundleDigest([u8; 32]);
 
 impl BundleDigest {
+    pub(super) fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
@@ -210,6 +214,10 @@ pub struct ReleaseTrust(BTreeMap<PublisherId, [u8; 32]>);
 impl ReleaseTrust {
     pub fn new(keys: BTreeMap<PublisherId, [u8; 32]>) -> Self {
         Self(keys)
+    }
+
+    pub(super) fn key_for(&self, publisher: &PublisherId) -> Option<&[u8; 32]> {
+        self.0.get(publisher)
     }
 
     pub fn verify(&self, release: SignedRelease<'_>) -> Result<VerifiedRelease, PluginDenial> {

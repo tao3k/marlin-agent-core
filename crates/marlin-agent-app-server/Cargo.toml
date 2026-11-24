@@ -27,6 +27,7 @@ grpc = [
     "tonic/router",
     "tonic/server",
 ]
+ui-grpc = ["grpc"]
 
 [dependencies]
 async-stream = { version = "0.3.6", optional = true }
@@ -56,3 +57,13 @@ path = "tests/integration/grpc.rs"
 [[test]]
 name = "session"
 path = "tests/integration/session/main.rs"
+
+[[test]]
+name = "ui_grpc"
+path = "tests/integration/ui_grpc.rs"
+required-features = ["ui-grpc"]
+
+[[example]]
+name = "mygo_bridge_server"
+path = "examples/mygo_bridge_server.rs"
+required-features = ["ui-grpc"]

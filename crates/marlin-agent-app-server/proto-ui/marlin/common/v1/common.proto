@@ -1,0 +1,74 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+syntax = "proto3";
+
+package marlin.common.v1;
+
+// Physical or remote runtime target executing a Marlin host or client shell.
+enum TargetKind {
+  TARGET_KIND_UNSPECIFIED = 0;
+  TARGET_KIND_DESKTOP_MACOS = 1;
+  TARGET_KIND_DESKTOP_LINUX = 2;
+  TARGET_KIND_DESKTOP_WINDOWS = 3;
+  TARGET_KIND_MOBILE_IOS = 4;
+  TARGET_KIND_MOBILE_ANDROID = 5;
+  TARGET_KIND_REMOTE_HEADLESS = 6;
+}
+
+// Content-addressed reference for payloads that exceed inline event budgets
+// (screenshots, large diffs, logs, exported Org documents).
+message ArtifactRef {
+  string artifact_id = 1;
+  // Exact 32-byte SHA-256 digest of the immutable payload bytes.
+  bytes sha256 = 2;
+  string mime_type = 3;
+  uint64 byte_size = 4;
+}
+
+// Immutable proof reference minted exclusively by the Rust authority layer.
+message ReceiptRef {
+  string receipt_id = 1;
+  string owner_domain = 2;
+  bytes digest_sha256 = 3;
+  uint64 committed_at_unix_ms = 4;
+}
+
+enum DenialCode {
+  DENIAL_CODE_UNSPECIFIED = 0;
+  DENIAL_CODE_UNAUTHORIZED = 1;
+  DENIAL_CODE_SESSION_BUSY = 2;
+  DENIAL_CODE_SESSION_UNRESOLVED = 3;
+  DENIAL_CODE_TOOL_CONTINUATION_PENDING = 4;
+  DENIAL_CODE_STALE_ORDINAL = 5;
+  DENIAL_CODE_CAPABILITY_NOT_GRANTED = 6;
+  DENIAL_CODE_INVALID_SIGNATURE = 7;
+  DENIAL_CODE_INVALID_DECLARATION = 8;
+  DENIAL_CODE_UNSUPPORTED_CONTRACT = 9;
+  DENIAL_CODE_BUDGET_EXCEEDED = 10;
+  DENIAL_CODE_STALE_GENERATION = 11;
+  DENIAL_CODE_OS_PERMISSION_DENIED = 12;
+  DENIAL_CODE_NOT_FOUND = 13;
+}
+
+// Structured refusal surfaced across all services without leaking internals.
+message TypedDenial {
+  DenialCode code = 1;
+  string message = 2;
+  optional string owner_id = 3;
+  map<string, string> details = 4;
+}
+
+// Bounded keyset pagination request; cursors are opaque server tokens.
+message CursorPageRequest {
+  optional string after_cursor = 1;
+  uint32 max_items = 2;
+  uint32 max_bytes = 3;
+}
+
+message CursorPageInfo {
+  optional string next_cursor = 1;
+  bool has_more = 2;
+  uint32 returned_items = 3;
+}

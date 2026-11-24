@@ -15,3 +15,9 @@ pub use session::{SessionBinding, SessionOpen};
 
 #[cfg(feature = "client")]
 pub mod v1;
+
+#[cfg(feature = "ui-grpc")]
+pub mod wire;
+
+#[cfg(feature = "ui-grpc")]
+pub mod ui_grpc;

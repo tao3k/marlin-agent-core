@@ -1,0 +1,128 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+syntax = "proto3";
+
+package marlin.projection.v1;
+
+import "marlin/common/v1/common.proto";
+
+// Read-only structured projections over Marlin's Org work plane, Graph-Loop
+// topology, Workspace Git status/diff, and Managed Processes.
+// Aligns with crates/marlin-agent-protocol/src/project_runtime/query.rs.
+service ProjectionQueryService {
+  rpc QueryProjectGraph(QueryProjectGraphRequest) returns (QueryProjectGraphResponse);
+  rpc WatchWorkspaceDiff(WatchWorkspaceDiffRequest) returns (stream WatchWorkspaceDiffResponse);
+  rpc WatchManagedProcesses(WatchManagedProcessesRequest) returns (stream WatchManagedProcessesResponse);
+  rpc WatchGraphTrajectory(WatchGraphTrajectoryRequest) returns (stream WatchGraphTrajectoryResponse);
+}
+
+message WatchWorkspaceDiffResponse {
+  WorkspaceDiffSnapshot snapshot = 1;
+}
+
+message WatchManagedProcessesResponse {
+  ManagedProcessSnapshot snapshot = 1;
+}
+
+message WatchGraphTrajectoryResponse {
+  GraphTrajectoryEvent event = 1;
+}
+
+enum GraphVisibleSurface {
+  GRAPH_VISIBLE_SURFACE_UNSPECIFIED = 0;
+  GRAPH_VISIBLE_SURFACE_WORKSPACE = 1;
+  GRAPH_VISIBLE_SURFACE_MEMORY = 2;
+  GRAPH_VISIBLE_SURFACE_TOOLS = 3;
+  GRAPH_VISIBLE_SURFACE_SESSIONS = 4;
+  GRAPH_VISIBLE_SURFACE_CONTENT = 5;
+  GRAPH_VISIBLE_SURFACE_TOPOLOGY = 6;
+  GRAPH_VISIBLE_SURFACE_EVIDENCE = 7;
+  GRAPH_VISIBLE_SURFACE_FAILURES = 8;
+}
+
+enum SecretVisibility {
+  SECRET_VISIBILITY_UNSPECIFIED = 0;
+  SECRET_VISIBILITY_DENIED = 1;
+  SECRET_VISIBILITY_ALLOWED = 2;
+}
+
+message QueryProjectGraphRequest {
+  string project_id = 1;
+  optional string session_id = 2;
+  repeated GraphVisibleSurface surfaces = 3;
+  SecretVisibility secret_visibility = 4;
+  string query = 5;
+  marlin.common.v1.CursorPageRequest page = 6;
+}
+
+message GraphRecordView {
+  string record_id = 1;
+  GraphVisibleSurface surface = 2;
+  string kind = 3;
+  string title = 4;
+  string summary = 5;
+  optional string source_path = 6;
+  optional uint32 start_line = 7;
+  optional uint32 end_line = 8;
+  map<string, string> facets = 9;
+}
+
+message QueryProjectGraphResponse {
+  repeated GraphRecordView records = 1;
+  marlin.common.v1.CursorPageInfo page_info = 2;
+}
+
+message WatchWorkspaceDiffRequest {
+  string project_id = 1;
+  optional string worktree_id = 2;
+}
+
+message FileDiffEntry {
+  string path = 1;
+  string status = 2; // "M", "A", "D", "R", "?"
+  uint32 added_lines = 3;
+  uint32 removed_lines = 4;
+  optional marlin.common.v1.ArtifactRef diff_artifact = 5;
+}
+
+message WorkspaceDiffSnapshot {
+  uint64 revision = 1;
+  string branch = 2;
+  repeated FileDiffEntry files = 3;
+}
+
+message WatchManagedProcessesRequest {
+  string session_id = 1;
+}
+
+message ManagedProcessView {
+  string process_id = 1;
+  string command = 2;
+  string state = 3; // "running", "exited", "killed", "timed_out"
+  optional int32 exit_code = 4;
+  uint64 started_at_unix_ms = 5;
+  optional marlin.common.v1.ReceiptRef shutdown_receipt = 6;
+}
+
+message ManagedProcessSnapshot {
+  uint64 revision = 1;
+  repeated ManagedProcessView processes = 2;
+}
+
+message WatchGraphTrajectoryRequest {
+  string session_id = 1;
+  optional string run_id = 2;
+  optional string after_event_id = 3;
+}
+
+message GraphTrajectoryEvent {
+  string event_id = 1;
+  string run_id = 2;
+  string node_id = 3;
+  string node_kind = 4;
+  string status = 5;
+  optional marlin.common.v1.ReceiptRef node_receipt = 6;
+  map<string, string> metadata = 7;
+}

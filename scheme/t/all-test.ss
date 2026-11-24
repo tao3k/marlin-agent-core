@@ -10,6 +10,7 @@
         "brief-to-draft-options-test"
         "envrc-test"
         "ui-workbench-test"
+        "ui-mygo-test"
         "task-workbench-tabs-test"
         "context-org-contract-test"
         "context-org-boundary-test"
