@@ -7,11 +7,13 @@
 ;;; Aggregated Gerbil runtime test entrypoint.
 
 (import "yuanxu-policy-test"
+        "yuanxu-design165-integration-test"
         "brief-to-draft-options-test"
         "envrc-test"
         "ui-workbench-test"
         "ui-mygo-test"
         "task-workbench-tabs-test"
+        "end-to-end-task-workflow-test"
         "context-org-contract-test"
         "context-org-boundary-test"
         "context-progressive-dispatch-test"

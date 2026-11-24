@@ -6,7 +6,7 @@
 
 (import (only-in :clan/poo/object .cc .o)
         (only-in :clan/poo/type Type.)
-        (only-in :clan/poo/object-contract ObjectContract.))
+        (only-in :clan/poo/types/object-contract ObjectContract.))
 
 (export PolicyScopeContract)
 

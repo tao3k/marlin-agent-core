@@ -8,6 +8,10 @@
 ;;; `:marlin-agent-core/interface`.
 
 (import (only-in :clan/poo/object .def .o .ref .slot? object?)
+        (only-in "./convergence.ss"
+                 marlin-design165-catalog
+                 marlin-converge-assembly
+                 marlin-converge-runtime-overlay)
         (only-in :marlin-agent-core/interface
                  LabFunflow LabDurableWork LabContextDurable
                  DurableWorkPolicy. RepoNode. WorktreeNode. TaskNode.
@@ -15,6 +19,9 @@
 
 (export MarlinRepo.
         MarlinWorktree.
+        marlin-design165-catalog
+        marlin-converge-assembly
+        marlin-converge-runtime-overlay
         marlin-derive-worktree
         marlin-derive-task
         marlin-orchestrate-task
