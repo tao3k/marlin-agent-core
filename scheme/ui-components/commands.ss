@@ -87,7 +87,7 @@
        (memq (cadddr entry)
              '(models model sessions session inspect history workspace context-budget
                runtime open-menu select-profile select-buffer enter-transient
-               kill-process envrc toggle-thinking clear helm deferred))
+               kill-process envrc toggle-thinking clear helm task-tabs deferred))
        (let (value (car (cddddr entry)))
          (if (eq? (cadddr entry) 'deferred)
            (not value)
