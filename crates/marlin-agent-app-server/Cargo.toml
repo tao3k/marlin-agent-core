@@ -28,6 +28,7 @@ grpc = [
     "tonic/server",
 ]
 ui-grpc = ["grpc"]
+turso-host = ["ui-grpc", "marlin-agent-storage/turso"]
 
 [dependencies]
 async-stream = { version = "0.3.6", optional = true }

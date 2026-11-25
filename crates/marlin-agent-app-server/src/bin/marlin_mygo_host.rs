@@ -8,9 +8,13 @@
 //! `MARLIN_BRIDGE_TLS_CERT` + `MARLIN_BRIDGE_TLS_KEY`).
 //!
 //! Set `MARLIN_BRIDGE_REAL_SESSION=1` to co-host the full durable `AppServer`
-//! (`SessionBinding<InMemoryAgentStorage>` + `ConversationJournal` + deterministic
-//! local multi-chunk `ModelStreamingGateway`) alongside `MyGoBridgeHost`'s five
-//! UI, Gate, Plugin, Device, and Projection services on the same HTTP/2 listener.
+//! (`SessionBinding<S>` + `ConversationJournal` + deterministic local
+//! multi-chunk `ModelStreamingGateway`) alongside `MyGoBridgeHost`'s five UI,
+//! Gate, Plugin, Device, and Projection services on the same HTTP/2 listener.
+//!
+//! When built with `--features turso-host`, set `MARLIN_BRIDGE_TURSO_PATH` to
+//! persist sessions, checkpoints, and cancellation receipts to a local Turso
+//! SQLite database that survives full process restarts.
 
 use std::{
     collections::BTreeMap,
@@ -35,7 +39,14 @@ use marlin_agent_runtime::{
     plugin::{PublisherId, ReleaseTrust},
 };
 use marlin_agent_sessions::{AgentSessionContext, ContextVisibility};
-use marlin_agent_storage::{AgentId, InMemoryAgentStorage, ProjectId};
+use marlin_agent_storage::{
+    AgentId, EventId, InMemoryAgentStorage, ProjectId, SessionEventPageRequest, SessionEventRecord,
+    SessionEventStore, StorageError, StoragePageLimit, TurnId,
+};
+#[cfg(feature = "turso-host")]
+use marlin_agent_storage::{
+    TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode, TursoOptimizationProfile,
+};
 use marlin_agent_stream::{
     ModelGatewayEventStream, ModelStreamChunk, ModelStreamEvent, ModelStreamingGateway,
 };
@@ -44,11 +55,18 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{
     Status,
     metadata::MetadataMap,
-    transport::{Identity, Server, ServerTlsConfig},
+    transport::{Identity, Server, ServerTlsConfig, server::Router},
 };
+
+const HOLD_AFTER_CHUNK1_PREFIX: &str = "[hold-after-chunk-1]";
+const ADMISSION_TURN_ID: &str = "app-session";
+const ADMISSION_EVENT_ID: &str = "admitted";
+const ADMISSION_EVENT_KIND: &str = "marlin.mygo.session.admitted.v1";
 
 /// Deterministic local multi-chunk streaming gateway used when
 /// `MARLIN_BRIDGE_REAL_SESSION=1` is enabled without any live external LLM calls.
+/// Prompts prefixed with `[hold-after-chunk-1]` emit chunk 1 durably and then
+/// wait deterministically so callers can exercise authoritative cancellation.
 struct DeterministicLocalGateway {
     chunk_delay: Duration,
 }
@@ -63,6 +81,7 @@ impl ModelStreamingGateway for DeterministicLocalGateway {
             .last()
             .map(|msg| msg.content.clone())
             .unwrap_or_default();
+        let hold_after_first = prompt.starts_with(HOLD_AFTER_CHUNK1_PREFIX);
         let delay = self.chunk_delay;
         Box::pin(async move {
             let chunk1 = "[marlin-core] ".to_owned();
@@ -77,7 +96,9 @@ impl ModelStreamingGateway for DeterministicLocalGateway {
                     tokio::time::sleep(delay).await;
                 }
                 yield ModelStreamEvent::Chunk(ModelStreamChunk::new(1, chunk1));
-                if !delay.is_zero() {
+                if hold_after_first {
+                    tokio::time::sleep(Duration::from_secs(15)).await;
+                } else if !delay.is_zero() {
                     tokio::time::sleep(delay).await;
                 }
                 yield ModelStreamEvent::Chunk(ModelStreamChunk::new(2, chunk2));
@@ -100,6 +121,113 @@ impl ModelStreamingGateway for DeterministicLocalGateway {
             Ok(Box::pin(stream) as ModelGatewayEventStream)
         })
     }
+}
+
+fn build_real_session_router<S>(
+    storage: S,
+    builder: Server,
+    host: MyGoBridgeHost,
+    expected_header: Arc<str>,
+    chunk_delay: Duration,
+) -> Result<Router, Box<dyn std::error::Error>>
+where
+    S: SessionEventStore + Clone + 'static,
+{
+    let project = ProjectId::new("default")?;
+    let agent = AgentId::new("assistant")?;
+    let bindings = Arc::new(Mutex::new(BTreeMap::<String, SessionBinding<S>>::new()));
+    let app_server = AppServer::new(
+        ModelEndpoint::new("openai", "gpt-marlin-local"),
+        Arc::new(DeterministicLocalGateway { chunk_delay }),
+        move |meta| check_bearer(meta, &expected_header),
+    )?
+    .with_session_lookup(move |_metadata, id, mode| {
+        let bindings = Arc::clone(&bindings);
+        let storage = storage.clone();
+        let project = project.clone();
+        let agent = agent.clone();
+        async move {
+            let mut guard = bindings.lock().await;
+            match mode {
+                SessionOpen::Create => {
+                    if guard.contains_key(id.as_str()) {
+                        return Err(Status::already_exists("session already exists"));
+                    }
+                    if guard.len() >= 64 {
+                        return Err(Status::resource_exhausted("host session limit reached"));
+                    }
+                    // Commit a durable admission event so duplicate Create is rejected
+                    // and Existing rehydration works cleanly across full process restarts.
+                    storage
+                        .append_session_event(SessionEventRecord {
+                            project_id: project.clone(),
+                            session_id: id.clone(),
+                            agent_id: agent.clone(),
+                            turn_id: TurnId::new(ADMISSION_TURN_ID)
+                                .map_err(|_| Status::internal("invalid admission turn id"))?,
+                            event_id: EventId::new(ADMISSION_EVENT_ID)
+                                .map_err(|_| Status::internal("invalid admission event id"))?,
+                            event_kind: ADMISSION_EVENT_KIND.to_owned(),
+                            causality_parent_event_id: None,
+                            body: b"admitted".to_vec(),
+                            created_at_unix_ms: 0,
+                        })
+                        .await
+                        .map_err(|error| match error {
+                            StorageError::DuplicateSessionEvent { .. } => {
+                                Status::already_exists("session already exists")
+                            }
+                            _ => Status::internal("failed to persist session admission"),
+                        })?;
+                    let (runtime, _events) = TokioAgentRuntime::from_build_request(
+                        TokioAgentRuntimeBuildRequest::runtime_root(16).with_session(
+                            AgentSessionContext::root(
+                                id.as_str(),
+                                ContextVisibility::default_runtime(),
+                            ),
+                        ),
+                    );
+                    let binding = SessionBinding::new(storage, project, agent, runtime)
+                        .map_err(|_| Status::internal("failed to bind session runtime"))?;
+                    guard.insert(id.as_str().to_owned(), binding.clone());
+                    Ok(binding)
+                }
+                SessionOpen::Existing => {
+                    if let Some(existing) = guard.get(id.as_str()) {
+                        return Ok(existing.clone());
+                    }
+                    // Check durable storage so sessions survive full process restarts.
+                    let page = storage
+                        .list_session_events_page(SessionEventPageRequest::new(
+                            project.clone(),
+                            id.clone(),
+                            StoragePageLimit::new(1).expect("page limit 1 is valid"),
+                        ))
+                        .await
+                        .map_err(|_| Status::internal("failed to query session storage"))?;
+                    if page.items.is_empty() {
+                        return Err(Status::not_found("session not opened"));
+                    }
+                    if guard.len() >= 64 {
+                        return Err(Status::resource_exhausted("host session limit reached"));
+                    }
+                    let (runtime, _events) = TokioAgentRuntime::from_build_request(
+                        TokioAgentRuntimeBuildRequest::runtime_root(16).with_session(
+                            AgentSessionContext::root(
+                                id.as_str(),
+                                ContextVisibility::default_runtime(),
+                            ),
+                        ),
+                    );
+                    let binding = SessionBinding::new(storage, project, agent, runtime)
+                        .map_err(|_| Status::internal("failed to rehydrate session runtime"))?;
+                    guard.insert(id.as_str().to_owned(), binding.clone());
+                    Ok(binding)
+                }
+            }
+        }
+    });
+    Ok(app_server.into_ui_router_on(builder, host))
 }
 
 fn decode_hex_32(hex: &str) -> Result<[u8; 32], String> {
@@ -202,57 +330,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(5);
-        let storage = InMemoryAgentStorage::default();
-        let project = ProjectId::new("default")?;
-        let agent = AgentId::new("assistant")?;
-        let bindings = Arc::new(Mutex::new(BTreeMap::<
-            String,
-            SessionBinding<InMemoryAgentStorage>,
-        >::new()));
-        let app_header = Arc::clone(&expected_header);
-        let app_server = AppServer::new(
-            ModelEndpoint::new("openai", "gpt-marlin-local"),
-            Arc::new(DeterministicLocalGateway {
-                chunk_delay: Duration::from_millis(delay_ms),
-            }),
-            move |meta| check_bearer(meta, &app_header),
-        )?
-        .with_session_lookup(move |_metadata, id, mode| {
-            let bindings = Arc::clone(&bindings);
-            let storage = storage.clone();
-            let project = project.clone();
-            let agent = agent.clone();
-            async move {
-                let mut guard = bindings.lock().await;
-                match mode {
-                    SessionOpen::Create => {
-                        if guard.contains_key(id.as_str()) {
-                            return Err(Status::already_exists("session already exists"));
-                        }
-                        if guard.len() >= 64 {
-                            return Err(Status::resource_exhausted("host session limit reached"));
-                        }
-                        let (runtime, _events) = TokioAgentRuntime::from_build_request(
-                            TokioAgentRuntimeBuildRequest::runtime_root(16).with_session(
-                                AgentSessionContext::root(
-                                    id.as_str(),
-                                    ContextVisibility::default_runtime(),
-                                ),
-                            ),
-                        );
-                        let binding = SessionBinding::new(storage, project, agent, runtime)
-                            .map_err(|_| Status::internal("failed to bind session runtime"))?;
-                        guard.insert(id.as_str().to_owned(), binding.clone());
-                        Ok(binding)
-                    }
-                    SessionOpen::Existing => guard
-                        .get(id.as_str())
-                        .cloned()
-                        .ok_or_else(|| Status::not_found("session not opened")),
-                }
+        let chunk_delay = Duration::from_millis(delay_ms);
+        let turso_path = env::var("MARLIN_BRIDGE_TURSO_PATH")
+            .ok()
+            .map(|p| p.trim().to_owned())
+            .filter(|p| !p.is_empty());
+
+        if let Some(path) = turso_path {
+            #[cfg(feature = "turso-host")]
+            {
+                let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
+                    path: std::path::PathBuf::from(path),
+                    optimization_profile: TursoOptimizationProfile::AsyncIoOnlyCompatibility,
+                    batch_transaction_mode: TursoBatchTransactionMode::Immediate,
+                })
+                .await?;
+                build_real_session_router(storage, builder, host, expected_header, chunk_delay)?
             }
-        });
-        app_server.into_ui_router_on(builder, host)
+            #[cfg(not(feature = "turso-host"))]
+            {
+                let _ = path;
+                return Err(
+                    "MARLIN_BRIDGE_TURSO_PATH requires building marlin-mygo-host with --features turso-host"
+                        .into(),
+                );
+            }
+        } else {
+            let storage = InMemoryAgentStorage::default();
+            build_real_session_router(storage, builder, host, expected_header, chunk_delay)?
+        }
     } else {
         host.attach_ui_services(builder.add_service(host.app_service()))
     };
