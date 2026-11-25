@@ -30,6 +30,9 @@ runs:
         # Orgize belongs to Lab's Scheme dependency graph, never Cargo's graph.
         orgize_repo=github.com/tao3k/orgize
         orgize_checkout="$GERBIL_PATH/pkg/$orgize_repo"
+        yuanxu_repo=github.com/tao3k/gebril-yuanxu
+        yuanxu_revision=$(sed -nE 's/.*"github\.com\/tao3k\/gebril-yuanxu@([0-9a-f]{40})".*/\1/p' scheme/gerbil.pkg)
+        [[ "$yuanxu_revision" =~ ^[0-9a-f]{40}$ ]]
         lab_repo=github.com/tao3k/agentic-ai-lab
         lab_revision=$(sed -nE 's/.*"github\.com\/tao3k\/agentic-ai-lab@([0-9a-f]{40})".*/\1/p' scheme/gerbil.pkg)
         [[ "$lab_revision" =~ ^[0-9a-f]{40}$ ]]
@@ -47,6 +50,7 @@ runs:
               (pkg-update (getenv "GERBIL_PACKAGE_REVISION"))'
           )
         }
+        seed_revision "$yuanxu_repo" "$yuanxu_revision"
         seed_revision "$lab_repo" "$lab_revision"
         git -C "$GERBIL_PATH/pkg/$lab_repo" submodule update --init --checkout core
         orgize_revision=$(git -C "$GERBIL_PATH/pkg/$lab_repo" show "$lab_revision:gerbil.pkg" |
@@ -238,6 +242,7 @@ runs:
           fi
           exit "$status"
         }
+        test "$(git -C "$GERBIL_PATH/pkg/$yuanxu_repo" rev-parse HEAD)" = "$yuanxu_revision"
         test "$(git -C "$orgize_checkout" rev-parse HEAD)" = "$orgize_revision"
         test "$(git -C "$GERBIL_PATH/pkg/$lab_repo" rev-parse HEAD)" = "$lab_revision"
     - name: Save installed Scheme dependencies
