@@ -11,14 +11,19 @@
 (import (only-in :clan/poo/object .get .o .ref .slot? object?)
         (rename-in (only-in :tao3k/agentic-ai-lab/modules/graph-engine/interface GraphEngine)
                    (GraphEngine LabGraphEngine))
+        (only-in :marlin-agent-core/context-system/convergence
+                 marlin-converge-assembly
+                 marlin-converge-runtime-overlay)
         (only-in :marlin-agent-core/interface LabDurableJournal))
 
 (export marlin-graph-engine-project-workbench-ui
         marlin-graph-engine-dispatch->continuation
         marlin-graph-engine-execute-turso-dispatch!
+        marlin-graph-engine-assemble-governed-context
         marlin-graph-engine-project-dispatch-vector
         marlin-graph-engine-reconcile-receipt-vector
-        marlin-graph-engine-project-workbench-tabs-vector)
+        marlin-graph-engine-project-workbench-tabs-vector
+        marlin-graph-engine-project-governed-context-vector)
 
 (def +marlin-projection-package+ "marlin-agent-core")
 (def +marlin-projection-object-system+ "gerbil-poo")
@@ -365,3 +370,150 @@
     (vector +marlin-graph-engine-abi-version+
             focused
             (list->vector (cons pinned-index (append active-tabs peek-tabs))))))
+
+(def +allowed-disclosure-depths+ '(L0 L1 L2 L3))
+(def +allowed-detour-modes+ '(mainline blocker-active side-quest-active))
+
+(def (normalize-disclosure-depth v)
+  (cond
+   ((memq v '(L0 l0 0)) 'L0)
+   ((memq v '(L1 l1 1)) 'L1)
+   ((memq v '(L2 l2 2)) 'L2)
+   ((memq v '(L3 l3 3)) 'L3)
+   ((string? v)
+    (let ((u (string-upcase v)))
+      (cond ((string=? u "L0") 'L0)
+            ((string=? u "L1") 'L1)
+            ((string=? u "L2") 'L2)
+            ((string=? u "L3") 'L3)
+            (else v))))
+   (else v)))
+
+(def (disclosure-depth-rank depth)
+  (case depth
+    ((L0) 0)
+    ((L1) 1)
+    ((L2) 2)
+    ((L3) 3)
+    (else -1)))
+
+;;; Compose Lab `GraphEngine`'s governed `ai-agentic-context` trunk assembly
+;;; (Two-Zone KV-Prefix digest, MINJA quarantine, L3 active-defeater floor,
+;;; Nono Lethal-Trifecta sandbox gate, inert Cedar handoff) with Marlin's
+;;; Design 165 runtime detour overlay (`blocker-active` -> `auto-archive: #f`),
+;;; returning a pure POO governed-context bundle + ready 13-slot C-ABI vector.
+(def (marlin-graph-engine-assemble-governed-context
+      task-id
+      trunk-id
+      apex-obligation-id
+      obligation-graph
+      capability-envelope
+      org-text
+      frozen-entries: (frozen-entries '())
+      memory-candidates: (memory-candidates '())
+      cedar-handoff: (cedar-handoff #f)
+      sandbox-admission: (sandbox-admission #f)
+      detour-mode: (detour-mode 'mainline))
+  (let* ((lab-exports (.get LabGraphEngine core exports))
+         (make-governed-trunk (.ref lab-exports 'make-governed-context-trunk))
+         (bundle (make-governed-trunk
+                  trunk-id
+                  apex-obligation-id
+                  obligation-graph
+                  capability-envelope
+                  org-text
+                  frozen-entries: frozen-entries
+                  memory-candidates: memory-candidates
+                  cedar-handoff: cedar-handoff
+                  sandbox-admission: sandbox-admission))
+         (assembly (marlin-converge-assembly '(env durable ui-workbench context-system)))
+         (overlay (marlin-converge-runtime-overlay
+                   assembly
+                   (list (cons 'durable (.o bind-these: #f detour-state: detour-mode)))))
+         (ctx-resolved (.ref (.ref overlay 'effective-configs) 'context-system))
+         (auto-archive? (and (object? ctx-resolved)
+                             (.slot? ctx-resolved 'auto-archive)
+                             (.ref ctx-resolved 'auto-archive)))
+         (cut-val (.ref obligation-graph 'cut))
+         (kv-dig (.ref bundle 'kv-prefix-digest))
+         (depth (normalize-disclosure-depth (.ref bundle 'effective-disclosure-depth)))
+         (quarantined (let ((q (.ref bundle 'quarantined-excluded)))
+                        (cond ((fixnum? q) q)
+                              ((list? q) (length q))
+                              (else 0))))
+         (has-defeater? (let loop ((obs (.ref obligation-graph 'obligations)))
+                          (and (pair? obs)
+                               (or (pair? (.ref (car obs) 'active-defeaters))
+                                   (loop (cdr obs))))))
+         (sandbox-ok? (or (not sandbox-admission) (.ref sandbox-admission 'admitted?)))
+         (cedar-ok? (or (not cedar-handoff) (.ref cedar-handoff 'policy-valid?)))
+         (abi-vector (marlin-graph-engine-project-governed-context-vector
+                      (vector task-id cut-val kv-dig depth has-defeater?
+                              quarantined sandbox-ok? cedar-ok?
+                              detour-mode auto-archive?))))
+    (.o bind-these: #f
+        kind: 'marlin.graph-engine.governed-context.v1
+        admitted?: (and (.ref bundle 'admitted?) (vector-ref abi-vector 1))
+        reason: (or (vector-ref abi-vector 12) (.ref bundle 'reason))
+        trunk-bundle: bundle
+        design165-overlay: overlay
+        auto-archive-enabled?: auto-archive?
+        abi-vector: abi-vector
+        runtime-executed?: #f)))
+
+;;; Project a 10-slot governed-context request vector:
+;;;   #(task-id context-cut kv-prefix-digest disclosure-depth has-active-defeater?
+;;;     quarantined-count sandbox-admitted? cedar-handoff-valid? detour-mode auto-archive?)
+;;; into a 13-slot rooted ABI vector:
+;;;   #(version admitted? task-id context-cut kv-prefix-digest disclosure-depth
+;;;     has-active-defeater? quarantined-count sandbox-admitted? cedar-handoff-valid?
+;;;     detour-mode auto-archive? reason)
+(def (marlin-graph-engine-project-governed-context-vector input)
+  (if (not (and (vector? input) (= (vector-length input) 10)))
+    (vector +marlin-graph-engine-abi-version+ #f "" 0 "" 'L0 #f 0 #f #f 'mainline #f
+            "invalid-governed-context-vector")
+    (let ((task-id (vector-ref input 0))
+          (context-cut (vector-ref input 1))
+          (kv-digest (vector-ref input 2))
+          (depth (vector-ref input 3))
+          (has-defeater? (vector-ref input 4))
+          (quarantined (vector-ref input 5))
+          (sandbox-ok? (vector-ref input 6))
+          (cedar-ok? (vector-ref input 7))
+          (detour-mode (vector-ref input 8))
+          (auto-archive? (vector-ref input 9)))
+      (let ((reason
+             (cond
+              ((not (non-empty-string? task-id)) "empty-task-id")
+              ((not (and (fixnum? context-cut) (> context-cut 0))) "invalid-context-cut")
+              ((not (non-empty-string? kv-digest)) "empty-kv-prefix-digest")
+              ((not (memq depth +allowed-disclosure-depths+)) "unsupported-disclosure-depth")
+              ((not (boolean? has-defeater?)) "invalid-defeater-flag")
+              ((not (and (fixnum? quarantined) (>= quarantined 0))) "invalid-quarantined-count")
+              ((not (boolean? sandbox-ok?)) "invalid-sandbox-flag")
+              ((not (boolean? cedar-ok?)) "invalid-cedar-flag")
+              ((not (memq detour-mode +allowed-detour-modes+)) "unsupported-detour-mode")
+              ((not (boolean? auto-archive?)) "invalid-auto-archive-flag")
+              ((and has-defeater? (< (disclosure-depth-rank depth) 3))
+               "active-defeater-requires-l3-disclosure")
+              ((not sandbox-ok?) "sandbox-lethal-trifecta-denied")
+              ((not cedar-ok?) "invalid-cedar-policy-handoff")
+              ((and (eq? detour-mode 'blocker-active) auto-archive?)
+               "blocker-detour-must-disable-auto-archive")
+              (else #f))))
+        (if reason
+          (vector +marlin-graph-engine-abi-version+ #f
+                  (if (string? task-id) task-id "")
+                  (if (fixnum? context-cut) context-cut 0)
+                  (if (string? kv-digest) kv-digest "")
+                  (if (symbol? depth) depth 'L0)
+                  (and (boolean? has-defeater?) has-defeater?)
+                  (if (fixnum? quarantined) quarantined 0)
+                  (and (boolean? sandbox-ok?) sandbox-ok?)
+                  (and (boolean? cedar-ok?) cedar-ok?)
+                  (if (symbol? detour-mode) detour-mode 'mainline)
+                  (and (boolean? auto-archive?) auto-archive?)
+                  reason)
+          (vector +marlin-graph-engine-abi-version+ #t
+                  task-id context-cut kv-digest depth has-defeater?
+                  quarantined sandbox-ok? cedar-ok? detour-mode auto-archive? #f))))))

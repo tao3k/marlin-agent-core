@@ -28,4 +28,5 @@
         "graph-loop-continuation-abi-projection-test"
         "graph-engine-test"
         "graph-engine-c-abi-test"
+        "graph-engine-governed-context-test"
         "agent-policy-routing-abi-projection-test")

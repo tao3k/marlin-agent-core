@@ -126,14 +126,16 @@ ui-helm-model-gate:
   quint run dev/quint/ui-helm.qnt --main=uiHelmEpochSafety --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
   @for control in uiHelmEpochSafety:staleResultOverwriteMutation uiHelmEpochSafety:applyWhileClosedMutation uiHelmEpochSafety:danglingMarkMutation; do result=0; output=$(quint run dev/quint/ui-helm.qnt --main="${control%:*}" --step="${control#*:}" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
 
-# MAR-GRAPH: Session-free TaskActor fencing-epoch anti-split-brain, C4 steering convergence, and Workbench tab invariants.
+# MAR-GRAPH: Session-free TaskActor fencing-epoch anti-split-brain, C4 steering convergence, governed context/detour confinement, and Workbench tab invariants.
 graph-engine-model-gate:
   quint typecheck dev/quint/graph-engine.qnt
   quint test dev/quint/graph-engine.qnt --main=graphEngineTaskActorSafety
   quint test dev/quint/graph-engine.qnt --main=graphEngineWorkbenchTabSafety
+  quint test dev/quint/graph-engine.qnt --main=graphEngineGovernedContextSafety
   quint run dev/quint/graph-engine.qnt --main=graphEngineTaskActorSafety --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
   quint run dev/quint/graph-engine.qnt --main=graphEngineWorkbenchTabSafety --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
-  @for control in graphEngineTaskActorSafety:staleReceiptAcceptMutation graphEngineTaskActorSafety:prematureJoinAdvanceMutation graphEngineTaskActorSafety:detachedProjectCommitMutation graphEngineTaskActorSafety:postTerminalMutation graphEngineWorkbenchTabSafety:unpinnedIndexMutation graphEngineWorkbenchTabSafety:peekOverlapMutation; do result=0; output=$(quint run dev/quint/graph-engine.qnt --main="${control%:*}" --step="${control#*:}" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
+  quint run dev/quint/graph-engine.qnt --main=graphEngineGovernedContextSafety --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  @for control in graphEngineTaskActorSafety:staleReceiptAcceptMutation graphEngineTaskActorSafety:prematureJoinAdvanceMutation graphEngineTaskActorSafety:detachedProjectCommitMutation graphEngineTaskActorSafety:postTerminalMutation graphEngineWorkbenchTabSafety:unpinnedIndexMutation graphEngineWorkbenchTabSafety:peekOverlapMutation graphEngineGovernedContextSafety:defeaterBelowL3Mutation graphEngineGovernedContextSafety:lethalTrifectaBypassMutation graphEngineGovernedContextSafety:settleDuringBlockerDetourMutation; do result=0; output=$(quint run dev/quint/graph-engine.qnt --main="${control%:*}" --step="${control#*:}" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
 
 # Multi-scale Criterion benchmarks for Marlin converged search engine bridge.
 search-engine-bench:

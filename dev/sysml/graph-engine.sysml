@@ -146,4 +146,12 @@ package MarlinGraphEngine {
                projections always pin `TaskActorIndex` at slot 0 and keep
                read-only peek tabs strictly disjoint from active writable tabs. */
     }
+    requirement <'MAR-GRAPH-R06'> governedContextAndDetourConfinement {
+        doc /* Governed `ai-agentic-context` capsules enforce the L3 disclosure
+               floor under active defeaters, Slice 52 Lethal-Trifecta sandbox
+               admission, Cedar handoff validity, monotonic `context_cut`,
+               Design 165 `blocker-active` auto-archive confinement, and
+               4-exit Scoped Detour re-anchoring across Scheme C-ABI, Runtime,
+               and App Server. */
+    }
 }

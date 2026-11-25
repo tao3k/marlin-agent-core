@@ -11,10 +11,12 @@ use std::future::Future;
 use std::sync::Arc;
 
 use marlin_agent_graph::{
-    AdmittedMarlinDispatch, FencingEpoch, GraphDispatchOperation, GraphDispatchRejection,
-    MarlinDispatchEnvelope, MarlinExecutionReceipt, ReceiptReconciliationDecision,
-    ReceiptReconciliationReason, TaskActorCursor, TaskActorId, TaskActorScopeMode,
-    TaskActorStatus, WorkbenchActiveTaskInput, WorkbenchTabProjection, admit_marlin_dispatch,
+    AdmittedGovernedContext, AdmittedMarlinDispatch, DetourExitKind, DetourMode, DetourNodeId,
+    DetourState, FencingEpoch, GovernedContextCapsule, GovernedContextRejection,
+    GraphDispatchOperation, GraphDispatchRejection, MarlinDispatchEnvelope,
+    MarlinExecutionReceipt, ReceiptReconciliationDecision, ReceiptReconciliationReason,
+    TaskActorCursor, TaskActorId, TaskActorScopeMode, TaskActorStatus, WorkbenchActiveTaskInput,
+    WorkbenchTabProjection, admit_governed_context_capsule, admit_marlin_dispatch,
     project_workbench_tabs, reconcile_marlin_execution_receipt,
 };
 use parking_lot::Mutex;
@@ -29,6 +31,10 @@ pub struct TaskActorRuntimeRecord {
     pub title: String,
     /// Current anti-split-brain cursor (`task_id`, `fencing_epoch`, `status`, `scope_mode`, `pending_steering_branches`).
     pub cursor: TaskActorCursor,
+    /// Latest admitted governed context capsule (`ai-agentic-context` + Design 165), if bound.
+    pub governed_context: Option<AdmittedGovernedContext>,
+    /// Current Scoped Detour state (`Mainline`, `BlockerActive`, or `SideQuestActive`).
+    pub detour_state: DetourState,
 }
 
 /// Snapshot of all Session-free `TaskActor` cursors and the projected Workbench tab strip.
@@ -72,6 +78,28 @@ pub enum TaskActorRuntimeError {
     /// Dispatch failed the typed `marlin-agent-graph` fail-closed admission gate.
     #[error("dispatch gate rejected: {0}")]
     DispatchRejected(#[from] GraphDispatchRejection),
+    /// Governed context capsule failed fail-closed `ai-agentic-context` admission.
+    #[error("governed context rejected: {0}")]
+    GovernedContextRejected(#[from] GovernedContextRejection),
+    /// Governed context cut regressed below a previously admitted cut.
+    #[error("stale context cut for {task_id}: current {current}, received {received}")]
+    StaleContextCut {
+        task_id: TaskActorId,
+        current: u64,
+        received: u64,
+    },
+    /// Attempted to enter an invalid or nested Scoped Detour.
+    #[error("invalid detour transition for {task_id}: {reason}")]
+    InvalidDetourTransition {
+        task_id: TaskActorId,
+        reason: &'static str,
+    },
+    /// Trunk settlement is blocked while a `BlockerActive` Scoped Detour is open.
+    #[error("blocker detour {detour_node_id} blocks settlement for {task_id}")]
+    BlockerDetourActive {
+        task_id: TaskActorId,
+        detour_node_id: DetourNodeId,
+    },
     /// A read-only peek cannot be opened for an actor that is currently an active writable tab.
     #[error("cannot open read-only peek for active task actor: {task_id}")]
     CannotPeekActiveActor { task_id: TaskActorId },
@@ -201,6 +229,8 @@ impl TaskActorRuntimeRegistry {
             TaskActorRuntimeRecord {
                 title,
                 cursor: cursor.clone(),
+                governed_context: None,
+                detour_state: DetourState::Mainline,
             },
         );
         let tabs = guard.project_tabs();
@@ -238,6 +268,18 @@ impl TaskActorRuntimeRegistry {
                 task_id: envelope.task_id.clone(),
                 expected: record.cursor.scope_mode,
                 received: envelope.scope_mode,
+            });
+        }
+        if envelope.operation == GraphDispatchOperation::CommitSettlement
+            && let DetourState::Active {
+                mode: DetourMode::BlockerActive,
+                detour_node_id,
+                ..
+            } = &record.detour_state
+        {
+            return Err(TaskActorRuntimeError::BlockerDetourActive {
+                task_id: envelope.task_id.clone(),
+                detour_node_id: detour_node_id.clone(),
             });
         }
 
@@ -397,6 +439,176 @@ impl TaskActorRuntimeRegistry {
         drop(guard);
         let _ = self.tabs_tx.send(tabs.clone());
         tabs
+    }
+
+    /// Binds a governed `ai-agentic-context` + Design 165 capsule onto a non-terminal actor,
+    /// enforcing L3 active-defeater disclosure floor, Lethal-Trifecta sandbox admission, Cedar
+    /// handoff validity, blocker auto-archive confinement, and monotonic `context_cut`.
+    pub fn bind_governed_context(
+        &self,
+        capsule: GovernedContextCapsule,
+    ) -> Result<AdmittedGovernedContext, TaskActorRuntimeError> {
+        let admitted = admit_governed_context_capsule(capsule)?;
+        let task_id = admitted.capsule().task_id.clone();
+        let mut guard = self.state.lock();
+        let record = guard
+            .actors
+            .get_mut(&task_id)
+            .ok_or_else(|| TaskActorRuntimeError::ActorNotFound {
+                task_id: task_id.clone(),
+            })?;
+        if record.cursor.status.is_terminal() {
+            return Err(TaskActorRuntimeError::ActorTerminal {
+                task_id,
+                status: record.cursor.status,
+            });
+        }
+        if let Some(prev) = &record.governed_context {
+            let current = prev.capsule().context_cut;
+            let received = admitted.capsule().context_cut;
+            if received < current {
+                return Err(TaskActorRuntimeError::StaleContextCut {
+                    task_id,
+                    current,
+                    received,
+                });
+            }
+        }
+        record.governed_context = Some(admitted.clone());
+        let tabs = guard.project_tabs();
+        drop(guard);
+        let _ = self.tabs_tx.send(tabs);
+        Ok(admitted)
+    }
+
+    /// Enters a Scoped Detour (`BlockerActive` or `SideQuestActive`) from `Mainline`.
+    pub fn enter_detour(
+        &self,
+        task_id: &TaskActorId,
+        mode: DetourMode,
+        detour_node_id: DetourNodeId,
+    ) -> Result<DetourState, TaskActorRuntimeError> {
+        if mode == DetourMode::Mainline {
+            return Err(TaskActorRuntimeError::InvalidDetourTransition {
+                task_id: task_id.clone(),
+                reason: "detour mode must be BlockerActive or SideQuestActive",
+            });
+        }
+        let mut guard = self.state.lock();
+        let record = guard
+            .actors
+            .get_mut(task_id)
+            .ok_or_else(|| TaskActorRuntimeError::ActorNotFound {
+                task_id: task_id.clone(),
+            })?;
+        if record.cursor.status.is_terminal() {
+            return Err(TaskActorRuntimeError::ActorTerminal {
+                task_id: task_id.clone(),
+                status: record.cursor.status,
+            });
+        }
+        if record.detour_state != DetourState::Mainline {
+            return Err(TaskActorRuntimeError::InvalidDetourTransition {
+                task_id: task_id.clone(),
+                reason: "nested scoped detour is not permitted",
+            });
+        }
+        let next = DetourState::Active {
+            mode,
+            origin_epoch: record.cursor.fencing_epoch,
+            detour_node_id,
+        };
+        record.detour_state = next.clone();
+        let tabs = guard.project_tabs();
+        drop(guard);
+        let _ = self.tabs_tx.send(tabs);
+        Ok(next)
+    }
+
+    /// Exits an active Scoped Detour via one of the 4 canonical re-anchoring exits:
+    /// `ReturnToOrigin`, `AbsorbAndContinue`, `SpawnSiblingTask`, or `AbortDetour`.
+    pub fn exit_detour(
+        &self,
+        task_id: &TaskActorId,
+        exit_kind: DetourExitKind,
+        sibling_task: Option<(TaskActorId, String)>,
+    ) -> Result<DetourState, TaskActorRuntimeError> {
+        let mut guard = self.state.lock();
+        let (scope_mode, is_terminal, in_detour) = {
+            let record = guard.actors.get(task_id).ok_or_else(|| {
+                TaskActorRuntimeError::ActorNotFound {
+                    task_id: task_id.clone(),
+                }
+            })?;
+            (
+                record.cursor.scope_mode,
+                record.cursor.status.is_terminal(),
+                record.detour_state != DetourState::Mainline,
+            )
+        };
+        if is_terminal {
+            let status = guard.actors[task_id].cursor.status;
+            return Err(TaskActorRuntimeError::ActorTerminal {
+                task_id: task_id.clone(),
+                status,
+            });
+        }
+        if !in_detour {
+            return Err(TaskActorRuntimeError::InvalidDetourTransition {
+                task_id: task_id.clone(),
+                reason: "actor is not inside an active scoped detour",
+            });
+        }
+
+        if exit_kind == DetourExitKind::SpawnSiblingTask {
+            let Some((sibling_id, sibling_title)) = sibling_task else {
+                return Err(TaskActorRuntimeError::InvalidDetourTransition {
+                    task_id: task_id.clone(),
+                    reason: "SpawnSiblingTask exit requires a sibling (task_id, title)",
+                });
+            };
+            if guard.actors.contains_key(&sibling_id) {
+                return Err(TaskActorRuntimeError::DuplicateActor {
+                    task_id: sibling_id,
+                });
+            }
+            let title = if sibling_title.trim().is_empty() {
+                sibling_id.as_str().to_owned()
+            } else {
+                sibling_title
+            };
+            guard.read_only_peeks.remove(&sibling_id);
+            guard.actors.insert(
+                sibling_id.clone(),
+                TaskActorRuntimeRecord {
+                    title,
+                    cursor: TaskActorCursor {
+                        task_id: sibling_id,
+                        fencing_epoch: FencingEpoch::new(1).expect("epoch 1 is strictly positive"),
+                        status: TaskActorStatus::OpenFocus,
+                        scope_mode,
+                        pending_steering_branches: 0,
+                    },
+                    governed_context: None,
+                    detour_state: DetourState::Mainline,
+                },
+            );
+        }
+
+        let record = guard
+            .actors
+            .get_mut(task_id)
+            .expect("actor verified present above");
+        if exit_kind == DetourExitKind::AbsorbAndContinue
+            && let Some(ctx) = &record.governed_context
+        {
+            record.governed_context = Some(ctx.with_next_cut());
+        }
+        record.detour_state = DetourState::Mainline;
+        let tabs = guard.project_tabs();
+        drop(guard);
+        let _ = self.tabs_tx.send(tabs);
+        Ok(DetourState::Mainline)
     }
 
     /// Convenience helper confirming a reconciliation decision rejected due to stale epoch.

@@ -4,11 +4,18 @@
 
 //! Typed `AgentGraph` topology contracts for Marlin agent coordination.
 
+mod governed_context;
 mod ids;
 mod planning;
 mod receipt;
 mod task_actor;
 mod topology;
+
+pub use governed_context::{
+    AdmittedGovernedContext, DetourExitKind, DetourMode, DetourNodeId, DetourState,
+    DisclosureDepth, GovernedContextCapsule, GovernedContextRejection, KvPrefixDigest,
+    admit_governed_context_capsule,
+};
 
 pub use ids::{
     AgentCapability, AgentDelegationReason, AgentEdgeId, AgentElectionReason, AgentEvidenceId,

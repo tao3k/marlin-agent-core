@@ -269,3 +269,158 @@ fn detached_actor_cannot_commit_project_settlement_or_cross_scope() {
         ))
     );
 }
+
+#[test]
+fn governed_context_and_scoped_detour_four_exits_enforce_confinement_and_monotonic_cut() {
+    use marlin_agent_runtime::{
+        DetourExitKind, DetourMode, DetourNodeId, DetourState, DisclosureDepth,
+        GovernedContextCapsule, GovernedContextRejection, KvPrefixDigest,
+    };
+
+    let registry = TaskActorRuntimeRegistry::new();
+    let task_id = TaskActorId::new("task-governed").unwrap();
+    registry
+        .register_actor(task_id.clone(), "Governed Task", TaskActorScopeMode::Project)
+        .unwrap();
+
+    // Active defeater with L2 depth must be rejected fail-closed.
+    let rejected_defeater = registry.bind_governed_context(GovernedContextCapsule {
+        task_id: task_id.clone(),
+        context_cut: 2,
+        kv_prefix_digest: KvPrefixDigest::new("sha256:kv-prefix-cut-2").unwrap(),
+        disclosure_depth: DisclosureDepth::L2,
+        has_active_defeater: true,
+        quarantined_memory_count: 1,
+        sandbox_admitted: true,
+        cedar_handoff_valid: true,
+        detour_mode: DetourMode::Mainline,
+        auto_archive_enabled: true,
+    });
+    assert_eq!(
+        rejected_defeater,
+        Err(TaskActorRuntimeError::GovernedContextRejected(
+            GovernedContextRejection::ActiveDefeaterRequiresL3Disclosure
+        ))
+    );
+
+    // Admitted governed capsule at cut 2 with L3 disclosure floor.
+    registry
+        .bind_governed_context(GovernedContextCapsule {
+            task_id: task_id.clone(),
+            context_cut: 2,
+            kv_prefix_digest: KvPrefixDigest::new("sha256:kv-prefix-cut-2").unwrap(),
+            disclosure_depth: DisclosureDepth::L3,
+            has_active_defeater: true,
+            quarantined_memory_count: 3,
+            sandbox_admitted: true,
+            cedar_handoff_valid: true,
+            detour_mode: DetourMode::Mainline,
+            auto_archive_enabled: true,
+        })
+        .unwrap();
+
+    // Regressing context_cut to 1 is rejected as stale.
+    let stale_cut = registry.bind_governed_context(GovernedContextCapsule {
+        task_id: task_id.clone(),
+        context_cut: 1,
+        kv_prefix_digest: KvPrefixDigest::new("sha256:kv-prefix-cut-1").unwrap(),
+        disclosure_depth: DisclosureDepth::L1,
+        has_active_defeater: false,
+        quarantined_memory_count: 0,
+        sandbox_admitted: true,
+        cedar_handoff_valid: true,
+        detour_mode: DetourMode::Mainline,
+        auto_archive_enabled: true,
+    });
+    assert_eq!(
+        stale_cut,
+        Err(TaskActorRuntimeError::StaleContextCut {
+            task_id: task_id.clone(),
+            current: 2,
+            received: 1,
+        })
+    );
+
+    // Enter BlockerActive detour -> blocks CommitSettlement until re-anchored!
+    let blocker_node = DetourNodeId::new("detour-fix-schema").unwrap();
+    let active_detour = registry
+        .enter_detour(&task_id, DetourMode::BlockerActive, blocker_node.clone())
+        .unwrap();
+    assert!(active_detour.is_blocker_active());
+
+    let blocked_commit = registry.admit_dispatch(MarlinDispatchEnvelope {
+        request_id: DispatchRequestId::new("req-blocked-by-detour").unwrap(),
+        task_id: task_id.clone(),
+        operation: GraphDispatchOperation::CommitSettlement,
+        fencing_epoch: FencingEpoch::new(1).unwrap(),
+        scope_mode: TaskActorScopeMode::Project,
+        join_node_id: None,
+        substrate_target: GraphSubstrateTarget::PureMemory,
+    });
+    assert_eq!(
+        blocked_commit,
+        Err(TaskActorRuntimeError::BlockerDetourActive {
+            task_id: task_id.clone(),
+            detour_node_id: blocker_node,
+        })
+    );
+
+    // Exit 1: AbsorbAndContinue -> returns to Mainline & advances context_cut 2 -> 3.
+    assert_eq!(
+        registry
+            .exit_detour(&task_id, DetourExitKind::AbsorbAndContinue, None)
+            .unwrap(),
+        DetourState::Mainline
+    );
+    assert_eq!(
+        registry.snapshot().actors[&task_id]
+            .governed_context
+            .as_ref()
+            .unwrap()
+            .capsule()
+            .context_cut,
+        3
+    );
+
+    // Exit 2: SideQuest -> SpawnSiblingTask spawns an independent TaskActor!
+    registry
+        .enter_detour(
+            &task_id,
+            DetourMode::SideQuestActive,
+            DetourNodeId::new("detour-side-quest").unwrap(),
+        )
+        .unwrap();
+    let sibling_id = TaskActorId::new("task-sibling-1").unwrap();
+    registry
+        .exit_detour(
+            &task_id,
+            DetourExitKind::SpawnSiblingTask,
+            Some((sibling_id.clone(), "Sibling Investigation".to_owned())),
+        )
+        .unwrap();
+    assert!(registry.cursor(&sibling_id).is_some());
+
+    // Exit 3 & 4: ReturnToOrigin and AbortDetour return cleanly without mutating cut 3.
+    for (node, exit) in [
+        ("detour-return", DetourExitKind::ReturnToOrigin),
+        ("detour-abort", DetourExitKind::AbortDetour),
+    ] {
+        registry
+            .enter_detour(
+                &task_id,
+                DetourMode::SideQuestActive,
+                DetourNodeId::new(node).unwrap(),
+            )
+            .unwrap();
+        registry.exit_detour(&task_id, exit, None).unwrap();
+    }
+    assert_eq!(
+        registry.snapshot().actors[&task_id]
+            .governed_context
+            .as_ref()
+            .unwrap()
+            .capsule()
+            .context_cut,
+        3
+    );
+}

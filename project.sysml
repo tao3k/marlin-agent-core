@@ -180,6 +180,7 @@ package MarlinAgentCORE {
         expose MarlinGraphEngine::monotonicFencingEpochAntiSplitBrain;
         expose MarlinGraphEngine::detachedScopeWriteIsolation;
         expose MarlinGraphEngine::rootedAbiAndPinnedIndexWorkbench;
+        expose MarlinGraphEngine::governedContextAndDetourConfinement;
         render asTreeDiagram;
     }
 

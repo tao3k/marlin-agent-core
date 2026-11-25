@@ -10,7 +10,8 @@
 //! without coupling to `SessionId`.
 
 use marlin_agent_runtime::{
-    AdmittedMarlinDispatch, MarlinDispatchEnvelope, MarlinExecutionReceipt,
+    AdmittedGovernedContext, AdmittedMarlinDispatch, DetourExitKind, DetourMode, DetourNodeId,
+    DetourState, GovernedContextCapsule, MarlinDispatchEnvelope, MarlinExecutionReceipt,
     ReceiptReconciliationDecision, TaskActorCursor, TaskActorId, TaskActorRuntimeError,
     TaskActorRuntimeRegistry, TaskActorRuntimeSnapshot, TaskActorScopeMode,
     WorkbenchTabProjection,
@@ -104,6 +105,34 @@ impl TaskActorControlPlane {
     /// Closes a read-only peek tab.
     pub fn close_read_only_peek(&self, task_id: &TaskActorId) -> WorkbenchTabProjection {
         self.registry.close_read_only_peek(task_id)
+    }
+
+    /// Binds a governed `ai-agentic-context` + Design 165 capsule onto a registered actor.
+    pub fn bind_governed_context(
+        &self,
+        capsule: GovernedContextCapsule,
+    ) -> Result<AdmittedGovernedContext, TaskActorRuntimeError> {
+        self.registry.bind_governed_context(capsule)
+    }
+
+    /// Enters a Scoped Detour (`BlockerActive` or `SideQuestActive`) for a registered actor.
+    pub fn enter_detour(
+        &self,
+        task_id: &TaskActorId,
+        mode: DetourMode,
+        detour_node_id: DetourNodeId,
+    ) -> Result<DetourState, TaskActorRuntimeError> {
+        self.registry.enter_detour(task_id, mode, detour_node_id)
+    }
+
+    /// Exits an active Scoped Detour via one of the 4 canonical re-anchoring exits.
+    pub fn exit_detour(
+        &self,
+        task_id: &TaskActorId,
+        exit_kind: DetourExitKind,
+        sibling_task: Option<(TaskActorId, String)>,
+    ) -> Result<DetourState, TaskActorRuntimeError> {
+        self.registry.exit_detour(task_id, exit_kind, sibling_task)
     }
 
     /// Captures a deterministic snapshot of all actors and the Workbench tab strip.

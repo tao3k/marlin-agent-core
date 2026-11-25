@@ -264,3 +264,157 @@ module graphEngineWorkbenchTabSafety {
       .then(openReadOnlyPeek(1))
       .expect(safe and t.activeTasks == Set() and t.peekTasks == Set(1) and t.focusedTask == 0)
 }
+
+module graphEngineGovernedContextSafety {
+  type GovernedCtxState = {
+    contextCut: int,
+    disclosureDepth: int,     // 0=L0, 1=L1, 2=L2, 3=L3
+    hasActiveDefeater: bool,
+    sandboxAdmitted: bool,
+    cedarValid: bool,
+    detourMode: str,          // "mainline" | "blocker-active" | "side-quest-active"
+    autoArchiveEnabled: bool,
+    settled: bool,
+    siblingsSpawned: int
+  }
+
+  var g: GovernedCtxState
+
+  action init = {
+    g' = {
+      contextCut: 1,
+      disclosureDepth: 1,
+      hasActiveDefeater: false,
+      sandboxAdmitted: true,
+      cedarValid: true,
+      detourMode: "mainline",
+      autoArchiveEnabled: true,
+      settled: false,
+      siblingsSpawned: 0
+    }
+  }
+
+  action bindGovernedTurn(nextCut: int, depth: int, defeater: bool): bool = all {
+    not(g.settled),
+    nextCut >= g.contextCut,
+    depth >= 0 and depth <= 3,
+    if (defeater) depth >= 3 else true,
+    g' = g
+      .with("contextCut", nextCut)
+      .with("disclosureDepth", depth)
+      .with("hasActiveDefeater", defeater)
+  }
+
+  action enterBlockerDetour = all {
+    not(g.settled),
+    g.detourMode == "mainline",
+    g' = g
+      .with("detourMode", "blocker-active")
+      .with("autoArchiveEnabled", false)
+  }
+
+  action enterSideQuestDetour = all {
+    not(g.settled),
+    g.detourMode == "mainline",
+    g' = g.with("detourMode", "side-quest-active")
+  }
+
+  action exitDetourReturnToOrigin = all {
+    not(g.settled),
+    g.detourMode != "mainline",
+    g' = g
+      .with("detourMode", "mainline")
+      .with("autoArchiveEnabled", true)
+  }
+
+  action exitDetourAbsorbAndContinue = all {
+    not(g.settled),
+    g.detourMode != "mainline",
+    g' = g
+      .with("detourMode", "mainline")
+      .with("autoArchiveEnabled", true)
+      .with("contextCut", g.contextCut + 1)
+  }
+
+  action exitDetourSpawnSibling = all {
+    not(g.settled),
+    g.detourMode != "mainline",
+    g' = g
+      .with("detourMode", "mainline")
+      .with("autoArchiveEnabled", true)
+      .with("siblingsSpawned", g.siblingsSpawned + 1)
+  }
+
+  action exitDetourAbort = all {
+    not(g.settled),
+    g.detourMode != "mainline",
+    g' = g
+      .with("detourMode", "mainline")
+      .with("autoArchiveEnabled", true)
+  }
+
+  action settleGovernedTrunk = all {
+    not(g.settled),
+    g.detourMode != "blocker-active",
+    g.sandboxAdmitted,
+    g.cedarValid,
+    if (g.hasActiveDefeater) g.disclosureDepth >= 3 else true,
+    g' = g.with("settled", true)
+  }
+
+  action step = any {
+    nondet cutDelta = oneOf(Set(0, 1))
+    nondet depth = oneOf(Set(0, 1, 2, 3))
+    nondet defeater = oneOf(Set(false, true))
+    bindGovernedTurn(g.contextCut + cutDelta, depth, defeater),
+    enterBlockerDetour,
+    enterSideQuestDetour,
+    exitDetourReturnToOrigin,
+    exitDetourAbsorbAndContinue,
+    exitDetourSpawnSibling,
+    exitDetourAbort,
+    settleGovernedTrunk,
+  }
+
+  def safe = all {
+    g.contextCut >= 1,
+    g.sandboxAdmitted,
+    g.cedarValid,
+    if (g.hasActiveDefeater) g.disclosureDepth >= 3 else true,
+    if (g.detourMode == "blocker-active") (not(g.autoArchiveEnabled) and not(g.settled)) else true,
+  }
+
+  // Negative controls: each mutation MUST violate `safe`.
+  action defeaterBelowL3 = all {
+    not(g.settled),
+    g' = g.with("hasActiveDefeater", true).with("disclosureDepth", 2)
+  }
+
+  action lethalTrifectaBypass = all {
+    not(g.settled),
+    g' = g.with("sandboxAdmitted", false)
+  }
+
+  action settleDuringBlockerDetour = all {
+    g.detourMode == "blocker-active",
+    g' = g.with("settled", true)
+  }
+
+  action defeaterBelowL3Mutation = any { step, defeaterBelowL3 }
+  action lethalTrifectaBypassMutation = any { step, lethalTrifectaBypass }
+  action settleDuringBlockerDetourMutation = any { step, settleDuringBlockerDetour }
+
+  run blockerDetourConfinementAndAbsorbTest =
+    init
+      .then(bindGovernedTurn(2, 3, true))
+      .then(enterBlockerDetour)
+      .then(exitDetourAbsorbAndContinue)
+      .then(settleGovernedTrunk)
+      .expect(safe and g.settled and g.contextCut == 3 and g.disclosureDepth == 3)
+
+  run sideQuestSpawnSiblingTest =
+    init
+      .then(enterSideQuestDetour)
+      .then(exitDetourSpawnSibling)
+      .expect(safe and g.detourMode == "mainline" and g.siblingsSpawned == 1)
+}
