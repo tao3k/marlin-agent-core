@@ -234,7 +234,9 @@ impl HelmOverlay {
         let has_filters = !self.parsed.languages.is_empty()
             || !self.parsed.documents.is_empty()
             || self.parsed.path_prefix.is_some()
-            || self.parsed.extension.is_some();
+            || self.parsed.extension.is_some()
+            || self.parsed.symbol.is_some()
+            || self.parsed.graph_target.is_some();
 
         if self.parsed.async_pattern.is_empty() && !has_filters {
             let Ok(index) = shared.read() else {
@@ -247,6 +249,8 @@ impl HelmOverlay {
                 documents: &[],
                 path_prefix: None,
                 extension: None,
+                symbol: None,
+                graph_target: None,
                 max_hits: 24,
                 context_radius: PREVIEW_CONTEXT_RADIUS,
             });
@@ -276,6 +280,8 @@ impl HelmOverlay {
             documents: &self.parsed.documents,
             path_prefix: self.parsed.path_prefix.as_deref(),
             extension: self.parsed.extension.as_deref(),
+            symbol: self.parsed.symbol.as_deref(),
+            graph_target: self.parsed.graph_target.as_deref(),
             max_hits: MAX_HELM_HITS,
             context_radius: PREVIEW_CONTEXT_RADIUS,
         });
@@ -440,12 +446,33 @@ impl HelmOverlay {
                 detail: "Filter live search by language".to_owned(),
             });
         }
+        if let Some(sym) = selected.primary_symbol.as_deref() {
+            items.push(HelmMenuActionItem {
+                kind: HelmMenuActionKind::ScopeSymbol,
+                key: "s",
+                label: format!("Jump to symbol definition @sym:{sym}"),
+                detail: "Locate exact symbol definitions across workspace".to_owned(),
+            });
+            items.push(HelmMenuActionItem {
+                kind: HelmMenuActionKind::ScopeGraph,
+                key: "g",
+                label: format!("Explore call/import graph @graph:{sym}"),
+                detail: "Show definers, importers, callers, and dependencies".to_owned(),
+            });
+        } else if let Some(stem) = selected.path.as_deref().and_then(file_stem_for_graph) {
+            items.push(HelmMenuActionItem {
+                kind: HelmMenuActionKind::ScopeGraph,
+                key: "g",
+                label: format!("Explore module graph @graph:{stem}"),
+                detail: "Show importers and dependencies of this module".to_owned(),
+            });
+        }
         items
     }
 
     /// Execute the active action. Returns `(true, Some(action))` when Helm should close
     /// and hand off to the TUI host, or `(false, None)` when an in-Helm transformer
-    /// action (like scoping `@prefix:` or `@lang:`) updated Helm live.
+    /// action (like scoping `@prefix:`, `@lang:`, `@sym:`, or `@graph:`) updated Helm live.
     pub(crate) fn accept(&mut self, export_citations_only: bool) -> (bool, Option<HelmAction>) {
         if self.action_mode {
             let actions = self.available_actions();
@@ -465,9 +492,41 @@ impl HelmOverlay {
                     self.apply_language_scope();
                     (false, None)
                 }
+                HelmMenuActionKind::ScopeSymbol => {
+                    self.apply_symbol_scope();
+                    (false, None)
+                }
+                HelmMenuActionKind::ScopeGraph => {
+                    self.apply_graph_scope();
+                    (false, None)
+                }
             };
         }
         (true, self.resolve_primary_action(export_citations_only))
+    }
+
+    fn apply_symbol_scope(&mut self) {
+        let Some(sym) = self
+            .selected_candidate()
+            .and_then(|c| c.primary_symbol.clone())
+        else {
+            return;
+        };
+        self.input = format!("@sym:{sym}");
+        self.on_input_changed();
+    }
+
+    fn apply_graph_scope(&mut self) {
+        let target = self.selected_candidate().and_then(|c| {
+            c.primary_symbol
+                .clone()
+                .or_else(|| c.path.as_deref().and_then(file_stem_for_graph))
+        });
+        let Some(target) = target else {
+            return;
+        };
+        self.input = format!("@graph:{target}");
+        self.on_input_changed();
     }
 
     fn apply_directory_scope(&mut self) {
@@ -635,4 +694,11 @@ impl HelmOverlay {
         self.marked_ids
             .retain(|mid| valid_ids.iter().any(|valid| valid == mid));
     }
+}
+
+fn file_stem_for_graph(path: &str) -> Option<String> {
+    let base = path.rsplit('/').next().unwrap_or(path);
+    let stem = base.rsplit_once('.').map_or(base, |(s, _)| s);
+    (!stem.is_empty() && stem != "mod" && stem != "lib" && stem != "index")
+        .then(|| stem.to_owned())
 }

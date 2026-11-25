@@ -136,10 +136,9 @@ fn render_grouped_candidates(
     let visible_rows = usize::from(area.height).max(1);
     let width = usize::from(area.width);
     if helm.display_rows.is_empty() {
-        let msg = helm
-            .last_error
-            .as_deref()
-            .unwrap_or("  No matches · try a pattern, @lang:rust, @prefix:crates/, or #local !neg");
+        let msg = helm.last_error.as_deref().unwrap_or(
+            "  No matches · try pattern, @sym:name, @graph:target, @lang:rust, @prefix:crates/, or #local !neg",
+        );
         let line = Line::from(Span::styled(msg, Style::default().fg(rgb(theme.muted))));
         frame.render_widget(Paragraph::new(line), area);
         return;
@@ -319,7 +318,12 @@ fn render_follow_preview(helm: &HelmOverlay, frame: &mut Frame<'_>, area: Rect, 
     let needles = helm.parsed.highlight_needles();
 
     let header_bg = Style::default().bg(rgb(theme.bar));
-    let title_text = clip_width(&format!(" ▎ {}", cand.display), width);
+    let raw_title = if let Some(rel) = cand.graph_relations.first() {
+        format!(" ▎ {} · {rel}", cand.display)
+    } else {
+        format!(" ▎ {}", cand.display)
+    };
+    let title_text = clip_width(&raw_title, width);
     let pad = " ".repeat(width.saturating_sub(UnicodeWidthStr::width(title_text.as_str())));
     let mut lines = Vec::with_capacity(height);
     lines.push(Line::from(vec![
@@ -511,6 +515,8 @@ fn render_helm_minibuffer(helm: &HelmOverlay, frame: &mut Frame<'_>, area: Rect,
             || part.starts_with("@doc:")
             || part.starts_with("@prefix:")
             || part.starts_with("@ext:")
+            || part.starts_with("@sym:")
+            || part.starts_with("@graph:")
         {
             Style::default()
                 .fg(rgb(theme.info))

@@ -61,6 +61,19 @@ pub(crate) struct HelmParsedInput {
     pub(crate) documents: Vec<String>,
     pub(crate) path_prefix: Option<String>,
     pub(crate) extension: Option<String>,
+    pub(crate) symbol: Option<String>,
+    pub(crate) graph_target: Option<String>,
+}
+
+#[derive(Eq, PartialEq)]
+pub(super) struct HelmAsyncKey<'a> {
+    async_pattern: &'a str,
+    languages: &'a [String],
+    documents: &'a [String],
+    path_prefix: Option<&'a str>,
+    extension: Option<&'a str>,
+    symbol: Option<&'a str>,
+    graph_target: Option<&'a str>,
 }
 
 impl HelmParsedInput {
@@ -74,6 +87,8 @@ impl HelmParsedInput {
         let mut documents = Vec::new();
         let mut path_prefix = None;
         let mut extension = None;
+        let mut symbol = None;
+        let mut graph_target = None;
 
         for token in async_raw.split_whitespace() {
             if let Some(val) = token.strip_prefix("@lang:") {
@@ -92,6 +107,14 @@ impl HelmParsedInput {
                 if !val.is_empty() {
                     extension = Some(val.to_owned());
                 }
+            } else if let Some(val) = token.strip_prefix("@sym:") {
+                if !val.is_empty() {
+                    symbol = Some(val.to_owned());
+                }
+            } else if let Some(val) = token.strip_prefix("@graph:") {
+                if !val.is_empty() {
+                    graph_target = Some(val.to_owned());
+                }
             } else {
                 pattern_parts.push(token);
             }
@@ -109,23 +132,37 @@ impl HelmParsedInput {
             documents,
             path_prefix,
             extension,
+            symbol,
+            graph_target,
         }
     }
 
-    pub(super) fn async_key(&self) -> (&str, &[String], &[String], Option<&str>, Option<&str>) {
-        (
-            &self.async_pattern,
-            &self.languages,
-            &self.documents,
-            self.path_prefix.as_deref(),
-            self.extension.as_deref(),
-        )
+    pub(super) fn async_key(&self) -> HelmAsyncKey<'_> {
+        HelmAsyncKey {
+            async_pattern: &self.async_pattern,
+            languages: &self.languages,
+            documents: &self.documents,
+            path_prefix: self.path_prefix.as_deref(),
+            extension: self.extension.as_deref(),
+            symbol: self.symbol.as_deref(),
+            graph_target: self.graph_target.as_deref(),
+        }
     }
 
     pub(crate) fn highlight_needles(&self) -> Vec<String> {
         let mut needles = Vec::new();
         if !self.async_pattern.is_empty() {
             needles.push(self.async_pattern.clone());
+        }
+        if let Some(sym) = self.symbol.as_deref()
+            && !sym.is_empty()
+        {
+            needles.push(sym.to_owned());
+        }
+        if let Some(graph) = self.graph_target.as_deref()
+            && !graph.is_empty()
+        {
+            needles.push(graph.to_owned());
         }
         needles.extend(
             self.local_tokens
@@ -144,6 +181,8 @@ pub(crate) struct HelmCandidate {
     pub(crate) display: String,
     pub(crate) path: Option<String>,
     pub(crate) language: Option<String>,
+    pub(crate) primary_symbol: Option<String>,
+    pub(crate) graph_relations: Vec<String>,
     pub(crate) snippet: String,
     pub(crate) citation: Option<String>,
     pub(crate) badge: String,
@@ -158,10 +197,11 @@ impl HelmCandidate {
             return true;
         }
         let haystack = format!(
-            "{} {} {} {}",
+            "{} {} {} {} {}",
             self.display.to_lowercase(),
             self.snippet.to_lowercase(),
             self.badge.to_lowercase(),
+            self.graph_relations.join(" ").to_lowercase(),
             self.source.label()
         );
         tokens.iter().all(|token| {
@@ -199,6 +239,8 @@ pub(crate) enum HelmMenuActionKind {
     ExportCitations,
     ScopeDirectory,
     ScopeLanguage,
+    ScopeSymbol,
+    ScopeGraph,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -296,6 +338,8 @@ pub(super) fn build_static_candidates(command_catalog: &[UiCommand]) -> Vec<Helm
                 display: format!("*{id}*"),
                 path: None,
                 language: None,
+                primary_symbol: None,
+                graph_relations: Vec::new(),
                 snippet: desc.to_owned(),
                 citation: None,
                 badge: "buffer".to_owned(),
@@ -319,6 +363,8 @@ pub(super) fn build_static_candidates(command_catalog: &[UiCommand]) -> Vec<Helm
             display: cmd.name.as_str().to_owned(),
             path: None,
             language: None,
+            primary_symbol: None,
+            graph_relations: Vec::new(),
             snippet: cmd.description.clone(),
             citation: None,
             badge: "M-x".to_owned(),
@@ -343,7 +389,9 @@ pub(super) fn build_static_candidates(command_catalog: &[UiCommand]) -> Vec<Helm
 
 pub(super) fn hit_to_candidate(hit: WorkspaceSearchHit) -> HelmCandidate {
     let display = match hit.first_line {
-        Some(line) if !hit.line_matches.is_empty() => format!("{}:{line}", hit.path),
+        Some(line) if !hit.line_matches.is_empty() || !hit.symbols.is_empty() => {
+            format!("{}:{line}", hit.path)
+        }
         _ => hit.path.clone(),
     };
     let citation = Some(format!("@{display}"));
@@ -356,10 +404,22 @@ pub(super) fn hit_to_candidate(hit: WorkspaceSearchHit) -> HelmCandidate {
         .cloned()
         .collect::<Vec<_>>()
         .join("+");
+    let primary_symbol = hit.symbols.first().map(|s| s.name.clone());
+    let rel_suffix = hit
+        .graph_relations
+        .first()
+        .map(|rel| format!("·{rel}"))
+        .or_else(|| {
+            hit.symbols
+                .first()
+                .filter(|_| hit.matched_axes.iter().any(|a| a == "symbol"))
+                .map(|sym| format!("·{}", sym.kind.as_str()))
+        })
+        .unwrap_or_default();
     let badge = if axes_tag.is_empty() {
-        lang.to_owned()
+        format!("{lang}{rel_suffix}")
     } else {
-        format!("{lang}·{axes_tag}")
+        format!("{lang}·{axes_tag}{rel_suffix}")
     };
     HelmCandidate {
         id: format!("search:{display}"),
@@ -367,6 +427,8 @@ pub(super) fn hit_to_candidate(hit: WorkspaceSearchHit) -> HelmCandidate {
         display,
         path: Some(hit.path),
         language: hit.language,
+        primary_symbol,
+        graph_relations: hit.graph_relations,
         snippet: hit.first_line_text.trim().to_owned(),
         citation,
         badge,

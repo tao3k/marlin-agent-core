@@ -107,8 +107,9 @@ package MarlinUiHelm {
     }
     requirement <'MAR-HELM-R02'> twoStageConsultOrderless {
         doc /* Prompts split on `#` into an async Playbook query (`@lang:`, `@doc:`,
-               `@prefix:`, `@ext:`) and instant local Orderless tokens (including
-               `!negation`) that refine results without incrementing async epoch. */
+               `@prefix:`, `@ext:`, `@sym:`, `@graph:`) and instant local Orderless
+               tokens (including `!negation`) that refine results without incrementing
+               async epoch. */
     }
     requirement <'MAR-HELM-R03'> epochFencingAndMarkSafety {
         doc /* Async results with `resultEpoch < session.epoch` or arriving after

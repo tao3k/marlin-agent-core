@@ -306,11 +306,35 @@ fn rooted_scheme_plans_and_compiled_module_project_into_asp() {
                 extension: None,
                 max_hits: 32,
                 context_radius: 4,
+                ..Default::default()
             });
             assert!(fast_report.hits.iter().any(|hit| hit.path
                 == "crates/marlin-agent-search-engine/src/engine.rs"
                 && hit.matched_axes.iter().any(|a| a == "rg")
                 && hit.matched_axes.iter().any(|a| a == "bm25")));
+            let sym_report = resident.query(&WorkspaceSearchQuery {
+                symbol: Some("marlin_search_engine"),
+                languages: &["rust".to_owned()],
+                max_hits: 16,
+                context_radius: 2,
+                ..Default::default()
+            });
+            assert!(sym_report.hits.iter().any(|hit| hit.path
+                == "crates/marlin-agent-search-engine/src/engine.rs"
+                && hit.matched_axes.iter().any(|a| a == "symbol")));
+            let graph_report = resident.query(&WorkspaceSearchQuery {
+                graph_target: Some("marlin_search_engine"),
+                languages: &["rust".to_owned()],
+                max_hits: 32,
+                context_radius: 2,
+                ..Default::default()
+            });
+            assert!(graph_report.hits.iter().any(|hit| hit.path
+                == "crates/marlin-agent-search-engine/src/engine.rs"
+                && hit.matched_axes.iter().any(|a| a == "graph")));
+            assert!(graph_report.hits.iter().any(|hit| hit.path
+                == "crates/marlin-agent-search-engine/src/lib.rs"
+                && hit.matched_axes.iter().any(|a| a == "graph")));
             assert!(
                 fast_report.elapsed_micros < 15_000,
                 "converged 4-axis query should stay ultra-fast even in debug build, got {}µs",

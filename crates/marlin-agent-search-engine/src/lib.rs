@@ -29,8 +29,9 @@ pub use agent_semantic_search::{
     SearchProjectId, SearchStoragePortError, SearchTopologyEdgeId, SearchTopologyEdgeRecord,
     SearchWorkspaceId, TrigramQuery, TrigramSnapshotError, WorkspaceContextLine,
     WorkspaceDeltaReceipt, WorkspaceFileDelta, WorkspaceIndexConfig, WorkspaceSearchHit,
-    WorkspaceSearchIndex, WorkspaceSearchQuery, WorkspaceSearchReport, compile_regex_trigram_query,
-    execute_admitted_playbook, execute_admitted_playbook_with_index,
+    WorkspaceSearchIndex, WorkspaceSearchQuery, WorkspaceSearchReport, WorkspaceSymbolKind,
+    WorkspaceSymbolMatch, compile_regex_trigram_query, execute_admitted_playbook,
+    execute_admitted_playbook_with_index,
 };
 pub use agent_semantic_search_playbook::{
     GraphNativeBlock, ProducerNativeBlock, ProgressiveSearchPlaybookError,

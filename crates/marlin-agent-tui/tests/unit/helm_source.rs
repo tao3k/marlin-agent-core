@@ -52,7 +52,7 @@ fn sample_theme() -> UiTheme {
 #[test]
 fn two_stage_consult_orderless_parser_separates_async_and_local_tokens() {
     let parsed = HelmParsedInput::parse(
-        "@lang:rust @doc:org @prefix:crates/ @ext:rs execute_admitted #storage !test",
+        "@lang:rust @doc:org @prefix:crates/ @ext:rs @sym:marlin_search_engine @graph:engine execute_admitted #storage !test",
     );
     assert_eq!(parsed.async_pattern, "execute_admitted");
     assert_eq!(parsed.local_tokens, vec!["storage", "!test"]);
@@ -60,6 +60,8 @@ fn two_stage_consult_orderless_parser_separates_async_and_local_tokens() {
     assert_eq!(parsed.documents, vec!["org"]);
     assert_eq!(parsed.path_prefix.as_deref(), Some("crates/"));
     assert_eq!(parsed.extension.as_deref(), Some("rs"));
+    assert_eq!(parsed.symbol.as_deref(), Some("marlin_search_engine"));
+    assert_eq!(parsed.graph_target.as_deref(), Some("engine"));
 }
 
 #[test]
@@ -412,5 +414,72 @@ fn cached_mmap_warm_start_and_incremental_refresh_detects_disk_edits_and_deletio
             .any(|cand| cand.display.contains("src/alpha.rs")),
         "expected refreshed alpha.rs hit, got {:?}",
         overlay.search_candidates
+    );
+}
+
+#[test]
+fn helm_symbol_and_graph_axes_locate_definitions_callers_and_action_transformer_scopes() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("workspace root")
+        .to_path_buf();
+    let cfg = scheme_like_config();
+    let warm_index = wrap_index(WorkspaceSearchIndex::build_with_config(
+        &workspace_root,
+        cfg.clone(),
+    ));
+
+    // 1. `@sym:` jumps directly to the exact Rust symbol definition line.
+    let mut sym_overlay = HelmOverlay::open(
+        Some("@lang:rust @sym:marlin_search_engine"),
+        workspace_root.clone(),
+        &[],
+        cfg.clone(),
+        Some(warm_index.clone()),
+        rt.handle(),
+    );
+    assert!(
+        sym_overlay.search_candidates.iter().any(|c| c
+            .display
+            .contains("crates/marlin-agent-search-engine/src/engine.rs:")
+            && c.badge.contains("symbol")
+            && c.primary_symbol.as_deref() == Some("marlin_search_engine")),
+        "expected @sym: hit on engine.rs, got {:?}",
+        sym_overlay.search_candidates
+    );
+
+    // 2. TAB Action Transformer offers `[s] @sym:` and `[g] @graph:` live scoping actions.
+    let actions = sym_overlay.available_actions();
+    let graph_action_pos = actions
+        .iter()
+        .position(|a| a.key == "g")
+        .expect("expected [g] graph transformer action");
+    sym_overlay.toggle_action_mode();
+    sym_overlay.action_selected = graph_action_pos;
+    let (should_close, handed_off) = sym_overlay.accept(false);
+    assert!(!should_close, "graph scoping keeps Helm open live");
+    assert!(handed_off.is_none());
+    assert_eq!(sym_overlay.input, "@graph:marlin_search_engine");
+    assert!(
+        sym_overlay
+            .search_candidates
+            .iter()
+            .any(|c| c.path.as_deref() == Some("crates/marlin-agent-search-engine/src/engine.rs")
+                && c.badge.contains("graph")),
+        "expected definer in @graph: results, got {:?}",
+        sym_overlay.search_candidates
+    );
+    assert!(
+        sym_overlay
+            .search_candidates
+            .iter()
+            .any(|c| c.path.as_deref() == Some("crates/marlin-agent-search-engine/src/lib.rs")),
+        "expected importer/re-exporter lib.rs in @graph: results, got {:?}",
+        sym_overlay.search_candidates
     );
 }
