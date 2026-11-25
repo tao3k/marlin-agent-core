@@ -56,9 +56,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         kind: GateKind::DeviceCapability as i32,
         turn: None,
         call_id: Some("call-e2e-1".to_owned()),
-        tool_or_node_name: "ios.calendar.create".to_owned(),
-        prompt: "Approve calendar event creation on iPhone?".to_owned(),
-        details_heading: "iOS EventKit Write".to_owned(),
+        tool_or_node_name: "device.ios.notify.send".to_owned(),
+        prompt: "Approve device notification delivery on iPhone?".to_owned(),
+        details_heading: "platform.ios Notifications".to_owned(),
         choices: Vec::new(),
         card: None,
         created_at_unix_ms: 1,
@@ -70,6 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("READY {local_addr}");
 
     Server::builder()
+        .add_service(host.app_service())
         .add_service(host.ui_service())
         .add_service(host.gate_service())
         .add_service(host.plugin_service())

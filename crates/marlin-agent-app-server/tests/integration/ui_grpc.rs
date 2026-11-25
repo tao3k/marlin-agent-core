@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 use marlin_agent_app_server::{
     ui_grpc::MyGoBridgeHost,
     wire::marlin::{
+        app::v1::{GetCapabilitiesRequest, app_server_client::AppServerClient},
         common::v1::{DenialCode, TargetKind},
         device::v1::{
             IngestCaptureRequest, RegisterDeviceNodeRequest,
@@ -75,6 +76,7 @@ async fn mygo_bridge_enforces_ui_slots_one_shot_gates_signed_panels_and_device_o
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
         Server::builder()
+            .add_service(host.app_service())
             .add_service(host.ui_service())
             .add_service(host.gate_service())
             .add_service(host.plugin_service())
@@ -86,6 +88,17 @@ async fn mygo_bridge_enforces_ui_slots_one_shot_gates_signed_panels_and_device_o
     });
 
     let endpoint = format!("http://{addr}");
+
+    // 0. AppServer.GetCapabilities advertises all 6 orthogonal services & host target kind.
+    let mut app_client = AppServerClient::connect(endpoint.clone()).await.unwrap();
+    let caps = app_client
+        .get_capabilities(auth_req(GetCapabilitiesRequest {}))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(caps.supported_services.len(), 6);
+    assert!(caps.supported_services.iter().any(|s| s == "marlin.ui.v1"));
+    assert_ne!(caps.host_target_kind, TargetKind::Unspecified as i32);
 
     // 1. UiWorkbenchService: unauthorized rejected, authorized opens with restricted approval.gate
     let mut ui_client = UiWorkbenchServiceClient::connect(endpoint.clone())

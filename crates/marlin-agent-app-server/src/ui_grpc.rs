@@ -23,13 +23,28 @@ use tokio_stream::Stream;
 use tonic::{Request, Response, Status, Streaming, metadata::MetadataMap};
 
 use crate::wire::marlin::{
+    app::v1::{
+        CancelSessionTurnRequest, CancelSessionTurnResponse, CancellationEvidenceUnavailable,
+        GetCapabilitiesRequest, GetCapabilitiesResponse, GetSessionSummaryRequest,
+        GetSessionSummaryResponse, GetSessionTurnCancellationRequest,
+        GetSessionTurnCancellationResponse, GetSessionTurnStatusRequest,
+        GetSessionTurnStatusResponse, OpenSessionRequest, OpenSessionResponse,
+        RuntimeRetirementStatus, RuntimeShutdownReceipt, SessionRecoveryState, SessionTurnEvent,
+        SessionTurnOutcome, SessionTurnRef, StartSessionTurnRequest, StartSessionTurnResponse,
+        StreamTurnRequest, TextCheckpoint, TextDelta, TurnCompleted, TurnEvent, TurnStarted,
+        WatchSessionTurnRequest,
+        app_server_server::{AppServer, AppServerServer},
+        get_session_turn_cancellation_response, session_turn_event, turn_event,
+    },
     common::v1::{ArtifactRef, CursorPageInfo, DenialCode, ReceiptRef, TargetKind, TypedDenial},
     device::v1::{
-        DownloadArtifactRequest, DownloadArtifactResponse, IngestCaptureRequest,
-        IngestCaptureResponse, OpenDeviceChannelRequest, OpenDeviceChannelResponse,
-        RegisterDeviceNodeRequest, RegisterDeviceNodeResponse, UploadArtifactRequest,
-        UploadArtifactResponse,
+        DeviceCapabilityDescriptor, DeviceHeartbeat, DeviceInvocationRequest,
+        DeviceInvocationResult, DownloadArtifactRequest, DownloadArtifactResponse,
+        IngestCaptureRequest, IngestCaptureResponse, OpenDeviceChannelRequest,
+        OpenDeviceChannelResponse, RegisterDeviceNodeRequest, RegisterDeviceNodeResponse,
+        UploadArtifactRequest, UploadArtifactResponse,
         device_bridge_service_server::{DeviceBridgeService, DeviceBridgeServiceServer},
+        open_device_channel_request, open_device_channel_response,
     },
     gate::v1::{
         GateDecisionReceipt, GateKind, GetGateReceiptRequest, GetGateReceiptResponse,
@@ -73,7 +88,20 @@ use crate::wire::marlin::{
 type AuthorizeFn = dyn Fn(&MetadataMap) -> Result<(), Status> + Send + Sync;
 type BoxStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send + 'static>>;
 
-/// Shared authoritative state for all 5 MyGo gRPC services.
+/// Typed Rust projection of one `scheme/ui-mygo` Target Profile Overlay.
+/// Mirrors the native Scheme vector emitted by `project-profile-overlay`.
+#[derive(Clone, Debug)]
+pub struct SchemeOverlayProjection {
+    pub target_kind: TargetKind,
+    pub profile_name: String,
+    pub layout_kind: String,
+    pub allowed_runtimes: Vec<PanelRuntimeKind>,
+    pub device_protocols: Vec<String>,
+    pub slots: Vec<SlotDeclaration>,
+}
+
+/// Shared authoritative state for all 6 MyGo gRPC services
+/// (`marlin.{app,ui,gate,plugin,device,projection}.v1`).
 #[derive(Clone)]
 pub struct MyGoBridgeHost {
     authorize: Arc<AuthorizeFn>,
@@ -82,6 +110,7 @@ pub struct MyGoBridgeHost {
     wb_tx: broadcast::Sender<UiWorkbenchSnapshot>,
     gate_tx: broadcast::Sender<PendingGate>,
     panel_tx: broadcast::Sender<ScopedPanelEvent>,
+    device_inv_tx: broadcast::Sender<DeviceInvocationRequest>,
 }
 
 struct BridgeState {
@@ -90,13 +119,17 @@ struct BridgeState {
     focus_id: String,
     model_label: String,
     session_label: String,
+    overlays: BTreeMap<i32, SchemeOverlayProjection>,
     slots: Vec<SlotDeclaration>,
+    sessions: BTreeSet<String>,
     pending_gates: BTreeMap<String, PendingGate>,
     claimed_gates: BTreeMap<String, GateDecisionReceipt>,
     installed_releases: BTreeMap<String, InstalledPanelRecord>,
     active_generations: BTreeMap<(String, String), ActivePanel>,
     receipt_seq: u64,
     registered_devices: BTreeMap<String, String>,
+    device_capabilities: BTreeMap<String, Vec<DeviceCapabilityDescriptor>>,
+    device_results: BTreeMap<String, DeviceInvocationResult>,
     capture_keys: BTreeSet<String>,
     artifacts: BTreeMap<String, Vec<u8>>,
 }
@@ -117,22 +150,39 @@ impl MyGoBridgeHost {
         trust: ReleaseTrust,
         authorize: impl Fn(&MetadataMap) -> Result<(), Status> + Send + Sync + 'static,
     ) -> Self {
+        Self::with_profile_overlays(trust, default_profile_overlays(), authorize)
+    }
+
+    pub fn with_profile_overlays(
+        trust: ReleaseTrust,
+        overlays: Vec<SchemeOverlayProjection>,
+        authorize: impl Fn(&MetadataMap) -> Result<(), Status> + Send + Sync + 'static,
+    ) -> Self {
         let (wb_tx, _) = broadcast::channel(64);
         let (gate_tx, _) = broadcast::channel(64);
         let (panel_tx, _) = broadcast::channel(128);
+        let (device_inv_tx, _) = broadcast::channel(64);
+        let overlay_map: BTreeMap<i32, SchemeOverlayProjection> = overlays
+            .into_iter()
+            .map(|o| (o.target_kind as i32, o))
+            .collect();
         let state = BridgeState {
             generation: 1,
             profile_name: "desktop-dev".to_owned(),
             focus_id: "composer".to_owned(),
             model_label: "marlin-core".to_owned(),
             session_label: "default".to_owned(),
+            overlays: overlay_map,
             slots: default_slots(),
+            sessions: BTreeSet::from(["default".to_owned()]),
             pending_gates: BTreeMap::new(),
             claimed_gates: BTreeMap::new(),
             installed_releases: BTreeMap::new(),
             active_generations: BTreeMap::new(),
             receipt_seq: 0,
             registered_devices: BTreeMap::new(),
+            device_capabilities: BTreeMap::new(),
+            device_results: BTreeMap::new(),
             capture_keys: BTreeSet::new(),
             artifacts: BTreeMap::new(),
         };
@@ -143,6 +193,7 @@ impl MyGoBridgeHost {
             wb_tx,
             gate_tx,
             panel_tx,
+            device_inv_tx,
         }
     }
 
@@ -156,6 +207,21 @@ impl MyGoBridgeHost {
     /// Publish a host-filtered event into subscribed ScopedPanel streams.
     pub fn publish_scoped_event(&self, event: ScopedPanelEvent) {
         let _ = self.panel_tx.send(event);
+    }
+
+    /// Dispatch a host-originated device.* invocation over live OpenDeviceChannel streams.
+    pub fn dispatch_device_invocation(&self, req: DeviceInvocationRequest) {
+        let _ = self.device_inv_tx.send(req);
+    }
+
+    /// Look up a DeviceInvocationResult returned by a connected device node.
+    pub fn device_result(&self, invocation_id: &str) -> Option<DeviceInvocationResult> {
+        let st = self.state.lock().expect("bridge mutex poisoned");
+        st.device_results.get(invocation_id).cloned()
+    }
+
+    pub fn app_service(&self) -> AppServerServer<Self> {
+        AppServerServer::new(self.clone())
     }
 
     pub fn ui_service(&self) -> UiWorkbenchServiceServer<Self> {
@@ -292,7 +358,95 @@ fn default_theme() -> UiTheme {
     }
 }
 
-fn profile_for_target(kind: i32) -> &'static str {
+fn default_profile_overlays() -> Vec<SchemeOverlayProjection> {
+    let base_slots = default_slots();
+    let desktop_runtimes = vec![
+        PanelRuntimeKind::Declarative,
+        PanelRuntimeKind::WebviewUntrusted,
+        PanelRuntimeKind::WasmUiIr,
+        PanelRuntimeKind::MygoJsWasm,
+    ];
+    let desktop_protocols = vec![
+        "device.desktop.clipboard".to_owned(),
+        "device.desktop.notifications".to_owned(),
+        "device.desktop.files-picker".to_owned(),
+    ];
+    vec![
+        SchemeOverlayProjection {
+            target_kind: TargetKind::DesktopMacos,
+            profile_name: "desktop-dev".to_owned(),
+            layout_kind: "desktop-split".to_owned(),
+            allowed_runtimes: desktop_runtimes.clone(),
+            device_protocols: desktop_protocols.clone(),
+            slots: base_slots.clone(),
+        },
+        SchemeOverlayProjection {
+            target_kind: TargetKind::DesktopLinux,
+            profile_name: "desktop-dev".to_owned(),
+            layout_kind: "desktop-split".to_owned(),
+            allowed_runtimes: desktop_runtimes.clone(),
+            device_protocols: desktop_protocols.clone(),
+            slots: base_slots.clone(),
+        },
+        SchemeOverlayProjection {
+            target_kind: TargetKind::DesktopWindows,
+            profile_name: "desktop-dev".to_owned(),
+            layout_kind: "desktop-split".to_owned(),
+            allowed_runtimes: desktop_runtimes,
+            device_protocols: desktop_protocols,
+            slots: base_slots.clone(),
+        },
+        SchemeOverlayProjection {
+            target_kind: TargetKind::MobileIos,
+            profile_name: "ios-personal".to_owned(),
+            layout_kind: "mobile-stack".to_owned(),
+            allowed_runtimes: vec![PanelRuntimeKind::Declarative],
+            device_protocols: vec![
+                "device.ios.photos".to_owned(),
+                "device.ios.eventkit".to_owned(),
+                "device.ios.contacts".to_owned(),
+                "device.ios.voice".to_owned(),
+                "device.ios.share-extension".to_owned(),
+            ],
+            slots: base_slots.clone(),
+        },
+        SchemeOverlayProjection {
+            target_kind: TargetKind::MobileAndroid,
+            profile_name: "android-personal".to_owned(),
+            layout_kind: "mobile-stack".to_owned(),
+            allowed_runtimes: vec![PanelRuntimeKind::Declarative],
+            device_protocols: vec![
+                "device.android.content-resolver".to_owned(),
+                "device.android.notifications".to_owned(),
+                "device.android.intents".to_owned(),
+            ],
+            slots: base_slots.clone(),
+        },
+        SchemeOverlayProjection {
+            target_kind: TargetKind::RemoteHeadless,
+            profile_name: "remote-headless".to_owned(),
+            layout_kind: "desktop-split".to_owned(),
+            allowed_runtimes: vec![PanelRuntimeKind::Declarative],
+            device_protocols: Vec::new(),
+            slots: base_slots,
+        },
+    ]
+}
+
+fn host_target_kind() -> TargetKind {
+    if cfg!(target_os = "macos") {
+        TargetKind::DesktopMacos
+    } else if cfg!(target_os = "windows") {
+        TargetKind::DesktopWindows
+    } else {
+        TargetKind::DesktopLinux
+    }
+}
+
+fn profile_for_target<'a>(st: &'a BridgeState, kind: i32) -> &'a str {
+    if let Some(overlay) = st.overlays.get(&kind) {
+        return overlay.profile_name.as_str();
+    }
     match TargetKind::try_from(kind).unwrap_or(TargetKind::Unspecified) {
         TargetKind::MobileIos => "ios-personal",
         TargetKind::MobileAndroid => "android-personal",
@@ -419,9 +573,13 @@ impl UiWorkbenchService for MyGoBridgeHost {
         if !req.session_id.is_empty() {
             st.session_label = req.session_id;
         }
-        st.profile_name = req
+        let resolved_profile = req
             .preferred_profile
-            .unwrap_or_else(|| profile_for_target(req.client_target_kind).to_owned());
+            .unwrap_or_else(|| profile_for_target(&st, req.client_target_kind).to_owned());
+        st.profile_name = resolved_profile;
+        if let Some(overlay) = st.overlays.get(&req.client_target_kind) {
+            st.slots = overlay.slots.clone();
+        }
         let snap = build_snapshot(&st);
         Ok(Response::new(OpenWorkbenchResponse {
             workbench: Some(snap),
@@ -615,10 +773,28 @@ impl ApprovalGateService for MyGoBridgeHost {
             gate_id: pending.gate_id.clone(),
             kind: pending.kind,
             claimed: true,
-            receipt: Some(rref),
+            receipt: Some(rref.clone()),
             denial: None,
         };
-        st.claimed_gates.insert(pending.gate_id, receipt.clone());
+        st.claimed_gates
+            .insert(pending.gate_id.clone(), receipt.clone());
+        let should_dispatch_device = pending.kind == GateKind::DeviceCapability as i32
+            && req.decision
+                == crate::wire::marlin::gate::v1::ToolReviewDecision::ApproveOnce as i32;
+        let session_label = st.session_label.clone();
+        drop(st);
+        if should_dispatch_device {
+            let _ = self.device_inv_tx.send(DeviceInvocationRequest {
+                invocation_id: format!("inv-{}", pending.gate_id),
+                session_id: session_label,
+                capability_id: pending.tool_or_node_name,
+                gate_receipt: Some(rref),
+                args_json:
+                    br#"{"title":"Marlin Approved","body":"Authorized via one-shot Rust gate"}"#
+                        .to_vec(),
+                timeout_ms: 5_000,
+            });
+        }
         Ok(Response::new(SubmitToolReviewDecisionResponse {
             receipt: Some(receipt),
         }))
@@ -911,7 +1087,23 @@ impl PluginService for MyGoBridgeHost {
             rec_mut.summary.enabled = true;
             rec_mut.summary.active_generation = next_gen;
         }
+        let first_scope = st
+            .active_generations
+            .get(&(req.plugin_id.clone(), req.contribution_id.clone()))
+            .and_then(|a| a.read_scopes.iter().find(|t| t.as_str() != "host.secrets"))
+            .cloned();
         let rref = mint_receipt(&mut st, "plugin-activate", req.plugin_id.as_bytes());
+        let event_seq = st.receipt_seq;
+        drop(st);
+        if let Some(topic) = first_scope {
+            let _ = self.panel_tx.send(ScopedPanelEvent {
+                event_id: format!("ev-activate-{event_seq}"),
+                plugin_id: req.plugin_id.clone(),
+                activation_generation: next_gen,
+                topic,
+                payload_json: br#"{"nodeId":"verify_receipts","status":"activated"}"#.to_vec(),
+            });
+        }
         Ok(Response::new(EnableWorkflowResponse {
             receipt: Some(WorkflowActivationReceipt {
                 activated: true,
@@ -1087,14 +1279,17 @@ impl DeviceBridgeService for MyGoBridgeHost {
     ) -> Result<Response<RegisterDeviceNodeResponse>, Status> {
         self.check_auth(&request)?;
         let req = request.into_inner();
-        let overlay = profile_for_target(req.target_kind).to_owned();
         let mut st = self.state.lock().expect("bridge mutex poisoned");
+        let overlay = profile_for_target(&st, req.target_kind).to_owned();
         let lease_id = format!(
             "lease-{}-{}",
             req.device_id,
             st.registered_devices.len() + 1
         );
-        st.registered_devices.insert(req.device_id, overlay.clone());
+        st.registered_devices
+            .insert(req.device_id.clone(), overlay.clone());
+        st.device_capabilities
+            .insert(req.device_id, req.capabilities);
         Ok(Response::new(RegisterDeviceNodeResponse {
             lease_id,
             lease_ttl_ms: 60_000,
@@ -1108,11 +1303,48 @@ impl DeviceBridgeService for MyGoBridgeHost {
     ) -> Result<Response<Self::OpenDeviceChannelStream>, Status> {
         self.check_auth(&request)?;
         let mut inbound = request.into_inner();
+        let mut inv_rx = self.device_inv_tx.subscribe();
+        let state = Arc::clone(&self.state);
         let stream = async_stream::try_stream! {
             use tokio_stream::StreamExt;
-            while let Some(frame) = inbound.next().await {
-                let _ = frame?;
-                yield OpenDeviceChannelResponse { frame: None };
+            loop {
+                tokio::select! {
+                    maybe_frame = inbound.next() => {
+                        match maybe_frame {
+                            Some(Ok(req)) => {
+                                match req.frame {
+                                    Some(open_device_channel_request::Frame::CapabilityUpdate(upd)) => {
+                                        let mut st = state.lock().expect("bridge mutex poisoned");
+                                        st.device_capabilities.insert(upd.lease_id, upd.capabilities);
+                                    }
+                                    Some(open_device_channel_request::Frame::InvocationResult(res)) => {
+                                        let mut st = state.lock().expect("bridge mutex poisoned");
+                                        st.device_results.insert(res.invocation_id.clone(), res);
+                                    }
+                                    Some(open_device_channel_request::Frame::Heartbeat(hb)) => {
+                                        yield OpenDeviceChannelResponse {
+                                            frame: Some(open_device_channel_response::Frame::Heartbeat(
+                                                DeviceHeartbeat { unix_ms: hb.unix_ms },
+                                            )),
+                                        };
+                                    }
+                                    None => {}
+                                }
+                            }
+                            Some(Err(_err)) => {
+                                break;
+                            }
+                            None => break,
+                        }
+                    }
+                    inv = inv_rx.recv() => {
+                        if let Ok(req) = inv {
+                            yield OpenDeviceChannelResponse {
+                                frame: Some(open_device_channel_response::Frame::InvocationRequest(req)),
+                            };
+                        }
+                    }
+                }
             }
         };
         Ok(Response::new(Box::pin(stream)))
@@ -1300,5 +1532,186 @@ impl ProjectionQueryService for MyGoBridgeHost {
             };
         };
         Ok(Response::new(Box::pin(stream)))
+    }
+}
+
+#[tonic::async_trait]
+impl AppServer for MyGoBridgeHost {
+    type StreamTurnStream = BoxStream<TurnEvent>;
+    type WatchSessionTurnStream = BoxStream<SessionTurnEvent>;
+
+    async fn get_capabilities(
+        &self,
+        request: Request<GetCapabilitiesRequest>,
+    ) -> Result<Response<GetCapabilitiesResponse>, Status> {
+        self.check_auth(&request)?;
+        let st = self.state.lock().expect("bridge mutex poisoned");
+        Ok(Response::new(GetCapabilitiesResponse {
+            max_request_bytes: 256 * 1024,
+            max_messages: 128,
+            max_output_text_bytes: 256 * 1024,
+            session_id: Some(st.session_label.clone()),
+            host_target_kind: host_target_kind() as i32,
+            supported_services: vec![
+                "marlin.app.v1".to_owned(),
+                "marlin.ui.v1".to_owned(),
+                "marlin.gate.v1".to_owned(),
+                "marlin.plugin.v1".to_owned(),
+                "marlin.device.v1".to_owned(),
+                "marlin.projection.v1".to_owned(),
+            ],
+        }))
+    }
+
+    async fn stream_turn(
+        &self,
+        request: Request<StreamTurnRequest>,
+    ) -> Result<Response<Self::StreamTurnStream>, Status> {
+        self.check_auth(&request)?;
+        let req = request.into_inner();
+        let reply = format!("marlin-bridge received {} message(s)", req.messages.len());
+        let bytes = reply.len() as u64;
+        let stream = async_stream::try_stream! {
+            yield TurnEvent { event: Some(turn_event::Event::Started(TurnStarted {})) };
+            yield TurnEvent {
+                event: Some(turn_event::Event::TextDelta(TextDelta {
+                    sequence: 1,
+                    text: reply,
+                })),
+            };
+            yield TurnEvent {
+                event: Some(turn_event::Event::Completed(TurnCompleted {
+                    text_chunks: 1,
+                    text_bytes: bytes,
+                })),
+            };
+        };
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn start_session_turn(
+        &self,
+        request: Request<StartSessionTurnRequest>,
+    ) -> Result<Response<StartSessionTurnResponse>, Status> {
+        self.check_auth(&request)?;
+        let req = request.into_inner();
+        let mut st = self.state.lock().expect("bridge mutex poisoned");
+        st.sessions.insert(req.session_id.clone());
+        Ok(Response::new(StartSessionTurnResponse {
+            turn: Some(SessionTurnRef {
+                session_id: req.session_id,
+                ordinal: req.after_turn.saturating_add(1),
+            }),
+        }))
+    }
+
+    async fn watch_session_turn(
+        &self,
+        request: Request<WatchSessionTurnRequest>,
+    ) -> Result<Response<Self::WatchSessionTurnStream>, Status> {
+        self.check_auth(&request)?;
+        let stream = async_stream::try_stream! {
+            yield SessionTurnEvent {
+                event_id: "turn-ev-1".to_owned(),
+                event: Some(session_turn_event::Event::Started(TurnStarted {})),
+            };
+            yield SessionTurnEvent {
+                event_id: "turn-ev-2".to_owned(),
+                event: Some(session_turn_event::Event::TextCheckpoint(TextCheckpoint {
+                    text: "session turn active".to_owned(),
+                })),
+            };
+            yield SessionTurnEvent {
+                event_id: "turn-ev-3".to_owned(),
+                event: Some(session_turn_event::Event::Outcome(
+                    SessionTurnOutcome::Completed as i32,
+                )),
+            };
+        };
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn cancel_session_turn(
+        &self,
+        request: Request<CancelSessionTurnRequest>,
+    ) -> Result<Response<CancelSessionTurnResponse>, Status> {
+        self.check_auth(&request)?;
+        let req = request.into_inner();
+        Ok(Response::new(CancelSessionTurnResponse {
+            turn: req.turn,
+            runtime: Some(RuntimeShutdownReceipt {
+                completed: true,
+                cancellation_requested: true,
+                tracker_closed: true,
+                tracked_tasks_at_shutdown: 0,
+                remaining_tasks: 0,
+                timeout_ms: None,
+                status: RuntimeRetirementStatus::Completed as i32,
+            }),
+            outcome: SessionTurnOutcome::Completed as i32,
+        }))
+    }
+
+    async fn open_session(
+        &self,
+        request: Request<OpenSessionRequest>,
+    ) -> Result<Response<OpenSessionResponse>, Status> {
+        self.check_auth(&request)?;
+        let req = request.into_inner();
+        let mut st = self.state.lock().expect("bridge mutex poisoned");
+        let id = if req.session_id.is_empty() {
+            "default".to_owned()
+        } else {
+            req.session_id
+        };
+        st.sessions.insert(id.clone());
+        Ok(Response::new(OpenSessionResponse { session_id: id }))
+    }
+
+    async fn get_session_summary(
+        &self,
+        request: Request<GetSessionSummaryRequest>,
+    ) -> Result<Response<GetSessionSummaryResponse>, Status> {
+        self.check_auth(&request)?;
+        let req = request.into_inner();
+        Ok(Response::new(GetSessionSummaryResponse {
+            latest_turn: Some(SessionTurnRef {
+                session_id: req.session_id,
+                ordinal: 1,
+            }),
+            latest_event_id: Some("turn-ev-3".to_owned()),
+            recovery_state: SessionRecoveryState::Finished as i32,
+        }))
+    }
+
+    async fn get_session_turn_status(
+        &self,
+        request: Request<GetSessionTurnStatusRequest>,
+    ) -> Result<Response<GetSessionTurnStatusResponse>, Status> {
+        self.check_auth(&request)?;
+        let req = request.into_inner();
+        Ok(Response::new(GetSessionTurnStatusResponse {
+            turn: req.turn,
+            recovery_state: SessionRecoveryState::Finished as i32,
+            latest_event_id: "turn-ev-3".to_owned(),
+            outcome: Some(SessionTurnOutcome::Completed as i32),
+        }))
+    }
+
+    async fn get_session_turn_cancellation(
+        &self,
+        request: Request<GetSessionTurnCancellationRequest>,
+    ) -> Result<Response<GetSessionTurnCancellationResponse>, Status> {
+        self.check_auth(&request)?;
+        let req = request.into_inner();
+        Ok(Response::new(GetSessionTurnCancellationResponse {
+            turn: req.turn,
+            evidence: Some(
+                get_session_turn_cancellation_response::Evidence::Unavailable(
+                    CancellationEvidenceUnavailable {},
+                ),
+            ),
+            outcome: SessionTurnOutcome::Completed as i32,
+        }))
     }
 }
