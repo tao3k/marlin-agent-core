@@ -39,7 +39,7 @@ marlin-agent-stream = { workspace = true, optional = true }
 prost = { version = "=0.14.4", optional = true }
 tokio = { workspace = true, optional = true }
 tokio-stream = { workspace = true, optional = true }
-tonic = { version = "=0.14.9", default-features = false, features = ["channel", "codegen", "tls-ring"], optional = true }
+tonic = { version = "=0.14.9", default-features = false, features = ["channel", "codegen", "tls-aws-lc"], optional = true }
 tonic-prost = { version = "=0.14.9", optional = true }
 
 [build-dependencies]
@@ -61,6 +61,11 @@ path = "tests/integration/session/main.rs"
 [[test]]
 name = "ui_grpc"
 path = "tests/integration/ui_grpc.rs"
+required-features = ["ui-grpc"]
+
+[[bin]]
+name = "marlin-mygo-host"
+path = "src/bin/marlin_mygo_host.rs"
 required-features = ["ui-grpc"]
 
 [[example]]
