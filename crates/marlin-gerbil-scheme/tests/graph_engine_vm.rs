@@ -957,4 +957,262 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
     assert_eq!(read_str(r_vis.element(0).unwrap()), "index");
     assert_eq!(read_str(r_vis.element(1).unwrap()), "task-turso-parent");
     assert_eq!(read_str(r_vis.element(2).unwrap()), "task-turso-sib");
+
+    // -------------------------------------------------------------------------
+    // Phase 5 (Round S7): Live Embedded Gerbil VM Interactive Fleet <-> TUI
+    // Controller Keystroke Loop + REAL Turso SQLite WAL Boot #2 -> Drop -> Boot #3!
+    // -------------------------------------------------------------------------
+    let ctrl_mod_sym = sym(&runtime, ":marlin-agent-core/graph-engine/fleet-controller");
+    let resolve_ctrl = |proc_name: &str| {
+        let name_sym = sym(&runtime, proc_name);
+        runtime
+            .resolve_package_export(scheme_dir_str, &ctrl_mod_sym, &name_sym)
+            .unwrap_or_else(|e| panic!("resolve {proc_name}: {e}"))
+    };
+    let scheme_ctrl_open = resolve_ctrl("marlin-fleet-workbench-controller-open-vector");
+    let scheme_ctrl_dispatch = resolve_ctrl("marlin-fleet-workbench-controller-dispatch-vector");
+
+    let turso_cfg3 = marlin_agent_storage::TursoAgentStorageConfig {
+        path: tmp_dir.path().join("gerbil-vm-fleet.db"),
+        optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvcc,
+        batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent,
+    };
+
+    // Open live FleetWorkbenchController directly over Boot #2's restored Fleet!
+    let ctrl_open_in = vec_obj(&runtime, &[restored_fleet, sym(&runtime, "L1")]);
+    let ctrl0 = runtime
+        .call_rooted(&scheme_ctrl_open, &ctrl_open_in)
+        .unwrap();
+
+    // 1. User triggers `SPC o h a` (`task-human-approve`) -> clears defeater & exits blocker-active!
+    let approve_in = vec_obj(
+        &runtime,
+        &[
+            ctrl0,
+            sym(&runtime, "task-human-approve"),
+            flag(&runtime, false),
+            flag(&runtime, false),
+            vec_obj(&runtime, &[]),
+            flag(&runtime, false),
+        ],
+    );
+    let approve_out = runtime
+        .call_rooted(&scheme_ctrl_dispatch, &approve_in)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let a1_detours = approve_out
+        .element(4)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let a1_defeaters = approve_out
+        .element(5)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let a1_ui = approve_out
+        .element(6)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    assert_eq!(read_sym(a1_detours.element(0).unwrap()), "mainline");
+    assert_eq!(read_fx(a1_defeaters.element(0).unwrap()), 0);
+    assert_eq!(a1_ui.len(), 9);
+    let ctrl1 = approve_out.element(0).unwrap();
+
+    // 2. User triggers `SPC o d s` (side-quest) -> `SPC o d n` (spawn sibling "task-turso-sib2")!
+    let sq_in = vec_obj(
+        &runtime,
+        &[
+            ctrl1,
+            sym(&runtime, "task-detour-sidequest"),
+            flag(&runtime, false),
+            txt(&runtime, "sq-tui-boot2"),
+            vec_obj(&runtime, &[]),
+            flag(&runtime, false),
+        ],
+    );
+    let sq_out = runtime
+        .call_rooted(&scheme_ctrl_dispatch, &sq_in)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let sq_detours = sq_out
+        .element(4)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    assert_eq!(
+        read_sym(sq_detours.element(0).unwrap()),
+        "side-quest-active"
+    );
+    let ctrl2 = sq_out.element(0).unwrap();
+
+    let sib_in = vec_obj(
+        &runtime,
+        &[
+            ctrl2,
+            sym(&runtime, "task-detour-exit-sibling"),
+            flag(&runtime, false),
+            txt(&runtime, "task-turso-sib2"),
+            vec_obj(&runtime, &[]),
+            flag(&runtime, false),
+        ],
+    );
+    let sib_out = runtime
+        .call_rooted(&scheme_ctrl_dispatch, &sib_in)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let sib_vis = sib_out
+        .element(3)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let sib_detours = sib_out
+        .element(4)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    assert_eq!(read_sym(sib_detours.element(0).unwrap()), "mainline");
+    assert_eq!(sib_vis.len(), 4); // index + task-turso-parent + task-turso-sib2 + peek task-turso-sib!
+    assert_eq!(read_str(sib_vis.element(0).unwrap()), "index");
+    assert_eq!(read_str(sib_vis.element(1).unwrap()), "task-turso-parent");
+    assert_eq!(read_str(sib_vis.element(2).unwrap()), "task-turso-sib2");
+    assert_eq!(read_str(sib_vis.element(3).unwrap()), "task-turso-sib");
+    let ctrl3 = sib_out.element(0).unwrap();
+
+    // 3. User triggers `SPC o 3` (`task-drill-l3`) -> disclosure elevates to L3 & projects Ratatui vector
+    let drill_in = vec_obj(
+        &runtime,
+        &[
+            ctrl3,
+            sym(&runtime, "task-drill-l3"),
+            flag(&runtime, false),
+            flag(&runtime, false),
+            vec_obj(&runtime, &[]),
+            flag(&runtime, false),
+        ],
+    );
+    let drill_out = runtime
+        .call_rooted(&scheme_ctrl_dispatch, &drill_in)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    assert_eq!(read_sym(drill_out.element(1).unwrap()), "L3");
+    assert_eq!(
+        drill_out
+            .element(6)
+            .unwrap()
+            .into_collection(CollectionKind::Vector)
+            .unwrap()
+            .len(),
+        9
+    );
+    let ctrl4 = drill_out.element(0).unwrap();
+
+    // 4. User triggers `SPC o f c` (`task-fleet-checkpoint`) -> emits UTF-8 CasPut -> persist to Turso WAL!
+    let cp_tui_in = vec_obj(
+        &runtime,
+        &[
+            ctrl4,
+            sym(&runtime, "task-fleet-checkpoint"),
+            flag(&runtime, false),
+            txt(&runtime, "fleet:turso:boot2-after-tui"),
+            vec_obj(&runtime, &[]),
+            flag(&runtime, false),
+        ],
+    );
+    let cp_tui_out = runtime
+        .call_rooted(&scheme_ctrl_dispatch, &cp_tui_in)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let cp_tui_effs = cp_tui_out
+        .element(2)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    assert_eq!(cp_tui_effs.len(), 1);
+    let cp_tui_effect = decode_effect(cp_tui_effs.element(0).unwrap());
+    let put_tui_receipts = rt_tokio.block_on(run_atomic_effect_batch(
+        Arc::clone(&turso_sub2),
+        vec![cp_tui_effect],
+    ));
+    assert!(matches!(
+        put_tui_receipts.as_slice(),
+        [AtomicEffectReceipt::CasStored(_)]
+    ));
+    drop(turso_sub2);
+
+    // 5. Boot #3: Reopen REAL disk Turso SQLite WAL, restore post-TUI Fleet, open fresh controller!
+    let storage3 = rt_tokio
+        .block_on(marlin_agent_storage::TursoAgentStorage::open_local(
+            turso_cfg3,
+        ))
+        .expect("reopen turso boot #3");
+    let turso_sub3 = Arc::new(TursoLeafSubstrate::new(storage3));
+    let get3_receipts = rt_tokio.block_on(run_atomic_effect_batch(
+        Arc::clone(&turso_sub3),
+        vec![AtomicEffect::CasGet(CasGetEffectPayload {
+            effect_id: "restore-fleet-boot3".to_owned(),
+            key: "fleet:turso:boot2-after-tui".to_owned(),
+        })],
+    ));
+    let cas_hit3 = get3_receipts.into_iter().next().unwrap();
+    assert!(matches!(cas_hit3, AtomicEffectReceipt::CasHit(_)));
+    let encoded_hit3 = encode_receipt(&runtime, &cas_hit3);
+    let restored_fleet3 = runtime
+        .call_rooted(&scheme_fleet_restore, &encoded_hit3)
+        .unwrap();
+    let ctrl_b3_in = vec_obj(&runtime, &[restored_fleet3, sym(&runtime, "L3")]);
+    let ctrl_b3 = runtime.call_rooted(&scheme_ctrl_open, &ctrl_b3_in).unwrap();
+    let verify_b3_in = vec_obj(
+        &runtime,
+        &[
+            ctrl_b3,
+            sym(&runtime, "task-drill-l3"),
+            flag(&runtime, false),
+            flag(&runtime, false),
+            vec_obj(&runtime, &[]),
+            flag(&runtime, false),
+        ],
+    );
+    let b3_out = runtime
+        .call_rooted(&scheme_ctrl_dispatch, &verify_b3_in)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let b3_vis = b3_out
+        .element(3)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let b3_detours = b3_out
+        .element(4)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let b3_defeaters = b3_out
+        .element(5)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let b3_ui = b3_out
+        .element(6)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+
+    assert_eq!(b3_vis.len(), 4);
+    assert_eq!(read_str(b3_vis.element(0).unwrap()), "index");
+    assert_eq!(read_str(b3_vis.element(1).unwrap()), "task-turso-parent");
+    assert_eq!(read_str(b3_vis.element(2).unwrap()), "task-turso-sib2");
+    assert_eq!(read_str(b3_vis.element(3).unwrap()), "task-turso-sib");
+    assert_eq!(read_sym(b3_detours.element(0).unwrap()), "mainline");
+    assert_eq!(read_sym(b3_detours.element(1).unwrap()), "mainline");
+    assert_eq!(read_fx(b3_defeaters.element(0).unwrap()), 0);
+    assert_eq!(read_fx(b3_defeaters.element(1).unwrap()), 0);
+    assert_eq!(b3_ui.len(), 9);
 }

@@ -27,11 +27,16 @@
                  marlin-ui-session-open
                  marlin-ui-session-project
                  marlin-ui-session-dispatch
-                 marlin-task-workbench-next-disclosure))
+                 marlin-task-workbench-next-disclosure)
+        (only-in "./funcs.ss"
+                 marlin-graph-engine-atomic-effect->vector
+                 marlin-graph-engine-vector->atomic-receipt))
 
 (export make-marlin-fleet-workbench-controller
         marlin-fleet-workbench-controller-apply-action
-        marlin-fleet-workbench-controller-project)
+        marlin-fleet-workbench-controller-project
+        marlin-fleet-workbench-controller-open-vector
+        marlin-fleet-workbench-controller-dispatch-vector)
 
 (def (opt-ref obj key default)
   (if (and (object? obj) (.slot? obj key))
@@ -248,3 +253,60 @@
 
 (def (marlin-fleet-workbench-controller-project controller)
   (marlin-ui-session-project (.get controller session)))
+
+;;; ---------------------------------------------------------------------------
+;;; Thin C-ABI Rooted-Vector Entrypoints for Embedded Gerbil VM (`Round S7`)
+;;; ---------------------------------------------------------------------------
+
+(def (tab-id->str v)
+  (cond
+   ((string? v) v)
+   ((symbol? v) (symbol->string v))
+   (else "unknown")))
+
+;;; Input:  `#(fleet disclosure-sym)`
+;;; Output: rooted `FleetWorkbenchController.`
+(def (marlin-fleet-workbench-controller-open-vector input)
+  (make-marlin-fleet-workbench-controller
+   (vector-ref input 0)
+   disclosure-level: (vector-ref input 1)))
+
+;;; Input:  `#(controller action-sym task-id-or-#f arg-or-#f #(receipt-vec ...) auto-archive?)`
+;;; Output: `#(next-controller disclosure-sym #(effect-vec ...) #(visible-tab-ids...) #(detour-modes...) #(defeater-counts...) ratatui-projection-vec)`
+(def (marlin-fleet-workbench-controller-dispatch-vector input)
+  (let* ((ctrl (vector-ref input 0))
+         (action-sym (vector-ref input 1))
+         (tid (vector-ref input 2))
+         (arg (vector-ref input 3))
+         (rcpts (map marlin-graph-engine-vector->atomic-receipt
+                     (vector->list (vector-ref input 4))))
+         (auto-arch? (vector-ref input 5))
+         (next-ctrl (marlin-fleet-workbench-controller-apply-action
+                     ctrl action-sym
+                     task-id: tid
+                     arg: arg
+                     receipts: rcpts
+                     auto-archive?: auto-arch?))
+         (next-fleet (.get next-ctrl fleet))
+         (active-drivers (.ref next-fleet 'active-drivers))
+         (eff-vecs (list->vector (map marlin-graph-engine-atomic-effect->vector
+                                      (.get next-ctrl last-effects))))
+         (vis-tabs (list->vector (map tab-id->str
+                                      (.ref (.get next-ctrl projection) 'visible-tab-ids))))
+         (detours (list->vector (map (lambda (st) (opt-ref (.ref st 'actor) 'detour-mode 'mainline))
+                                     active-drivers)))
+         (defeaters (list->vector
+                     (map (lambda (st)
+                            (let loop ((obs (.ref (.ref st 'obligation-graph) 'obligations)) (acc 0))
+                              (if (null? obs)
+                                acc
+                                (loop (cdr obs) (+ acc (length (.ref (car obs) 'active-defeaters)))))))
+                          active-drivers)))
+         (ui-vec (marlin-fleet-workbench-controller-project next-ctrl)))
+    (vector next-ctrl
+            (.get next-ctrl disclosure-level)
+            eff-vecs
+            vis-tabs
+            detours
+            defeaters
+            ui-vec)))
