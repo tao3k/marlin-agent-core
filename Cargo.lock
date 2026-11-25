@@ -54,51 +54,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "agent-semantic-artifacts"
-version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
-dependencies = [
- "agent-semantic-config",
- "agent-semantic-content-identity",
- "agent-semantic-provider-protocol",
- "asp-rust-project-harness-policy",
- "blake3",
- "fs2",
- "libc",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "agent-semantic-client-protocol"
-version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
-dependencies = [
- "agent-semantic-artifacts",
- "agent-semantic-content-identity",
- "asp-rust-project-harness-policy",
- "blake3",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "agent-semantic-config"
-version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
-dependencies = [
- "asp-rust-project-harness-policy",
- "serde",
- "toml 0.9.12+spec-1.1.0",
-]
-
-[[package]]
 name = "agent-semantic-content-identity"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1b687777a72ced5fdc87c433729150be3a869b44#1b687777a72ced5fdc87c433729150be3a869b44"
 dependencies = [
- "asp-rust-project-harness-policy",
  "base64 0.22.1",
  "blake3",
  "serde",
@@ -109,10 +68,9 @@ dependencies = [
 [[package]]
 name = "agent-semantic-mrr"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1b687777a72ced5fdc87c433729150be3a869b44#1b687777a72ced5fdc87c433729150be3a869b44"
 dependencies = [
  "ascent",
- "asp-rust-project-harness-policy",
  "blake3",
  "gql-catalog",
  "gql-compiler",
@@ -123,43 +81,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "agent-semantic-provider-protocol"
-version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
-dependencies = [
- "agent-semantic-config",
- "agent-semantic-schema-manager",
- "asp-rust-project-harness-policy",
- "serde",
- "serde_json",
- "toml 0.9.12+spec-1.1.0",
-]
-
-[[package]]
-name = "agent-semantic-schema-manager"
-version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
-dependencies = [
- "asp-rust-project-harness-policy",
- "serde_json",
-]
-
-[[package]]
 name = "agent-semantic-search"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1b687777a72ced5fdc87c433729150be3a869b44#1b687777a72ced5fdc87c433729150be3a869b44"
 dependencies = [
- "agent-semantic-client-protocol",
- "agent-semantic-config",
  "agent-semantic-content-identity",
- "agent-semantic-mrr",
  "agent-semantic-search-playbook",
- "agent-semantic-search-projection",
  "agent-semantic-topology",
- "agent-semantic-tree-sitter",
- "asp-rust-project-harness-policy",
  "blake3",
- "bytes",
  "globset",
  "ignore",
  "memchr",
@@ -170,50 +99,27 @@ dependencies = [
  "rustc-hash 2.1.3",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "tantivy",
- "tempfile",
- "tokio",
- "tokio-stream",
- "toml 0.9.12+spec-1.1.0",
- "which 8.0.6",
 ]
 
 [[package]]
 name = "agent-semantic-search-playbook"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1b687777a72ced5fdc87c433729150be3a869b44#1b687777a72ced5fdc87c433729150be3a869b44"
 dependencies = [
- "asp-rust-project-harness-policy",
  "blake3",
  "serde",
  "tantivy-query-grammar",
 ]
 
 [[package]]
-name = "agent-semantic-search-projection"
-version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
-dependencies = [
- "agent-semantic-content-identity",
- "agent-semantic-topology",
- "asp-rust-project-harness-policy",
- "blake3",
- "rustc-hash 2.1.3",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "agent-semantic-topology"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1b687777a72ced5fdc87c433729150be3a869b44#1b687777a72ced5fdc87c433729150be3a869b44"
 dependencies = [
  "agent-semantic-content-identity",
  "agent-semantic-mrr",
  "agent-semantic-workspace-scheduler",
- "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=7a659352c0497823b7492fd1c717f451cfbe0be9)",
- "asp-rust-project-harness-policy",
  "blake3",
  "globset",
  "serde",
@@ -222,27 +128,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "agent-semantic-tree-sitter"
-version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
-dependencies = [
- "agent-semantic-client-protocol",
- "agent-semantic-provider-protocol",
- "asp-rust-project-harness-policy",
- "base64 0.23.1",
- "blake3",
- "regex-automata",
- "serde_json",
- "tree-sitter",
- "tree-sitter-tsquery",
-]
-
-[[package]]
 name = "agent-semantic-workspace-scheduler"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1b687777a72ced5fdc87c433729150be3a869b44#1b687777a72ced5fdc87c433729150be3a869b44"
 dependencies = [
- "asp-rust-project-harness-policy",
  "libc",
  "serde",
  "tokio",
@@ -544,27 +433,6 @@ dependencies = [
 [[package]]
 name = "asp-rust"
 version = "0.1.2"
-source = "git+https://github.com/tao3k/asp-rust?rev=7a659352c0497823b7492fd1c717f451cfbe0be9#7a659352c0497823b7492fd1c717f451cfbe0be9"
-dependencies = [
- "asp-rust-build-support 0.1.0 (git+https://github.com/tao3k/asp-rust?rev=7a659352c0497823b7492fd1c717f451cfbe0be9)",
- "blake3",
- "cargo_toml",
- "globset",
- "libc",
- "proc-macro2",
- "quote",
- "regex",
- "semver",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "syn 3.0.10",
- "toml 1.2.1+spec-1.1.0",
-]
-
-[[package]]
-name = "asp-rust"
-version = "0.1.2"
 source = "git+https://github.com/tao3k/asp-rust?rev=b64f80401c8e2688d7aa7809de714d5f22890ebf#b64f80401c8e2688d7aa7809de714d5f22890ebf"
 dependencies = [
  "asp-rust-build-support 0.1.0 (git+https://github.com/tao3k/asp-rust?rev=b64f80401c8e2688d7aa7809de714d5f22890ebf)",
@@ -608,14 +476,6 @@ dependencies = [
 [[package]]
 name = "asp-rust-build-support"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/asp-rust?rev=7a659352c0497823b7492fd1c717f451cfbe0be9#7a659352c0497823b7492fd1c717f451cfbe0be9"
-dependencies = [
- "blake3",
-]
-
-[[package]]
-name = "asp-rust-build-support"
-version = "0.1.0"
 source = "git+https://github.com/tao3k/asp-rust?rev=b64f80401c8e2688d7aa7809de714d5f22890ebf#b64f80401c8e2688d7aa7809de714d5f22890ebf"
 dependencies = [
  "blake3",
@@ -627,17 +487,6 @@ version = "0.1.0"
 source = "git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd#dd9bf7188bb9900cdfc6540fee2bfd28f43496fd"
 dependencies = [
  "blake3",
-]
-
-[[package]]
-name = "asp-rust-project-harness-policy"
-version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=0214b1baa40a899a26b6b3c4204947783c843a68#0214b1baa40a899a26b6b3c4204947783c843a68"
-dependencies = [
- "asp-rust-build-support 0.1.0 (git+https://github.com/tao3k/asp-rust?rev=7a659352c0497823b7492fd1c717f451cfbe0be9)",
- "blake3",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -5899,8 +5748,6 @@ version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
 dependencies = [
- "foldhash 0.2.0",
- "indexmap",
  "itoa",
  "memchr",
  "serde",
@@ -6169,12 +6016,6 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
-
-[[package]]
-name = "streaming-iterator"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "string-width"
@@ -6693,7 +6534,6 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
- "tokio-util",
 ]
 
 [[package]]
@@ -7020,36 +6860,6 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
-]
-
-[[package]]
-name = "tree-sitter"
-version = "0.26.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17ebdd3a5a7e28a1890b876fdbd0c3c0fe0a6336cffaa104f11b9f720c9daa29"
-dependencies = [
- "cc",
- "regex",
- "regex-syntax",
- "serde_json",
- "streaming-iterator",
- "tree-sitter-language",
-]
-
-[[package]]
-name = "tree-sitter-language"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0af592be68c579aa78a16846bd19422978c3c52e438523d45ff5d1bff1f9d4a"
-
-[[package]]
-name = "tree-sitter-tsquery"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1b31e95ea85379972abf3b6857a59b2f6fb7ef3b5e47e9a4fb6c07111dee5e6"
-dependencies = [
- "cc",
- "tree-sitter-language",
 ]
 
 [[package]]
