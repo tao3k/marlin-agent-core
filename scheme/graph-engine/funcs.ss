@@ -9,7 +9,12 @@
 ;;; and Marlin's opt-in `+sqlite-turso` WAL execution boundary.
 
 (import (only-in :clan/poo/object .get .o .ref .slot? object?)
-        (rename-in (only-in :tao3k/agentic-ai-lab/modules/graph-engine/interface GraphEngine)
+        (rename-in (only-in :tao3k/agentic-ai-lab/modules/graph-engine/interface
+                            GraphEngine
+                            make-capability-envelope
+                            make-obligation
+                            make-deterministic-task-node
+                            make-obligation-graph)
                    (GraphEngine LabGraphEngine))
         (only-in :marlin-agent-core/context-system/convergence
                  marlin-converge-assembly
@@ -23,7 +28,11 @@
         marlin-graph-engine-project-dispatch-vector
         marlin-graph-engine-reconcile-receipt-vector
         marlin-graph-engine-project-workbench-tabs-vector
-        marlin-graph-engine-project-governed-context-vector)
+        marlin-graph-engine-project-governed-context-vector
+        marlin-graph-engine-atomic-effect->vector
+        marlin-graph-engine-vector->atomic-receipt
+        marlin-graph-engine-make-demo-driver-state-vector
+        marlin-graph-engine-step-driver-vector)
 
 (def +marlin-projection-package+ "marlin-agent-core")
 (def +marlin-projection-object-system+ "gerbil-poo")
@@ -517,3 +526,123 @@
           (vector +marlin-graph-engine-abi-version+ #t
                   task-id context-cut kv-digest depth has-defeater?
                   quarantined sandbox-ok? cedar-ok? detour-mode auto-archive? #f))))))
+
+;;; ---------------------------------------------------------------------------
+;;; Thin Atomic Effect C-ABI Vector Bridge (`scheme/graph-engine/funcs.ss`)
+;;; ---------------------------------------------------------------------------
+;;; Encodes Scheme's 4 canonical `AtomicEffect.` POO objects into rooted Scheme
+;;; vectors for Marlin's thin Rust `effect_pump.rs`, and decodes raw Rust
+;;; `AtomicEffectReceipt` vectors back into POO receipts for `drive-graph-actor-step`.
+
+(def (marlin-graph-engine-atomic-effect->vector eff)
+  (let ((k (.ref eff 'kind))
+        (id (.ref eff 'effect-id)))
+    (cond
+     ((eq? k 'cas-get)
+      (vector 'cas-get id (.ref eff 'key)))
+     ((eq? k 'cas-put)
+      (vector 'cas-put id (.ref eff 'key) (value->config-string (.ref eff 'payload))))
+     ((eq? k 'llm-complete)
+      (let ((msg-vecs
+             (list->vector
+              (map (lambda (m) (vector (car m) (cadr m)))
+                   (.ref eff 'messages)))))
+        (vector 'llm-complete id (.ref eff 'endpoint) msg-vecs)))
+     ((eq? k 'sandbox-run)
+      (vector 'sandbox-run id (.ref eff 'program)
+              (list->vector (opt-ref eff 'args '()))
+              (opt-ref eff 'cwd #f)))
+     (else
+      (error "unsupported atomic effect kind for C-ABI vector" k)))))
+
+(def (marlin-graph-engine-vector->atomic-receipt vec)
+  (let* ((lab-exports (.get LabGraphEngine core exports))
+         (k (vector-ref vec 0))
+         (id (vector-ref vec 1)))
+    (cond
+     ((eq? k 'cas-hit)
+      ((.ref lab-exports 'make-cas-hit-receipt) id (vector-ref vec 2)))
+     ((eq? k 'cas-miss)
+      ((.ref lab-exports 'make-cas-miss-receipt) id))
+     ((eq? k 'cas-stored)
+      ((.ref lab-exports 'make-cas-stored-receipt) id))
+     ((eq? k 'llm-completed)
+      ((.ref lab-exports 'make-llm-completed-receipt) id (vector-ref vec 2)))
+     ((eq? k 'sandbox-exited)
+      ((.ref lab-exports 'make-sandbox-exited-receipt)
+       id (vector-ref vec 2) (vector-ref vec 3) stderr: (vector-ref vec 4)))
+     (else
+      ((.ref lab-exports 'make-effect-error-receipt) id (vector-ref vec 2))))))
+
+;;; Helper constructing a live rooted Scheme `UnifiedDriverState.` (1 pure-cas
+;;; deterministic task + 2 competing hypotheses x 2 branches) from `#(task-id title kv-digest)`.
+(def (marlin-graph-engine-make-demo-driver-state-vector input)
+  (let* ((lab-exports (.get LabGraphEngine core exports))
+         (tid (vector-ref input 0))
+         (title (vector-ref input 1))
+         (kv-digest (vector-ref input 2))
+         (ob-mod (.ref lab-exports 'make-context-trunk))
+         (make-actor (.ref lab-exports 'make-task-actor))
+         (make-hyp (.ref lab-exports 'make-competing-hypothesis))
+         (make-br (.ref lab-exports 'make-hypothesis-branch-proposal))
+         (make-st (.ref lab-exports 'make-unified-driver-state))
+         (env (make-capability-envelope
+               "vm-owner"
+               allowed-caps: '(context-read)
+               denied-caps: '(host-egress)
+               egress-allowed?: #f))
+         (ob (make-obligation
+              "ob-vm-1"
+              title: "Verify VM Task"
+              required-evidence-ids: '("ev-vm-det")))
+         (det (make-deterministic-task-node
+               "det-vm-cas-1"
+               "ob-vm-1"
+               "ev-vm-det"
+               'funflow-vm-cas
+               "vm-in"
+               effect-class: 'pure-cas
+               read-footprint: '("vm.ss")
+               write-footprint: '()))
+         (g0 (make-obligation-graph
+              "g-vm-driver"
+              cut: 1
+              obligations: (list ob)
+              evidence: '()
+              det-tasks: (list det)))
+         (trunk (ob-mod "trunk-vm-driver" "ob-vm-1" g0 env
+                        shared-context-cut: 1
+                        kv-prefix-digest: kv-digest))
+         (actor (make-actor tid trunk '("scope-main") title: title))
+         (ctx (.o bind-these: #f
+                  context-cut: 1
+                  kv-prefix-digest: kv-digest
+                  disclosure-depth: 'L3
+                  has-active-defeater?: #f
+                  sandbox-admitted?: #t
+                  cedar-handoff-valid?: #t))
+         (h1 (make-hyp "H1" "Hypothesis Alpha" contradictions: '("c1") open-questions: '("q1")))
+         (h2 (make-hyp "H2" "Hypothesis Beta" contradictions: '() open-questions: '("q2")))
+         (b1 (make-br "B1" "Check trace A"))
+         (b2 (make-br "B2" "Check trace B")))
+    (make-st actor g0 ctx
+             competing-hypotheses: (list h1 h2)
+             branch-proposals: (list b1 b2))))
+
+;;; Thin C-ABI driver step:
+;;; Input:  `#(driver-state #(receipt-vec ...))`
+;;; Output: `#(next-driver-state phase-sym llm-calls-int cas-hits-int cas-puts-int #(effect-vec ...))`
+(def (marlin-graph-engine-step-driver-vector input)
+  (let* ((lab-exports (.get LabGraphEngine core exports))
+         (drive (.ref lab-exports 'drive-graph-actor-step))
+         (st (vector-ref input 0))
+         (rcpt-vecs (vector->list (vector-ref input 1)))
+         (rcpts (map marlin-graph-engine-vector->atomic-receipt rcpt-vecs))
+         (step (drive st rcpts))
+         (eff-vecs (list->vector (map marlin-graph-engine-atomic-effect->vector (.ref step 'effects)))))
+    (vector (.ref step 'state)
+            (.ref step 'phase)
+            (.ref step 'llm-calls-emitted)
+            (opt-ref step 'cas-hits-observed 0)
+            (opt-ref step 'cas-puts-emitted 0)
+            eff-vecs)))

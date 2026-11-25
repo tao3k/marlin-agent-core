@@ -15,7 +15,8 @@
                  marlin-graph-engine-project-dispatch-vector
                  marlin-graph-engine-reconcile-receipt-vector
                  marlin-graph-engine-project-workbench-tabs-vector
-                 marlin-graph-engine-project-governed-context-vector))
+                 marlin-graph-engine-project-governed-context-vector
+                 marlin-graph-engine-step-driver-vector))
 
 (export GraphEngineMarlinOperations
         EnableMarlinGraphEngineSqliteTurso)
@@ -27,7 +28,8 @@
   project-dispatch-vector: marlin-graph-engine-project-dispatch-vector
   reconcile-receipt-vector: marlin-graph-engine-reconcile-receipt-vector
   project-workbench-tabs-vector: marlin-graph-engine-project-workbench-tabs-vector
-  project-governed-context-vector: marlin-graph-engine-project-governed-context-vector)
+  project-governed-context-vector: marlin-graph-engine-project-governed-context-vector
+  step-driver-vector: marlin-graph-engine-step-driver-vector)
 
 (def (EnableMarlinGraphEngineSqliteTurso inherited)
   (.o (:: self inherited)

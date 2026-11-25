@@ -30,6 +30,7 @@
                  graph-make-task-actor
                  make-competing-hypothesis
                  make-hypothesis-branch-proposal
+                 make-cas-get-effect
                  make-cas-hit-receipt
                  make-cas-miss-receipt
                  make-cas-stored-receipt
@@ -41,6 +42,9 @@
                  graph-enter-task-actor-detour
                  make-graph-fleet-state
                  fleet-spawn-sibling-from-detour
+                 fleet-apply-bitemporal-event
+                 plan-fleet-cas-checkpoint
+                 restore-fleet-from-cas-receipt
                  run-graph-fleet-to-quiescence
                  project-fleet->workbench-projection))
 
@@ -357,4 +361,48 @@
         (check-equal? (.ref run 'settled-task-ids) '("task-fleet-sib"))
         (check-equal? (.ref proj 'visible-tab-ids) '(index "task-fleet-parent" "task-fleet-sib"))
         (check-equal? (vector? rendered) #t)
-        (check-equal? (vector-ref (vector-ref step1 1) 0) 'select-buffer)))))
+        (check-equal? (vector-ref (vector-ref step1 1) 0) 'select-buffer)))
+
+    (test-case "Round S2: Bitemporal defeater -> Blocker + L3 + Human Inbox -> Fleet CAS checkpoint/restore -> Marlin TUI (0 Rust edits)"
+      (let* ((cas-table (make-hash-table))
+             (pump (lambda (effs)
+                     (map (lambda (e)
+                            (let ((k (.ref e 'kind)) (id (.ref e 'effect-id)))
+                              (cond
+                               ((eq? k 'cas-put)
+                                (hash-put! cas-table (.ref e 'key) (.ref e 'payload))
+                                (make-cas-stored-receipt id))
+                               ((eq? k 'cas-get)
+                                (let ((v (hash-get cas-table (.ref e 'key))))
+                                  (if v (make-cas-hit-receipt id v) (make-cas-miss-receipt id))))
+                               (else (make-effect-error-receipt id "err")))))
+                          effs)))
+             (env (make-capability-envelope "owner" allowed-caps: '(context-read) denied-caps: '(host-egress) egress-allowed?: #f))
+             (ctx (.o bind-these: #f
+                      context-cut: 1
+                      kv-prefix-digest: "sha256:s2-zone1"
+                      disclosure-depth: 'L1
+                      has-active-defeater?: #f
+                      sandbox-admitted?: #t
+                      cedar-handoff-valid?: #t))
+             (ob (make-obligation "ob-s2" title: "Release Audit" required-evidence-ids: '("ev-s2")))
+             (g0 (make-obligation-graph "g-s2" cut: 1 obligations: (list ob) evidence: '() det-tasks: '()))
+             (tr0 (make-context-trunk "tr-s2" "ob-s2" g0 env shared-context-cut: 1 kv-prefix-digest: "sha256:s2-zone1"))
+             (actor0 (graph-make-task-actor "task-s2-01" tr0 '("scope-main") title: "Release Gate"))
+             (fl0 (make-graph-fleet-state (list (make-unified-driver-state actor0 g0 ctx))))
+             (def-ev (.o bind-these: #f event-kind: 'defeater-discovered obligation-id: "ob-s2" defeater-id: "def-sig-01"))
+             (fl-def (fleet-apply-bitemporal-event fl0 "task-s2-01" def-ev))
+             ;; Persist full Fleet snapshot via CAS & restore cleanly
+             (_put (pump (list (plan-fleet-cas-checkpoint fl-def "fleet:s2"))))
+             (get-r (car (pump (list (make-cas-get-effect "get-s2" "fleet:s2")))))
+             (fl-restored (restore-fleet-from-cas-receipt get-r))
+             (proj (project-fleet->workbench-projection fl-restored))
+             (tab (car (.ref proj 'dynamic-tabs)))
+             (pkg-ui (make-marlin-task-workbench-package proj disclosure-level: 'L3))
+             (sess0 (marlin-ui-session-open
+                     (vector pkg-ui #("gemini-2.5-pro" "s2-inbox" #() #()) #())))
+             (rendered (marlin-ui-session-project sess0)))
+        (check-equal? (.ref tab 'detour-mode) 'blocker-active)
+        (check-equal? (.ref tab 'active-defeaters-count) 1)
+        (check-equal? (length (.ref tab 'human-inbox)) 1)
+        (check-equal? (vector? rendered) #t)))))

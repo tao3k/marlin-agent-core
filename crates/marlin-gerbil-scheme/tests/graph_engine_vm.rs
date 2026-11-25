@@ -5,9 +5,14 @@
 //! Real embedded Gambit/Gerbil VM round-trip verification for all 4 `GraphEngine`
 //! rooted-vector C-ABI schemas (dispatch, reconcile, workbench-tabs, governed-context).
 
+use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+
 use gerbil_scheme::{
-    CollectionKind, GerbilRuntime, IdentifierKind, PackageResolutionProgress, RootedSchemeObject,
-    SchemeScalar,
+    CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
+    PackageResolutionProgress, RootedSchemeObject, SchemeScalar,
 };
 use marlin_agent_graph::{
     DetourMode, DisclosureDepth, DispatchRequestId, ExecutionReceiptStatus, FencingEpoch,
@@ -16,7 +21,15 @@ use marlin_agent_graph::{
     MarlinDispatchEnvelope, MarlinExecutionReceipt, ReceiptReconciliationReason, TaskActorId,
     TaskActorScopeMode, TaskActorStatus, WorkbenchActiveTaskInput, WorkbenchTabKind,
 };
-use marlin_agent_runtime::TaskActorRuntimeRegistry;
+use marlin_agent_protocol::{
+    ModelEndpoint, ModelGatewayRequest, system_gateway_message, user_gateway_message,
+};
+use marlin_agent_runtime::{
+    AtomicEffect, AtomicEffectExecutor, AtomicEffectReceipt, CasGetEffectPayload,
+    CasHitReceiptPayload, CasPutEffectPayload, EffectErrorReceiptPayload, LlmCompleteEffectPayload,
+    LlmCompletedReceiptPayload, SandboxExitedReceiptPayload, SandboxRunEffectPayload,
+    TaskActorRuntimeRegistry, run_atomic_effect_batch,
+};
 use marlin_gerbil_scheme::{
     GraphEngineDispatchProjection, GraphEngineGovernedContextProjection,
     GraphEngineProjectionError, GraphEngineWorkbenchTaskRow, decode_graph_engine_dispatch_vector,
@@ -300,4 +313,312 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
             reason: "blocker-detour-must-disable-auto-archive".to_owned(),
         }
     );
+
+    // -------------------------------------------------------------------------
+    // Phase 3 (Round S3): Live Embedded Gerbil Scheme VM <-> Thin Rust Tokio
+    // `marlin_agent_runtime::run_atomic_effect_batch` 4-Primitive Round-Trip!
+    // -------------------------------------------------------------------------
+    let scheme_make_demo = resolve("marlin-graph-engine-make-demo-driver-state-vector");
+    let scheme_step_driver = resolve("marlin-graph-engine-step-driver-vector");
+
+    struct VmLeafSubstrate {
+        cas: Mutex<BTreeMap<String, Vec<u8>>>,
+    }
+
+    impl AtomicEffectExecutor for VmLeafSubstrate {
+        fn execute_atomic<'a>(
+            &'a self,
+            effect: AtomicEffect,
+        ) -> Pin<Box<dyn Future<Output = AtomicEffectReceipt> + Send + 'a>> {
+            Box::pin(async move {
+                match effect {
+                    AtomicEffect::CasGet(p) => {
+                        if let Some(bytes) = self.cas.lock().unwrap().get(&p.key).cloned() {
+                            AtomicEffectReceipt::CasHit(CasHitReceiptPayload {
+                                effect_id: p.effect_id,
+                                bytes,
+                            })
+                        } else {
+                            AtomicEffectReceipt::CasMiss(p.effect_id)
+                        }
+                    }
+                    AtomicEffect::CasPut(p) => {
+                        self.cas.lock().unwrap().insert(p.key, p.bytes);
+                        AtomicEffectReceipt::CasStored(p.effect_id)
+                    }
+                    AtomicEffect::LlmComplete(p) => {
+                        let tail = p
+                            .request
+                            .messages()
+                            .last()
+                            .map(|m| m.content.clone())
+                            .unwrap_or_default();
+                        AtomicEffectReceipt::LlmCompleted(LlmCompletedReceiptPayload {
+                            effect_id: p.effect_id,
+                            content: format!("vm-llm-out:{tail}"),
+                        })
+                    }
+                    AtomicEffect::SandboxRun(p) => {
+                        AtomicEffectReceipt::SandboxExited(SandboxExitedReceiptPayload {
+                            effect_id: p.effect_id,
+                            exit_code: 0,
+                            stdout: format!("ran:{}", p.program).into_bytes(),
+                            stderr: Vec::new(),
+                        })
+                    }
+                }
+            })
+        }
+    }
+
+    fn read_sym(obj: RootedSchemeObject<'_>) -> String {
+        assert_eq!(obj.as_ref().kind().unwrap(), ObjectKind::Symbol);
+        let mut buf = IdentifierBuffer::default();
+        obj.as_ref().copy_identifier_names(&mut buf).unwrap();
+        let (IdentifierKind::Symbol, name) = buf.get(0).unwrap() else {
+            panic!("expected symbol");
+        };
+        name.to_owned()
+    }
+
+    fn read_str(obj: RootedSchemeObject<'_>) -> String {
+        obj.into_string()
+            .unwrap()
+            .to_string()
+            .into_result()
+            .unwrap()
+    }
+
+    fn read_opt_str(obj: RootedSchemeObject<'_>) -> Option<String> {
+        match obj.as_ref().kind().unwrap() {
+            ObjectKind::String => Some(read_str(obj)),
+            _ => None,
+        }
+    }
+
+    fn read_fx(obj: RootedSchemeObject<'_>) -> isize {
+        match obj.as_ref().scalar().unwrap() {
+            SchemeScalar::Fixnum(n) => n,
+            other => panic!("expected fixnum, got {other:?}"),
+        }
+    }
+
+    fn decode_effect<'vm>(obj: RootedSchemeObject<'vm>) -> AtomicEffect {
+        let v = obj.into_collection(CollectionKind::Vector).unwrap();
+        let kind = read_sym(v.element(0).unwrap());
+        let id = read_str(v.element(1).unwrap());
+        match kind.as_str() {
+            "cas-get" => AtomicEffect::CasGet(CasGetEffectPayload {
+                effect_id: id,
+                key: read_str(v.element(2).unwrap()),
+            }),
+            "cas-put" => AtomicEffect::CasPut(CasPutEffectPayload {
+                effect_id: id,
+                key: read_str(v.element(2).unwrap()),
+                bytes: read_str(v.element(3).unwrap()).into_bytes(),
+            }),
+            "llm-complete" => {
+                let endpoint_raw = read_str(v.element(2).unwrap());
+                let (prov, model) = endpoint_raw
+                    .split_once('/')
+                    .unwrap_or(("openai", endpoint_raw.as_str()));
+                let msgs_vec = v
+                    .element(3)
+                    .unwrap()
+                    .into_collection(CollectionKind::Vector)
+                    .unwrap();
+                let mut messages = Vec::with_capacity(msgs_vec.len());
+                for i in 0..msgs_vec.len() {
+                    let pair = msgs_vec
+                        .element(i)
+                        .unwrap()
+                        .into_collection(CollectionKind::Vector)
+                        .unwrap();
+                    let role = read_sym(pair.element(0).unwrap());
+                    let body = read_str(pair.element(1).unwrap());
+                    messages.push(if role == "system" {
+                        system_gateway_message(body)
+                    } else {
+                        user_gateway_message(body)
+                    });
+                }
+                AtomicEffect::LlmComplete(LlmCompleteEffectPayload {
+                    effect_id: id,
+                    request: ModelGatewayRequest::new(ModelEndpoint::new(prov, model), messages),
+                })
+            }
+            "sandbox-run" => {
+                let prog = read_str(v.element(2).unwrap());
+                let args_vec = v
+                    .element(3)
+                    .unwrap()
+                    .into_collection(CollectionKind::Vector)
+                    .unwrap();
+                let mut args = Vec::with_capacity(args_vec.len());
+                for i in 0..args_vec.len() {
+                    args.push(read_str(args_vec.element(i).unwrap()));
+                }
+                let cwd = read_opt_str(v.element(4).unwrap());
+                AtomicEffect::SandboxRun(SandboxRunEffectPayload {
+                    effect_id: id,
+                    program: prog,
+                    args,
+                    cwd,
+                })
+            }
+            other => panic!("unexpected atomic effect kind from Scheme VM: {other}"),
+        }
+    }
+
+    fn encode_receipt<'vm>(
+        rt: &'vm GerbilRuntime,
+        receipt: &AtomicEffectReceipt,
+    ) -> RootedSchemeObject<'vm> {
+        match receipt {
+            AtomicEffectReceipt::CasHit(p) => vec_obj(
+                rt,
+                &[
+                    sym(rt, "cas-hit"),
+                    txt(rt, &p.effect_id),
+                    txt(rt, &String::from_utf8_lossy(&p.bytes)),
+                ],
+            ),
+            AtomicEffectReceipt::CasMiss(id) => vec_obj(rt, &[sym(rt, "cas-miss"), txt(rt, id)]),
+            AtomicEffectReceipt::CasStored(id) => {
+                vec_obj(rt, &[sym(rt, "cas-stored"), txt(rt, id)])
+            }
+            AtomicEffectReceipt::LlmCompleted(p) => vec_obj(
+                rt,
+                &[
+                    sym(rt, "llm-completed"),
+                    txt(rt, &p.effect_id),
+                    txt(rt, &p.content),
+                ],
+            ),
+            AtomicEffectReceipt::SandboxExited(p) => vec_obj(
+                rt,
+                &[
+                    sym(rt, "sandbox-exited"),
+                    txt(rt, &p.effect_id),
+                    fx(rt, p.exit_code as isize),
+                    txt(rt, &String::from_utf8_lossy(&p.stdout)),
+                    txt(rt, &String::from_utf8_lossy(&p.stderr)),
+                ],
+            ),
+            AtomicEffectReceipt::EffectError(EffectErrorReceiptPayload { effect_id, message }) => {
+                vec_obj(
+                    rt,
+                    &[
+                        sym(rt, "effect-error"),
+                        txt(rt, effect_id),
+                        txt(rt, message),
+                    ],
+                )
+            }
+        }
+    }
+
+    let rt_tokio = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let substrate = Arc::new(VmLeafSubstrate {
+        cas: Mutex::new(BTreeMap::new()),
+    });
+
+    #[allow(clippy::too_many_arguments)]
+    fn pump_vm_rounds<'vm>(
+        runtime: &'vm GerbilRuntime,
+        step_proc: &RootedSchemeObject<'vm>,
+        rt_tokio: &tokio::runtime::Runtime,
+        substrate: &Arc<VmLeafSubstrate>,
+        state: RootedSchemeObject<'vm>,
+        incoming_receipts: Vec<AtomicEffectReceipt>,
+        remaining: usize,
+        total_llm: isize,
+        total_cas_hits: isize,
+        total_cas_puts: isize,
+    ) -> (String, isize, isize, isize) {
+        let rcpt_objs: Vec<RootedSchemeObject<'vm>> = incoming_receipts
+            .iter()
+            .map(|r| encode_receipt(runtime, r))
+            .collect();
+        let step_in = vec_obj(runtime, &[state, vec_obj(runtime, &rcpt_objs)]);
+        let step_out = runtime
+            .call_rooted(step_proc, &step_in)
+            .unwrap()
+            .into_collection(CollectionKind::Vector)
+            .unwrap();
+
+        let last_phase = read_sym(step_out.element(1).unwrap());
+        let next_llm = total_llm + read_fx(step_out.element(2).unwrap());
+        let next_hits = total_cas_hits + read_fx(step_out.element(3).unwrap());
+        let next_puts = total_cas_puts + read_fx(step_out.element(4).unwrap());
+
+        let effs_vec = step_out
+            .element(5)
+            .unwrap()
+            .into_collection(CollectionKind::Vector)
+            .unwrap();
+        if effs_vec.is_empty() || remaining <= 1 {
+            return (last_phase, next_llm, next_hits, next_puts);
+        }
+        let mut effects = Vec::with_capacity(effs_vec.len());
+        for i in 0..effs_vec.len() {
+            effects.push(decode_effect(effs_vec.element(i).unwrap()));
+        }
+        let next_receipts =
+            rt_tokio.block_on(run_atomic_effect_batch(Arc::clone(substrate), effects));
+        let next_state = step_out.element(0).unwrap();
+        pump_vm_rounds(
+            runtime,
+            step_proc,
+            rt_tokio,
+            substrate,
+            next_state,
+            next_receipts,
+            remaining - 1,
+            next_llm,
+            next_hits,
+            next_puts,
+        )
+    }
+
+    let run_vm_to_quiescence = |substrate: Arc<VmLeafSubstrate>| -> (String, isize, isize, isize) {
+        let init_req = vec_obj(
+            &runtime,
+            &[
+                txt(&runtime, "task-vm-pump-01"),
+                txt(&runtime, "VM Pump Actor"),
+                txt(&runtime, "sha256:vm-pump-zone1"),
+            ],
+        );
+        let init_state = runtime.call_rooted(&scheme_make_demo, &init_req).unwrap();
+        pump_vm_rounds(
+            &runtime,
+            &scheme_step_driver,
+            &rt_tokio,
+            &substrate,
+            init_state,
+            Vec::new(),
+            8,
+            0,
+            0,
+            0,
+        )
+    };
+
+    // Cold run: cas-get -> cas-miss -> Two-Zone llm-complete -> cas-put -> 2x2 competing hypotheses -> quiescent!
+    let (cold_phase, cold_llm, cold_hits, cold_puts) = run_vm_to_quiescence(Arc::clone(&substrate));
+    assert_eq!(cold_phase, "quiescent-fixed-point");
+    assert_eq!(cold_hits, 0);
+    assert_eq!(cold_puts, 1);
+    assert_eq!(cold_llm, 5); // 1 deterministic cold-miss fill + 4 competing hypothesis evaluations
+
+    // Warm run against same Rust CAS map: cas-get -> cas-hit (0 LLM for deterministic wave!) + 4 hypothesis evals -> quiescent!
+    let (warm_phase, warm_llm, warm_hits, warm_puts) = run_vm_to_quiescence(Arc::clone(&substrate));
+    assert_eq!(warm_phase, "quiescent-fixed-point");
+    assert_eq!(warm_hits, 1);
+    assert_eq!(warm_puts, 0);
+    assert_eq!(warm_llm, 4);
 }

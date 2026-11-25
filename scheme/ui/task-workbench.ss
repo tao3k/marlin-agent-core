@@ -78,6 +78,8 @@
         (mode (symbol->string (opt-ref tab-obj 'mode 'active)))
         (detour (opt-ref tab-obj 'detour-mode 'mainline))
         (phase (opt-ref tab-obj 'driver-phase #f))
+        (inbox (opt-ref tab-obj 'human-inbox '()))
+        (defeaters (opt-ref tab-obj 'active-defeaters-count 0))
         (wt (opt-ref tab-obj 'worktree "main"))
         (done-c (opt-ref tab-obj 'checklist-done 0))
         (total-c (opt-ref tab-obj 'checklist-total 0)))
@@ -87,6 +89,12 @@
                      (string-append "/" (symbol->string detour)))
                    (if phase
                      (string-append " · " (symbol->string phase))
+                     "")
+                   (if (> (length inbox) 0)
+                     (string-append " · INBOX:" (number->string (length inbox)))
+                     "")
+                   (if (> defeaters 0)
+                     (string-append " · DEFEATERS:" (number->string defeaters))
                      "")
                    "]  " label
                    "  (" (number->string done-c) "/" (number->string total-c) ")  wt:" wt)))
@@ -156,6 +164,29 @@
             (take hyps (min 4 (length hyps)))))
       '())))
 
+(def (human-inbox-lines tab-obj disclosure-level)
+  (let ((inbox (opt-ref tab-obj 'human-inbox '()))
+        (defeaters (opt-ref tab-obj 'active-defeaters-count 0))
+        (rep-attempts (opt-ref tab-obj 'repair-attempts 0))
+        (rep-budget (opt-ref tab-obj 'repair-budget #f)))
+    (if (and (memq disclosure-level '(L1 L2 L3))
+             (or (pair? inbox) (> defeaters 0) (> rep-attempts 0)))
+      (cons
+       (cons 'warning
+             (string-append "Human Inbox & Diagnostics · Items:" (number->string (length inbox))
+                            " · Active Defeaters:" (number->string defeaters)
+                            (if rep-budget
+                              (string-append " · Repair Budget:" (number->string rep-attempts)
+                                             "/" (number->string rep-budget))
+                              "")))
+       (map (lambda (item)
+              (let ((k (opt-ref item 'kind 'diagnostic))
+                    (detail (opt-ref item 'detail "")))
+                (cons 'warning
+                      (string-append "  ! [" (symbol->string k) "] " detail))))
+            (take inbox (min 4 (length inbox)))))
+      '())))
+
 (def (make-task-buffer-entry tab-obj disclosure-level)
   (let* ((id (marlin-ui-task-tab-identity (.ref tab-obj 'id)))
          (label (opt-ref tab-obj 'label (symbol->string id)))
@@ -183,6 +214,7 @@
                  (cons 'normal (string-append "Checklist: [" (number->string done-c)
                                               "/" (number->string total-c) "]"
                                               " · Disclosure: " (symbol->string disclosure-level))))
+           (human-inbox-lines tab-obj disclosure-level)
            (competing-hypothesis-lines tab-obj disclosure-level)
            (list (cons 'muted (if (eq? mode 'peek-readonly)
                                 "Read-only peek mode (SPC o r to reopen durably)"
