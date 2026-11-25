@@ -30,6 +30,7 @@ org-memory = [
     "org-source",
     "dep:marlin-agent-graph",
     "dep:parking_lot",
+    "dep:sha2",
 ]
 
 [dependencies]
@@ -83,3 +84,8 @@ path = "tests/unit/org_workflow_test.rs"
 [[test]]
 name = "governance_async_mediation"
 path = "tests/unit/governance_async_mediation.rs"
+
+[[test]]
+name = "governed_context_bridge"
+path = "tests/unit/governed_context_bridge.rs"
+required-features = ["org-memory"]

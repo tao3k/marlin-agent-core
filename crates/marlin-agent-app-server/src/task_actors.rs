@@ -173,6 +173,105 @@ impl TaskActorControlPlane {
             .execute_and_reconcile(envelope, executor)
             .await
     }
+
+    /// Persists the complete Session-free `TaskActor` snapshot as a CAS artifact in
+    /// `marlin-agent-storage` (`TursoAgentStorage` WAL or `InMemoryAgentStorage`) and
+    /// atomically advances `pointer_key` via optimistic compare-and-swap.
+    pub async fn save_to_agent_storage<S: marlin_agent_storage::AgentStorage>(
+        &self,
+        storage: &S,
+        project_id: &marlin_agent_storage::ProjectId,
+        pointer_key: &marlin_agent_storage::ArtifactPointerKey,
+        agent_id: &marlin_agent_storage::AgentId,
+        event_id: &marlin_agent_storage::EventId,
+    ) -> Result<marlin_agent_storage::ArtifactHash, TaskActorRuntimeError> {
+        let (body, digest_str) = self.registry.snapshot_json_with_sha256()?;
+        let artifact_hash = marlin_agent_storage::ArtifactHash::new(digest_str).map_err(|err| {
+            TaskActorRuntimeError::PersistenceError {
+                reason: format!("invalid artifact hash: {err}"),
+            }
+        })?;
+        let control_session = marlin_agent_storage::SessionId::new("graph-engine-control-plane")
+            .map_err(|err| TaskActorRuntimeError::PersistenceError {
+                reason: format!("invalid control session id: {err}"),
+            })?;
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        storage
+            .put_artifact(marlin_agent_storage::ArtifactRecord {
+                project_id: project_id.clone(),
+                artifact_hash: artifact_hash.clone(),
+                artifact_kind: "graph-engine-task-actor-snapshot".to_owned(),
+                producer_session_id: control_session.clone(),
+                producer_agent_id: agent_id.clone(),
+                producer_event_id: event_id.clone(),
+                media_type: "application/json".to_owned(),
+                size_bytes: body.len() as u64,
+                body,
+                created_at_unix_ms: now_ms,
+            })
+            .await
+            .map_err(|err| TaskActorRuntimeError::PersistenceError {
+                reason: format!("put_artifact failed: {err}"),
+            })?;
+        let expected_artifact_hash = storage
+            .get_artifact_pointer(project_id, pointer_key)
+            .await
+            .map_err(|err| TaskActorRuntimeError::PersistenceError {
+                reason: format!("get_artifact_pointer failed: {err}"),
+            })?
+            .map(|ptr| ptr.target_artifact_hash);
+        storage
+            .compare_and_swap_artifact_pointer(marlin_agent_storage::ArtifactPointerUpdate {
+                project_id: project_id.clone(),
+                pointer_key: pointer_key.clone(),
+                expected_artifact_hash,
+                new_artifact_hash: artifact_hash.clone(),
+                updated_by_session_id: control_session,
+                updated_by_agent_id: agent_id.clone(),
+                updated_by_event_id: event_id.clone(),
+                updated_at_unix_ms: now_ms,
+            })
+            .await
+            .map_err(|err| TaskActorRuntimeError::PersistenceError {
+                reason: format!("compare_and_swap_artifact_pointer failed: {err}"),
+            })?;
+        Ok(artifact_hash)
+    }
+
+    /// Loads and restores a Session-free `TaskActorControlPlane` from a CAS pointer in
+    /// `marlin-agent-storage` (`TursoAgentStorage` WAL or `InMemoryAgentStorage`).
+    pub async fn load_from_agent_storage<S: marlin_agent_storage::AgentStorage>(
+        storage: &S,
+        project_id: &marlin_agent_storage::ProjectId,
+        pointer_key: &marlin_agent_storage::ArtifactPointerKey,
+    ) -> Result<Option<Self>, TaskActorRuntimeError> {
+        let Some(pointer) = storage
+            .get_artifact_pointer(project_id, pointer_key)
+            .await
+            .map_err(|err| TaskActorRuntimeError::PersistenceError {
+                reason: format!("get_artifact_pointer failed: {err}"),
+            })?
+        else {
+            return Ok(None);
+        };
+        let artifact = storage
+            .get_artifact(project_id, &pointer.target_artifact_hash)
+            .await
+            .map_err(|err| TaskActorRuntimeError::PersistenceError {
+                reason: format!("get_artifact failed: {err}"),
+            })?
+            .ok_or_else(|| TaskActorRuntimeError::PersistenceError {
+                reason: format!(
+                    "dangling task-actor pointer: missing artifact {}",
+                    pointer.target_artifact_hash.as_str()
+                ),
+            })?;
+        let registry = TaskActorRuntimeRegistry::from_snapshot_json_bytes(&artifact.body)?;
+        Ok(Some(Self::with_registry(registry)))
+    }
 }
 
 #[cfg(test)]
@@ -294,5 +393,98 @@ mod tests {
         assert_eq!(tabs.tabs.len(), 2);
         assert_eq!(tabs.tabs[0].kind, WorkbenchTabKind::PinnedIndex);
         assert_eq!(tabs.tabs[1].id, "task-bridge-1");
+    }
+
+    #[tokio::test]
+    async fn turso_wal_storage_persists_and_restores_task_actor_control_plane_with_epoch_protection()
+     {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("task-actors-turso.db");
+        let config = marlin_agent_storage::TursoAgentStorageConfig {
+            path: db_path,
+            optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvcc,
+            batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent,
+        };
+        let storage = marlin_agent_storage::TursoAgentStorage::open_local(config.clone())
+            .await
+            .expect("open turso wal");
+
+        let project_id = marlin_agent_storage::ProjectId::new("proj-graph-01").unwrap();
+        let pointer_key =
+            marlin_agent_storage::ArtifactPointerKey::new("pointer:graph-engine:task-actors")
+                .unwrap();
+        let agent_id = marlin_agent_storage::AgentId::new("agent-graph").unwrap();
+        let event_id = marlin_agent_storage::EventId::new("ev-checkpoint-1").unwrap();
+
+        let plane = TaskActorControlPlane::new();
+        let task_id = TaskActorId::new("task-turso-01").unwrap();
+        plane
+            .register_actor(RegisterTaskActorRequest {
+                task_id: task_id.clone(),
+                title: "Turso Durable Task".to_owned(),
+                scope_mode: TaskActorScopeMode::Project,
+            })
+            .unwrap();
+        let (_admitted, decision) = plane
+            .execute_and_reconcile(
+                MarlinDispatchEnvelope {
+                    request_id: DispatchRequestId::new("req-turso-1").unwrap(),
+                    task_id: task_id.clone(),
+                    operation: GraphDispatchOperation::ExecuteFrontier,
+                    fencing_epoch: FencingEpoch::new(1).unwrap(),
+                    scope_mode: TaskActorScopeMode::Project,
+                    join_node_id: None,
+                    substrate_target: GraphSubstrateTarget::SqliteTurso,
+                },
+                |admitted| async move {
+                    MarlinExecutionReceipt {
+                        request_id: admitted.envelope().request_id.clone(),
+                        task_id: admitted.envelope().task_id.clone(),
+                        fencing_epoch: admitted.envelope().fencing_epoch,
+                        status: ExecutionReceiptStatus::Ok,
+                    }
+                },
+            )
+            .await
+            .unwrap();
+        assert!(decision.accepted);
+        assert_eq!(decision.next_epoch.value(), 2);
+
+        plane
+            .enter_detour(
+                &task_id,
+                DetourMode::BlockerActive,
+                DetourNodeId::new("detour-turso-blk").unwrap(),
+            )
+            .unwrap();
+
+        let saved_hash = plane
+            .save_to_agent_storage(&storage, &project_id, &pointer_key, &agent_id, &event_id)
+            .await
+            .expect("save snapshot to Turso WAL");
+        assert!(saved_hash.as_str().starts_with("sha256:"));
+        let expected_snapshot = plane.snapshot();
+        drop(storage);
+
+        let reopened = marlin_agent_storage::TursoAgentStorage::open_local(config)
+            .await
+            .expect("reopen turso wal");
+        let restored =
+            TaskActorControlPlane::load_from_agent_storage(&reopened, &project_id, &pointer_key)
+                .await
+                .expect("load snapshot from Turso WAL")
+                .expect("checkpoint must exist");
+        assert_eq!(restored.snapshot(), expected_snapshot);
+
+        let stale = restored
+            .reconcile_receipt(&MarlinExecutionReceipt {
+                request_id: DispatchRequestId::new("req-turso-1").unwrap(),
+                task_id: task_id.clone(),
+                fencing_epoch: FencingEpoch::new(1).unwrap(),
+                status: ExecutionReceiptStatus::Ok,
+            })
+            .unwrap();
+        assert!(!stale.accepted);
+        assert_eq!(stale.reason, ReceiptReconciliationReason::StaleFencingEpoch);
     }
 }

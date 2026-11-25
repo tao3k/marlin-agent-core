@@ -14,6 +14,7 @@ mod loop_program_handoff;
 mod loop_program_handoff_executor;
 mod loop_program_policy_matrix;
 mod loop_program_side_effects;
+mod task_actor_executor;
 
 pub use adapters::{ProviderNodeAdapter, SubAgentNodeAdapter, ToolNodeAdapter};
 pub use controller::{
@@ -91,3 +92,4 @@ pub use marlin_agent_protocol::{
     LoopQueuePolicy, LoopSelfEvolutionPolicy, LoopToolBatchPolicy, NodeId, RunId,
     RuntimePlanSnapshot,
 };
+pub use task_actor_executor::{TaskActorKernelExecutor, TaskActorStepHandler};

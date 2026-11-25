@@ -12,6 +12,10 @@ pub mod gerbil;
 pub mod gerbil_org;
 /// Structural Org `:ID:` region leases and concurrent multi-agent subtree mediation.
 pub mod governance;
+/// Bridges `OrgGovernanceLedger` subtree mediation with `marlin-agent-graph`
+/// `GovernedContextCapsule`, Scoped Detours, and Two-Zone KV-Prefix prompt assembly.
+#[cfg(feature = "org-memory")]
+pub mod governed_bridge;
 /// Org-backed Context source and optional memory projections.
 #[cfg(feature = "org-source")]
 pub mod org;

@@ -631,6 +631,35 @@ impl TaskActorRuntimeRegistry {
         Ok(snapshot)
     }
 
+    /// Serializes the full `TaskActorRuntimeSnapshot` into deterministic JSON bytes
+    /// paired with a `sha256:<hex>` content digest suitable for `AgentStorage` CAS artifacts.
+    pub fn snapshot_json_with_sha256(&self) -> Result<(Vec<u8>, String), TaskActorRuntimeError> {
+        let snapshot = self.snapshot();
+        let bytes = serde_json::to_vec(&snapshot).map_err(|err| {
+            TaskActorRuntimeError::PersistenceError {
+                reason: format!("serialize snapshot json: {err}"),
+            }
+        })?;
+        let digest = ring::digest::digest(&ring::digest::SHA256, &bytes);
+        let mut hex = String::with_capacity("sha256:".len() + digest.as_ref().len() * 2);
+        hex.push_str("sha256:");
+        for byte in digest.as_ref() {
+            use std::fmt::Write as _;
+            let _ = write!(&mut hex, "{byte:02x}");
+        }
+        Ok((bytes, hex))
+    }
+
+    /// Reconstructs a `TaskActorRuntimeRegistry` from canonical JSON snapshot bytes.
+    pub fn from_snapshot_json_bytes(bytes: &[u8]) -> Result<Self, TaskActorRuntimeError> {
+        let snapshot: TaskActorRuntimeSnapshot = serde_json::from_slice(bytes).map_err(|err| {
+            TaskActorRuntimeError::PersistenceError {
+                reason: format!("parse snapshot json bytes: {err}"),
+            }
+        })?;
+        Ok(Self::from_snapshot(snapshot))
+    }
+
     /// Loads and restores a `TaskActorRuntimeRegistry` from a JSON checkpoint file.
     pub fn load_checkpoint_file(path: &std::path::Path) -> Result<Self, TaskActorRuntimeError> {
         let bytes = std::fs::read(path).map_err(|err| TaskActorRuntimeError::PersistenceError {
