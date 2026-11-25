@@ -13,8 +13,7 @@ use marlin_agent_runtime::{
     AdmittedGovernedContext, AdmittedMarlinDispatch, DetourExitKind, DetourMode, DetourNodeId,
     DetourState, GovernedContextCapsule, MarlinDispatchEnvelope, MarlinExecutionReceipt,
     ReceiptReconciliationDecision, TaskActorCursor, TaskActorId, TaskActorRuntimeError,
-    TaskActorRuntimeRegistry, TaskActorRuntimeSnapshot, TaskActorScopeMode,
-    WorkbenchTabProjection,
+    TaskActorRuntimeRegistry, TaskActorRuntimeSnapshot, TaskActorScopeMode, WorkbenchTabProjection,
 };
 use tokio::sync::watch;
 
@@ -151,8 +150,8 @@ mod tests {
     use super::*;
     use marlin_agent_runtime::{
         DispatchRequestId, ExecutionReceiptStatus, FencingEpoch, GraphConvergenceNodeId,
-        GraphDispatchOperation, GraphSubstrateTarget, ReceiptReconciliationReason,
-        TaskActorStatus, WorkbenchTabKind,
+        GraphDispatchOperation, GraphSubstrateTarget, ReceiptReconciliationReason, TaskActorStatus,
+        WorkbenchTabKind,
     };
 
     #[tokio::test]
@@ -227,7 +226,10 @@ mod tests {
 
         let snap = plane.snapshot();
         assert_eq!(snap.workbench_tabs.tabs.len(), 1);
-        assert_eq!(snap.workbench_tabs.tabs[0].kind, WorkbenchTabKind::PinnedIndex);
+        assert_eq!(
+            snap.workbench_tabs.tabs[0].kind,
+            WorkbenchTabKind::PinnedIndex
+        );
 
         let peek_tabs = plane.open_read_only_peek(task_id.clone()).unwrap();
         assert_eq!(peek_tabs.tabs.len(), 2);
@@ -243,10 +245,9 @@ mod tests {
         use std::collections::BTreeMap;
 
         let shared = TaskActorControlPlane::new();
-        let host = crate::ui_grpc::MyGoBridgeHost::new(ReleaseTrust::new(BTreeMap::new()), |_| {
-            Ok(())
-        })
-        .with_task_actors(shared.clone());
+        let host =
+            crate::ui_grpc::MyGoBridgeHost::new(ReleaseTrust::new(BTreeMap::new()), |_| Ok(()))
+                .with_task_actors(shared.clone());
 
         let mut rx = host.task_actors().subscribe_workbench_tabs();
         let task_id = TaskActorId::new("task-bridge-1").unwrap();

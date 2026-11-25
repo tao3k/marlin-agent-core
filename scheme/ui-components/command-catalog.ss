@@ -41,12 +41,12 @@
                         optional toggle-thinking #f)
                        ("clear" "Clear displayed transcript" none clear #f))))
 (.def TaskTabCommands.
-  (entries => append '(("task-index" "Focus the pinned Tasks Index tab" none task-tabs "index")
-                       ("task-next" "Focus the next active TaskActor tab" none task-tabs "next")
-                       ("task-prev" "Focus the previous active TaskActor tab" none task-tabs "prev")
-                       ("task-focus" "Focus an active TaskActor tab by ID" required task-tabs "focus")
-                       ("task-peek" "Open a read-only peek tab for an archived task ID" required task-tabs "peek")
-                       ("task-unpeek" "Close a read-only peek tab by task ID" required task-tabs "unpeek"))))
+  (entries => append '(("task-tab-index" "Focus the pinned Tasks Index tab" none scheme-action "task-tab-index")
+                       ("task-tab-next" "Focus the next active TaskActor tab" none scheme-action "task-tab-next")
+                       ("task-tab-prev" "Focus the previous active TaskActor tab" none scheme-action "task-tab-prev")
+                       ("task-tab-focus" "Focus an active TaskActor tab by ID" required scheme-action "task-tab-focus")
+                       ("task-tab-peek" "Open a read-only peek tab for an archived task ID" required scheme-action "task-tab-peek")
+                       ("task-tab-unpeek" "Close a read-only peek tab by task ID" required scheme-action "task-tab-unpeek"))))
 ;;; The inherited slot computes one ordered catalog when the selected module reads it.
 (def marlin-ui-command-catalog
   (seal-object! (.mix TaskTabCommands. WorkspaceCommands. JournalCommands. UiCommandCatalog.)))

@@ -27,7 +27,6 @@ mod render;
 mod replay;
 mod session_browser;
 mod signals;
-pub mod task_tabs;
 pub mod test_window;
 pub mod ui_elements;
 #[cfg(test)]

@@ -24,6 +24,12 @@ pub enum UiEvent {
     },
     /// A successfully admitted command, for Scheme-owned completion history.
     RecordCommand(UiCommandName),
+    /// A generic Scheme-owned UI state action that re-projects `UiElement`s cleanly
+    /// without custom Rust widget bypasses.
+    SchemeAction {
+        action: UiCommandName,
+        argument: Option<String>,
+    },
 }
 
 /// A bounded Scheme profile identity; Rust does not enumerate profile names.

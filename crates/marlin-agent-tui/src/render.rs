@@ -368,17 +368,6 @@ pub(crate) fn frame_snapshot(app: &App, ui: &UiWorkbench, area: Rect) -> FrameSn
     frame_snapshot_with_bindings(app, ui, area, Vec::new())
 }
 
-fn split_task_tab_strip_area(app: &App, area: Rect) -> (Option<Rect>, Rect) {
-    if area.height >= 4 && app.task_actor_tabs().is_some() {
-        (
-            Some(Rect::new(area.x, area.y, area.width, 1)),
-            Rect::new(area.x, area.y + 1, area.width, area.height - 1),
-        )
-    } else {
-        (None, area)
-    }
-}
-
 pub(crate) fn frame_snapshot_with_bindings(
     app: &App,
     ui: &UiWorkbench,
@@ -386,7 +375,6 @@ pub(crate) fn frame_snapshot_with_bindings(
     mut bindings: Vec<(UiComponentId, String)>,
 ) -> FrameSnapshot {
     use super::ui_elements::{Extent, RegionExtents, layout_regions_with_facts};
-    let (_, area) = split_task_tab_strip_area(app, area);
     let preview = app.preview_buffer();
     let buffer = preview.as_ref().unwrap_or(&app.buffer_view);
     let echo = echo_text(app, ui, area, buffer, preview.is_some(), &bindings);
@@ -581,14 +569,13 @@ pub(crate) fn draw_with_snapshot(
     use super::ui_elements::{Extent, RegionExtents, UiRenderInputs};
 
     app.list_state.borrow_mut().begin_frame();
-    let full_area = frame.area();
+    let area = frame.area();
     frame.buffer_mut().set_style(
-        full_area,
+        area,
         Style::default()
             .bg(rgb(ui.theme.canvas))
             .fg(rgb(ui.theme.ink)),
     );
-    let (tab_bar_area, area) = split_task_tab_strip_area(app, full_area);
     let command_active = app.command_draft.is_some() || app.tool_review_prompt.is_some();
     let frame_spec = if command_active {
         &ui.layout.command_frame
@@ -810,11 +797,8 @@ pub(crate) fn draw_with_snapshot(
         &inputs,
         &mut slots,
     );
-    if let (Some(tab_area), Some(tabs)) = (tab_bar_area, app.task_actor_tabs()) {
-        super::task_tabs::render_workbench_tab_strip(frame, tab_area, &tabs);
-    }
     if let Some(helm) = app.helm.as_ref() {
-        super::helm_render::render_helm_window(helm, frame, full_area, &ui.theme);
+        super::helm_render::render_helm_window(helm, frame, area, &ui.theme);
     }
     PaintedFrame {
         scroll: slots.main.effective_scroll,

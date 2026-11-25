@@ -84,7 +84,11 @@ impl App {
             if !matches!(
                 self.command_descriptor(&input)
                     .and_then(|descriptor| Command::parse(descriptor, &input)),
-                Some(Command::ToggleThinking(_) | Command::Helm(_) | Command::TaskTab(_))
+                Some(
+                    Command::ToggleThinking(_)
+                        | Command::Helm(_)
+                        | Command::SelectUi(marlin_agent_ui::UiEvent::SchemeAction { .. })
+                )
             ) {
                 self.publish_message(MessageEvent {
                     source: MessageSource::Ui,
@@ -257,7 +261,6 @@ impl App {
                 }
                 Some(Command::Clear) => self.transcript.clear(),
                 Some(Command::Helm(query)) => self.open_helm(query, runtime.handle()),
-                Some(Command::TaskTab(command)) => self.apply_task_tab_command(command),
                 Some(Command::ToggleThinking(index)) => {
                     if !self.transcript.toggle_thinking_from_end(index) {
                         self.publish_message(MessageEvent {

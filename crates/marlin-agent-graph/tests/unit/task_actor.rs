@@ -104,7 +104,10 @@ fn receipt_reconciliation_enforces_fencing_epoch_and_c4_steering_gate() {
         },
     );
     assert!(!future.accepted);
-    assert_eq!(future.reason, ReceiptReconciliationReason::FutureFencingEpoch);
+    assert_eq!(
+        future.reason,
+        ReceiptReconciliationReason::FutureFencingEpoch
+    );
 
     // Mismatched task ID rejected.
     let mismatch = reconcile_marlin_execution_receipt(

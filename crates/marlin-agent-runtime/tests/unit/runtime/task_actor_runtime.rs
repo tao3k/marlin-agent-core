@@ -133,10 +133,7 @@ async fn task_actor_runtime_enforces_c4_steering_anti_split_brain_and_auto_archi
         .unwrap();
     assert!(decision_steer.accepted);
     assert_eq!(decision_steer.next_epoch, FencingEpoch::new(3).unwrap());
-    assert_eq!(
-        decision_steer.next_status,
-        TaskActorStatus::WaitingSteering
-    );
+    assert_eq!(decision_steer.next_status, TaskActorStatus::WaitingSteering);
     assert_eq!(
         decision_steer.reason,
         ReceiptReconciliationReason::AwaitingSteeringConvergence
@@ -280,7 +277,11 @@ fn governed_context_and_scoped_detour_four_exits_enforce_confinement_and_monoton
     let registry = TaskActorRuntimeRegistry::new();
     let task_id = TaskActorId::new("task-governed").unwrap();
     registry
-        .register_actor(task_id.clone(), "Governed Task", TaskActorScopeMode::Project)
+        .register_actor(
+            task_id.clone(),
+            "Governed Task",
+            TaskActorScopeMode::Project,
+        )
         .unwrap();
 
     // Active defeater with L2 depth must be rejected fail-closed.

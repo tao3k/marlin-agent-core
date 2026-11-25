@@ -116,13 +116,19 @@ impl Display for GraphEngineProjectionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Native(message) => {
-                write!(formatter, "graph-engine native projection failed: {message}")
+                write!(
+                    formatter,
+                    "graph-engine native projection failed: {message}"
+                )
             }
             Self::Invalid(message) => {
                 write!(formatter, "invalid graph-engine projection: {message}")
             }
             Self::DispatchGate(rejection) => {
-                write!(formatter, "graph-engine dispatch gate rejected: {rejection}")
+                write!(
+                    formatter,
+                    "graph-engine dispatch gate rejected: {rejection}"
+                )
             }
             Self::GovernedContextGate(rejection) => {
                 write!(
@@ -435,8 +441,7 @@ pub fn decode_graph_engine_workbench_tabs_vector(
             "unsupported graph-engine ABI version",
         ));
     }
-    let focused_raw =
-        decode_optional_string(native(items.element(1))?, MAX_IDENTIFIER_BYTES)?;
+    let focused_raw = decode_optional_string(native(items.element(1))?, MAX_IDENTIFIER_BYTES)?;
     let focused_task_id = match focused_raw {
         Some(raw) => Some(
             TaskActorId::new(raw)
@@ -456,7 +461,8 @@ pub fn decode_graph_engine_workbench_tabs_vector(
     let mut peek_ids = BTreeSet::new();
 
     for index in 0..raw_tabs.len() {
-        let entry_vec = native(native(raw_tabs.element(index))?.into_collection(CollectionKind::Vector))?;
+        let entry_vec =
+            native(native(raw_tabs.element(index))?.into_collection(CollectionKind::Vector))?;
         if entry_vec.len() != 6 {
             return Err(GraphEngineProjectionError::Invalid(
                 "workbench tab entry must have 6 slots",
@@ -667,12 +673,10 @@ pub fn encode_graph_engine_dispatch_request<'vm>(
         runtime.intern_identifier(IdentifierKind::Symbol, operation_symbol(envelope.operation)),
     )?;
     let epoch = encode_u64(runtime, envelope.fencing_epoch.value())?;
-    let scope = native(
-        runtime.intern_identifier(
-            IdentifierKind::Symbol,
-            scope_mode_symbol(envelope.scope_mode),
-        ),
-    )?;
+    let scope = native(runtime.intern_identifier(
+        IdentifierKind::Symbol,
+        scope_mode_symbol(envelope.scope_mode),
+    ))?;
     let join = encode_optional_str(
         runtime,
         envelope.join_node_id.as_ref().map(|id| id.as_str()),
@@ -713,9 +717,10 @@ pub fn encode_graph_engine_reconcile_request<'vm>(
         native(runtime.string_from_utf8(receipt.request_id.as_str()))?.into_object();
     let receipt_task_id = native(runtime.string_from_utf8(receipt.task_id.as_str()))?.into_object();
     let receipt_epoch = encode_u64(runtime, receipt.fencing_epoch.value())?;
-    let receipt_status = native(
-        runtime.intern_identifier(IdentifierKind::Symbol, receipt_status_symbol(receipt.status)),
-    )?;
+    let receipt_status = native(runtime.intern_identifier(
+        IdentifierKind::Symbol,
+        receipt_status_symbol(receipt.status),
+    ))?;
     Ok(native(runtime.collection_from_objects(
         CollectionKind::Vector,
         &[
@@ -760,9 +765,8 @@ pub fn encode_graph_engine_workbench_tabs_request<'vm>(
         active_rows.push(vec);
     }
     let active_refs: Vec<&RootedSchemeObject<'vm>> = active_rows.iter().collect();
-    let active_vec =
-        native(runtime.collection_from_objects(CollectionKind::Vector, &active_refs))?
-            .into_object();
+    let active_vec = native(runtime.collection_from_objects(CollectionKind::Vector, &active_refs))?
+        .into_object();
 
     let mut peek_objs = Vec::with_capacity(peek_task_ids.len());
     for peek_id in peek_task_ids {
@@ -772,10 +776,10 @@ pub fn encode_graph_engine_workbench_tabs_request<'vm>(
     let peek_vec =
         native(runtime.collection_from_objects(CollectionKind::Vector, &peek_refs))?.into_object();
 
-    Ok(native(runtime.collection_from_objects(
-        CollectionKind::Vector,
-        &[&focused, &active_vec, &peek_vec],
-    ))?
+    Ok(native(
+        runtime
+            .collection_from_objects(CollectionKind::Vector, &[&focused, &active_vec, &peek_vec]),
+    )?
     .into_object())
 }
 
@@ -846,21 +850,17 @@ pub fn encode_graph_engine_governed_context_request<'vm>(
         IdentifierKind::Symbol,
         disclosure_depth_symbol(capsule.disclosure_depth),
     ))?;
-    let defeater = native(runtime.scalar_object(SchemeScalar::Boolean(
-        capsule.has_active_defeater,
-    )))?;
+    let defeater =
+        native(runtime.scalar_object(SchemeScalar::Boolean(capsule.has_active_defeater)))?;
     let quarantined = encode_u64(runtime, u64::from(capsule.quarantined_memory_count))?;
     let sandbox = native(runtime.scalar_object(SchemeScalar::Boolean(capsule.sandbox_admitted)))?;
-    let cedar = native(runtime.scalar_object(SchemeScalar::Boolean(
-        capsule.cedar_handoff_valid,
-    )))?;
+    let cedar = native(runtime.scalar_object(SchemeScalar::Boolean(capsule.cedar_handoff_valid)))?;
     let detour = native(runtime.intern_identifier(
         IdentifierKind::Symbol,
         detour_mode_symbol(capsule.detour_mode),
     ))?;
-    let auto_archive = native(runtime.scalar_object(SchemeScalar::Boolean(
-        capsule.auto_archive_enabled,
-    )))?;
+    let auto_archive =
+        native(runtime.scalar_object(SchemeScalar::Boolean(capsule.auto_archive_enabled)))?;
     Ok(native(runtime.collection_from_objects(
         CollectionKind::Vector,
         &[
@@ -1042,7 +1042,10 @@ mod tests {
             GraphSubstrateTarget::PureMemory,
             GraphSubstrateTarget::SqliteTurso,
         ] {
-            assert_eq!(parse_substrate(substrate_symbol(substrate)).unwrap(), substrate);
+            assert_eq!(
+                parse_substrate(substrate_symbol(substrate)).unwrap(),
+                substrate
+            );
         }
         for status in [
             TaskActorStatus::OpenFocus,

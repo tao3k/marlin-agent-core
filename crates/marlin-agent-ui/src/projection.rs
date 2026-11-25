@@ -741,7 +741,7 @@ fn decode_commands(payload: RootedSchemeObject<'_>) -> Result<UiRegion, UiProjec
             "toggle-thinking" => UiCommandCapability::ToggleThinking,
             "clear" => UiCommandCapability::Clear,
             "helm" => UiCommandCapability::Helm,
-            "task-tabs" => UiCommandCapability::TaskTabs,
+            "scheme-action" => UiCommandCapability::SchemeAction,
             "deferred" => UiCommandCapability::Deferred,
             _ => return Err(UiProjectionError::Invalid("unknown command capability")),
         };

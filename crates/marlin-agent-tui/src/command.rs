@@ -29,16 +29,6 @@ impl EnvrcCommand {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum TaskTabCommand<'a> {
-    FocusIndex,
-    Next,
-    Prev,
-    Focus(&'a str),
-    Peek(&'a str),
-    Unpeek(&'a str),
-}
-
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum Command<'a> {
     Models,
@@ -61,7 +51,6 @@ pub(crate) enum Command<'a> {
     ToggleThinking(usize),
     Clear,
     Helm(Option<&'a str>),
-    TaskTab(TaskTabCommand<'a>),
 }
 
 impl<'a> Command<'a> {
@@ -94,8 +83,7 @@ impl<'a> Command<'a> {
                 EnvrcCommand::from_value(action).is_some()
             }
             (Capability::Sessions | Capability::Helm, Optional, None) => true,
-            (Capability::TaskTabs, NoArguments, Some("index" | "next" | "prev"))
-            | (Capability::TaskTabs, Required, Some("focus" | "peek" | "unpeek")) => true,
+            (Capability::SchemeAction, _, Some(action)) => UiCommandName::new(action).is_ok(),
             (Capability::Deferred, _, None) => true,
             (Capability::History, NoArguments, Some("older" | "newest")) => true,
             (Capability::Workspace, NoArguments, Some("status"))
@@ -176,14 +164,12 @@ impl<'a> Command<'a> {
             Capability::EnterTransient => Self::EnterTransient(UiTransientId::new(value?).ok()?),
             Capability::Clear => Self::Clear,
             Capability::Helm => Self::Helm(argument.map(str::trim).filter(|s| !s.is_empty())),
-            Capability::TaskTabs => Self::TaskTab(match value? {
-                "index" => TaskTabCommand::FocusIndex,
-                "next" => TaskTabCommand::Next,
-                "prev" => TaskTabCommand::Prev,
-                "focus" => TaskTabCommand::Focus(argument?.trim()),
-                "peek" => TaskTabCommand::Peek(argument?.trim()),
-                "unpeek" => TaskTabCommand::Unpeek(argument?.trim()),
-                _ => return None,
+            Capability::SchemeAction => Self::SelectUi(UiEvent::SchemeAction {
+                action: UiCommandName::new(value?).ok()?,
+                argument: argument
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned),
             }),
             Capability::Deferred => return None,
             Capability::ToggleThinking => Self::ToggleThinking(match argument {

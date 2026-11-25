@@ -674,6 +674,7 @@ fn dispatch_event_with<'runtime>(
         UiEvent::SelectBuffer(_) => "select-buffer",
         UiEvent::SelectListRow { .. } => "select-list-row",
         UiEvent::RecordCommand(_) => "record-command",
+        UiEvent::SchemeAction { .. } => "scheme-action",
     };
     let symbol = runtime.intern_identifier(IdentifierKind::Symbol, name)?;
     let argument = match &event {
@@ -697,6 +698,25 @@ fn dispatch_event_with<'runtime>(
         }
         UiEvent::RecordCommand(name) => {
             Some(runtime.intern_identifier(IdentifierKind::Symbol, name.as_str())?)
+        }
+        UiEvent::SchemeAction { action, argument } => {
+            let action_sym = runtime.intern_identifier(IdentifierKind::Symbol, action.as_str())?;
+            let arg_obj = match argument {
+                Some(text) => {
+                    if text.chars().take(MAX_TEXT_CHARS + 1).count() > MAX_TEXT_CHARS {
+                        return Err(UiProjectionError::Invalid(
+                            "scheme action argument exceeds limit",
+                        ));
+                    }
+                    runtime.string_from_utf8(text)?.into_object()
+                }
+                None => runtime.scalar_object(SchemeScalar::Boolean(false))?,
+            };
+            Some(
+                runtime
+                    .collection_from_objects(CollectionKind::Vector, &[&action_sym, &arg_obj])?
+                    .into_object(),
+            )
         }
         _ => None,
     };

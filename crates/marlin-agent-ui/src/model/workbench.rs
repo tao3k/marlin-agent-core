@@ -95,6 +95,7 @@ impl UiWorkbench {
     ) -> Result<(), UiProjectionError> {
         let profile_change = matches!(&event, UiEvent::SelectProfile(_));
         let buffer_change = matches!(&event, UiEvent::SelectBuffer(_));
+        let scheme_action = matches!(&event, UiEvent::SchemeAction { .. });
         let supported = matches!(
             (&event, intent),
             (
@@ -116,6 +117,12 @@ impl UiWorkbench {
             || (buffer_change
                 && matches!((&event, intent), (UiEvent::SelectBuffer(requested), UiIntent::SelectBuffer(id))
                     if requested == id && next.frame.selected_buffer() == Some(id)))
+            || (scheme_action
+                && match intent {
+                    UiIntent::Focus(_) => true,
+                    UiIntent::SelectBuffer(id) => next.frame.selected_buffer() == Some(id),
+                    UiIntent::SubmitDraft | UiIntent::Scroll(_) => false,
+                })
             || (event == UiEvent::Submit
                 && match intent {
                     UiIntent::SubmitDraft => self.focus.as_str() == "composer",
@@ -139,6 +146,12 @@ impl UiWorkbench {
                         .layout
                         .frame_tree
                         .same_profile_structure(&next.layout.frame_tree)
+            } else if scheme_action {
+                self.layout.message_frame != next.layout.message_frame
+                    || self.layout.regions != next.layout.regions
+                    || self.layout.command_frame != next.layout.command_frame
+                    || self.layout.max_chatbox_rows != next.layout.max_chatbox_rows
+                    || self.layout.max_command_rows != next.layout.max_command_rows
             } else {
                 self.layout != next.layout
             }
@@ -160,11 +173,18 @@ impl UiWorkbench {
                                 || (old.id != self.frame.selected_window
                                     && old.buffer != new.buffer)
                         })
+            } else if scheme_action {
+                self.frame.id != next.frame.id
+                    || self.frame.selected_window != next.frame.selected_window
+                    || self.frame.minibuffer != next.frame.minibuffer
+                    || self.frame.windows.len() != next.frame.windows.len()
             } else {
                 self.frame != next.frame
             }
             || if profile_change {
                 !profile_regions_match(&self.regions, &next.regions)
+            } else if scheme_action {
+                self.commands() != next.commands() || self.theme != next.theme
             } else {
                 self.regions != next.regions || self.theme != next.theme
             }

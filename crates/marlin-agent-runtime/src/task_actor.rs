@@ -13,11 +13,11 @@ use std::sync::Arc;
 use marlin_agent_graph::{
     AdmittedGovernedContext, AdmittedMarlinDispatch, DetourExitKind, DetourMode, DetourNodeId,
     DetourState, FencingEpoch, GovernedContextCapsule, GovernedContextRejection,
-    GraphDispatchOperation, GraphDispatchRejection, MarlinDispatchEnvelope,
-    MarlinExecutionReceipt, ReceiptReconciliationDecision, ReceiptReconciliationReason,
-    TaskActorCursor, TaskActorId, TaskActorScopeMode, TaskActorStatus, WorkbenchActiveTaskInput,
-    WorkbenchTabProjection, admit_governed_context_capsule, admit_marlin_dispatch,
-    project_workbench_tabs, reconcile_marlin_execution_receipt,
+    GraphDispatchOperation, GraphDispatchRejection, MarlinDispatchEnvelope, MarlinExecutionReceipt,
+    ReceiptReconciliationDecision, ReceiptReconciliationReason, TaskActorCursor, TaskActorId,
+    TaskActorScopeMode, TaskActorStatus, WorkbenchActiveTaskInput, WorkbenchTabProjection,
+    admit_governed_context_capsule, admit_marlin_dispatch, project_workbench_tabs,
+    reconcile_marlin_execution_receipt,
 };
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -310,11 +310,13 @@ impl TaskActorRuntimeRegistry {
         task_id: &TaskActorId,
     ) -> Result<TaskActorCursor, TaskActorRuntimeError> {
         let mut guard = self.state.lock();
-        let record = guard.actors.get_mut(task_id).ok_or_else(|| {
-            TaskActorRuntimeError::ActorNotFound {
-                task_id: task_id.clone(),
-            }
-        })?;
+        let record =
+            guard
+                .actors
+                .get_mut(task_id)
+                .ok_or_else(|| TaskActorRuntimeError::ActorNotFound {
+                    task_id: task_id.clone(),
+                })?;
         if record.cursor.status.is_terminal() {
             return Err(TaskActorRuntimeError::ActorTerminal {
                 task_id: task_id.clone(),
@@ -393,11 +395,13 @@ impl TaskActorRuntimeRegistry {
     ) -> Result<WorkbenchTabProjection, TaskActorRuntimeError> {
         let mut guard = self.state.lock();
         if let Some(ref target) = task_id {
-            let record = guard.actors.get(target).ok_or_else(|| {
-                TaskActorRuntimeError::ActorNotFound {
-                    task_id: target.clone(),
-                }
-            })?;
+            let record =
+                guard
+                    .actors
+                    .get(target)
+                    .ok_or_else(|| TaskActorRuntimeError::ActorNotFound {
+                        task_id: target.clone(),
+                    })?;
             if record.cursor.status.is_terminal() {
                 return Err(TaskActorRuntimeError::ActorTerminal {
                     task_id: target.clone(),
@@ -451,12 +455,13 @@ impl TaskActorRuntimeRegistry {
         let admitted = admit_governed_context_capsule(capsule)?;
         let task_id = admitted.capsule().task_id.clone();
         let mut guard = self.state.lock();
-        let record = guard
-            .actors
-            .get_mut(&task_id)
-            .ok_or_else(|| TaskActorRuntimeError::ActorNotFound {
-                task_id: task_id.clone(),
-            })?;
+        let record =
+            guard
+                .actors
+                .get_mut(&task_id)
+                .ok_or_else(|| TaskActorRuntimeError::ActorNotFound {
+                    task_id: task_id.clone(),
+                })?;
         if record.cursor.status.is_terminal() {
             return Err(TaskActorRuntimeError::ActorTerminal {
                 task_id,
@@ -495,12 +500,13 @@ impl TaskActorRuntimeRegistry {
             });
         }
         let mut guard = self.state.lock();
-        let record = guard
-            .actors
-            .get_mut(task_id)
-            .ok_or_else(|| TaskActorRuntimeError::ActorNotFound {
-                task_id: task_id.clone(),
-            })?;
+        let record =
+            guard
+                .actors
+                .get_mut(task_id)
+                .ok_or_else(|| TaskActorRuntimeError::ActorNotFound {
+                    task_id: task_id.clone(),
+                })?;
         if record.cursor.status.is_terminal() {
             return Err(TaskActorRuntimeError::ActorTerminal {
                 task_id: task_id.clone(),
@@ -534,18 +540,19 @@ impl TaskActorRuntimeRegistry {
         sibling_task: Option<(TaskActorId, String)>,
     ) -> Result<DetourState, TaskActorRuntimeError> {
         let mut guard = self.state.lock();
-        let (scope_mode, is_terminal, in_detour) = {
-            let record = guard.actors.get(task_id).ok_or_else(|| {
-                TaskActorRuntimeError::ActorNotFound {
-                    task_id: task_id.clone(),
-                }
-            })?;
-            (
-                record.cursor.scope_mode,
-                record.cursor.status.is_terminal(),
-                record.detour_state != DetourState::Mainline,
-            )
-        };
+        let (scope_mode, is_terminal, in_detour) =
+            {
+                let record = guard.actors.get(task_id).ok_or_else(|| {
+                    TaskActorRuntimeError::ActorNotFound {
+                        task_id: task_id.clone(),
+                    }
+                })?;
+                (
+                    record.cursor.scope_mode,
+                    record.cursor.status.is_terminal(),
+                    record.detour_state != DetourState::Mainline,
+                )
+            };
         if is_terminal {
             let status = guard.actors[task_id].cursor.status;
             return Err(TaskActorRuntimeError::ActorTerminal {
@@ -613,6 +620,10 @@ impl TaskActorRuntimeRegistry {
 
     /// Convenience helper confirming a reconciliation decision rejected due to stale epoch.
     pub const fn is_stale_split_brain_rejection(decision: &ReceiptReconciliationDecision) -> bool {
-        !decision.accepted && matches!(decision.reason, ReceiptReconciliationReason::StaleFencingEpoch)
+        !decision.accepted
+            && matches!(
+                decision.reason,
+                ReceiptReconciliationReason::StaleFencingEpoch
+            )
     }
 }

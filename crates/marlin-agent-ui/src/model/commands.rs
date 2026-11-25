@@ -133,7 +133,9 @@ pub enum UiCommandCapability {
     ToggleThinking,
     Clear,
     Helm,
-    TaskTabs,
+    /// A pure Scheme-owned UI action routed back through `UiEvent::SchemeAction`
+    /// without adding bespoke Rust command variants or custom renderers.
+    SchemeAction,
     /// A Scheme catalog entry awaiting publication admission.
     Deferred,
 }

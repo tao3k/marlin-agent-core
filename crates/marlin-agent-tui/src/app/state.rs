@@ -134,7 +134,6 @@ pub(crate) struct App {
     pub(crate) runtime_edge: Option<RuntimeEdgePolicyReceipt>,
     pub(crate) runtime_content: Vec<UiContent>,
     pub(crate) runtime_receipt_open: bool,
-    pub(crate) task_actors: marlin_agent_runtime::TaskActorRuntimeRegistry,
     pub(crate) dynamic_buffer_content: std::collections::HashMap<UiBufferId, Vec<UiContent>>,
     pub(super) process_snapshot: Option<(marlin_agent_runtime::SessionId, u64)>,
     pub(super) session_browser: Option<SessionBrowser<TursoAgentStorage>>,
@@ -234,7 +233,6 @@ impl App {
             runtime_edge: None,
             runtime_content: Vec::new(),
             runtime_receipt_open: false,
-            task_actors: marlin_agent_runtime::TaskActorRuntimeRegistry::new(),
             dynamic_buffer_content: std::collections::HashMap::new(),
             process_snapshot: None,
             session_browser: None,
@@ -249,103 +247,6 @@ impl App {
                 .push((String::new(), format!("{}{}", policy.user_prefix, text)));
         } else {
             self.transcript.push(("You".into(), text));
-        }
-    }
-
-    /// Returns the active Session-free `TaskActor` Workbench tab projection whenever at least one
-    /// active task or read-only peek tab is open, preserving baseline layout when none exist.
-    pub(crate) fn task_actor_tabs(&self) -> Option<marlin_agent_runtime::WorkbenchTabProjection> {
-        let projection = self.task_actors.project_workbench_tabs();
-        (projection.tabs.len() > 1).then_some(projection)
-    }
-
-    /// Executes a typed Session-free Workbench tab / read-only peek command fail-closed.
-    pub(crate) fn apply_task_tab_command(&mut self, command: crate::command::TaskTabCommand<'_>) {
-        use crate::command::TaskTabCommand;
-        use marlin_agent_runtime::{TaskActorId, WorkbenchTabKind};
-
-        match command {
-            TaskTabCommand::FocusIndex => {
-                let _ = self.task_actors.set_focus(None);
-            }
-            TaskTabCommand::Next | TaskTabCommand::Prev => {
-                let projection = self.task_actors.project_workbench_tabs();
-                let active_ids: Vec<&str> = projection
-                    .tabs
-                    .iter()
-                    .filter(|tab| tab.kind == WorkbenchTabKind::ActiveTask)
-                    .map(|tab| tab.id.as_str())
-                    .collect();
-                if active_ids.is_empty() {
-                    let _ = self.task_actors.set_focus(None);
-                    return;
-                }
-                let current_pos = projection
-                    .focused_task_id
-                    .as_ref()
-                    .and_then(|focused| active_ids.iter().position(|id| *id == focused.as_str()));
-                // Slot 0 = None (Pinned Index), Slots 1..=N = active tasks.
-                let total = active_ids.len() + 1;
-                let current_slot = current_pos.map_or(0, |index| index + 1);
-                let next_slot = if matches!(command, TaskTabCommand::Next) {
-                    (current_slot + 1) % total
-                } else {
-                    (current_slot + total - 1) % total
-                };
-                let next_focus = if next_slot == 0 {
-                    None
-                } else {
-                    TaskActorId::new(active_ids[next_slot - 1]).ok()
-                };
-                let _ = self.task_actors.set_focus(next_focus);
-            }
-            TaskTabCommand::Focus(raw_id) => match TaskActorId::new(raw_id) {
-                Ok(task_id) => {
-                    if let Err(error) = self.task_actors.set_focus(Some(task_id)) {
-                        self.publish_message(MessageEvent {
-                            source: MessageSource::Ui,
-                            severity: MessageSeverity::Warning,
-                            summary: "Cannot focus task tab",
-                            detail: &error.to_string(),
-                        });
-                    }
-                }
-                Err(_) => self.publish_message(MessageEvent {
-                    source: MessageSource::Input,
-                    severity: MessageSeverity::Warning,
-                    summary: "Invalid task identifier",
-                    detail: "Task identifier cannot be empty.",
-                }),
-            },
-            TaskTabCommand::Peek(raw_id) => match TaskActorId::new(raw_id) {
-                Ok(task_id) => {
-                    if let Err(error) = self.task_actors.open_read_only_peek(task_id) {
-                        self.publish_message(MessageEvent {
-                            source: MessageSource::Ui,
-                            severity: MessageSeverity::Warning,
-                            summary: "Cannot open read-only peek",
-                            detail: &error.to_string(),
-                        });
-                    }
-                }
-                Err(_) => self.publish_message(MessageEvent {
-                    source: MessageSource::Input,
-                    severity: MessageSeverity::Warning,
-                    summary: "Invalid task identifier",
-                    detail: "Task identifier cannot be empty.",
-                }),
-            },
-            TaskTabCommand::Unpeek(raw_id) => match TaskActorId::new(raw_id) {
-                Ok(task_id) => {
-                    self.task_actors.close_read_only_peek(&task_id);
-                }
-                Err(_) => self.publish_message(MessageEvent {
-                    source: MessageSource::Input,
-                    severity: MessageSeverity::Warning,
-                    summary: "Invalid task identifier",
-                    detail: "Task identifier cannot be empty.",
-                }),
-            },
         }
     }
 
@@ -417,7 +318,7 @@ impl App {
                                 | marlin_agent_ui::UiCommandCapability::KillProcess
                                 | marlin_agent_ui::UiCommandCapability::Envrc
                                 | marlin_agent_ui::UiCommandCapability::Helm
-                                | marlin_agent_ui::UiCommandCapability::TaskTabs
+                                | marlin_agent_ui::UiCommandCapability::SchemeAction
                         ) || (descriptor.capability
                             == marlin_agent_ui::UiCommandCapability::SelectBuffer
                             && descriptor.value.as_deref() == Some("processes")))

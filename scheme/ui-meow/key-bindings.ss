@@ -44,6 +44,9 @@
     ((BACKSPACE) backward-char "Move left")
     ((DELETE) delete-char "Delete character")
     ((SPC t t) switch-themes "Switch theme")
+    ((SPC t i) task-tab-index "Focus pinned Tasks Index tab")
+    ((SPC t n) task-tab-next "Focus next active TaskActor tab")
+    ((SPC t p) task-tab-prev "Focus previous active TaskActor tab")
     ((SPC s) helm "Open Helm search")
     ((SPC h) help "Open help"))
   (meow-edit

@@ -39,6 +39,15 @@ pub use graph_loop::{
     GraphLoopRunStatus, GraphLoopRunWaitReceipt, GraphLoopRunWaitStatus,
     project_agent_flow_loop_step,
 };
+pub use marlin_agent_graph::{
+    AdmittedGovernedContext, AdmittedMarlinDispatch, DetourExitKind, DetourMode, DetourNodeId,
+    DetourState, DisclosureDepth, DispatchRequestId, ExecutionReceiptStatus, FencingEpoch,
+    GovernedContextCapsule, GovernedContextRejection, GraphConvergenceNodeId,
+    GraphDispatchOperation, GraphDispatchRejection, GraphSubstrateTarget, KvPrefixDigest,
+    MarlinDispatchEnvelope, MarlinExecutionReceipt, ReceiptReconciliationDecision,
+    ReceiptReconciliationReason, TaskActorCursor, TaskActorId, TaskActorScopeMode, TaskActorStatus,
+    WorkbenchActiveTaskInput, WorkbenchTabEntry, WorkbenchTabKind, WorkbenchTabProjection,
+};
 pub use model_gateway::{
     ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
     ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage,
@@ -69,15 +78,6 @@ pub use resilience::{
 pub use task_actor::{
     TaskActorRuntimeError, TaskActorRuntimeRecord, TaskActorRuntimeRegistry,
     TaskActorRuntimeSnapshot,
-};
-pub use marlin_agent_graph::{
-    AdmittedGovernedContext, AdmittedMarlinDispatch, DetourExitKind, DetourMode, DetourNodeId,
-    DetourState, DisclosureDepth, DispatchRequestId, ExecutionReceiptStatus, FencingEpoch,
-    GovernedContextCapsule, GovernedContextRejection, GraphConvergenceNodeId,
-    GraphDispatchOperation, GraphDispatchRejection, GraphSubstrateTarget, KvPrefixDigest,
-    MarlinDispatchEnvelope, MarlinExecutionReceipt, ReceiptReconciliationDecision,
-    ReceiptReconciliationReason, TaskActorCursor, TaskActorId, TaskActorScopeMode, TaskActorStatus,
-    WorkbenchActiveTaskInput, WorkbenchTabEntry, WorkbenchTabKind, WorkbenchTabProjection,
 };
 pub use tokio_runtime::MAX_RUNTIME_EVENT_HEAP_BYTES;
 pub use tokio_runtime::RuntimeProcessBudget;
