@@ -308,8 +308,26 @@ pub unsafe fn project_linked(
     admit_rooted_search_plan(projected)
 }
 
+/// Project a live Modern Helm prompt through an AOT-linked `marlin_ui_helm_compile_plan`
+/// C ABI export without text serialization.
+///
+/// # Safety
+/// `export` must be from `runtime`'s live Marlin programme and return a fresh
+/// strong root using the Gerbil Scheme Rust ABI.
+pub unsafe fn project_linked_helm_prompt(
+    runtime: &GerbilRuntime,
+    export: unsafe extern "C" fn(i64) -> i64,
+    prompt: &str,
+) -> Result<ProgressiveSearchPlaybookRequest, SearchPlanProjectionError> {
+    let procedure = native(unsafe { runtime.bind_object_export(export) })?;
+    let prompt_obj = native(runtime.string_from_utf8(prompt))?.into_object();
+    let projected = native(procedure.call(&prompt_obj).into_result())?;
+    admit_rooted_search_plan(projected)
+}
+
 /// Resolve and invoke `:marlin-agent-core/c-abi/search-engine#marlin-search-engine-plan-project`
 /// directly from a compiled Gerbil Scheme package directory.
+#[cfg(not(feature = "linked-ui"))]
 pub fn project_from_package(
     runtime: &GerbilRuntime,
     scheme_dir: &str,
@@ -335,6 +353,7 @@ pub fn project_from_package(
 /// Resolve and invoke `:marlin-agent-core/c-abi/ui-helm#marlin-ui-helm-compile-plan`
 /// to compile a live Modern Helm prompt string directly into an admitted ASP
 /// Search Playbook through native `RootedSchemeObject` ABI (zero pseudo S-expr).
+#[cfg(not(feature = "linked-ui"))]
 pub fn project_helm_prompt(
     runtime: &GerbilRuntime,
     scheme_dir: &str,

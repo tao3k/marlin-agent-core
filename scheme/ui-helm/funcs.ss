@@ -7,6 +7,7 @@
 ;;; `scheme/search-engine` RootedSchemeObject Playbook compiler.
 (import (only-in :clan/poo/object .get .o seal-object!)
         (only-in :std/string/misc string-contains string-trim)
+        (only-in "../ui-elements/funcs.ss" ui-rows ui-text)
         (only-in "../search-engine/funcs.ss"
                  intersect-plan
                  make-search-plan
@@ -36,7 +37,8 @@
         helm-cancel
         helm-visible-candidates
         helm-selected-candidate
-        helm-render-lines)
+        helm-render-lines
+        helm-project-ui-elements)
 
 (def (make-helm-source id label kind: (kind 'search) priority: (priority 10) async?: (async? #t))
   (seal-object!
@@ -464,3 +466,58 @@
             (if (null? rows) (list "  (no matches)") rows)
             preview
             actions)))
+
+;;; Project a `HelmSession.` directly into declarative Marlin `ui-elements`
+;;; (`ui-rows` + `ui-text`) for Ratatui rendering and `UiPackage.` buffers.
+(def (helm-project-ui-elements session)
+  (let* ((total (length (.get session candidates)))
+         (sel (.get session selected-index))
+         (voff (.get session viewport-offset))
+         (marks (.get session marked-ids))
+         (visible (helm-visible-candidates session))
+         (header (string-append
+                   "HELM [" (symbol->string (.get session active-source))
+                   "] epoch=" (number->string (.get session epoch))
+                   " hits=" (number->string total)
+                   " marked=" (number->string (length marks))
+                   " gen=" (short-digest (.get session generation-digest))))
+         (prompt (string-append "Helm> " (.get session input-text)))
+         (row-elements
+           (if (null? visible)
+             (list (ui-text (list (cons 'muted "  (no matches)"))))
+             (let loop ((rest visible) (i voff) (acc '()))
+               (if (null? rest)
+                 (reverse acc)
+                 (let* ((cand (car rest))
+                        (selected? (= i sel))
+                        (marked? (and (member (.get cand id) marks) #t))
+                        (prefix (string-append (if selected? "> " "  ")
+                                               (if marked? "* " "  ")))
+                        (ann (.get cand annotation))
+                        (spans (append
+                                 (list (cons (if selected? 'accent 'muted) prefix)
+                                       (cons (if selected? 'info 'normal) (.get cand display)))
+                                 (if (string=? ann "")
+                                   '()
+                                   (list (cons 'muted (string-append "  [" ann "]")))))))
+                   (loop (cdr rest) (+ i 1) (cons (ui-text spans) acc)))))))
+         (selected (helm-selected-candidate session))
+         (preview-elements
+           (if (and (eq? (.get session layout) 'split-preview)
+                    selected
+                    (not (null? (.get selected preview-lines))))
+             (cons (ui-text (list (cons 'info (string-append "--- Preview: " (.get selected display) " ---"))))
+                   (map (lambda (line) (ui-text (list (cons 'normal line))))
+                        (.get selected preview-lines)))
+             '()))
+         (action-elements
+           (if (.get session action-menu-open?)
+             (list (ui-text (list (cons 'warning "--- Actions: [RET] Open  [C-o] Preview  [TAB] Mark  [C-e] Export-Context  [C-a] Dispatch-Agent ---"))))
+             '())))
+    (ui-rows
+      (append
+        (list (ui-text (list (cons 'accent header)))
+              (ui-text (list (cons 'info prompt))))
+        row-elements
+        preview-elements
+        action-elements))))

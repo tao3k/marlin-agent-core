@@ -39,6 +39,7 @@ pub(super) fn release_interrupted_key_sequence(
 ) {
     if (app.tool_review_prompt.is_some()
         || app.history_search.is_some()
+        || app.helm.is_some()
         || matches!(
             input,
             Some(TerminalInput::Paste(_) | TerminalInput::MouseClick(_, _))
@@ -111,6 +112,7 @@ pub(super) fn route_frame_click(
             .map(|command| command.name.clone());
         return app.tool_review_prompt.is_none()
             && app.history_search.is_none()
+            && app.helm.is_none()
             && command.is_some_and(|name| app.prepare_bound_command(&name));
     }
     select_clicked_list_row(app, ui, x, y);
@@ -265,4 +267,56 @@ fn apply_package_event(app: &mut App, ui: &mut UiHost<'_>, event: UiPackageEvent
     app.set_commands(ui.view());
     app.transcript_policy = Some(ui.view().layout.transcript_policy.clone());
     true
+}
+
+/// Handle one terminal input event while the interactive Helm overlay is open.
+/// Returns `Ok(true)` if the main event loop should exit (`Ctrl-q` or channel closed).
+pub(super) fn handle_helm_input(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    runtime: &tokio::runtime::Handle,
+    received: Result<std::io::Result<TerminalInput>, std::sync::mpsc::RecvTimeoutError>,
+) -> std::io::Result<bool> {
+    let Some(helm) = app.helm.as_mut() else {
+        return Ok(false);
+    };
+    let mut accepted: Option<super::HelmAction> = None;
+    let mut close_helm = false;
+    match received {
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => return Ok(true),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('c' | 'g') | Key::Esc))) => {
+            close_helm = true;
+            app.disarm_exit();
+        }
+        Ok(Ok(TerminalInput::Key(Key::Char('\n')))) => {
+            accepted = helm.accept(false);
+            close_helm = true;
+        }
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('e')))) => {
+            accepted = helm.accept(true);
+            close_helm = true;
+        }
+        Ok(Ok(TerminalInput::Key(Key::Up | Key::Ctrl('p')))) => helm.move_selection(-1),
+        Ok(Ok(TerminalInput::Key(Key::Down | Key::Ctrl('n')))) => helm.move_selection(1),
+        Ok(Ok(TerminalInput::Key(Key::Char('\t')))) => helm.toggle_mark(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('o')))) => helm.toggle_preview(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('s')))) => helm.next_source(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('a')))) => helm.toggle_actions(),
+        Ok(Ok(TerminalInput::Key(Key::Backspace))) => helm.backspace(runtime),
+        Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() => {
+            helm.insert_text(&c.to_string(), runtime);
+        }
+        Ok(Ok(TerminalInput::Paste(text))) => helm.insert_text(&text, runtime),
+        Ok(Err(err)) => return Err(err),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Ok(true),
+        _ => {}
+    }
+    if close_helm {
+        app.helm = None;
+    }
+    if let Some(action) = accepted {
+        app.apply_helm_action(action);
+        apply_ui_request(app, ui);
+    }
+    Ok(false)
 }

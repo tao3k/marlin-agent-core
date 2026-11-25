@@ -18,7 +18,9 @@
                  make-marlin-task-workbench-package
                  marlin-task-workbench-peek-set-add
                  marlin-task-workbench-peek-set-remove
-                 marlin-task-workbench-next-disclosure))
+                 marlin-task-workbench-next-disclosure)
+        (only-in "./helm-workbench.ss"
+                 make-marlin-helm-workbench-package))
 (export marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch
         marlin-ui-session-browse-command
         marlin-ui-session-command-candidates
@@ -27,7 +29,8 @@
         make-marlin-task-workbench-package
         marlin-task-workbench-peek-set-add
         marlin-task-workbench-peek-set-remove
-        marlin-task-workbench-next-disclosure)
+        marlin-task-workbench-next-disclosure
+        make-marlin-helm-workbench-package)
 
 ;;; Each event returns a successor; older frames keep their own rooted state.
 (.def UiNativeSession.)

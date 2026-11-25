@@ -740,6 +740,7 @@ fn decode_commands(payload: RootedSchemeObject<'_>) -> Result<UiRegion, UiProjec
             "envrc" => UiCommandCapability::Envrc,
             "toggle-thinking" => UiCommandCapability::ToggleThinking,
             "clear" => UiCommandCapability::Clear,
+            "helm" => UiCommandCapability::Helm,
             "deferred" => UiCommandCapability::Deferred,
             _ => return Err(UiProjectionError::Invalid("unknown command capability")),
         };

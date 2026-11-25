@@ -132,6 +132,7 @@ pub enum UiCommandCapability {
     Envrc,
     ToggleThinking,
     Clear,
+    Helm,
     /// A Scheme catalog entry awaiting publication admission.
     Deferred,
 }

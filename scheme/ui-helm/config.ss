@@ -24,4 +24,5 @@
     toggle-preview: helm-toggle-preview
     toggle-actions: helm-toggle-actions
     dispatch-action: helm-dispatch-action
-    render-lines: helm-render-lines))
+    render-lines: helm-render-lines
+    project-ui-elements: helm-project-ui-elements))

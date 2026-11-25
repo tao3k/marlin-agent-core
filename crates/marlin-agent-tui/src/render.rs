@@ -797,6 +797,9 @@ pub(crate) fn draw_with_snapshot(
         &inputs,
         &mut slots,
     );
+    if let Some(helm) = app.helm.as_ref() {
+        helm.render(frame, area, &ui.theme);
+    }
     PaintedFrame {
         scroll: slots.main.effective_scroll,
         regions: painted,

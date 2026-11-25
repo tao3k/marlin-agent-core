@@ -4,9 +4,11 @@
 
 ;;; Scheme TUI behavior and projection tests for Marlin's Modern Helm (`scheme/ui-helm`).
 (import :std/test
-        (only-in :clan/poo/object .get)
+        (only-in :clan/poo/object .get .o)
         (only-in :std/string/misc string-contains)
+        (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
         (only-in :marlin-agent-core/ui-helm/config UiHelmScope)
+        (only-in :marlin-agent-core/ui/helm-workbench make-marlin-helm-workbench-package)
         (only-in :marlin-agent-core/ui-helm/funcs
                  helm-open-session
                  helm-parse-input
@@ -21,6 +23,7 @@
                  helm-visible-candidates
                  helm-selected-candidate
                  helm-render-lines
+                 helm-project-ui-elements
                  make-helm-candidate))
 
 (export marlin-ui-helm-test)
@@ -137,4 +140,33 @@
         (check (.get s7 active-source) => 'search)
         (check (length (.get s7 candidates)) => 2)
         ;; Preview toggle works cleanly
-        (check (.get (helm-toggle-preview s7) layout) => 'bottom-list)))))
+        (check (.get (helm-toggle-preview s7) layout) => 'bottom-list)))
+
+    (test-case "TUI workbench exposes SPC s keymap, helm command, declarative UI elements, and *Helm* package buffer"
+      (let* ((ui (.get marlin-agent-core.init.exports Marlin ui))
+             (base-keys (vector->list ((.get ui keymap-entries))))
+             (s0 (helm-open-session viewport-height: 2))
+             (s1 (helm-apply-results s0 (.get s0 epoch) "blake3-256:ui0123456789" (sample-candidates)))
+             (ui-tree (helm-project-ui-elements s1))
+             (pkg-ui (make-marlin-helm-workbench-package s1))
+             (wb ((.get pkg-ui workbench)
+                  (.o model: "gemini-2.5-pro"
+                      session: "helm-workbench"
+                      contributions: '()
+                      extensions: '())))
+             (projected ((.get pkg-ui project-workbench) wb))
+             (pkg-keys (vector->list ((.get pkg-ui keymap-entries))))
+             (frame0 ((.get pkg-ui make-frame)))
+             (frame1 ((.get pkg-ui select-buffer) frame0 'helm-snapshot))
+             (proj-frame ((.get pkg-ui project-frame) frame1)))
+        ;; Built-in SPC s launches live interactive Helm
+        (check (and (member '#(normal #(SPC s) helm) base-keys) #t) => #t)
+        ;; Declarative UI element tree starts with 'rows
+        (check (vector? ui-tree) => #t)
+        (check (vector-ref ui-tree 0) => 'rows)
+        ;; Package workbench projects cleanly into Ratatui native vector
+        (check (vector? projected) => #t)
+        ;; Buffer switching activates 'helm-snapshot in main window
+        (check (vector-ref (vector-ref (vector-ref proj-frame 1) 0) 1) => 'helm-snapshot)
+        ;; Package keybinding SPC f h binds cleanly without colliding with SPC s
+        (check (and (member '#(normal #(SPC f h) buffer-helm-snapshot) pkg-keys) #t) => #t)))))

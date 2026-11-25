@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use std::collections::BTreeMap;
+#[cfg(not(feature = "linked-ui"))]
 use std::path::Path;
 use std::sync::Arc;
 
@@ -13,8 +14,10 @@ use marlin_agent_search_engine::{
     AgentTopologyRelationship, MarlinAgentStorageSearchPort, MarlinContextOrgPort,
     MarlinSearchStorageProvenance, SearchGenerationDigest, SearchProjectId, SearchStoragePortError,
     SearchTopologyEdgeId, SearchTopologyEdgeRecord, SearchWorkspaceId, admit_rooted_search_plan,
-    decode_search_plan, marlin_search_engine, project_from_package, project_helm_prompt,
+    decode_search_plan, marlin_search_engine,
 };
+#[cfg(not(feature = "linked-ui"))]
+use marlin_agent_search_engine::{project_from_package, project_helm_prompt};
 use marlin_agent_storage::InMemoryAgentStorage;
 use marlin_context_org_model::{OrgNode, OrgNodeKind};
 
@@ -211,55 +214,58 @@ fn rooted_scheme_plans_and_compiled_module_project_into_asp() {
         "unexpected error: {error}"
     );
 
-    // 3. Compiled real Gerbil Scheme `:marlin-agent-core/c-abi/search-engine` module projection.
-    let scheme_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(2)
-        .expect("workspace root")
-        .join("scheme");
-    if scheme_dir
-        .join(".gerbil/lib/marlin-agent-core/c-abi/search-engine.ssi")
-        .exists()
+    #[cfg(not(feature = "linked-ui"))]
     {
-        let compiled_admitted =
-            project_from_package(&runtime, scheme_dir.to_str().expect("utf-8 scheme dir"))
-                .expect("project and admit compiled :marlin-agent-core/c-abi/search-engine");
-        assert_eq!(compiled_admitted.language.as_deref(), Some("rust"));
-        assert_eq!(compiled_admitted.rg.len(), 1);
-        assert_eq!(compiled_admitted.tantivy.len(), 1);
-        assert_eq!(compiled_admitted.topology.len(), 1);
-        assert_eq!(compiled_admitted.graph.len(), 1);
-    }
-
-    // 4. Live Modern Helm (`:marlin-agent-core/c-abi/ui-helm`) prompt -> ASP pure-Rust
-    //    execution over Marlin's real `crates/marlin-agent-search-engine` source tree!
-    if scheme_dir
-        .join(".gerbil/lib/marlin-agent-core/c-abi/ui-helm.ssi")
-        .exists()
-    {
-        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        // 3. Compiled real Gerbil Scheme `:marlin-agent-core/c-abi/search-engine` module projection.
+        let scheme_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
             .nth(2)
-            .expect("workspace root");
-        let helm_admitted = project_helm_prompt(
-            &runtime,
-            scheme_dir.to_str().expect("utf-8 scheme dir"),
-            "@lang:rust @prefix:crates/marlin-agent-search-engine/src/ marlin_search_engine #engine",
-        )
-        .expect("project and admit live Modern Helm prompt through Gerbil C ABI");
-        let report = engine
-            .execute_admitted_playbook(workspace_root, &helm_admitted)
-            .expect("ASP executes live Modern Helm prompt over real Marlin repo");
-        assert_eq!(report.execution_mode, "pure-rust-in-process");
-        assert!(report.matched_files >= 1);
-        assert!(
-            report
-                .hits
-                .iter()
-                .any(|hit| hit.path == "crates/marlin-agent-search-engine/src/engine.rs"),
-            "expected engine.rs in live Helm hits: {:?}",
-            report.hits
-        );
+            .expect("workspace root")
+            .join("scheme");
+        if scheme_dir
+            .join(".gerbil/lib/marlin-agent-core/c-abi/search-engine.ssi")
+            .exists()
+        {
+            let compiled_admitted =
+                project_from_package(&runtime, scheme_dir.to_str().expect("utf-8 scheme dir"))
+                    .expect("project and admit compiled :marlin-agent-core/c-abi/search-engine");
+            assert_eq!(compiled_admitted.language.as_deref(), Some("rust"));
+            assert_eq!(compiled_admitted.rg.len(), 1);
+            assert_eq!(compiled_admitted.tantivy.len(), 1);
+            assert_eq!(compiled_admitted.topology.len(), 1);
+            assert_eq!(compiled_admitted.graph.len(), 1);
+        }
+
+        // 4. Live Modern Helm (`:marlin-agent-core/c-abi/ui-helm`) prompt -> ASP pure-Rust
+        //    execution over Marlin's real `crates/marlin-agent-search-engine` source tree!
+        if scheme_dir
+            .join(".gerbil/lib/marlin-agent-core/c-abi/ui-helm.ssi")
+            .exists()
+        {
+            let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .ancestors()
+                .nth(2)
+                .expect("workspace root");
+            let helm_admitted = project_helm_prompt(
+                &runtime,
+                scheme_dir.to_str().expect("utf-8 scheme dir"),
+                "@lang:rust @prefix:crates/marlin-agent-search-engine/src/ marlin_search_engine #engine",
+            )
+            .expect("project and admit live Modern Helm prompt through Gerbil C ABI");
+            let report = engine
+                .execute_admitted_playbook(workspace_root, &helm_admitted)
+                .expect("ASP executes live Modern Helm prompt over real Marlin repo");
+            assert_eq!(report.execution_mode, "pure-rust-in-process");
+            assert!(report.matched_files >= 1);
+            assert!(
+                report
+                    .hits
+                    .iter()
+                    .any(|hit| hit.path == "crates/marlin-agent-search-engine/src/engine.rs"),
+                "expected engine.rs in live Helm hits: {:?}",
+                report.hits
+            );
+        }
     }
 }
 

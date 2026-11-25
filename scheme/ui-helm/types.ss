@@ -29,5 +29,6 @@
                toggle-preview: [(Fun Object <- Object)]
                toggle-actions: [(Fun Object <- Object)]
                dispatch-action: [(Fun Object <- Object Symbol)]
-               render-lines: [(Fun (List String) <- Object)])
+               render-lines: [(Fun (List String) <- Object)]
+               project-ui-elements: [(Fun HelmVector <- Object)])
        identity: 'marlin/ui-helm))

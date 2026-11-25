@@ -74,6 +74,7 @@ pub(crate) struct App {
     pub(crate) gateway_observation: GatewayObservation,
     pub(super) prompt_history: PromptHistory,
     pub(crate) history_search: Option<HistorySearch>,
+    pub(crate) helm: Option<super::HelmOverlay>,
     pub(crate) command_draft: Option<Composer>,
     pub(crate) command_menu: Option<CommandMenu>,
     pub(crate) command_selection: Option<(String, UiCommandName)>,
@@ -177,6 +178,7 @@ impl App {
             gateway_observation: GatewayObservation::Unchecked,
             prompt_history: PromptHistory::default(),
             history_search: None,
+            helm: None,
             command_draft: None,
             command_menu: None,
             command_selection: None,
@@ -308,6 +310,7 @@ impl App {
                             marlin_agent_ui::UiCommandCapability::ToggleThinking
                                 | marlin_agent_ui::UiCommandCapability::KillProcess
                                 | marlin_agent_ui::UiCommandCapability::Envrc
+                                | marlin_agent_ui::UiCommandCapability::Helm
                         ) || (descriptor.capability
                             == marlin_agent_ui::UiCommandCapability::SelectBuffer
                             && descriptor.value.as_deref() == Some("processes")))
@@ -399,6 +402,47 @@ impl App {
         if let Some(preview) = self.history_search.take().and_then(HistorySearch::accept) {
             self.prompt_history.discard();
             self.composer = preview;
+        }
+    }
+
+    pub(crate) fn open_helm(
+        &mut self,
+        initial_query: Option<&str>,
+        runtime: &tokio::runtime::Handle,
+    ) {
+        self.history_search = None;
+        self.command_selection = None;
+        self.command_selection_locked = false;
+        let workspace_root = self
+            .context_worktree
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        self.helm = Some(super::HelmOverlay::open(
+            initial_query,
+            workspace_root,
+            &self.command_catalog,
+            runtime,
+        ));
+    }
+
+    pub(crate) fn apply_helm_action(&mut self, action: super::HelmAction) {
+        match action {
+            super::HelmAction::InsertCitations(text) => {
+                let existing = self.composer.text();
+                let needs_space = !existing.is_empty() && !existing.ends_with(char::is_whitespace);
+                if needs_space {
+                    self.composer.insert_text(" ");
+                }
+                self.composer.insert_text(&text);
+                self.enter_insert_mode(false);
+            }
+            super::HelmAction::SelectBuffer(buffer) => {
+                self.ui_request = Some(UiEvent::SelectBuffer(buffer));
+            }
+            super::HelmAction::PrepareCommand(name) => {
+                let _ = self.prepare_bound_command(&name);
+            }
         }
     }
 

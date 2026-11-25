@@ -84,7 +84,7 @@ impl App {
             if !matches!(
                 self.command_descriptor(&input)
                     .and_then(|descriptor| Command::parse(descriptor, &input)),
-                Some(Command::ToggleThinking(_))
+                Some(Command::ToggleThinking(_) | Command::Helm(_))
             ) {
                 self.publish_message(MessageEvent {
                     source: MessageSource::Ui,
@@ -256,6 +256,7 @@ impl App {
                     self.command_selection_locked = false;
                 }
                 Some(Command::Clear) => self.transcript.clear(),
+                Some(Command::Helm(query)) => self.open_helm(query, runtime.handle()),
                 Some(Command::ToggleThinking(index)) => {
                     if !self.transcript.toggle_thinking_from_end(index) {
                         self.publish_message(MessageEvent {

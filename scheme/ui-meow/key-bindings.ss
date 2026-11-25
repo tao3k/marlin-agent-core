@@ -44,6 +44,7 @@
     ((BACKSPACE) backward-char "Move left")
     ((DELETE) delete-char "Delete character")
     ((SPC t t) switch-themes "Switch theme")
+    ((SPC s) helm "Open Helm search")
     ((SPC h) help "Open help"))
   (meow-edit
     ((w) select-word "Select word")

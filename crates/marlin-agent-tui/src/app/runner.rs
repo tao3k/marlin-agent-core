@@ -26,8 +26,8 @@ use super::runtime_probe::RuntimeProbe;
 use super::tool_review::{open_tool_review, poll_tool_review, submit_tool_review};
 use super::ui_events::{
     activate_deferred_command, apply_editor_mode, apply_ui_request, browse_menu,
-    command_menu_active, release_interrupted_key_sequence, route_frame_click, route_terminal_key,
-    stage_ui_package,
+    command_menu_active, handle_helm_input, release_interrupted_key_sequence, route_frame_click,
+    route_terminal_key, stage_ui_package,
 };
 use termion::input::TermReadEventsAndRaw;
 
@@ -471,6 +471,7 @@ pub(super) fn run(
                 .history_search
                 .as_mut()
                 .is_some_and(|search| search.step(&app.history));
+            let helm_updated = app.helm.as_mut().is_some_and(super::HelmOverlay::poll);
             if app.ui_request.is_some()
                 || app.command_history_request.is_some()
                 || app.transient_request.is_some()
@@ -489,6 +490,7 @@ pub(super) fn run(
                 || processes_changed
                 || workspace_health_changed
                 || search_finished
+                || helm_updated
             {
                 schedule.mark_dirty();
             }
@@ -503,12 +505,9 @@ pub(super) fn run(
             let mouse = mouse_position.load(Ordering::Relaxed);
             let area = ratatui::layout::Rect::new(0, 0, size.0, size.1);
             // Idle polls and pointer hit checks can reuse the last layout.
-            let snapshot = if schedule.has_changes() || layout_snapshot.is_none() {
-                layout_snapshot.insert(frame_snapshot(&app, ui.view(), area))
-            } else {
-                layout_snapshot
-                    .as_mut()
-                    .expect("initial frame has a layout")
+            let snapshot = match layout_snapshot.as_mut() {
+                Some(existing) if !schedule.has_changes() => existing,
+                _ => layout_snapshot.insert(frame_snapshot(&app, ui.view(), area)),
             };
             let hovered = mouse_over_minibuffer(
                 &snapshot.regions,
@@ -597,6 +596,14 @@ pub(super) fn run(
                     .is_some_and(HistorySearch::is_searching)
             {
                 std::time::Duration::ZERO
+            } else if app
+                .helm
+                .as_ref()
+                .is_some_and(super::HelmOverlay::is_searching)
+            {
+                schedule
+                    .wait_duration(Instant::now())
+                    .min(std::time::Duration::from_millis(16))
             } else {
                 schedule.wait_duration(Instant::now())
             };
@@ -702,6 +709,12 @@ pub(super) fn run(
                 {
                     app.submit(&gateway, &runtime, &reply_tx);
                     apply_ui_request(&mut app, &mut ui);
+                }
+                continue;
+            }
+            if app.helm.is_some() {
+                if handle_helm_input(&mut app, &mut ui, runtime.handle(), received)? {
+                    break;
                 }
                 continue;
             }

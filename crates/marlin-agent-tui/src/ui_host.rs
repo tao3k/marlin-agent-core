@@ -755,7 +755,12 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
     }
     let admitted_command = |name: &UiCommandName| {
         view.commands().iter().any(|command| {
-            &command.name == name && command.arguments == marlin_agent_ui::UiCommandArguments::None
+            &command.name == name
+                && matches!(
+                    command.arguments,
+                    marlin_agent_ui::UiCommandArguments::None
+                        | marlin_agent_ui::UiCommandArguments::Optional
+                )
         })
     };
     for binding in &view.keymap {

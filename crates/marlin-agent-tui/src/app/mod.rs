@@ -23,6 +23,7 @@ use super::{
     edge_gateway::{RuntimeStreamGateway, SharedGateway},
     event_queue::{Reply, ReplyError, ReplySender, reply_channel},
     frame_schedule::FrameSchedule,
+    helm::{HelmAction, HelmOverlay},
     input::{BracketedPaste, InputDecoder, MouseMotion, TerminalInput, WheelAccumulator},
     journal_gateway::JournalGateway,
     model_catalog::ModelCatalog,

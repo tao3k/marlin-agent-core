@@ -50,6 +50,7 @@ pub(crate) enum Command<'a> {
     EnterTransient(UiTransientId),
     ToggleThinking(usize),
     Clear,
+    Helm(Option<&'a str>),
 }
 
 impl<'a> Command<'a> {
@@ -81,7 +82,7 @@ impl<'a> Command<'a> {
             (Capability::Envrc, NoArguments, Some(action)) => {
                 EnvrcCommand::from_value(action).is_some()
             }
-            (Capability::Sessions, Optional, None) => true,
+            (Capability::Sessions | Capability::Helm, Optional, None) => true,
             (Capability::Deferred, _, None) => true,
             (Capability::History, NoArguments, Some("older" | "newest")) => true,
             (Capability::Workspace, NoArguments, Some("status"))
@@ -161,6 +162,7 @@ impl<'a> Command<'a> {
             }
             Capability::EnterTransient => Self::EnterTransient(UiTransientId::new(value?).ok()?),
             Capability::Clear => Self::Clear,
+            Capability::Helm => Self::Helm(argument.map(str::trim).filter(|s| !s.is_empty())),
             Capability::Deferred => return None,
             Capability::ToggleThinking => Self::ToggleThinking(match argument {
                 Some(value) => value.trim().parse().ok().filter(|index| *index > 0)?,

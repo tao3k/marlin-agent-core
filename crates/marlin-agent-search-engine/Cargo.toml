@@ -13,6 +13,7 @@ repository.workspace = true
 [features]
 default = []
 turso = ["marlin-agent-storage/turso"]
+linked-ui = ["gerbil-scheme/external-program"]
 
 [dependencies]
 agent-semantic-search.workspace = true

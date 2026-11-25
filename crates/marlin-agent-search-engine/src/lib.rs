@@ -44,7 +44,9 @@ pub use org_port::{
     project_org_nodes_to_overlay,
 };
 pub use projection::{
-    SearchPlanProjectionError, admit_rooted_search_plan, decode_search_plan, project_from_package,
-    project_helm_prompt, project_linked,
+    SearchPlanProjectionError, admit_rooted_search_plan, decode_search_plan, project_linked,
+    project_linked_helm_prompt,
 };
+#[cfg(not(feature = "linked-ui"))]
+pub use projection::{project_from_package, project_helm_prompt};
 pub use storage_port::{MarlinAgentStorageSearchPort, MarlinSearchStorageProvenance};
