@@ -143,6 +143,7 @@ pub(super) fn poll_tool_review<G: ModelStreamingGateway + Clone>(
             }
         }
         Ok(super::super::journal_gateway::JournalToolReviewOutcome::Results(receipt)) => {
+            app.sync_search_index_background(runtime.handle());
             app.publish_message(MessageEvent {
                 source: MessageSource::Gateway,
                 severity: MessageSeverity::Info,

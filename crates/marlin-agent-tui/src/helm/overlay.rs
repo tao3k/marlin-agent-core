@@ -699,6 +699,5 @@ impl HelmOverlay {
 fn file_stem_for_graph(path: &str) -> Option<String> {
     let base = path.rsplit('/').next().unwrap_or(path);
     let stem = base.rsplit_once('.').map_or(base, |(s, _)| s);
-    (!stem.is_empty() && stem != "mod" && stem != "lib" && stem != "index")
-        .then(|| stem.to_owned())
+    (!stem.is_empty() && stem != "mod" && stem != "lib" && stem != "index").then(|| stem.to_owned())
 }

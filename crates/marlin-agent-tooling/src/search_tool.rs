@@ -73,6 +73,23 @@ impl SharedSearchIndexSlot {
         self.attach(opened.clone());
         opened
     }
+
+    /// Incrementally reconcile the attached resident index with on-disk workspace
+    /// changes and persist the cached `mmap` snapshot when files changed.
+    #[must_use]
+    pub fn sync_from_disk_and_persist(&self, workspace: &Path) -> bool {
+        let shared = self.get_or_open(workspace);
+        let Ok(mut guard) = shared.write() else {
+            return false;
+        };
+        let receipt = guard.sync_workspace_from_disk();
+        let changed = receipt.upserted_files > 0 || receipt.deleted_files > 0;
+        if changed {
+            let snapshot_path = default_workspace_snapshot_path(workspace);
+            let _ = guard.save_snapshot(&snapshot_path);
+        }
+        changed
+    }
 }
 
 /// Reusable pure-Rust resident workspace search capability for Agent tool calls.
@@ -209,6 +226,7 @@ fn execute_resident_search_tool(
     output_limit: usize,
 ) -> String {
     let parsed = ParsedAgentSearchQuery::parse(raw_query);
+    let _ = slot.sync_from_disk_and_persist(workspace);
     let shared = slot.get_or_open(workspace);
     let report = match shared.read() {
         Ok(index) => index.query(&WorkspaceSearchQuery {

@@ -415,10 +415,7 @@ async fn turso_http2_recovers_cancellation_evidence_after_process_restart() {
             .into_inner();
         assert_eq!(recovered.outcome(), SessionTurnOutcome::RemoteUncertain);
         assert_eq!(recovered.turn, Some(turn.clone()));
-        assert_eq!(
-            recovered.evidence,
-            Some(Evidence::Recorded(receipt.clone()))
-        );
+        assert_eq!(recovered.evidence, Some(Evidence::Recorded(receipt)));
         let retried = client
             .cancel_session_turn(authorized(CancelSessionTurnRequest {
                 turn: Some(turn.clone()),
@@ -555,10 +552,7 @@ async fn turso_http2_recovers_retirement_when_terminal_commit_fails() {
             .unwrap()
             .into_inner();
         assert_eq!(recovered.outcome(), SessionTurnOutcome::Unspecified);
-        assert_eq!(
-            recovered.evidence,
-            Some(Evidence::Recorded(receipt.clone()))
-        );
+        assert_eq!(recovered.evidence, Some(Evidence::Recorded(receipt)));
         let retry = client
             .cancel_session_turn(cancel())
             .await

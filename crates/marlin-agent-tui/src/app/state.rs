@@ -79,6 +79,7 @@ pub(crate) struct App {
     pub(crate) search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig,
     pub(super) search_index_warming:
         Option<tokio::sync::oneshot::Receiver<crate::helm::SharedSearchIndex>>,
+    pub(super) search_index_syncing: Option<tokio::sync::oneshot::Receiver<bool>>,
     #[cfg(feature = "linked-ui")]
     pub(crate) search_tool_slot: marlin_agent_tooling::SharedSearchIndexSlot,
     pub(crate) command_draft: Option<Composer>,
@@ -188,6 +189,7 @@ impl App {
             search_index: None,
             search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig::default(),
             search_index_warming: None,
+            search_index_syncing: None,
             #[cfg(feature = "linked-ui")]
             search_tool_slot: marlin_agent_tooling::SharedSearchIndexSlot::empty(),
             command_draft: None,
@@ -447,6 +449,35 @@ impl App {
         });
     }
 
+    pub(crate) fn sync_search_index_background(&mut self, runtime: &tokio::runtime::Handle) {
+        if self.search_index_syncing.is_some() || self.search_index_warming.is_some() {
+            return;
+        }
+        let Some(existing) = self.search_index.clone() else {
+            return;
+        };
+        let workspace_root = self
+            .context_worktree
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let snapshot_path =
+            marlin_agent_search_engine::default_workspace_snapshot_path(&workspace_root);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.search_index_syncing = Some(rx);
+        runtime.spawn_blocking(move || {
+            let mut changed = false;
+            if let Ok(mut guard) = existing.write() {
+                let receipt = guard.sync_workspace_from_disk();
+                if receipt.upserted_files > 0 || receipt.deleted_files > 0 {
+                    let _ = guard.save_snapshot(&snapshot_path);
+                    changed = true;
+                }
+            }
+            let _ = tx.send(changed);
+        });
+    }
+
     pub(crate) fn poll_search_index(&mut self) -> bool {
         let mut changed = false;
         if let Some(rx) = self.search_index_warming.as_mut() {
@@ -464,6 +495,25 @@ impl App {
                 Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
                 Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
                     self.search_index_warming = None;
+                }
+            }
+        }
+        if let Some(rx) = self.search_index_syncing.as_mut() {
+            match rx.try_recv() {
+                Ok(synced_changes) => {
+                    self.search_index_syncing = None;
+                    if synced_changes && let Some(existing) = self.search_index.clone() {
+                        #[cfg(feature = "linked-ui")]
+                        self.search_tool_slot.attach(existing.clone());
+                        if let Some(helm) = self.helm.as_mut() {
+                            helm.attach_warm_index(existing);
+                        }
+                        changed = true;
+                    }
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    self.search_index_syncing = None;
                 }
             }
         }
@@ -497,6 +547,7 @@ impl App {
             self.search_index.clone(),
             runtime,
         ));
+        self.sync_search_index_background(runtime);
     }
 
     pub(crate) fn apply_helm_action(&mut self, action: super::HelmAction) {

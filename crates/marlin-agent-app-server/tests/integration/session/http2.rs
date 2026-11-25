@@ -396,7 +396,7 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
         };
         assert!(runtime.completed && runtime.tracker_closed && runtime.cancellation_requested);
         assert_eq!(runtime.remaining_tasks, 0);
-        assert_eq!(retry_cancel.await.unwrap().unwrap().into_inner().runtime, Some(runtime.clone()));
+        assert_eq!(retry_cancel.await.unwrap().unwrap().into_inner().runtime, Some(runtime));
         let last = resumed.message().await.unwrap().unwrap();
         assert!(matches!(last.event, Some(Event::Outcome(outcome)) if outcome == i32::from(SessionTurnOutcome::RemoteUncertain)));
         assert!(resumed.message().await.unwrap().is_none());
@@ -411,7 +411,7 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
         let mut suffix = client.watch_session_turn(watch(Some(last.event_id))).await.unwrap().into_inner();
         assert!(suffix.message().await.unwrap().is_none());
         let repeat = client.cancel_session_turn(cancel()).await.unwrap().into_inner();
-        assert_eq!(repeat.runtime, Some(runtime.clone()));
+        assert_eq!(repeat.runtime, Some(runtime));
         assert_eq!(cancellation_writing.available_permits(), 0);
         let recorded = client.get_session_turn_cancellation(read_cancellation()).await.unwrap().into_inner();
         assert_eq!(recorded.outcome(), SessionTurnOutcome::RemoteUncertain);
