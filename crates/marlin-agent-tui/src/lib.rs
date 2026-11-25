@@ -17,6 +17,7 @@ mod edge_gateway;
 mod event_queue;
 mod frame_schedule;
 mod helm;
+mod helm_render;
 mod input;
 mod journal_gateway;
 mod model_catalog;

@@ -24,6 +24,7 @@ unsafe extern "C" {
     fn marlin_ui_command_candidates(root: i64) -> i64;
     fn marlin_ui_review_menu(root: i64) -> i64;
     fn marlin_ui_refresh_labels(root: i64) -> i64;
+    fn marlin_ui_helm_index_config(root: i64) -> i64;
     fn marlin_tooling_project(root: i64) -> i64;
     fn marlin_envrc_plan(root: i64) -> i64;
     fn marlin_worktree_context_prepare(root: i64) -> i64;
@@ -131,6 +132,21 @@ pub(crate) fn tooling_declarations(
 > {
     // SAFETY: this export belongs to the same linked programme initialized above.
     unsafe { marlin_agent_tooling::project_linked(runtime, marlin_tooling_project) }
+}
+
+pub(crate) fn helm_index_config(
+    runtime: &GerbilRuntime,
+) -> Result<
+    marlin_agent_search_engine::WorkspaceIndexConfig,
+    marlin_agent_search_engine::SearchPlanProjectionError,
+> {
+    // SAFETY: `marlin_ui_helm_index_config` belongs to the linked Marlin TUI programme.
+    unsafe {
+        marlin_agent_search_engine::project_linked_helm_index_config(
+            runtime,
+            marlin_ui_helm_index_config,
+        )
+    }
 }
 
 #[cfg(test)]

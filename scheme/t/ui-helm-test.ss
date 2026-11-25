@@ -169,4 +169,17 @@
         ;; Buffer switching activates 'helm-snapshot in main window
         (check (vector-ref (vector-ref (vector-ref proj-frame 1) 0) 1) => 'helm-snapshot)
         ;; Package keybinding SPC f h binds cleanly without colliding with SPC s
-        (check (and (member '#(normal #(SPC f h) buffer-helm-snapshot) pkg-keys) #t) => #t)))))
+        (check (and (member '#(normal #(SPC f h) buffer-helm-snapshot) pkg-keys) #t) => #t)
+        ;; Scheme owns Helm index exclusions and bottom-split Emacs window policy
+        (let ((idx-cfg ((.get UiHelmScope index-config-vector)))
+              (win-pol ((.get UiHelmScope window-policy-vector))))
+          (check (vector? idx-cfg) => #t)
+          (check (vector-length idx-cfg) => 4)
+          (check (and (member "target" (vector->list (vector-ref idx-cfg 0))) #t) => #t)
+          (check (and (member ".gerbil" (vector->list (vector-ref idx-cfg 0))) #t) => #t)
+          (check (vector-ref idx-cfg 1) => 2097152)
+          (check (vector? win-pol) => #t)
+          (check (vector-ref win-pol 0) => 'bottom-split)
+          (check (vector-ref win-pol 4) => #t)
+          (check (vector-ref win-pol 5) => #t)
+          (check (vector-ref win-pol 6) => #t))))))

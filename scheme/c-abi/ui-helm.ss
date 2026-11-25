@@ -7,14 +7,30 @@
 (import (only-in :marlin-agent-core/c-abi/roots marlin-rooted-call)
         (only-in :clan/poo/object .get)
         (only-in :marlin-agent-core/ui-helm/config UiHelmScope))
-(export marlin-ui-helm-compile-plan)
+(export marlin-ui-helm-compile-plan
+        marlin-ui-helm-index-config
+        marlin-ui-helm-window-policy)
 
 (def (marlin-ui-helm-compile-plan input)
   (let ((prompt (if (string? input) input "@lang:rust marlin_search_engine")))
     ((.get UiHelmScope compile-plan-vector) prompt)))
 
+(def (marlin-ui-helm-index-config _input)
+  ((.get UiHelmScope index-config-vector)))
+
+(def (marlin-ui-helm-window-policy _input)
+  ((.get UiHelmScope window-policy-vector)))
+
 (begin-foreign
   (c-define (ui-helm-compile-plan root) (int64) int64
     "marlin_ui_helm_compile_plan" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root
-      marlin-agent-core/c-abi/ui-helm#marlin-ui-helm-compile-plan)))
+      marlin-agent-core/c-abi/ui-helm#marlin-ui-helm-compile-plan))
+  (c-define (ui-helm-index-config root) (int64) int64
+    "marlin_ui_helm_index_config" "extern"
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root
+      marlin-agent-core/c-abi/ui-helm#marlin-ui-helm-index-config))
+  (c-define (ui-helm-window-policy root) (int64) int64
+    "marlin_ui_helm_window_policy" "extern"
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root
+      marlin-agent-core/c-abi/ui-helm#marlin-ui-helm-window-policy)))

@@ -30,5 +30,7 @@
                toggle-actions: [(Fun Object <- Object)]
                dispatch-action: [(Fun Object <- Object Symbol)]
                render-lines: [(Fun (List String) <- Object)]
-               project-ui-elements: [(Fun HelmVector <- Object)])
+               project-ui-elements: [(Fun HelmVector <- Object)]
+               index-config-vector: [(Fun HelmVector <-)]
+               window-policy-vector: [(Fun HelmVector <-)])
        identity: 'marlin/ui-helm))

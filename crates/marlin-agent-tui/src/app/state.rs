@@ -75,6 +75,11 @@ pub(crate) struct App {
     pub(super) prompt_history: PromptHistory,
     pub(crate) history_search: Option<HistorySearch>,
     pub(crate) helm: Option<super::HelmOverlay>,
+    pub(crate) search_index: Option<Arc<marlin_agent_search_engine::WorkspaceSearchIndex>>,
+    pub(crate) search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig,
+    pub(super) search_index_warming: Option<
+        tokio::sync::oneshot::Receiver<Arc<marlin_agent_search_engine::WorkspaceSearchIndex>>,
+    >,
     pub(crate) command_draft: Option<Composer>,
     pub(crate) command_menu: Option<CommandMenu>,
     pub(crate) command_selection: Option<(String, UiCommandName)>,
@@ -179,6 +184,9 @@ impl App {
             prompt_history: PromptHistory::default(),
             history_search: None,
             helm: None,
+            search_index: None,
+            search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig::default(),
+            search_index_warming: None,
             command_draft: None,
             command_menu: None,
             command_selection: None,
@@ -405,6 +413,58 @@ impl App {
         }
     }
 
+    pub(crate) fn warm_search_index(
+        &mut self,
+        config: marlin_agent_search_engine::WorkspaceIndexConfig,
+        runtime: &tokio::runtime::Handle,
+    ) {
+        self.search_index_config = config.clone();
+        if self.search_index.is_some() || self.search_index_warming.is_some() {
+            return;
+        }
+        let workspace_root = self
+            .context_worktree
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.search_index_warming = Some(rx);
+        runtime.spawn_blocking(move || {
+            let built = Arc::new(
+                marlin_agent_search_engine::WorkspaceSearchIndex::build_with_config(
+                    &workspace_root,
+                    config,
+                ),
+            );
+            let _ = tx.send(built);
+        });
+    }
+
+    pub(crate) fn poll_search_index(&mut self) -> bool {
+        let mut changed = false;
+        if let Some(rx) = self.search_index_warming.as_mut() {
+            match rx.try_recv() {
+                Ok(built) => {
+                    self.search_index_warming = None;
+                    self.search_index = Some(built.clone());
+                    if let Some(helm) = self.helm.as_mut() {
+                        helm.attach_warm_index(built);
+                    }
+                    changed = true;
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    self.search_index_warming = None;
+                }
+            }
+        }
+        if let Some(built) = self.helm.as_mut().and_then(super::HelmOverlay::poll) {
+            self.search_index = Some(built);
+            changed = true;
+        }
+        changed
+    }
+
     pub(crate) fn open_helm(
         &mut self,
         initial_query: Option<&str>,
@@ -422,6 +482,8 @@ impl App {
             initial_query,
             workspace_root,
             &self.command_catalog,
+            self.search_index_config.clone(),
+            self.search_index.clone(),
             runtime,
         ));
     }

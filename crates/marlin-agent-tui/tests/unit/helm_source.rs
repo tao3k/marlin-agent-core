@@ -3,7 +3,43 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use super::{HelmAction, HelmOverlay, HelmParsedInput, HelmSourceKind};
+use crate::helm_render::render_helm_window;
+use marlin_agent_search_engine::{WorkspaceIndexConfig, WorkspaceSearchIndex};
+use marlin_agent_ui::{UiRgb, UiTheme};
 use std::path::Path;
+use std::sync::Arc;
+
+fn scheme_like_config() -> WorkspaceIndexConfig {
+    WorkspaceIndexConfig {
+        skip_dirs: vec![
+            "target".into(),
+            ".git".into(),
+            ".gerbil".into(),
+            "node_modules".into(),
+            ".devenv".into(),
+            ".direnv".into(),
+            "dist".into(),
+            "build".into(),
+        ],
+        max_file_bytes: 2 * 1024 * 1024,
+        max_line_matches_per_hit: 6,
+        max_line_preview_chars: 220,
+    }
+}
+
+fn sample_theme() -> UiTheme {
+    let rgb = |red, green, blue| UiRgb { red, green, blue };
+    UiTheme {
+        canvas: rgb(40, 44, 52),
+        ink: rgb(187, 194, 207),
+        bar: rgb(33, 36, 43),
+        accent: rgb(81, 175, 239),
+        info: rgb(70, 217, 255),
+        success: rgb(152, 190, 101),
+        warning: rgb(236, 190, 123),
+        muted: rgb(91, 98, 104),
+    }
+}
 
 #[test]
 fn two_stage_consult_orderless_parser_separates_async_and_local_tokens() {
@@ -19,7 +55,7 @@ fn two_stage_consult_orderless_parser_separates_async_and_local_tokens() {
 }
 
 #[test]
-fn live_helm_overlay_executes_real_asp_search_and_enforces_local_orderless_without_epoch_bump() {
+fn warm_trigram_helm_executes_instantly_and_supports_emacs_source_jump_mark_and_actions() {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -29,27 +65,30 @@ fn live_helm_overlay_executes_real_asp_search_and_enforces_local_orderless_witho
         .nth(2)
         .expect("workspace root")
         .to_path_buf();
+    let cfg = scheme_like_config();
+    let warm_index = Arc::new(WorkspaceSearchIndex::build_with_config(
+        &workspace_root,
+        cfg.clone(),
+    ));
+    assert!(warm_index.file_count() > 50);
 
     let mut overlay = HelmOverlay::open(
         Some("@lang:rust @prefix:crates/marlin-agent-search-engine/src/ marlin_search_engine"),
         workspace_root,
         &[],
+        cfg,
+        Some(warm_index),
         rt.handle(),
     );
-    assert!(overlay.is_searching());
-    let epoch_before = overlay.epoch;
-
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-    while overlay.is_searching() && std::time::Instant::now() < deadline {
-        if overlay.poll() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    assert!(!overlay.is_searching());
+    assert!(!overlay.is_indexing());
     assert!(overlay.generation_digest.is_some());
-    overlay.next_source();
-    assert_eq!(overlay.active_source, HelmSourceKind::Search);
+    assert!(overlay.last_query_micros.is_some());
+    eprintln!(
+        "warm Helm trigram query elapsed: {} ({} indexed files)",
+        overlay.format_latency(),
+        overlay.indexed_files
+    );
+
     assert!(
         overlay.search_candidates.iter().any(|cand| cand
             .display
@@ -57,16 +96,34 @@ fn live_helm_overlay_executes_real_asp_search_and_enforces_local_orderless_witho
         "expected engine.rs hit, got {:?}",
         overlay.search_candidates
     );
+    // Surrounding context lines are pre-extracted directly from RAM for follow-preview!
+    assert!(
+        overlay
+            .selected_candidate()
+            .is_some_and(|cand| cand.context_lines.len() >= 3)
+    );
 
-    // Local Orderless filter must not bump epoch or re-trigger async search.
-    overlay.insert_text(" #engine !storage", rt.handle());
+    // Local Orderless filter must NOT bump epoch.
+    let epoch_before = overlay.epoch;
+    overlay.insert_text(" #engine !storage");
     assert_eq!(overlay.epoch, epoch_before);
-    assert!(!overlay.is_searching());
     assert!(!overlay.filtered_indices.is_empty());
 
-    // Mark + Embark citation export produces structured `@path:line` citation.
-    overlay.toggle_mark();
-    match overlay.accept(true) {
+    // C-o jumps across source groups cleanly (Search -> Buffers if present, or wraps).
+    overlay.insert_text("");
+    overlay.cycle_source_filter();
+    assert_eq!(overlay.active_source, HelmSourceKind::Search);
+
+    // C-SPC mark-and-advance + TAB Action Transformer mode + export citations.
+    overlay.toggle_mark_and_advance();
+    assert_eq!(overlay.marked_ids.len(), 1);
+    overlay.toggle_action_mode();
+    assert!(overlay.action_mode);
+    assert!(!overlay.available_actions().is_empty());
+
+    let (should_close, action) = overlay.accept(true);
+    assert!(should_close);
+    match action {
         Some(HelmAction::InsertCitations(citations)) => {
             assert!(
                 citations.contains("@crates/marlin-agent-search-engine/src/engine.rs:"),
@@ -75,4 +132,93 @@ fn live_helm_overlay_executes_real_asp_search_and_enforces_local_orderless_witho
         }
         other => panic!("expected InsertCitations, got {other:?}"),
     }
+}
+
+#[test]
+fn emacs_bottom_split_helm_window_renders_source_headers_preview_modeline_and_minibuffer() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("workspace root")
+        .to_path_buf();
+    let cfg = scheme_like_config();
+    let warm_index = Arc::new(WorkspaceSearchIndex::build_with_config(
+        &workspace_root,
+        cfg.clone(),
+    ));
+    let mut overlay = HelmOverlay::open(
+        Some("@lang:rust @prefix:crates/marlin-agent-search-engine/src/ marlin_search_engine"),
+        workspace_root,
+        &[],
+        cfg,
+        Some(warm_index),
+        rt.handle(),
+    );
+
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).expect("test backend");
+    let theme = sample_theme();
+    terminal
+        .draw(|frame| {
+            render_helm_window(&overlay, frame, frame.area(), &theme);
+        })
+        .expect("render bottom-split Helm window");
+
+    let buf = terminal.backend().buffer();
+    let rows: Vec<String> = (0..30)
+        .map(|y| {
+            (0..120)
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .collect();
+    // Top rows stay unobstructed so the main conversation buffer remains visible above Helm!
+    assert!(rows[0].trim().is_empty());
+    // Bottom-most row is the authentic Emacs Helm minibuffer prompt.
+    assert!(
+        rows[29].contains("Helm>"),
+        "expected Helm> minibuffer on bottom row, got: {:?}",
+        rows[29]
+    );
+    // Second-to-last row is the authentic Doom-style Helm modeline.
+    assert!(
+        rows[28].contains("HELM"),
+        "expected HELM modeline on row 28, got: {:?}",
+        rows[28]
+    );
+    // Source header bar and side-by-side follow preview divider are both rendered.
+    let joined = rows.join("\n");
+    assert!(
+        joined.contains("▌ Workspace Search"),
+        "missing source header"
+    );
+    assert!(
+        joined.contains("│"),
+        "missing right split follow-preview divider"
+    );
+
+    // TAB switches cleanly to the Action Transformer view.
+    overlay.toggle_action_mode();
+    terminal
+        .draw(|frame| {
+            render_helm_window(&overlay, frame, frame.area(), &theme);
+        })
+        .expect("render Helm action transformer");
+    let act_buf = terminal.backend().buffer();
+    let act_text: String = (0..30)
+        .map(|y| {
+            (0..120)
+                .map(|x| act_buf[(x, y)].symbol())
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(act_text.contains("Helm Actions"));
+    assert!(act_text.contains("HELM-ACT"));
 }

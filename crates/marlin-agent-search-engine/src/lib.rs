@@ -17,6 +17,7 @@
 //!    wired via [`MarlinAgentStorageSearchPort`] implementing [`SearchEngineStoragePort`].
 
 mod engine;
+mod index;
 mod org_port;
 mod projection;
 mod storage_port;
@@ -39,14 +40,19 @@ pub use agent_semantic_topology::{
     OrgOverlayDocumentProjection, OrgProjectionPortError, OrgPropertyEntry, OrgSectionProjection,
 };
 pub use engine::marlin_search_engine;
+pub use index::{
+    WorkspaceContextLine, WorkspaceIndexConfig, WorkspaceSearchHit, WorkspaceSearchIndex,
+    WorkspaceSearchQuery, WorkspaceSearchReport,
+};
 pub use org_port::{
     MarlinContextOrgPort, parse_live_org_nodes, project_org_nodes_to_document,
     project_org_nodes_to_overlay,
 };
 pub use projection::{
-    SearchPlanProjectionError, admit_rooted_search_plan, decode_search_plan, project_linked,
+    SearchPlanProjectionError, admit_rooted_search_plan, decode_search_plan,
+    decode_workspace_index_config, project_linked, project_linked_helm_index_config,
     project_linked_helm_prompt,
 };
 #[cfg(not(feature = "linked-ui"))]
-pub use projection::{project_from_package, project_helm_prompt};
+pub use projection::{project_from_package, project_helm_index_config, project_helm_prompt};
 pub use storage_port::{MarlinAgentStorageSearchPort, MarlinSearchStorageProvenance};

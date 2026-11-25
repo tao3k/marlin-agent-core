@@ -17,7 +17,10 @@ use marlin_agent_search_engine::{
     decode_search_plan, marlin_search_engine,
 };
 #[cfg(not(feature = "linked-ui"))]
-use marlin_agent_search_engine::{project_from_package, project_helm_prompt};
+use marlin_agent_search_engine::{
+    WorkspaceSearchIndex, WorkspaceSearchQuery, project_from_package, project_helm_index_config,
+    project_helm_prompt,
+};
 use marlin_agent_storage::InMemoryAgentStorage;
 use marlin_context_org_model::{OrgNode, OrgNodeKind};
 
@@ -264,6 +267,36 @@ fn rooted_scheme_plans_and_compiled_module_project_into_asp() {
                     .any(|hit| hit.path == "crates/marlin-agent-search-engine/src/engine.rs"),
                 "expected engine.rs in live Helm hits: {:?}",
                 report.hits
+            );
+
+            // 5. Scheme-owned `HelmIndexPolicy.` drives resident trigram index (`skip-dirs`, limits).
+            let index_cfg =
+                project_helm_index_config(&runtime, scheme_dir.to_str().expect("utf-8 scheme dir"))
+                    .expect("project Scheme HelmIndexPolicy.");
+            assert!(index_cfg.skip_dirs.iter().any(|dir| dir == "target"));
+            assert!(index_cfg.skip_dirs.iter().any(|dir| dir == ".gerbil"));
+            assert_eq!(index_cfg.max_file_bytes, 2 * 1024 * 1024);
+
+            let resident = WorkspaceSearchIndex::build_with_config(workspace_root, index_cfg);
+            let fast_report = resident.query(&WorkspaceSearchQuery {
+                pattern: "marlin_search_engine",
+                languages: &["rust".to_owned()],
+                documents: &[],
+                path_prefix: Some("crates/marlin-agent-search-engine/src/"),
+                extension: None,
+                max_hits: 32,
+                context_radius: 4,
+            });
+            assert!(
+                fast_report
+                    .hits
+                    .iter()
+                    .any(|hit| hit.path == "crates/marlin-agent-search-engine/src/engine.rs")
+            );
+            assert!(
+                fast_report.elapsed_micros < 5_000,
+                "resident trigram query should be near/sub-ms even in debug build, got {}µs",
+                fast_report.elapsed_micros
             );
         }
     }

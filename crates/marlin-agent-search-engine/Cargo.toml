@@ -19,10 +19,14 @@ linked-ui = ["gerbil-scheme/external-program"]
 agent-semantic-search.workspace = true
 agent-semantic-search-playbook.workspace = true
 agent-semantic-topology.workspace = true
+blake3 = "1.8.7"
 futures-executor.workspace = true
 gerbil-scheme.workspace = true
+ignore = "0.4.34"
 marlin-agent-storage.workspace = true
 marlin-context-org-model.workspace = true
+memchr = "2.8.3"
+rayon = "1.12.0"
 thiserror.workspace = true
 
 [dev-dependencies]

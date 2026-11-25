@@ -38,7 +38,9 @@
         helm-visible-candidates
         helm-selected-candidate
         helm-render-lines
-        helm-project-ui-elements)
+        helm-project-ui-elements
+        helm-project-index-config
+        helm-project-window-policy)
 
 (def (make-helm-source id label kind: (kind 'search) priority: (priority 10) async?: (async? #t))
   (seal-object!
@@ -521,3 +523,25 @@
         row-elements
         preview-elements
         action-elements))))
+
+;;; Project Scheme-owned resident search index policy into a rooted native vector:
+;;; #(skip-dirs-vector max-file-bytes max-line-matches max-line-preview-chars)
+(def (helm-project-index-config (policy HelmIndexPolicy.))
+  (vector
+    (list->vector (.get policy skip-dirs))
+    (.get policy max-file-bytes)
+    (.get policy max-line-matches)
+    (.get policy max-line-preview-chars)))
+
+;;; Project Scheme-owned Emacs Helm window layout policy into a rooted native vector:
+;;; #(window-style height-percent preview-width-percent preview-min-width
+;;;   source-headers? match-highlight? follow-preview?)
+(def (helm-project-window-policy (policy HelmWindowPolicy.))
+  (vector
+    (.get policy window-style)
+    (.get policy height-percent)
+    (.get policy preview-width-percent)
+    (.get policy preview-min-width)
+    (.get policy source-headers?)
+    (.get policy match-highlight?)
+    (.get policy follow-preview?)))

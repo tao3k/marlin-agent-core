@@ -374,3 +374,73 @@ pub fn project_helm_prompt(
     let projected = native(runtime.call_rooted(&procedure, &prompt_obj))?;
     admit_rooted_search_plan(projected)
 }
+
+fn decode_u64(value: RootedSchemeObject<'_>) -> Result<u64, SearchPlanProjectionError> {
+    match native(value.as_ref().scalar())? {
+        SchemeScalar::Fixnum(v) if v >= 0 => Ok(v as u64),
+        _ => Err(SearchPlanProjectionError::Invalid(
+            "expected non-negative integer scalar",
+        )),
+    }
+}
+
+/// Decode Scheme-owned `HelmIndexPolicy.` rooted vector into [`crate::WorkspaceIndexConfig`]:
+/// `#(skip-dirs-vector max-file-bytes max-line-matches max-line-preview-chars)`.
+pub fn decode_workspace_index_config(
+    value: RootedSchemeObject<'_>,
+) -> Result<crate::WorkspaceIndexConfig, SearchPlanProjectionError> {
+    let tuple = native(value.into_collection(CollectionKind::Vector))?;
+    if tuple.len() != 4 {
+        return Err(SearchPlanProjectionError::Invalid(
+            "workspace index config arity",
+        ));
+    }
+    let skip_dirs = decode_string_vector(native(tuple.element(0))?)?;
+    let max_file_bytes = decode_u64(native(tuple.element(1))?)?;
+    let max_line_matches_per_hit =
+        usize::try_from(decode_u64(native(tuple.element(2))?)?).unwrap_or(6);
+    let max_line_preview_chars =
+        usize::try_from(decode_u64(native(tuple.element(3))?)?).unwrap_or(220);
+    Ok(crate::WorkspaceIndexConfig {
+        skip_dirs,
+        max_file_bytes: max_file_bytes.max(1024),
+        max_line_matches_per_hit: max_line_matches_per_hit.max(1),
+        max_line_preview_chars: max_line_preview_chars.max(32),
+    })
+}
+
+/// Project Scheme-owned `HelmIndexPolicy.` through an AOT-linked `marlin_ui_helm_index_config` export.
+///
+/// # Safety
+/// `export` must originate from `runtime`'s live Marlin programme and return a fresh strong root.
+pub unsafe fn project_linked_helm_index_config(
+    runtime: &GerbilRuntime,
+    export: unsafe extern "C" fn(i64) -> i64,
+) -> Result<crate::WorkspaceIndexConfig, SearchPlanProjectionError> {
+    let procedure = native(unsafe { runtime.bind_object_export(export) })?;
+    let void_input = native(runtime.void_object())?;
+    let projected = native(procedure.call(&void_input).into_result())?;
+    decode_workspace_index_config(projected)
+}
+
+/// Resolve and project Scheme-owned `HelmIndexPolicy.` from a compiled package directory.
+#[cfg(not(feature = "linked-ui"))]
+pub fn project_helm_index_config(
+    runtime: &GerbilRuntime,
+    scheme_dir: &str,
+) -> Result<crate::WorkspaceIndexConfig, SearchPlanProjectionError> {
+    let module = native(
+        runtime.intern_identifier(IdentifierKind::Symbol, ":marlin-agent-core/c-abi/ui-helm"),
+    )?;
+    let name =
+        native(runtime.intern_identifier(IdentifierKind::Symbol, "marlin-ui-helm-index-config"))?;
+    let procedure = native(runtime.resolve_package_export(scheme_dir, &module, &name))?;
+    if native(procedure.as_ref().kind())? != ObjectKind::Procedure {
+        return Err(SearchPlanProjectionError::Invalid(
+            "ui-helm index config export is not a procedure",
+        ));
+    }
+    let void_input = native(runtime.void_object())?;
+    let projected = native(runtime.call_rooted(&procedure, &void_input))?;
+    decode_workspace_index_config(projected)
+}

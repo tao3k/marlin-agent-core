@@ -284,29 +284,46 @@ pub(super) fn handle_helm_input(
     let mut close_helm = false;
     match received {
         Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => return Ok(true),
-        Ok(Ok(TerminalInput::Key(Key::Ctrl('c' | 'g') | Key::Esc))) => {
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('c' | 'g')))) => {
             close_helm = true;
             app.disarm_exit();
         }
+        Ok(Ok(TerminalInput::Key(Key::Esc))) => {
+            if helm.action_mode {
+                helm.toggle_action_mode();
+            } else {
+                close_helm = true;
+                app.disarm_exit();
+            }
+        }
         Ok(Ok(TerminalInput::Key(Key::Char('\n')))) => {
-            accepted = helm.accept(false);
-            close_helm = true;
+            let (should_close, action) = helm.accept(false);
+            accepted = action;
+            close_helm = should_close;
         }
         Ok(Ok(TerminalInput::Key(Key::Ctrl('e')))) => {
-            accepted = helm.accept(true);
-            close_helm = true;
+            let (should_close, action) = helm.accept(true);
+            accepted = action;
+            close_helm = should_close;
         }
         Ok(Ok(TerminalInput::Key(Key::Up | Key::Ctrl('p')))) => helm.move_selection(-1),
         Ok(Ok(TerminalInput::Key(Key::Down | Key::Ctrl('n')))) => helm.move_selection(1),
-        Ok(Ok(TerminalInput::Key(Key::Char('\t')))) => helm.toggle_mark(),
-        Ok(Ok(TerminalInput::Key(Key::Ctrl('o')))) => helm.toggle_preview(),
-        Ok(Ok(TerminalInput::Key(Key::Ctrl('s')))) => helm.next_source(),
-        Ok(Ok(TerminalInput::Key(Key::Ctrl('a')))) => helm.toggle_actions(),
-        Ok(Ok(TerminalInput::Key(Key::Backspace))) => helm.backspace(runtime),
-        Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() => {
-            helm.insert_text(&c.to_string(), runtime);
+        Ok(Ok(TerminalInput::Key(Key::PageUp | Key::Alt('v')))) => helm.move_selection(-8),
+        Ok(Ok(TerminalInput::Key(Key::PageDown | Key::Ctrl('v')))) => helm.move_selection(8),
+        Ok(Ok(TerminalInput::Key(Key::Null | Key::Ctrl(' ') | Key::Alt('m')))) => {
+            helm.toggle_mark_and_advance();
         }
-        Ok(Ok(TerminalInput::Paste(text))) => helm.insert_text(&text, runtime),
+        Ok(Ok(TerminalInput::Key(Key::Alt('a')))) => helm.toggle_mark_all(),
+        Ok(Ok(TerminalInput::Key(Key::Char('\t')))) => helm.toggle_action_mode(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('z')))) => helm.toggle_follow_preview(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('o')))) => helm.jump_next_source(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('s')))) => helm.cycle_source_filter(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('l')))) => helm.refresh_index(runtime),
+        Ok(Ok(TerminalInput::Key(Key::Backspace))) => helm.backspace(),
+        Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() => {
+            helm.insert_text(&c.to_string());
+        }
+        Ok(Ok(TerminalInput::Paste(text))) => helm.insert_text(&text),
         Ok(Err(err)) => return Err(err),
         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Ok(true),
         _ => {}

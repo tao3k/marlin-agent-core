@@ -471,7 +471,7 @@ pub(super) fn run(
                 .history_search
                 .as_mut()
                 .is_some_and(|search| search.step(&app.history));
-            let helm_updated = app.helm.as_mut().is_some_and(super::HelmOverlay::poll);
+            let helm_updated = app.poll_search_index();
             if app.ui_request.is_some()
                 || app.command_history_request.is_some()
                 || app.transient_request.is_some()
@@ -576,15 +576,25 @@ pub(super) fn run(
                 if first_frame_elapsed.is_none() {
                     first_frame_elapsed = Some(startup.elapsed());
                     #[cfg(feature = "linked-ui")]
-                    if let Some(approved) = git_context_approval.as_ref() {
-                        git_context = Some(super::git_context::GitContext::new(
-                            &scheme_runtime,
-                            approved.clone(),
-                            launch_checkout.clone(),
-                            &app,
-                            &runtime,
-                        ));
+                    {
+                        let helm_cfg = super::super::linked_ui::helm_index_config(&scheme_runtime)
+                            .unwrap_or_default();
+                        app.warm_search_index(helm_cfg, runtime.handle());
+                        if let Some(approved) = git_context_approval.as_ref() {
+                            git_context = Some(super::git_context::GitContext::new(
+                                &scheme_runtime,
+                                approved.clone(),
+                                launch_checkout.clone(),
+                                &app,
+                                &runtime,
+                            ));
+                        }
                     }
+                    #[cfg(not(feature = "linked-ui"))]
+                    app.warm_search_index(
+                        marlin_agent_search_engine::WorkspaceIndexConfig::default(),
+                        runtime.handle(),
+                    );
                 }
             }
             let wait = if processed == REPLY_BATCH_LIMIT
@@ -599,11 +609,11 @@ pub(super) fn run(
             } else if app
                 .helm
                 .as_ref()
-                .is_some_and(super::HelmOverlay::is_searching)
+                .is_some_and(super::HelmOverlay::is_indexing)
             {
                 schedule
                     .wait_duration(Instant::now())
-                    .min(std::time::Duration::from_millis(16))
+                    .min(std::time::Duration::from_millis(8))
             } else {
                 schedule.wait_duration(Instant::now())
             };

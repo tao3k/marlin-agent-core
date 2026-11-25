@@ -11,7 +11,26 @@
         HelmCandidate.
         HelmAction.
         HelmActionReceipt.
+        HelmIndexPolicy.
+        HelmWindowPolicy.
         HelmSession.)
+
+(.def HelmIndexPolicy.
+  skip-dirs: '("target" ".git" ".gerbil" "node_modules" ".devenv" ".direnv" "dist" "build")
+  max-file-bytes: 2097152
+  max-line-matches: 6
+  max-line-preview-chars: 220
+  max-hits: 64
+  context-radius: 5)
+
+(.def HelmWindowPolicy.
+  window-style: 'bottom-split
+  height-percent: 54
+  preview-width-percent: 44
+  preview-min-width: 88
+  source-headers?: #t
+  match-highlight?: #t
+  follow-preview?: #t)
 
 (.def HelmSource.
   id: 'search
