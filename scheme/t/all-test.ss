@@ -30,3 +30,17 @@
         "graph-engine-c-abi-test"
         "graph-engine-governed-context-test"
         "agent-policy-routing-abi-projection-test")
+
+(export yuanxu-design165-integration-test
+        brief-to-draft-options-test
+        marlin-ui-helm-test
+        ui-mygo-test
+        task-workbench-tabs-test
+        end-to-end-task-workflow-test
+        context-progressive-dispatch-test
+        context-durable-orchestrator-test
+        artifacts-gitops-catalog-test
+        git-worktree-context-test
+        marlin-graph-engine-test
+        marlin-graph-engine-c-abi-test
+        marlin-graph-engine-governed-context-test)
