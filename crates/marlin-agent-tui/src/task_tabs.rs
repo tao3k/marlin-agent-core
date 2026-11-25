@@ -261,4 +261,125 @@ mod tests {
         assert!(top_row.contains("★ Tasks"));
         assert!(top_row.contains("Live Graph · e1"));
     }
+
+    #[test]
+    fn task_tab_commands_cycle_focus_and_manage_disjoint_read_only_peeks() {
+        use crate::{
+            app::App,
+            command::{Command, TaskTabCommand},
+        };
+        use marlin_agent_protocol::ModelEndpoint;
+        use marlin_agent_ui::{
+            UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName,
+        };
+
+        let descriptor = |name: &str, args: UiCommandArguments, value: &str| UiCommand {
+            name: UiCommandName::new(name).unwrap(),
+            description: "task tab action".to_owned(),
+            arguments: args,
+            capability: UiCommandCapability::TaskTabs,
+            value: Some(value.to_owned()),
+        };
+
+        let next_desc = descriptor("task-next", UiCommandArguments::None, "next");
+        let prev_desc = descriptor("task-prev", UiCommandArguments::None, "prev");
+        let idx_desc = descriptor("task-index", UiCommandArguments::None, "index");
+        let focus_desc = descriptor("task-focus", UiCommandArguments::Required, "focus");
+        let peek_desc = descriptor("task-peek", UiCommandArguments::Required, "peek");
+        let unpeek_desc = descriptor("task-unpeek", UiCommandArguments::Required, "unpeek");
+        let bad_desc = descriptor("task-bad", UiCommandArguments::None, "peek");
+
+        assert!(Command::admit(&next_desc));
+        assert!(Command::admit(&focus_desc));
+        assert!(!Command::admit(&bad_desc));
+        assert_eq!(
+            Command::parse(&next_desc, "task-next"),
+            Some(Command::TaskTab(TaskTabCommand::Next))
+        );
+        assert_eq!(
+            Command::parse(&prev_desc, "task-prev"),
+            Some(Command::TaskTab(TaskTabCommand::Prev))
+        );
+        assert_eq!(
+            Command::parse(&idx_desc, "task-index"),
+            Some(Command::TaskTab(TaskTabCommand::FocusIndex))
+        );
+        assert_eq!(
+            Command::parse(&focus_desc, "task-focus task-beta"),
+            Some(Command::TaskTab(TaskTabCommand::Focus("task-beta")))
+        );
+        assert_eq!(
+            Command::parse(&peek_desc, "task-peek task-old"),
+            Some(Command::TaskTab(TaskTabCommand::Peek("task-old")))
+        );
+        assert_eq!(
+            Command::parse(&unpeek_desc, "task-unpeek task-old"),
+            Some(Command::TaskTab(TaskTabCommand::Unpeek("task-old")))
+        );
+
+        let mut app = App::new(ModelEndpoint::new("provider", "model"));
+        let alpha = TaskActorId::new("task-alpha").unwrap();
+        let beta = TaskActorId::new("task-beta").unwrap();
+        app.task_actors
+            .register_actor(alpha.clone(), "Alpha", TaskActorScopeMode::Project)
+            .unwrap();
+        app.task_actors
+            .register_actor(beta.clone(), "Beta", TaskActorScopeMode::Project)
+            .unwrap();
+
+        // Cycle forward: Index -> alpha -> beta -> Index
+        app.apply_task_tab_command(TaskTabCommand::Next);
+        assert_eq!(
+            app.task_actors.project_workbench_tabs().focused_task_id,
+            Some(alpha.clone())
+        );
+        app.apply_task_tab_command(TaskTabCommand::Next);
+        assert_eq!(
+            app.task_actors.project_workbench_tabs().focused_task_id,
+            Some(beta.clone())
+        );
+        app.apply_task_tab_command(TaskTabCommand::Next);
+        assert_eq!(
+            app.task_actors.project_workbench_tabs().focused_task_id,
+            None
+        );
+
+        // Cycle backward from Index wraps to beta
+        app.apply_task_tab_command(TaskTabCommand::Prev);
+        assert_eq!(
+            app.task_actors.project_workbench_tabs().focused_task_id,
+            Some(beta)
+        );
+        app.apply_task_tab_command(TaskTabCommand::FocusIndex);
+        assert_eq!(
+            app.task_actors.project_workbench_tabs().focused_task_id,
+            None
+        );
+
+        // Disjoint read-only peek opens and closes cleanly; peeking an active task is denied.
+        app.apply_task_tab_command(TaskTabCommand::Peek("task-alpha"));
+        assert!(
+            !app.task_actors
+                .project_workbench_tabs()
+                .tabs
+                .iter()
+                .any(|t| t.kind == WorkbenchTabKind::ReadOnlyPeek)
+        );
+        app.apply_task_tab_command(TaskTabCommand::Peek("task-archived-42"));
+        assert!(
+            app.task_actors
+                .project_workbench_tabs()
+                .tabs
+                .iter()
+                .any(|t| t.kind == WorkbenchTabKind::ReadOnlyPeek && t.id == "task-archived-42")
+        );
+        app.apply_task_tab_command(TaskTabCommand::Unpeek("task-archived-42"));
+        assert!(
+            !app.task_actors
+                .project_workbench_tabs()
+                .tabs
+                .iter()
+                .any(|t| t.kind == WorkbenchTabKind::ReadOnlyPeek)
+        );
+    }
 }

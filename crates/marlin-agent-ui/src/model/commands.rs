@@ -133,6 +133,7 @@ pub enum UiCommandCapability {
     ToggleThinking,
     Clear,
     Helm,
+    TaskTabs,
     /// A Scheme catalog entry awaiting publication admission.
     Deferred,
 }

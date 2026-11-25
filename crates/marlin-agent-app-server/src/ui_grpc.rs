@@ -155,6 +155,7 @@ pub struct MyGoBridgeHost {
     gate_tx: broadcast::Sender<PendingGate>,
     panel_tx: broadcast::Sender<ScopedPanelEvent>,
     device_inv_tx: broadcast::Sender<DeviceInvocationRequest>,
+    task_actors: crate::TaskActorControlPlane,
 }
 
 struct BridgeState {
@@ -228,7 +229,19 @@ impl MyGoBridgeHost {
             gate_tx,
             panel_tx,
             device_inv_tx,
+            task_actors: crate::TaskActorControlPlane::new(),
         })
+    }
+
+    /// Share an authoritative Session-free `TaskActorControlPlane` with `AppServer`.
+    pub fn with_task_actors(mut self, task_actors: crate::TaskActorControlPlane) -> Self {
+        self.task_actors = task_actors;
+        self
+    }
+
+    /// Borrow the Session-free `TaskActorControlPlane` bound to this bridge host.
+    pub fn task_actors(&self) -> &crate::TaskActorControlPlane {
+        &self.task_actors
     }
 
     /// Attach the 5 orthogonal UI/Gate/Plugin/Device/Projection services to an
@@ -498,7 +511,7 @@ fn host_target_kind() -> TargetKind {
     }
 }
 
-fn profile_for_target<'a>(st: &'a BridgeState, kind: i32) -> &'a str {
+fn profile_for_target(st: &BridgeState, kind: i32) -> &str {
     if let Some(overlay) = st.overlays.get(&kind) {
         return overlay.profile_name.as_str();
     }

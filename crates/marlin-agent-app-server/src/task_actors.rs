@@ -206,4 +206,33 @@ mod tests {
         let closed = plane.close_read_only_peek(&task_id);
         assert_eq!(closed.tabs.len(), 1);
     }
+
+    #[cfg(feature = "ui-grpc")]
+    #[tokio::test]
+    async fn mygo_bridge_host_shares_live_task_actor_control_plane_updates() {
+        use marlin_agent_runtime::plugin::ReleaseTrust;
+        use std::collections::BTreeMap;
+
+        let shared = TaskActorControlPlane::new();
+        let host = crate::ui_grpc::MyGoBridgeHost::new(ReleaseTrust::new(BTreeMap::new()), |_| {
+            Ok(())
+        })
+        .with_task_actors(shared.clone());
+
+        let mut rx = host.task_actors().subscribe_workbench_tabs();
+        let task_id = TaskActorId::new("task-bridge-1").unwrap();
+        shared
+            .register_actor(RegisterTaskActorRequest {
+                task_id: task_id.clone(),
+                title: "Bridge Graph".to_owned(),
+                scope_mode: TaskActorScopeMode::Project,
+            })
+            .unwrap();
+
+        rx.changed().await.unwrap();
+        let tabs = rx.borrow().clone();
+        assert_eq!(tabs.tabs.len(), 2);
+        assert_eq!(tabs.tabs[0].kind, WorkbenchTabKind::PinnedIndex);
+        assert_eq!(tabs.tabs[1].id, "task-bridge-1");
+    }
 }

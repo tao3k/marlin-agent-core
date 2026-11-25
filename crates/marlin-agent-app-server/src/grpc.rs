@@ -55,6 +55,7 @@ pub struct AppServer<S = marlin_agent_storage::InMemoryAgentStorage> {
     session_watches: Arc<Semaphore>,
     session: Option<SessionBinding<S>>,
     session_lookup: Option<Arc<SessionLookup<S>>>,
+    task_actors: crate::TaskActorControlPlane,
 }
 
 impl AppServer {
@@ -74,6 +75,7 @@ impl AppServer {
             session_watches: Arc::new(Semaphore::new(MAX_SESSION_WATCHES)),
             session: None,
             session_lookup: None,
+            task_actors: crate::TaskActorControlPlane::new(),
         })
     }
 
@@ -90,6 +92,7 @@ impl AppServer {
             session_watches: self.session_watches,
             session: Some(session),
             session_lookup: None,
+            task_actors: self.task_actors,
         }
     }
 
@@ -114,7 +117,21 @@ impl AppServer {
             session_lookup: Some(Arc::new(move |metadata, id, mode| {
                 Box::pin(lookup(metadata, id, mode))
             })),
+            task_actors: self.task_actors,
         }
+    }
+}
+
+impl<S> AppServer<S> {
+    /// Mount a shared Session-free `TaskActorControlPlane` onto this `AppServer`.
+    pub fn with_task_actors(mut self, task_actors: crate::TaskActorControlPlane) -> Self {
+        self.task_actors = task_actors;
+        self
+    }
+
+    /// Access the Session-free `TaskActorControlPlane` mounted on this `AppServer`.
+    pub fn task_actors(&self) -> &crate::TaskActorControlPlane {
+        &self.task_actors
     }
 }
 
