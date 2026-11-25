@@ -164,4 +164,101 @@ mod tests {
         assert!(alpha_pos < beta_pos);
         assert!(beta_pos < peek_pos);
     }
+
+    #[test]
+    fn app_main_frame_mounts_task_tab_strip_only_when_actors_or_peeks_exist() {
+        use crate::{
+            app::App,
+            render::{draw, frame_snapshot},
+            ui_fixture::{test_frame, test_layout},
+            viewport::{ScrollAnchor, TranscriptViewportCache},
+        };
+        use marlin_agent_protocol::ModelEndpoint;
+        use marlin_agent_ui::{UiComponentId, UiRgb, UiTheme, UiWorkbench};
+
+        let ui = UiWorkbench {
+            layout: test_layout(),
+            theme: UiTheme {
+                canvas: UiRgb {
+                    red: 0,
+                    green: 0,
+                    blue: 0,
+                },
+                bar: UiRgb {
+                    red: 20,
+                    green: 20,
+                    blue: 20,
+                },
+                ink: UiRgb {
+                    red: 240,
+                    green: 240,
+                    blue: 240,
+                },
+                muted: UiRgb {
+                    red: 120,
+                    green: 120,
+                    blue: 120,
+                },
+                accent: UiRgb {
+                    red: 80,
+                    green: 180,
+                    blue: 255,
+                },
+                info: UiRgb {
+                    red: 100,
+                    green: 180,
+                    blue: 255,
+                },
+                success: UiRgb {
+                    red: 80,
+                    green: 200,
+                    blue: 120,
+                },
+                warning: UiRgb {
+                    red: 240,
+                    green: 180,
+                    blue: 60,
+                },
+            },
+            frame: test_frame(),
+            regions: Vec::new(),
+            keymap: Vec::new(),
+            transients: Vec::new(),
+            focus: UiComponentId::new("composer").unwrap(),
+            model_label: "model".to_owned(),
+            session_label: "session".to_owned(),
+        };
+
+        let app = App::new(ModelEndpoint::new("provider", "model"));
+        let full = Rect::new(0, 0, 80, 12);
+
+        // Baseline: zero tasks -> full height preserved untouched.
+        assert!(app.task_actor_tabs().is_none());
+        let baseline = frame_snapshot(&app, &ui, full);
+        assert_eq!(baseline.area, full);
+
+        // Register an active task -> row 0 hosts the pinned-Index tab strip, body shifts to y=1.
+        let task_id = TaskActorId::new("task-live-1").unwrap();
+        app.task_actors
+            .register_actor(task_id.clone(), "Live Graph", TaskActorScopeMode::Project)
+            .unwrap();
+        app.task_actors.set_focus(Some(task_id)).unwrap();
+        assert!(app.task_actor_tabs().is_some());
+
+        let with_tabs = frame_snapshot(&app, &ui, full);
+        assert_eq!(with_tabs.area, Rect::new(0, 1, 80, 11));
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 12)).unwrap();
+        let mut cache = TranscriptViewportCache::default();
+        let mut anchor = ScrollAnchor::default();
+        terminal
+            .draw(|frame| {
+                draw(frame, &app, &ui, &mut cache, &mut anchor);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let top_row: String = (0..80).map(|x| buffer[(x, 0)].symbol()).collect();
+        assert!(top_row.contains("★ Tasks"));
+        assert!(top_row.contains("Live Graph · e1"));
+    }
 }

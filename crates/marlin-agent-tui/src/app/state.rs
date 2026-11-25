@@ -135,6 +135,7 @@ pub(crate) struct App {
     pub(crate) runtime_edge: Option<RuntimeEdgePolicyReceipt>,
     pub(crate) runtime_content: Vec<UiContent>,
     pub(crate) runtime_receipt_open: bool,
+    pub(crate) task_actors: marlin_agent_runtime::TaskActorRuntimeRegistry,
     pub(crate) dynamic_buffer_content: std::collections::HashMap<UiBufferId, Vec<UiContent>>,
     pub(super) process_snapshot: Option<(marlin_agent_runtime::SessionId, u64)>,
     pub(super) session_browser: Option<SessionBrowser<TursoAgentStorage>>,
@@ -234,6 +235,7 @@ impl App {
             runtime_edge: None,
             runtime_content: Vec::new(),
             runtime_receipt_open: false,
+            task_actors: marlin_agent_runtime::TaskActorRuntimeRegistry::new(),
             dynamic_buffer_content: std::collections::HashMap::new(),
             process_snapshot: None,
             session_browser: None,
@@ -249,6 +251,13 @@ impl App {
         } else {
             self.transcript.push(("You".into(), text));
         }
+    }
+
+    /// Returns the active Session-free `TaskActor` Workbench tab projection whenever at least one
+    /// active task or read-only peek tab is open, preserving baseline layout when none exist.
+    pub(crate) fn task_actor_tabs(&self) -> Option<marlin_agent_runtime::WorkbenchTabProjection> {
+        let projection = self.task_actors.project_workbench_tabs();
+        (projection.tabs.len() > 1).then_some(projection)
     }
 
     pub(crate) fn push_answer(&mut self, role: &str, content: String) {

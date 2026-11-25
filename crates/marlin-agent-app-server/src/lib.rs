@@ -12,6 +12,10 @@ pub use grpc::AppServer;
 mod session;
 #[cfg(feature = "grpc")]
 pub use session::{SessionBinding, SessionOpen};
+#[cfg(feature = "grpc")]
+pub mod task_actors;
+#[cfg(feature = "grpc")]
+pub use task_actors::{RegisterTaskActorRequest, TaskActorControlPlane};
 
 #[cfg(feature = "client")]
 pub mod v1;
