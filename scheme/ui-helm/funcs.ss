@@ -58,6 +58,8 @@
        path: (path #f)
        line: (line #f)
        language: (language #f)
+       primary-symbol: (primary-symbol #f)
+       graph-relations: (graph-relations '())
        axes: (axes '())
        score: (score 0)
        annotation: (annotation "")
@@ -70,6 +72,8 @@
         (path := path)
         (line := line)
         (language := language)
+        (primary-symbol := primary-symbol)
+        (graph-relations := graph-relations)
         (axes := axes)
         (score := score)
         (annotation := annotation)
@@ -95,6 +99,8 @@
     (make-helm-action 'open "RET" "Open / Jump" scope: 'single)
     (make-helm-action 'preview "C-o" "Toggle Preview" scope: 'single)
     (make-helm-action 'mark "TAB" "Toggle Mark" scope: 'single)
+    (make-helm-action 'scope-symbol "s" "Jump to Symbol (@sym:)" scope: 'single)
+    (make-helm-action 'scope-graph "g" "Explore Call/Import Graph (@graph:)" scope: 'single)
     (make-helm-action 'export-context "C-e" "Export to Shared Org Context" scope: 'marked)
     (make-helm-action 'dispatch-agent "C-a" "Dispatch Hits to Agent" scope: 'marked)))
 
@@ -127,7 +133,9 @@
                (languages '())
                (documents '())
                (path-prefix #f)
-               (extension #f))
+               (extension #f)
+               (symbol #f)
+               (graph-target #f))
       (if (null? tokens)
         (seal-object!
           (.o (:: @ HelmParsedInput.)
@@ -137,30 +145,40 @@
               (languages := languages)
               (documents := documents)
               (path-prefix := path-prefix)
-              (extension := extension)))
+              (extension := extension)
+              (symbol := symbol)
+              (graph-target := graph-target)))
         (let ((tok (car tokens)))
           (cond
             ((string-prefix? "@lang:" tok)
              (let ((v (substring tok 6 (string-length tok))))
                (loop (cdr tokens) pattern-parts
                      (if (string=? v "") languages (append-unique languages v))
-                     documents path-prefix extension)))
+                     documents path-prefix extension symbol graph-target)))
             ((string-prefix? "@doc:" tok)
              (let ((v (substring tok 5 (string-length tok))))
                (loop (cdr tokens) pattern-parts languages
                      (if (string=? v "") documents (append-unique documents v))
-                     path-prefix extension)))
+                     path-prefix extension symbol graph-target)))
             ((string-prefix? "@prefix:" tok)
              (let ((v (substring tok 8 (string-length tok))))
                (loop (cdr tokens) pattern-parts languages documents
-                     (if (string=? v "") path-prefix v) extension)))
+                     (if (string=? v "") path-prefix v) extension symbol graph-target)))
             ((string-prefix? "@ext:" tok)
              (let ((v (substring tok 5 (string-length tok))))
                (loop (cdr tokens) pattern-parts languages documents
-                     path-prefix (if (string=? v "") extension v))))
+                     path-prefix (if (string=? v "") extension v) symbol graph-target)))
+            ((string-prefix? "@sym:" tok)
+             (let ((v (substring tok 5 (string-length tok))))
+               (loop (cdr tokens) pattern-parts languages documents
+                     path-prefix extension (if (string=? v "") symbol v) graph-target)))
+            ((string-prefix? "@graph:" tok)
+             (let ((v (substring tok 7 (string-length tok))))
+               (loop (cdr tokens) pattern-parts languages documents
+                     path-prefix extension symbol (if (string=? v "") graph-target v))))
             (else
              (loop (cdr tokens) (cons tok pattern-parts)
-                   languages documents path-prefix extension))))))))
+                   languages documents path-prefix extension symbol graph-target))))))))
 
 (def (helm-compile-search-plan parsed workspace: (workspace "marlin-main"))
   (let* ((pattern (.get parsed async-pattern))
@@ -168,7 +186,13 @@
          (documents (.get parsed documents))
          (path-prefix (.get parsed path-prefix))
          (extension (.get parsed extension))
-         (effective-pattern (if (string=? pattern "") "marlin" pattern))
+         (symbol (.get parsed symbol))
+         (graph-target (.get parsed graph-target))
+         (effective-pattern (cond
+                              ((not (string=? pattern "")) pattern)
+                              ((and (string? symbol) (not (string=? symbol ""))) symbol)
+                              ((and (string? graph-target) (not (string=? graph-target ""))) graph-target)
+                              (else "marlin")))
          (rg (rg-leaf "-n" effective-pattern))
          (tantivy (tantivy-leaf
                     (string-append "title:\"" effective-pattern "\"^2 OR body:" effective-pattern)))
@@ -193,11 +217,14 @@
 
 (def (candidate-searchable-haystack candidate)
   (string-join
-    (filter string?
-            (list (.get candidate display)
-                  (.get candidate path)
-                  (.get candidate annotation)
-                  (symbol->string (.get candidate source-id))))
+    (append
+      (filter string?
+              (list (.get candidate display)
+                    (.get candidate path)
+                    (.get candidate primary-symbol)
+                    (.get candidate annotation)
+                    (symbol->string (.get candidate source-id))))
+      (filter string? (.get candidate graph-relations)))
     " "))
 
 (def (string-contains-ci haystack needle)
@@ -300,7 +327,9 @@
                      (equal? (.get prev-parsed languages) (.get next-parsed languages))
                      (equal? (.get prev-parsed documents) (.get next-parsed documents))
                      (equal? (.get prev-parsed path-prefix) (.get next-parsed path-prefix))
-                     (equal? (.get prev-parsed extension) (.get next-parsed extension)))))
+                     (equal? (.get prev-parsed extension) (.get next-parsed extension))
+                     (equal? (.get prev-parsed symbol) (.get next-parsed symbol))
+                     (equal? (.get prev-parsed graph-target) (.get next-parsed graph-target)))))
          (next-epoch (if async-changed? (+ (.get session epoch) 1) (.get session epoch)))
          (next-session (rebuild-session-view
                          session

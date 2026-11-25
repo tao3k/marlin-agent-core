@@ -19,7 +19,8 @@ use gerbil_scheme::{
 use marlin_agent_search_engine::{
     AgentTopologyRelationship, MarlinAgentStorageSearchPort, MarlinContextOrgPort,
     MarlinSearchStorageProvenance, SearchGenerationDigest, SearchProjectId, SearchTopologyEdgeId,
-    SearchTopologyEdgeRecord, SearchWorkspaceId, admit_rooted_search_plan, marlin_search_engine,
+    SearchTopologyEdgeRecord, SearchWorkspaceId, WorkspaceIndexConfig, WorkspaceSearchIndex,
+    WorkspaceSearchQuery, admit_rooted_search_plan, marlin_search_engine,
 };
 use marlin_agent_storage::InMemoryAgentStorage;
 use marlin_context_org_model::{OrgNode, OrgNodeKind};
@@ -335,6 +336,64 @@ fn bench_rooted_scheme_abi_admission(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_resident_cached_open_sync_and_sym_graph(c: &mut Criterion) {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let tmp = tempfile::tempdir().expect("tempdir for snapshot bench");
+    let snapshot_path = tmp.path().join("bench-search-engine.asp-index.bin");
+    let cfg = WorkspaceIndexConfig::default();
+
+    // Prime snapshot on disk so warm mmap open + zero-I/O sync are measured accurately.
+    let mut resident =
+        WorkspaceSearchIndex::open_or_build_cached(crate_root, &snapshot_path, cfg.clone());
+
+    let mut group = c.benchmark_group("marlin_search_engine_resident_axes");
+    group.throughput(Throughput::Elements(1));
+
+    group.bench_function("open_or_build_cached_mmap_warm", |bencher| {
+        bencher.iter(|| {
+            let opened = WorkspaceSearchIndex::open_or_build_cached(
+                black_box(crate_root),
+                black_box(&snapshot_path),
+                cfg.clone(),
+            );
+            black_box(opened.file_count());
+        });
+    });
+
+    group.bench_function("sync_workspace_from_disk_unchanged", |bencher| {
+        bencher.iter(|| {
+            let receipt = resident.sync_workspace_from_disk();
+            black_box(receipt.live_files);
+        });
+    });
+
+    group.bench_function("query_symbol_axis", |bencher| {
+        bencher.iter(|| {
+            let report = resident.query(black_box(&WorkspaceSearchQuery {
+                symbol: Some("marlin_search_engine"),
+                max_hits: 16,
+                context_radius: 2,
+                ..Default::default()
+            }));
+            black_box(report.matched_files);
+        });
+    });
+
+    group.bench_function("query_graph_axis_1hop", |bencher| {
+        bencher.iter(|| {
+            let report = resident.query(black_box(&WorkspaceSearchQuery {
+                graph_target: Some("marlin_search_engine"),
+                max_hits: 32,
+                context_radius: 2,
+                ..Default::default()
+            }));
+            black_box(report.matched_files);
+        });
+    });
+
+    group.finish();
+}
+
 fn benchmark_config() -> Criterion {
     Criterion::default()
         .warm_up_time(Duration::from_millis(500))
@@ -349,6 +408,7 @@ criterion_group! {
         bench_storage_cas_publish_and_load,
         bench_topology_edges,
         bench_org_port_admission,
-        bench_rooted_scheme_abi_admission
+        bench_rooted_scheme_abi_admission,
+        bench_resident_cached_open_sync_and_sym_graph
 }
 criterion_main!(benches);

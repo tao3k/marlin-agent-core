@@ -79,6 +79,8 @@ pub(crate) struct App {
     pub(crate) search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig,
     pub(super) search_index_warming:
         Option<tokio::sync::oneshot::Receiver<crate::helm::SharedSearchIndex>>,
+    #[cfg(feature = "linked-ui")]
+    pub(crate) search_tool_slot: marlin_agent_tooling::SharedSearchIndexSlot,
     pub(crate) command_draft: Option<Composer>,
     pub(crate) command_menu: Option<CommandMenu>,
     pub(crate) command_selection: Option<(String, UiCommandName)>,
@@ -186,6 +188,8 @@ impl App {
             search_index: None,
             search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig::default(),
             search_index_warming: None,
+            #[cfg(feature = "linked-ui")]
+            search_tool_slot: marlin_agent_tooling::SharedSearchIndexSlot::empty(),
             command_draft: None,
             command_menu: None,
             command_selection: None,
@@ -450,6 +454,8 @@ impl App {
                 Ok(built) => {
                     self.search_index_warming = None;
                     self.search_index = Some(built.clone());
+                    #[cfg(feature = "linked-ui")]
+                    self.search_tool_slot.attach(built.clone());
                     if let Some(helm) = self.helm.as_mut() {
                         helm.attach_warm_index(built);
                     }
@@ -462,6 +468,8 @@ impl App {
             }
         }
         if let Some(built) = self.helm.as_mut().and_then(super::HelmOverlay::poll) {
+            #[cfg(feature = "linked-ui")]
+            self.search_tool_slot.attach(built.clone());
             self.search_index = Some(built);
             changed = true;
         }

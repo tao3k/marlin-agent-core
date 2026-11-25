@@ -7,9 +7,13 @@
 (def tooling (.get marlin-agent-core.init.exports Marlin tooling))
 (def declarations ((.get tooling project)))
 (unless (and (eq? (.get tooling identity) 'marlin/tooling)
-             (= (vector-length declarations) 1)
+             (= (vector-length declarations) 2)
              (equal? (vector-ref declarations 0)
                      #(bash "Run a Bash command in the workspace after approval."
-                       shell ask command 30 65536)))
+                       shell ask command 30 65536))
+             (equal? (vector-ref declarations 1)
+                     #(workspace_search
+                       "Search workspace files, symbols (@sym:), and import/call graph (@graph:) via resident index."
+                       search ask query 10 65536)))
   (error "selected tooling declaration changed"))
 (displayln "TOOLING-OK")

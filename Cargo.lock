@@ -3461,6 +3461,11 @@ dependencies = [
  "gerbil-scheme",
  "marlin-agent-protocol",
  "marlin-agent-runtime",
+ "marlin-agent-search-engine",
+ "marlin-agent-sessions",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

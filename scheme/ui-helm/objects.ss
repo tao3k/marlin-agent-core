@@ -50,7 +50,9 @@
   languages: '()
   documents: '()
   path-prefix: #f
-  extension: #f)
+  extension: #f
+  symbol: #f
+  graph-target: #f)
 
 (.def HelmCandidate.
   id: ""
@@ -59,6 +61,8 @@
   path: #f
   line: #f
   language: #f
+  primary-symbol: #f
+  graph-relations: '()
   axes: '()
   score: 0
   annotation: ""

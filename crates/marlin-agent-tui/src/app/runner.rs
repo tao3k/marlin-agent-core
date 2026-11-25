@@ -130,11 +130,17 @@ pub(super) fn run(
     trace_startup("Tokio runtime");
     let directory = env::current_dir()?;
     #[cfg(feature = "linked-ui")]
+    let search_tool_slot = marlin_agent_tooling::SharedSearchIndexSlot::empty();
+    #[cfg(feature = "linked-ui")]
     let tool_catalog = if config.session.is_some() {
         let declarations = super::super::linked_ui::tooling_declarations(&scheme_runtime)?;
         Some(Arc::new(
-            marlin_agent_tooling::catalog_from_declarations(declarations, directory.clone())
-                .map_err(|error| format!("cannot bind Scheme tool catalog: {error:?}"))?,
+            marlin_agent_tooling::catalog_from_declarations_with_search(
+                declarations,
+                directory.clone(),
+                search_tool_slot.clone(),
+            )
+            .map_err(|error| format!("cannot bind Scheme tool catalog: {error:?}"))?,
         ))
     } else {
         None
@@ -166,6 +172,10 @@ pub(super) fn run(
         .as_ref()
         .map(|catalog| catalog.offer().completion_options());
     app.tool_catalog = tool_catalog.clone();
+    #[cfg(feature = "linked-ui")]
+    {
+        app.search_tool_slot = search_tool_slot;
+    }
     let runtime_probe = RuntimeProbe::start(&runtime, &app.runtime_owner);
     #[cfg(target_os = "macos")]
     let host_pulse = match env::var_os("MARLIN_TUI_HOST_OBSERVATIONS_FILE")

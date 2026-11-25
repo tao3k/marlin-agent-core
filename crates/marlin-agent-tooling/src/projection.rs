@@ -4,7 +4,7 @@
 
 //! One native Scheme value projection for any declared tool capability.
 
-use std::{collections::HashSet, fmt::Display, path::PathBuf};
+use std::{collections::HashSet, fmt::Display, path::PathBuf, sync::Arc};
 
 use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
@@ -12,8 +12,11 @@ use gerbil_scheme::{
 };
 use marlin_agent_protocol::ModelToolName;
 use marlin_agent_runtime::{
-    ModelToolCatalog, ModelToolCatalogError, ModelToolDeclaration, ShellToolDeclarationRequest,
+    ModelToolCapability, ModelToolCatalog, ModelToolCatalogError, ModelToolDeclaration,
+    ModelToolHandler, SearchToolDeclarationRequest, ShellToolDeclarationRequest,
 };
+
+use crate::search_tool::{ResidentSearchToolHandler, SharedSearchIndexSlot};
 
 /// Rejection while converting selected Scheme tool values into Rust types.
 #[derive(Debug)]
@@ -78,41 +81,58 @@ pub fn decode_tooling(
     let mut seen = HashSet::with_capacity(values.len());
     let mut declarations = Vec::with_capacity(values.len());
     for index in 0..values.len() {
-        let entry = native(native(values.element(index))?.into_collection(CollectionKind::Vector))?;
-        if entry.len() != 7 {
-            return Err(ToolingProjectionError::Invalid("tool declaration arity"));
-        }
-        let name = symbol(native(entry.element(0))?)?;
-        if !seen.insert(name.clone()) {
-            return Err(ToolingProjectionError::Invalid("duplicate tool name"));
-        }
-        let description = string(native(entry.element(1))?)?;
-        if symbol(native(entry.element(2))?)? != "shell" {
+        let entry = native(values.element(index))?;
+        let declaration = decode_tool_entry(entry, &mut seen)?;
+        declarations.push(declaration);
+    }
+    Ok(declarations)
+}
+
+fn decode_tool_entry(
+    value: RootedSchemeObject<'_>,
+    seen: &mut HashSet<String>,
+) -> Result<ModelToolDeclaration, ToolingProjectionError> {
+    let entry = native(value.into_collection(CollectionKind::Vector))?;
+    if entry.len() != 7 {
+        return Err(ToolingProjectionError::Invalid("tool declaration arity"));
+    }
+    let name = symbol(native(entry.element(0))?)?;
+    if !seen.insert(name.clone()) {
+        return Err(ToolingProjectionError::Invalid("duplicate tool name"));
+    }
+    let description = string(native(entry.element(1))?)?;
+    let capability = symbol(native(entry.element(2))?)?;
+    if symbol(native(entry.element(3))?)? != "ask" {
+        return Err(ToolingProjectionError::Invalid("tool must ask"));
+    }
+    let argument = symbol(native(entry.element(4))?)?;
+    let timeout = positive_integer(native(entry.element(5))?)?;
+    let output_limit = positive_integer(native(entry.element(6))?)?;
+    let name = ModelToolName::new(name).map_err(ToolingProjectionError::Invalid)?;
+    let output_limit = usize::try_from(output_limit)
+        .map_err(|_| ToolingProjectionError::Invalid("output limit overflow"))?;
+    match capability.as_str() {
+        "shell" => ModelToolDeclaration::shell(ShellToolDeclarationRequest {
+            name,
+            description,
+            argument,
+            timeout_seconds: timeout,
+            output_limit,
+        }),
+        "search" => ModelToolDeclaration::search(SearchToolDeclarationRequest {
+            name,
+            description,
+            argument,
+            timeout_seconds: timeout,
+            output_limit,
+        }),
+        _ => {
             return Err(ToolingProjectionError::Invalid(
                 "unsupported tool capability",
             ));
         }
-        if symbol(native(entry.element(3))?)? != "ask" {
-            return Err(ToolingProjectionError::Invalid("shell tool must ask"));
-        }
-        let argument = symbol(native(entry.element(4))?)?;
-        let timeout = positive_integer(native(entry.element(5))?)?;
-        let output_limit = positive_integer(native(entry.element(6))?)?;
-        let name = ModelToolName::new(name).map_err(ToolingProjectionError::Invalid)?;
-        let output_limit = usize::try_from(output_limit)
-            .map_err(|_| ToolingProjectionError::Invalid("output limit overflow"))?;
-        declarations.push(
-            ModelToolDeclaration::shell(ShellToolDeclarationRequest {
-                name,
-                description,
-                argument,
-                timeout_seconds: timeout,
-                output_limit,
-            })
-            .map_err(ToolingProjectionError::Invalid)?,
-        );
     }
-    Ok(declarations)
+    .map_err(ToolingProjectionError::Invalid)
 }
 
 /// Bind every admitted Scheme declaration to an existing host capability.
@@ -121,9 +141,31 @@ pub fn catalog_from_declarations(
     declarations: impl IntoIterator<Item = ModelToolDeclaration>,
     workspace: PathBuf,
 ) -> Result<ModelToolCatalog, ModelToolCatalogError> {
+    catalog_from_declarations_with_search(declarations, workspace, SharedSearchIndexSlot::empty())
+}
+
+/// Bind every admitted Scheme declaration to host capabilities while sharing a
+/// single resident [`SharedSearchIndexSlot`] with the host UI (e.g. Modern Helm).
+pub fn catalog_from_declarations_with_search(
+    declarations: impl IntoIterator<Item = ModelToolDeclaration>,
+    workspace: PathBuf,
+    search_slot: SharedSearchIndexSlot,
+) -> Result<ModelToolCatalog, ModelToolCatalogError> {
     let mut catalog = ModelToolCatalog::new();
     for declaration in declarations {
-        catalog.register_declaration(declaration, workspace.clone())?;
+        match declaration.capability() {
+            ModelToolCapability::Shell => {
+                catalog.register_declaration(declaration, workspace.clone())?;
+            }
+            ModelToolCapability::Search => {
+                let handler: Arc<ModelToolHandler> = Arc::new(ResidentSearchToolHandler::new(
+                    workspace.clone(),
+                    declaration.clone(),
+                    search_slot.clone(),
+                ));
+                catalog.register(declaration, handler)?;
+            }
+        }
     }
     Ok(catalog)
 }

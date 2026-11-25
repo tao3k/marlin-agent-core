@@ -59,8 +59,8 @@ pub use model_tool_catalog::{
     ModelToolCatalog, ModelToolCatalogError, ModelToolHandler, ModelToolOffer, ModelToolOutcome,
 };
 pub use model_tooling::{
-    ModelToolCapability, ModelToolDeclaration, ModelToolGovernance, ShellToolDeclarationRequest,
-    ShellToolHandler,
+    ModelToolCapability, ModelToolDeclaration, ModelToolGovernance, SearchToolDeclarationRequest,
+    ShellToolDeclarationRequest, ShellToolHandler,
 };
 pub use process::{
     AsyncManagedChildProcess, ManagedChildProcessSpec, ManagedChildStdin,

@@ -37,7 +37,9 @@
       path: "crates/marlin-agent-search-engine/src/engine.rs"
       line: 14
       language: "rust"
-      axes: '("rg" "tantivy")
+      primary-symbol: "marlin_search_engine"
+      graph-relations: '("defines:marlin_search_engine")
+      axes: '("rg" "tantivy" "symbol")
       score: 95
       annotation: "rust · rg+tantivy · 95"
       preview-lines: '("14: pub fn marlin_search_engine("
@@ -71,15 +73,24 @@
   (test-suite "Marlin Modern Helm (scheme/ui-helm)"
     (test-case "two-stage Consult + Orderless input parser and native Playbook projection"
       (let* ((parsed (helm-parse-input
-                       "@lang:rust @doc:org @prefix:crates/ @ext:rs execute_admitted #storage !test"))
+                       "@lang:rust @doc:org @prefix:crates/ @ext:rs @sym:marlin_search_engine @graph:engine execute_admitted #storage !test"))
              (plan-vec ((.get UiHelmScope compile-plan-vector)
-                        "@lang:rust @doc:org @prefix:crates/ @ext:rs execute_admitted #storage !test")))
+                        "@lang:rust @doc:org @prefix:crates/ @ext:rs @sym:marlin_search_engine @graph:engine execute_admitted #storage !test"))
+             (s0 (helm-open-session viewport-height: 2))
+             (s1 (helm-update-input s0 "@sym:marlin_search_engine"))
+             (s2 (helm-update-input s1 "@graph:marlin_search_engine"))
+             (action-ids (map (lambda (a) (.get a id)) (.get UiHelmScope default-actions))))
         (check (.get parsed async-pattern) => "execute_admitted")
         (check (.get parsed local-tokens) => '("storage" "!test"))
         (check (.get parsed languages) => '("rust"))
         (check (.get parsed documents) => '("org"))
         (check (.get parsed path-prefix) => "crates/")
         (check (.get parsed extension) => "rs")
+        (check (.get parsed symbol) => "marlin_search_engine")
+        (check (.get parsed graph-target) => "engine")
+        (check (> (.get s2 epoch) (.get s1 epoch)) => #t)
+        (check (and (member 'scope-symbol action-ids) #t) => #t)
+        (check (and (member 'scope-graph action-ids) #t) => #t)
         ;; Rooted C-ABI vector shape: #(workspace languages documents composition)
         (check (vector? plan-vec) => #t)
         (check (vector-length plan-vec) => 4)

@@ -21,6 +21,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModelToolCapability {
     Shell,
+    Search,
 }
 
 /// The Scheme policy's required authorization. A declaration cannot grant it.
@@ -50,6 +51,15 @@ pub struct ShellToolDeclarationRequest {
     pub output_limit: usize,
 }
 
+/// Named fields from a Scheme resident-search declaration admitted by the Rust bridge.
+pub struct SearchToolDeclarationRequest {
+    pub name: ModelToolName,
+    pub description: String,
+    pub argument: String,
+    pub timeout_seconds: u64,
+    pub output_limit: usize,
+}
+
 impl ModelToolDeclaration {
     pub fn name(&self) -> &ModelToolName {
         &self.name
@@ -62,14 +72,45 @@ impl ModelToolDeclaration {
     pub fn governance(&self) -> ModelToolGovernance {
         self.governance
     }
+
+    pub fn argument(&self) -> &str {
+        &self.argument
+    }
+
+    pub fn output_limit(&self) -> usize {
+        self.output_limit
+    }
+
     pub fn shell(request: ShellToolDeclarationRequest) -> Result<Self, &'static str> {
-        let ShellToolDeclarationRequest {
-            name,
-            description,
-            argument,
-            timeout_seconds,
-            output_limit,
-        } = request;
+        Self::build(
+            ModelToolCapability::Shell,
+            request.name,
+            request.description,
+            request.argument,
+            request.timeout_seconds,
+            request.output_limit,
+        )
+    }
+
+    pub fn search(request: SearchToolDeclarationRequest) -> Result<Self, &'static str> {
+        Self::build(
+            ModelToolCapability::Search,
+            request.name,
+            request.description,
+            request.argument,
+            request.timeout_seconds,
+            request.output_limit,
+        )
+    }
+
+    fn build(
+        capability: ModelToolCapability,
+        name: ModelToolName,
+        description: String,
+        argument: String,
+        timeout_seconds: u64,
+        output_limit: usize,
+    ) -> Result<Self, &'static str> {
         if description.trim().is_empty()
             || description.len() > 256
             || argument.is_empty()
@@ -80,12 +121,12 @@ impl ModelToolDeclaration {
             || !(1..=120).contains(&timeout_seconds)
             || !(1..=1024 * 1024).contains(&output_limit)
         {
-            return Err("invalid shell tool declaration");
+            return Err("invalid tool declaration");
         }
         Ok(Self {
             name,
             description,
-            capability: ModelToolCapability::Shell,
+            capability,
             governance: ModelToolGovernance::Ask,
             argument,
             timeout: Duration::from_secs(timeout_seconds),
