@@ -56,7 +56,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-artifacts"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "agent-semantic-config",
  "agent-semantic-content-identity",
@@ -73,7 +73,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-client-protocol"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "agent-semantic-artifacts",
  "agent-semantic-content-identity",
@@ -86,7 +86,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-config"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "asp-rust-project-harness-policy",
  "serde",
@@ -96,7 +96,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-content-identity"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "asp-rust-project-harness-policy",
  "base64 0.22.1",
@@ -109,7 +109,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-mrr"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "ascent",
  "asp-rust-project-harness-policy",
@@ -125,7 +125,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-provider-protocol"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "agent-semantic-config",
  "agent-semantic-schema-manager",
@@ -138,22 +138,16 @@ dependencies = [
 [[package]]
 name = "agent-semantic-schema-manager"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
- "agent-semantic-config",
- "agent-semantic-content-identity",
- "agent-semantic-workspace-scheduler",
  "asp-rust-project-harness-policy",
- "serde",
  "serde_json",
- "tempfile",
- "tokio",
 ]
 
 [[package]]
 name = "agent-semantic-search"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "agent-semantic-client-protocol",
  "agent-semantic-config",
@@ -187,7 +181,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-search-playbook"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "asp-rust-project-harness-policy",
  "blake3",
@@ -198,7 +192,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-search-projection"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "agent-semantic-content-identity",
  "agent-semantic-topology",
@@ -212,7 +206,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-topology"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "agent-semantic-content-identity",
  "agent-semantic-mrr",
@@ -229,7 +223,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-tree-sitter"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "agent-semantic-client-protocol",
  "agent-semantic-provider-protocol",
@@ -245,7 +239,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-workspace-scheduler"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "asp-rust-project-harness-policy",
  "libc",
@@ -637,7 +631,7 @@ dependencies = [
 [[package]]
 name = "asp-rust-project-harness-policy"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=f612ef808e98d4eb667b0ac5ddbaf9b7157501b1#f612ef808e98d4eb667b0ac5ddbaf9b7157501b1"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=1a59ab4af1cc817ac50e629f89b44697ddaf22d5#1a59ab4af1cc817ac50e629f89b44697ddaf22d5"
 dependencies = [
  "asp-rust-build-support 0.1.0 (git+https://github.com/tao3k/asp-rust?rev=7a659352c0497823b7492fd1c717f451cfbe0be9)",
  "blake3",
