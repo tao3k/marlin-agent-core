@@ -28,6 +28,7 @@
   (ui-mygo)
   (tooling)
   (search-engine)
+  (ui-helm)
   (agent-hooks)
   (scheme-package-hooks)
   (policy)

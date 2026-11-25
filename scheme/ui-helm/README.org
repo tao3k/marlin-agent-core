@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+TITLE: Marlin Modern Helm (`scheme/ui-helm`)
+#+LANGUAGE: en
+#+FILETAGS: :marlin:ui:helm:search-engine:
+
+* Overview
+
+=scheme/ui-helm= brings a modern, non-blocking, composable *Helm* to Marlin TUI,
+combining the best lessons of Vertico, Consult, Orderless, Marginalia, Embark,
+and Telescope directly on top of Marlin's native Rust =search-engine= (ASP):
+
+1. *Zero UI Blocking*: Scheme owns pure functional state transitions and
+   virtual-viewport rendering; Rust/ASP executes multi-axis workspace queries in
+   milliseconds with strict =query_epoch= staleness fencing.
+2. *Two-Stage Consult + Orderless Query*:
+   - Before =#=: async directives (=@lang:=, =@doc:=, =@prefix:=, =@ext:=) and
+     search pattern compiled straight into a native =scheme/search-engine=
+     =RootedSchemeObject= Playbook vector (zero text S-expression serialization).
+   - After =#=: instant local Orderless multi-token matching with =!negation=.
+3. *Marginalia + Embark + Agent Integration*: Right-hand metadata annotations,
+   split preview, multi-select marks (=TAB=), and Embark action dispatch
+   including =export-context= and =dispatch-agent= carrying the verified BLAKE3
+   =generation_digest=.

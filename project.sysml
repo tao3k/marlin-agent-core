@@ -37,6 +37,7 @@ package MarlinAgentCORE {
     dependency gitOpsContextDesign from project to MarlinGitOpsContext::target;
     dependency sharedOrgSessionDesign from project to MarlinOrgBabelSession::target;
     dependency searchEngineDesign from project to MarlinSearchEngine::target;
+    dependency modernHelmDesign from project to MarlinUiHelm::target;
     dependency tuiTurnLifecycle from project to MarlinTuiLifecycle::TurnLifecycle;
 
     view projectStructure {
@@ -155,5 +156,19 @@ package MarlinAgentCORE {
 
     view searchEngineQueryFlow : StandardViewDefinitions::ActionFlowView {
         expose MarlinSearchEngine::ExecuteConvergedSearch;
+    }
+
+    view modernHelmArchitecture {
+        expose MarlinUiHelm::target;
+        expose MarlinUiHelm::nonBlockingNativeExecution;
+        expose MarlinUiHelm::twoStageConsultOrderless;
+        expose MarlinUiHelm::epochFencingAndMarkSafety;
+        expose MarlinUiHelm::boundedVirtualViewport;
+        expose MarlinUiHelm::embarkAgentAndContextActions;
+        render asTreeDiagram;
+    }
+
+    view modernHelmFlow : StandardViewDefinitions::ActionFlowView {
+        expose MarlinUiHelm::ExecuteHelmSearch;
     }
 }

@@ -11,6 +11,7 @@
         "brief-to-draft-options-test"
         "envrc-test"
         "ui-workbench-test"
+        "ui-helm-test"
         "ui-mygo-test"
         "task-workbench-tabs-test"
         "end-to-end-task-workflow-test"

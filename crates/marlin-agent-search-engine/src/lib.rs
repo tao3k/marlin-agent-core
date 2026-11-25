@@ -45,6 +45,6 @@ pub use org_port::{
 };
 pub use projection::{
     SearchPlanProjectionError, admit_rooted_search_plan, decode_search_plan, project_from_package,
-    project_linked,
+    project_helm_prompt, project_linked,
 };
 pub use storage_port::{MarlinAgentStorageSearchPort, MarlinSearchStorageProvenance};

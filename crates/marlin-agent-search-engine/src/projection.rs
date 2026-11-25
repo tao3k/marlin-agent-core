@@ -331,3 +331,27 @@ pub fn project_from_package(
     let projected = native(runtime.call_rooted(&procedure, &void_input))?;
     admit_rooted_search_plan(projected)
 }
+
+/// Resolve and invoke `:marlin-agent-core/c-abi/ui-helm#marlin-ui-helm-compile-plan`
+/// to compile a live Modern Helm prompt string directly into an admitted ASP
+/// Search Playbook through native `RootedSchemeObject` ABI (zero pseudo S-expr).
+pub fn project_helm_prompt(
+    runtime: &GerbilRuntime,
+    scheme_dir: &str,
+    prompt: &str,
+) -> Result<ProgressiveSearchPlaybookRequest, SearchPlanProjectionError> {
+    let module = native(
+        runtime.intern_identifier(IdentifierKind::Symbol, ":marlin-agent-core/c-abi/ui-helm"),
+    )?;
+    let name =
+        native(runtime.intern_identifier(IdentifierKind::Symbol, "marlin-ui-helm-compile-plan"))?;
+    let procedure = native(runtime.resolve_package_export(scheme_dir, &module, &name))?;
+    if native(procedure.as_ref().kind())? != ObjectKind::Procedure {
+        return Err(SearchPlanProjectionError::Invalid(
+            "ui-helm export is not a procedure",
+        ));
+    }
+    let prompt_obj = native(runtime.string_from_utf8(prompt))?.into_object();
+    let projected = native(runtime.call_rooted(&procedure, &prompt_obj))?;
+    admit_rooted_search_plan(projected)
+}
