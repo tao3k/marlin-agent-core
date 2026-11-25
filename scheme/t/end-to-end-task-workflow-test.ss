@@ -13,7 +13,7 @@
         (only-in :std/list/list find)
         (only-in :clan/poo/object .get .o .ref .slot?)
         (only-in :marlin-agent-core/interface LabContext)
-        (only-in :marlin-agent-core/ui/task-workflow
+        (only-in "../ui/task-workflow.ss"
                  marlin-task-workflow-admit-batch
                  marlin-task-workflow-orchestrate-and-project
                  marlin-task-workflow-commit-and-archive!))
