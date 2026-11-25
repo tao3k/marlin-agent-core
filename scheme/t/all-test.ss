@@ -25,4 +25,5 @@
         "deck-runtime-test"
         "deck-runtime-loop-graph-test"
         "graph-loop-continuation-abi-projection-test"
+        "graph-engine-test"
         "agent-policy-routing-abi-projection-test")

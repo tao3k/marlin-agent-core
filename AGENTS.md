@@ -16,6 +16,7 @@ See [Marlin Functional Scheme Style](scheme/CODING-STYLE.org) for the authoring 
 - Keep state changes and I/O at their owning boundaries. Compose pure operations over values and return the next state when the caller owns the transition.
 - Reuse Gerbil `:std` and SRFI procedures for standard operations. Prefer a direct, named function when it explains the behavior clearly.
 - Keep application behavior and presentation policy in Scheme where they fit the existing host capabilities. Use the Rust boundary for typed admission, native effects and reusable mappings.
+- Keep `scheme/build.ss` minimal on Yuanxu's `defbuild-script` + `std-make-spec` + `.with-link` boundary (`compile` / `clean` / `spec` are owned by Yuanxu). Never add `required-lab-sentinels`, ad hoc `ensure-lab-dependencies!` shellouts, or manual upstream `.ssi` build/cleanup lists inside `scheme/build.ss`; rebuild/clean linked packages through `gerbil pkg build` and `just scheme-clean` / `just scheme-build`.
 - Keep Scheme TUI behavior tests in the Gerbil suite under `scheme/t`. Add keymap, command, buffer, and layout regressions there, using Scheme fixtures with the shared test window for rendering checks. A Scheme-only UI change needs only Scheme test edits. Rust TUI tests cover the native boundary, terminal I/O, and generic Ratatui mapping.
 
 ## Protocol Evolution
