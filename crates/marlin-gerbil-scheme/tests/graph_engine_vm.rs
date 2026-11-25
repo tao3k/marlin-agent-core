@@ -8,7 +8,10 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
 
 use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
@@ -621,4 +624,337 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
     assert_eq!(warm_hits, 1);
     assert_eq!(warm_puts, 0);
     assert_eq!(warm_llm, 4);
+
+    // -------------------------------------------------------------------------
+    // Phase 4 (Round S4): Live Embedded Gerbil VM Multi-Actor Fleet <-> REAL
+    // `TursoAgentStorage` SQLite WAL on Disk + Full Crash/Reopen Recovery!
+    // -------------------------------------------------------------------------
+    let scheme_make_fleet = resolve("marlin-graph-engine-make-demo-fleet-vector");
+    let scheme_step_fleet = resolve("marlin-graph-engine-step-fleet-vector");
+    let scheme_fleet_checkpoint = resolve("marlin-graph-engine-fleet-checkpoint-vector");
+    let scheme_fleet_restore = resolve("marlin-graph-engine-fleet-restore-vector");
+    let scheme_fleet_summary = resolve("marlin-graph-engine-fleet-summary-vector");
+
+    struct TursoLeafSubstrate {
+        storage: marlin_agent_storage::TursoAgentStorage,
+        project_id: marlin_agent_storage::ProjectId,
+        session_id: marlin_agent_storage::SessionId,
+        agent_id: marlin_agent_storage::AgentId,
+        seq: AtomicU64,
+    }
+
+    impl TursoLeafSubstrate {
+        fn new(storage: marlin_agent_storage::TursoAgentStorage) -> Self {
+            Self {
+                storage,
+                project_id: marlin_agent_storage::ProjectId::new("proj-vm-turso").unwrap(),
+                session_id: marlin_agent_storage::SessionId::new("vm-turso-pump").unwrap(),
+                agent_id: marlin_agent_storage::AgentId::new("gerbil-vm-agent").unwrap(),
+                seq: AtomicU64::new(1),
+            }
+        }
+
+        fn pointer_key_for(key: &str) -> marlin_agent_storage::ArtifactPointerKey {
+            let digest = marlin_agent_context::governed_bridge::compute_kv_prefix_digest(key);
+            let hex = digest
+                .as_str()
+                .strip_prefix("sha256:")
+                .unwrap_or(digest.as_str());
+            marlin_agent_storage::ArtifactPointerKey::new(format!("ptr:cas:{hex}")).unwrap()
+        }
+    }
+
+    impl AtomicEffectExecutor for TursoLeafSubstrate {
+        fn execute_atomic<'a>(
+            &'a self,
+            effect: AtomicEffect,
+        ) -> Pin<Box<dyn Future<Output = AtomicEffectReceipt> + Send + 'a>> {
+            use marlin_agent_storage::AgentStorage;
+            Box::pin(async move {
+                match effect {
+                    AtomicEffect::CasGet(p) => {
+                        let ptr_key = Self::pointer_key_for(&p.key);
+                        let ptr = self
+                            .storage
+                            .get_artifact_pointer(&self.project_id, &ptr_key)
+                            .await
+                            .unwrap();
+                        if let Some(pointer) = ptr {
+                            let art = self
+                                .storage
+                                .get_artifact(&self.project_id, &pointer.target_artifact_hash)
+                                .await
+                                .unwrap()
+                                .expect("turso cas artifact must exist");
+                            AtomicEffectReceipt::CasHit(CasHitReceiptPayload {
+                                effect_id: p.effect_id,
+                                bytes: art.body,
+                            })
+                        } else {
+                            AtomicEffectReceipt::CasMiss(p.effect_id)
+                        }
+                    }
+                    AtomicEffect::CasPut(p) => {
+                        let body_text = String::from_utf8_lossy(&p.bytes);
+                        let digest =
+                            marlin_agent_context::governed_bridge::compute_kv_prefix_digest(
+                                &body_text,
+                            );
+                        let hash =
+                            marlin_agent_storage::ArtifactHash::new(digest.as_str().to_owned())
+                                .unwrap();
+                        let n = self.seq.fetch_add(1, Ordering::Relaxed);
+                        let event_id =
+                            marlin_agent_storage::EventId::new(format!("ev-vm-cas-{n}")).unwrap();
+                        self.storage
+                            .put_artifact(marlin_agent_storage::ArtifactRecord {
+                                project_id: self.project_id.clone(),
+                                artifact_hash: hash.clone(),
+                                artifact_kind: "scheme-cas-blob".to_owned(),
+                                producer_session_id: self.session_id.clone(),
+                                producer_agent_id: self.agent_id.clone(),
+                                producer_event_id: event_id.clone(),
+                                media_type: "text/plain".to_owned(),
+                                size_bytes: p.bytes.len() as u64,
+                                body: p.bytes,
+                                created_at_unix_ms: n as i64,
+                            })
+                            .await
+                            .unwrap();
+                        let ptr_key = Self::pointer_key_for(&p.key);
+                        let expected = self
+                            .storage
+                            .get_artifact_pointer(&self.project_id, &ptr_key)
+                            .await
+                            .unwrap()
+                            .map(|ptr| ptr.target_artifact_hash);
+                        self.storage
+                            .compare_and_swap_artifact_pointer(
+                                marlin_agent_storage::ArtifactPointerUpdate {
+                                    project_id: self.project_id.clone(),
+                                    pointer_key: ptr_key,
+                                    expected_artifact_hash: expected,
+                                    new_artifact_hash: hash,
+                                    updated_by_session_id: self.session_id.clone(),
+                                    updated_by_agent_id: self.agent_id.clone(),
+                                    updated_by_event_id: event_id,
+                                    updated_at_unix_ms: n as i64,
+                                },
+                            )
+                            .await
+                            .unwrap();
+                        AtomicEffectReceipt::CasStored(p.effect_id)
+                    }
+                    AtomicEffect::LlmComplete(p) => {
+                        let tail = p
+                            .request
+                            .messages()
+                            .last()
+                            .map(|m| m.content.clone())
+                            .unwrap_or_default();
+                        AtomicEffectReceipt::LlmCompleted(LlmCompletedReceiptPayload {
+                            effect_id: p.effect_id,
+                            content: format!("turso-llm:{tail}"),
+                        })
+                    }
+                    AtomicEffect::SandboxRun(p) => {
+                        AtomicEffectReceipt::SandboxExited(SandboxExitedReceiptPayload {
+                            effect_id: p.effect_id,
+                            exit_code: 0,
+                            stdout: format!("turso-ran:{}", p.program).into_bytes(),
+                            stderr: Vec::new(),
+                        })
+                    }
+                }
+            })
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn pump_fleet_rounds<'vm>(
+        runtime: &'vm GerbilRuntime,
+        step_proc: &RootedSchemeObject<'vm>,
+        cp_proc: &RootedSchemeObject<'vm>,
+        rt_tokio: &tokio::runtime::Runtime,
+        substrate: &Arc<TursoLeafSubstrate>,
+        fleet: RootedSchemeObject<'vm>,
+        incoming: Vec<AtomicEffectReceipt>,
+        remaining: usize,
+        cp_key: &str,
+    ) -> (Vec<String>, Vec<String>, AtomicEffect) {
+        let rcpt_objs: Vec<RootedSchemeObject<'vm>> = incoming
+            .iter()
+            .map(|r| encode_receipt(runtime, r))
+            .collect();
+        let step_in = vec_obj(
+            runtime,
+            &[fleet, vec_obj(runtime, &rcpt_objs), flag(runtime, true)],
+        );
+        let step_out = runtime
+            .call_rooted(step_proc, &step_in)
+            .unwrap()
+            .into_collection(CollectionKind::Vector)
+            .unwrap();
+        let active_vec = step_out
+            .element(1)
+            .unwrap()
+            .into_collection(CollectionKind::Vector)
+            .unwrap();
+        let settled_vec = step_out
+            .element(2)
+            .unwrap()
+            .into_collection(CollectionKind::Vector)
+            .unwrap();
+        let effs_vec = step_out
+            .element(6)
+            .unwrap()
+            .into_collection(CollectionKind::Vector)
+            .unwrap();
+        let next_fleet = step_out.element(0).unwrap();
+        if effs_vec.is_empty() || remaining <= 1 {
+            let active_ids: Vec<String> = (0..active_vec.len())
+                .map(|i| read_str(active_vec.element(i).unwrap()))
+                .collect();
+            let settled_ids: Vec<String> = (0..settled_vec.len())
+                .map(|i| read_str(settled_vec.element(i).unwrap()))
+                .collect();
+            let cp_in = vec_obj(runtime, &[next_fleet, txt(runtime, cp_key)]);
+            let cp_eff_obj = runtime.call_rooted(cp_proc, &cp_in).unwrap();
+            return (active_ids, settled_ids, decode_effect(cp_eff_obj));
+        }
+        let mut effects = Vec::with_capacity(effs_vec.len());
+        for i in 0..effs_vec.len() {
+            effects.push(decode_effect(effs_vec.element(i).unwrap()));
+        }
+        let next_receipts =
+            rt_tokio.block_on(run_atomic_effect_batch(Arc::clone(substrate), effects));
+        pump_fleet_rounds(
+            runtime,
+            step_proc,
+            cp_proc,
+            rt_tokio,
+            substrate,
+            next_fleet,
+            next_receipts,
+            remaining - 1,
+            cp_key,
+        )
+    }
+
+    let tmp_dir = tempfile::tempdir().expect("tempdir for turso vm");
+    let turso_cfg = marlin_agent_storage::TursoAgentStorageConfig {
+        path: tmp_dir.path().join("gerbil-vm-fleet.db"),
+        optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvcc,
+        batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent,
+    };
+
+    // Boot #1: Open real Turso SQLite WAL on disk, run 2-actor Fleet inside live Gerbil VM,
+    // persist full Fleet UTF-8 wire checkpoint into Turso WAL, then DROP storage!
+    let storage1 = rt_tokio
+        .block_on(marlin_agent_storage::TursoAgentStorage::open_local(
+            turso_cfg.clone(),
+        ))
+        .expect("open turso boot #1");
+    let turso_sub1 = Arc::new(TursoLeafSubstrate::new(storage1));
+    let fleet_req = vec_obj(
+        &runtime,
+        &[
+            txt(&runtime, "task-turso-parent"),
+            txt(&runtime, "task-turso-sib"),
+            txt(&runtime, "sha256:turso-vm-zone1"),
+        ],
+    );
+    let init_fleet = runtime.call_rooted(&scheme_make_fleet, &fleet_req).unwrap();
+    let (active_ids, settled_ids, cp_effect) = pump_fleet_rounds(
+        &runtime,
+        &scheme_step_fleet,
+        &scheme_fleet_checkpoint,
+        &rt_tokio,
+        &turso_sub1,
+        init_fleet,
+        Vec::new(),
+        8,
+        "fleet:turso:boot1",
+    );
+    assert_eq!(active_ids, vec!["task-turso-parent"]);
+    assert_eq!(settled_ids, vec!["task-turso-sib"]);
+
+    // Persist Fleet UTF-8 wire checkpoint to REAL Turso SQLite WAL on disk!
+    let put_receipts = rt_tokio.block_on(run_atomic_effect_batch(
+        Arc::clone(&turso_sub1),
+        vec![cp_effect],
+    ));
+    assert!(matches!(
+        put_receipts.as_slice(),
+        [AtomicEffectReceipt::CasStored(_)]
+    ));
+    drop(turso_sub1);
+
+    // Boot #2: Reopen REAL Turso SQLite WAL from disk, read raw UTF-8 wire bytes via CasGet,
+    // and rehydrate the live GraphFleetState inside Gerbil VM!
+    let storage2 = rt_tokio
+        .block_on(marlin_agent_storage::TursoAgentStorage::open_local(
+            turso_cfg,
+        ))
+        .expect("reopen turso boot #2");
+    let turso_sub2 = Arc::new(TursoLeafSubstrate::new(storage2));
+    let get_receipts = rt_tokio.block_on(run_atomic_effect_batch(
+        Arc::clone(&turso_sub2),
+        vec![AtomicEffect::CasGet(CasGetEffectPayload {
+            effect_id: "restore-fleet-boot2".to_owned(),
+            key: "fleet:turso:boot1".to_owned(),
+        })],
+    ));
+    let cas_hit_rcpt = get_receipts.into_iter().next().unwrap();
+    assert!(matches!(cas_hit_rcpt, AtomicEffectReceipt::CasHit(_)));
+
+    let encoded_hit = encode_receipt(&runtime, &cas_hit_rcpt);
+    let restored_fleet = runtime
+        .call_rooted(&scheme_fleet_restore, &encoded_hit)
+        .unwrap();
+    let summary = runtime
+        .call_rooted(&scheme_fleet_summary, &restored_fleet)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let r_active = summary
+        .element(0)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let r_settled = summary
+        .element(1)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let r_detours = summary
+        .element(2)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let r_defeaters = summary
+        .element(3)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let r_inboxes = summary
+        .element(4)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let r_vis = summary
+        .element(5)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+
+    assert_eq!(read_str(r_active.element(0).unwrap()), "task-turso-parent");
+    assert_eq!(read_str(r_settled.element(0).unwrap()), "task-turso-sib");
+    assert_eq!(read_sym(r_detours.element(0).unwrap()), "blocker-active");
+    assert_eq!(read_fx(r_defeaters.element(0).unwrap()), 1);
+    assert_eq!(read_fx(r_inboxes.element(0).unwrap()), 1);
+    assert_eq!(r_vis.len(), 3); // index + active task-turso-parent + read-only peek task-turso-sib!
+    assert_eq!(read_str(r_vis.element(0).unwrap()), "index");
+    assert_eq!(read_str(r_vis.element(1).unwrap()), "task-turso-parent");
+    assert_eq!(read_str(r_vis.element(2).unwrap()), "task-turso-sib");
 }

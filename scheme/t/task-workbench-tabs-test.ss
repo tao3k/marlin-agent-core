@@ -20,7 +20,10 @@
         (only-in :marlin-agent-core/ui/session
                  marlin-ui-session-open
                  marlin-ui-session-project
-                 marlin-ui-session-dispatch)
+                 marlin-ui-session-dispatch
+                 make-marlin-task-workbench-controller
+                 marlin-task-workbench-controller-apply-action
+                 marlin-task-workbench-controller-project)
         (only-in :tao3k/agentic-ai-lab/modules/graph-engine/interface
                  make-capability-envelope
                  make-obligation
@@ -405,4 +408,31 @@
         (check-equal? (.ref tab 'detour-mode) 'blocker-active)
         (check-equal? (.ref tab 'active-defeaters-count) 1)
         (check-equal? (length (.ref tab 'human-inbox)) 1)
-        (check-equal? (vector? rendered) #t)))))
+        (check-equal? (vector? rendered) #t)))
+
+    (test-case "Round S5: Interactive Scheme TaskWorkbenchController live-reprojects disclosure and Detour 4-exit sibling tabs (0 Rust edits)"
+      (let* ((proj0 (.o bind-these: #f
+                        pinned-tab: 'index
+                        dynamic-tabs:
+                        (list (.o bind-these: #f
+                                  id: "task-ctrl-01"
+                                  label: "Interactive Controller"
+                                  status: 'in-progress
+                                  mode: 'active
+                                  detour-mode: 'mainline
+                                  detour-node-id: #f
+                                  worktree: "wt/ctrl"
+                                  checklist-done: 1
+                                  checklist-total: 2
+                                  competing-hypotheses: '()))
+                        archived-index: '()
+                        visible-tab-ids: '(index "task-ctrl-01")))
+             (c0 (make-marlin-task-workbench-controller proj0 disclosure-level: 'L1))
+             (c1 (marlin-task-workbench-controller-apply-action c0 'task-drill-l3))
+             (c2 (marlin-task-workbench-controller-apply-action c1 'task-detour-blocker "task-ctrl-01" "blk-live"))
+             (c3 (marlin-task-workbench-controller-apply-action c2 'task-detour-exit-sibling "task-ctrl-01" "task-ctrl-sib"))
+             (vec3 (marlin-task-workbench-controller-project c3)))
+        (check-equal? (.ref c1 'disclosure-level) 'L3)
+        (check-equal? (.ref (car (.ref (.ref c2 'projection) 'dynamic-tabs)) 'detour-mode) 'blocker-active)
+        (check-equal? (.ref (.ref c3 'projection) 'visible-tab-ids) '(index "task-ctrl-01" "task-ctrl-sib"))
+        (check-equal? (vector? vec3) #t)))))

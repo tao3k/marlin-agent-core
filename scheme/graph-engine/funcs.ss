@@ -32,7 +32,12 @@
         marlin-graph-engine-atomic-effect->vector
         marlin-graph-engine-vector->atomic-receipt
         marlin-graph-engine-make-demo-driver-state-vector
-        marlin-graph-engine-step-driver-vector)
+        marlin-graph-engine-step-driver-vector
+        marlin-graph-engine-make-demo-fleet-vector
+        marlin-graph-engine-step-fleet-vector
+        marlin-graph-engine-fleet-checkpoint-vector
+        marlin-graph-engine-fleet-restore-vector
+        marlin-graph-engine-fleet-summary-vector)
 
 (def +marlin-projection-package+ "marlin-agent-core")
 (def +marlin-projection-object-system+ "gerbil-poo")
@@ -646,3 +651,102 @@
             (opt-ref step 'cas-hits-observed 0)
             (opt-ref step 'cas-puts-emitted 0)
             eff-vecs)))
+
+;;; Construct a live 2-actor Fleet inside Gambit heap from `#(parent-id sib-id kv-digest)`:
+;;;   - `parent-id`: active actor with a `defeater-discovered` bitemporal event (blocker-active + L3 + human-inbox)
+;;;   - `sib-id`: active sibling actor with a `pure-cas` deterministic task ready to run & auto-archive!
+(def (marlin-graph-engine-make-demo-fleet-vector input)
+  (let* ((lab-exports (.get LabGraphEngine core exports))
+         (parent-id (vector-ref input 0))
+         (sib-id (vector-ref input 1))
+         (kv-digest (vector-ref input 2))
+         (make-trunk (.ref lab-exports 'make-context-trunk))
+         (make-actor (.ref lab-exports 'make-task-actor))
+         (enter-detour (.ref lab-exports 'enter-task-actor-detour))
+         (make-st (.ref lab-exports 'make-unified-driver-state))
+         (make-fleet (.ref lab-exports 'make-graph-fleet-state))
+         (spawn-sib (.ref lab-exports 'fleet-spawn-sibling-from-detour))
+         (apply-ev (.ref lab-exports 'fleet-apply-bitemporal-event))
+         (env (make-capability-envelope "vm-fleet" allowed-caps: '(context-read) denied-caps: '(host-egress) egress-allowed?: #f))
+         (ctx (.o bind-these: #f
+                  context-cut: 1
+                  kv-prefix-digest: kv-digest
+                  disclosure-depth: 'L1
+                  has-active-defeater?: #f
+                  sandbox-admitted?: #t
+                  cedar-handoff-valid?: #t))
+         (ob-p (make-obligation "ob-p" title: "Parent Gate" required-evidence-ids: '("ev-p")))
+         (g-p (make-obligation-graph "g-p" cut: 1 obligations: (list ob-p) evidence: '() det-tasks: '()))
+         (tr-p (make-trunk "tr-p" "ob-p" g-p env shared-context-cut: 1 kv-prefix-digest: kv-digest))
+         (p0 (make-actor parent-id tr-p '("scope-main") title: "Turso Fleet Parent"))
+         (p-sq (.ref (enter-detour p0 'side-quest-active "sq-vm-split") 'actor))
+         (fl0 (make-fleet (list (make-st p-sq g-p ctx)) peek-set: (list sib-id)))
+         (ob-s (make-obligation "ob-s" title: "Sibling Task" required-evidence-ids: '("ev-s")))
+         (det-s (make-deterministic-task-node
+                 "det-turso-sib" "ob-s" "ev-s" 'funflow-turso "in-s"
+                 effect-class: 'pure-cas read-footprint: '("sib.ss") write-footprint: '()))
+         (g-s (make-obligation-graph "g-s" cut: 1 obligations: (list ob-s) evidence: '() det-tasks: (list det-s)))
+         (fl1 (spawn-sib fl0 parent-id sib-id "Turso Fleet Sibling" g-s sibling-apex-id: "ob-s"))
+         (def-ev (.o bind-these: #f
+                     event-kind: 'defeater-discovered
+                     obligation-id: "ob-p"
+                     defeater-id: "def-turso-01")))
+    (apply-ev fl1 parent-id def-ev)))
+
+;;; Thin C-ABI multi-actor Fleet step:
+;;; Input:  `#(fleet #(receipt-vec ...) auto-archive?)`
+;;; Output: `#(next-fleet #(active-ids...) #(settled-ids...) llm-calls cas-hits cas-puts #(effect-vec ...))`
+(def (marlin-graph-engine-step-fleet-vector input)
+  (let* ((lab-exports (.get LabGraphEngine core exports))
+         (step-fleet (.ref lab-exports 'step-graph-fleet))
+         (fl (vector-ref input 0))
+         (rcpts (map marlin-graph-engine-vector->atomic-receipt (vector->list (vector-ref input 1))))
+         (auto-arch? (vector-ref input 2))
+         (res (step-fleet fl rcpts auto-archive?: auto-arch?))
+         (next-fl (.ref res 'fleet))
+         (active-ids (list->vector (map (lambda (st) (.ref (.ref st 'actor) 'task-id))
+                                        (.ref next-fl 'active-drivers))))
+         (settled-ids (list->vector (map (lambda (a) (.ref a 'task-id))
+                                         (.ref next-fl 'archived-actors))))
+         (eff-vecs (list->vector (map marlin-graph-engine-atomic-effect->vector (.ref res 'effects)))))
+    (vector next-fl
+            active-ids
+            settled-ids
+            (.ref res 'llm-calls-emitted)
+            (.ref res 'cas-hits-observed)
+            (.ref res 'cas-puts-emitted)
+            eff-vecs)))
+
+;;; Thin C-ABI Fleet checkpoint: `#(fleet cas-key)` -> `#(cas-put id key wire-utf8-string)`
+(def (marlin-graph-engine-fleet-checkpoint-vector input)
+  (let* ((lab-exports (.get LabGraphEngine core exports))
+         (plan-cp (.ref lab-exports 'plan-fleet-cas-checkpoint))
+         (eff (plan-cp (vector-ref input 0) (vector-ref input 1))))
+    (marlin-graph-engine-atomic-effect->vector eff)))
+
+;;; Thin C-ABI Fleet restore: `#(cas-hit id wire-utf8-string)` -> live `GraphFleetState.`
+(def (marlin-graph-engine-fleet-restore-vector input)
+  (let* ((lab-exports (.get LabGraphEngine core exports))
+         (restore (.ref lab-exports 'restore-fleet-from-cas-receipt))
+         (rcpt (marlin-graph-engine-vector->atomic-receipt input)))
+    (restore rcpt)))
+
+;;; Thin C-ABI Fleet summary vector for cross-restart assertions:
+;;; `fleet` -> `#(#(active-ids...) #(settled-ids...) #(detour-modes...) #(defeater-counts...) #(inbox-counts...) #(visible-tab-ids...))`
+(def (marlin-graph-engine-fleet-summary-vector fleet)
+  (let* ((lab-exports (.get LabGraphEngine core exports))
+         (proj-fn (.ref lab-exports 'project-fleet->workbench-projection))
+         (proj (proj-fn fleet))
+         (active-drivers (.ref fleet 'active-drivers))
+         (active-ids (list->vector (map (lambda (st) (.ref (.ref st 'actor) 'task-id)) active-drivers)))
+         (settled-ids (list->vector (map (lambda (a) (.ref a 'task-id)) (.ref fleet 'archived-actors))))
+         (detours (list->vector (map (lambda (st) (opt-ref (.ref st 'actor) 'detour-mode 'mainline)) active-drivers)))
+         (defeaters (list->vector
+                     (map (lambda (st)
+                            (let loop ((obs (.ref (.ref st 'obligation-graph) 'obligations)) (acc 0))
+                              (if (null? obs) acc (loop (cdr obs) (+ acc (length (.ref (car obs) 'active-defeaters)))))))
+                          active-drivers)))
+         (inboxes (list->vector (map (lambda (st) (length (opt-ref (.ref st 'obligation-graph) 'human-inbox '())))
+                                     active-drivers)))
+         (vis-tabs (list->vector (map value->config-string (.ref proj 'visible-tab-ids)))))
+    (vector active-ids settled-ids detours defeaters inboxes vis-tabs)))
