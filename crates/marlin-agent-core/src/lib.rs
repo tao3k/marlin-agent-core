@@ -10,6 +10,9 @@ mod release;
 #[cfg(feature = "app-server")]
 pub use marlin_agent_app_server as app_server;
 
+#[cfg(feature = "search-engine")]
+pub use marlin_agent_search_engine as search_engine;
+
 pub use marlin_agent_context as context;
 pub use marlin_agent_graph::{
     self as agent_graph, AgentCapability, AgentCoordinationDecision, AgentCoordinationEvidenceKind,

@@ -156,6 +156,107 @@ impl MarlinContextOrgPort {
             })
         })
     }
+
+    /// Construct a live zero-FFI Org port that parses raw Org source directly
+    /// into Marlin [`OrgNode`] trees (document drawers, nested headings, and
+    /// section `:PROPERTIES:` drawers).
+    #[must_use]
+    pub fn with_live_org_parser() -> Self {
+        Self::from_projector(|source| Ok(parse_live_org_nodes(source)))
+    }
+}
+
+/// Parse raw Org text directly into Marlin [`OrgNode`] trees without any C/FFI bridge.
+#[must_use]
+pub fn parse_live_org_nodes(source: &str) -> Vec<OrgNode> {
+    let mut parser = LiveOrgParser::new();
+    for raw_line in source.lines() {
+        parser.apply_line(raw_line);
+    }
+    parser.finish()
+}
+
+struct LiveOrgParser {
+    nodes: Vec<OrgNode>,
+    heading_stack: Vec<(usize, usize)>,
+    active_node_idx: usize,
+    in_properties: bool,
+}
+
+impl LiveOrgParser {
+    fn new() -> Self {
+        let mut doc = OrgNode::heading("doc", "Document");
+        doc.kind = OrgNodeKind::Document;
+        Self {
+            nodes: vec![doc],
+            heading_stack: Vec::new(),
+            active_node_idx: 0,
+            in_properties: false,
+        }
+    }
+
+    fn apply_line(&mut self, raw_line: &str) {
+        if let Some((level, title)) = parse_org_headline(raw_line) {
+            self.push_heading(level, title);
+            return;
+        }
+        let trimmed = raw_line.trim();
+        if trimmed.eq_ignore_ascii_case(":PROPERTIES:") {
+            self.in_properties = true;
+        } else if self.in_properties && trimmed.eq_ignore_ascii_case(":END:") {
+            self.in_properties = false;
+        } else if self.in_properties
+            && let Some((key, value)) = parse_property_entry(trimmed)
+        {
+            self.nodes[self.active_node_idx]
+                .properties
+                .insert(key, value);
+        }
+    }
+
+    fn push_heading(&mut self, level: usize, title: &str) {
+        self.in_properties = false;
+        while self
+            .heading_stack
+            .last()
+            .is_some_and(|(parent_level, _)| *parent_level >= level)
+        {
+            self.heading_stack.pop();
+        }
+        let parent_idx = self.heading_stack.last().map_or(0, |(_, idx)| *idx);
+        let node_idx = self.nodes.len();
+        let node_id = format!("heading-{node_idx}");
+        self.nodes[parent_idx]
+            .children
+            .push(OrgNodeId::from(node_id.clone()));
+        self.nodes.push(OrgNode::heading(node_id, title));
+        self.heading_stack.push((level, node_idx));
+        self.active_node_idx = node_idx;
+    }
+
+    fn finish(self) -> Vec<OrgNode> {
+        self.nodes
+    }
+}
+
+fn parse_org_headline(line: &str) -> Option<(usize, &str)> {
+    let stars = line.bytes().take_while(|byte| *byte == b'*').count();
+    if stars == 0 {
+        return None;
+    }
+    let rest = line.get(stars..)?;
+    let title = rest.strip_prefix(' ')?.trim();
+    Some((stars, title))
+}
+
+fn parse_property_entry(trimmed: &str) -> Option<(String, String)> {
+    let rest = trimmed.strip_prefix(':')?;
+    let (key, value) = rest.split_once(':')?;
+    let key = key.trim();
+    if key.is_empty() {
+        return None;
+    }
+    Some((key.to_owned(), value.trim().to_owned()))
 }
 
 impl OrgDocumentProjectionPort for MarlinContextOrgPort {

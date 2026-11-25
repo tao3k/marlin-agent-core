@@ -10,6 +10,10 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+turso = ["marlin-agent-storage/turso"]
+
 [dependencies]
 agent-semantic-search.workspace = true
 agent-semantic-search-playbook.workspace = true
@@ -24,10 +28,17 @@ thiserror.workspace = true
 asp-rust.workspace = true
 criterion.workspace = true
 proptest.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
 
 [[test]]
 name = "unit_test"
 path = "tests/unit_test.rs"
+
+[[test]]
+name = "turso_persistence"
+path = "tests/integration/turso_persistence.rs"
+required-features = ["turso"]
 
 [[bench]]
 name = "search_engine_bridge"
