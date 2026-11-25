@@ -76,7 +76,7 @@
          (commands (.get package-value commands))
          (_admission
            (unless (and (marlin-ui-bounded-list? buffers 8)
-                        (marlin-ui-bounded-list? keys 16)
+                        (marlin-ui-bounded-list? keys 32)
                         (marlin-ui-command-entries? commands)
                         (andmap (lambda (entry)
                                   (and (marlin-ui-bounded-list? entry 4)

@@ -327,7 +327,8 @@
                ((memq action-sym '(task-drill-l0 task-drill-l1 task-drill-l2 task-drill-l3
                                    task-detour-blocker task-detour-sidequest
                                    task-detour-exit-return task-detour-exit-absorb
-                                   task-detour-exit-sibling task-detour-exit-abort))
+                                   task-detour-exit-sibling task-detour-exit-abort
+                                   task-human-approve task-fleet-step task-fleet-checkpoint))
                 cur-buf)
                (else #f))))
         (if target-buf

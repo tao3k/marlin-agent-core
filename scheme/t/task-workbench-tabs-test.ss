@@ -24,6 +24,10 @@
                  make-marlin-task-workbench-controller
                  marlin-task-workbench-controller-apply-action
                  marlin-task-workbench-controller-project)
+        (only-in :marlin-agent-core/graph-engine/fleet-controller
+                 make-marlin-fleet-workbench-controller
+                 marlin-fleet-workbench-controller-apply-action
+                 marlin-fleet-workbench-controller-project)
         (only-in :tao3k/agentic-ai-lab/modules/graph-engine/interface
                  make-capability-envelope
                  make-obligation
@@ -435,4 +439,72 @@
         (check-equal? (.ref c1 'disclosure-level) 'L3)
         (check-equal? (.ref (car (.ref (.ref c2 'projection) 'dynamic-tabs)) 'detour-mode) 'blocker-active)
         (check-equal? (.ref (.ref c3 'projection) 'visible-tab-ids) '(index "task-ctrl-01" "task-ctrl-sib"))
-        (check-equal? (vector? vec3) #t)))))
+        (check-equal? (vector? vec3) #t)))
+
+    (test-case "Round S6: Live Fleet <-> Declarative TUI Bi-Directional Controller drives human-approve, detour-sibling, fleet-step, checkpoint (0 Rust edits)"
+      (let* ((env (make-capability-envelope "owner" allowed-caps: '(context-read) denied-caps: '(host-egress) egress-allowed?: #f))
+             (ctx (.o bind-these: #f
+                      context-cut: 1
+                      kv-prefix-digest: "sha256:s6-live-zone1"
+                      disclosure-depth: 'L1
+                      has-active-defeater?: #f
+                      sandbox-admitted?: #t
+                      cedar-handoff-valid?: #t))
+             (ob (make-obligation "ob-s6" title: "Live Fleet Gate" required-evidence-ids: '("ev-s6")))
+             (det (make-deterministic-task-node
+                   "det-s6-cas" "ob-s6" "ev-s6" 'funflow-s6 "in-s6"
+                   effect-class: 'pure-cas read-footprint: '("s6.ss") write-footprint: '()))
+             (g0 (make-obligation-graph "g-s6" cut: 1 obligations: (list ob) evidence: '() det-tasks: (list det)))
+             (tr0 (make-context-trunk "tr-s6" "ob-s6" g0 env shared-context-cut: 1 kv-prefix-digest: "sha256:s6-live-zone1"))
+             (actor0 (graph-make-task-actor "task-s6-01" tr0 '("scope-main") title: "S6 Live Fleet Task"))
+             (fl0 (make-graph-fleet-state (list (make-unified-driver-state actor0 g0 ctx))
+                                          focused-task-id: "task-s6-01"))
+             ;; 1. Inject bitemporal defeater -> actor enters blocker-active with 1 defeater & 1 human-inbox item
+             (def-ev (.o bind-these: #f event-kind: 'defeater-discovered obligation-id: "ob-s6" defeater-id: "def-s6-01"))
+             (fl-def (fleet-apply-bitemporal-event fl0 "task-s6-01" def-ev))
+             (fc0 (make-marlin-fleet-workbench-controller fl-def disclosure-level: 'L1))
+             (tab0 (car (.ref (.ref fc0 'projection) 'dynamic-tabs)))
+             (keys0 (vector->list ((.get (.get (.ref fc0 'session) ui) keymap-entries))))
+             ;; 2. User triggers `SPC o h a` (task-human-approve) -> clears defeater & exits blocker-active to mainline!
+             (fc1 (marlin-fleet-workbench-controller-apply-action fc0 'task-human-approve))
+             (tab1 (car (.ref (.ref fc1 'projection) 'dynamic-tabs)))
+             ;; 3. User triggers `SPC o d s` (side-quest) -> `SPC o d n` (spawn-sibling-task) directly on live Fleet!
+             (fc2 (marlin-fleet-workbench-controller-apply-action fc1 'task-detour-sidequest arg: "sq-s6-branch"))
+             (fc3 (marlin-fleet-workbench-controller-apply-action fc2 'task-detour-exit-sibling arg: "task-s6-sib"))
+             ;; 4. User triggers `SPC o f s` (task-fleet-step) -> emits atomic `cas-get` batch in `last-effects`
+             (fc4 (marlin-fleet-workbench-controller-apply-action fc3 'task-fleet-step auto-archive?: #f))
+             (step-effs (.ref fc4 'last-effects))
+             ;; 5. User triggers `SPC o f c` (task-fleet-checkpoint) -> emits UTF-8 `cas-put` checkpoint effect!
+             (fc5 (marlin-fleet-workbench-controller-apply-action fc4 'task-fleet-checkpoint arg: "fleet:s6:live"))
+             (cp-eff (car (.ref fc5 'last-effects)))
+             ;; 6. User drills to L3 (`SPC o 3`) and projects native Ratatui vector cleanly!
+             (fc6 (marlin-fleet-workbench-controller-apply-action fc5 'task-drill-l3))
+             (vec6 (marlin-fleet-workbench-controller-project fc6))
+             ;; 7. Verify emitted checkpoint wire string restores lossless live Fleet!
+             (fl-restored (restore-fleet-from-cas-receipt (make-cas-hit-receipt "r-s6" (.ref cp-eff 'payload)))))
+        ;; Keymap bindings registered cleanly under SPC o
+        (check-equal? (and (member '#(normal #(SPC o h a) task-human-approve) keys0) #t) #t)
+        (check-equal? (and (member '#(normal #(SPC o f s) task-fleet-step) keys0) #t) #t)
+        (check-equal? (and (member '#(normal #(SPC o f c) task-fleet-checkpoint) keys0) #t) #t)
+        ;; Initial blocked state
+        (check-equal? (.ref tab0 'detour-mode) 'blocker-active)
+        (check-equal? (.ref tab0 'active-defeaters-count) 1)
+        (check-equal? (length (.ref tab0 'human-inbox)) 1)
+        ;; After `task-human-approve`: defeater cleared, actor returned to mainline!
+        (check-equal? (.ref tab1 'detour-mode) 'mainline)
+        (check-equal? (.ref tab1 'active-defeaters-count) 0)
+        ;; After `task-detour-sidequest` -> `task-detour-exit-sibling`: live Fleet has 2 active drivers & 3 visible tabs!
+        (check-equal? (length (.ref (.ref fc3 'fleet) 'active-drivers)) 2)
+        (check-equal? (.ref (.ref fc3 'projection) 'visible-tab-ids) '(index "task-s6-01" "task-s6-sib"))
+        ;; After `task-fleet-step`: emitted atomic `cas-get` effect in `last-effects` (controller never executes I/O)
+        (check-equal? (.ref fc4 'authorizes-effect?) #f)
+        (check-equal? (pair? step-effs) #t)
+        (check-equal? (.ref (car step-effs) 'kind) 'cas-get)
+        ;; After `task-fleet-checkpoint`: emitted UTF-8 `cas-put` effect carrying lossless wire payload
+        (check-equal? (.ref cp-eff 'kind) 'cas-put)
+        (check-equal? (.ref cp-eff 'key) "fleet:s6:live")
+        (check-equal? (string? (.ref cp-eff 'payload)) #t)
+        (check-equal? (length (.ref fl-restored 'active-drivers)) 2)
+        ;; After `task-drill-l3`: disclosure updated and native Ratatui vector projected cleanly
+        (check-equal? (.ref fc6 'disclosure-level) 'L3)
+        (check-equal? (vector? vec6) #t)))))

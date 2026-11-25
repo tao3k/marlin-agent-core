@@ -19,7 +19,11 @@
                  marlin-graph-engine-step-driver-vector
                  marlin-graph-engine-step-fleet-vector
                  marlin-graph-engine-fleet-checkpoint-vector
-                 marlin-graph-engine-fleet-restore-vector))
+                 marlin-graph-engine-fleet-restore-vector)
+        (only-in "./fleet-controller.ss"
+                 make-marlin-fleet-workbench-controller
+                 marlin-fleet-workbench-controller-apply-action
+                 marlin-fleet-workbench-controller-project))
 
 (export GraphEngineMarlinOperations
         EnableMarlinGraphEngineSqliteTurso)
@@ -35,7 +39,10 @@
   step-driver-vector: marlin-graph-engine-step-driver-vector
   step-fleet-vector: marlin-graph-engine-step-fleet-vector
   fleet-checkpoint-vector: marlin-graph-engine-fleet-checkpoint-vector
-  fleet-restore-vector: marlin-graph-engine-fleet-restore-vector)
+  fleet-restore-vector: marlin-graph-engine-fleet-restore-vector
+  make-fleet-workbench-controller: make-marlin-fleet-workbench-controller
+  fleet-workbench-controller-apply-action: marlin-fleet-workbench-controller-apply-action
+  fleet-workbench-controller-project: marlin-fleet-workbench-controller-project)
 
 (def (EnableMarlinGraphEngineSqliteTurso inherited)
   (.o (:: self inherited)

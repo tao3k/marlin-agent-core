@@ -53,7 +53,10 @@
     ((SPC o d r) task-detour-exit-return "Exit Detour: Return to Origin")
     ((SPC o d a) task-detour-exit-absorb "Exit Detour: Absorb and Continue")
     ((SPC o d n) task-detour-exit-sibling "Exit Detour: Spawn Sibling Task")
-    ((SPC o d x) task-detour-exit-abort "Exit Detour: Abort Detour")))
+    ((SPC o d x) task-detour-exit-abort "Exit Detour: Abort Detour")
+    ((SPC o h a) task-human-approve "Approve human gate and resolve active defeater")
+    ((SPC o f s) task-fleet-step "Advance live GraphEngine Fleet one pure step")
+    ((SPC o f c) task-fleet-checkpoint "Emit Fleet CAS checkpoint effect")))
 
 (def (marlin-task-workbench-commands)
   '(("task-index" "Focus pinned Task Index buffer" none select-buffer "index")
@@ -69,7 +72,10 @@
     ("task-detour-exit-return" "Exit active Scoped Detour via return-to-origin" none scheme-action "task-detour-exit-return")
     ("task-detour-exit-absorb" "Exit active Scoped Detour via absorb-and-continue" none scheme-action "task-detour-exit-absorb")
     ("task-detour-exit-sibling" "Exit active Scoped Detour by spawning a sibling Task tab" optional scheme-action "task-detour-exit-sibling")
-    ("task-detour-exit-abort" "Exit active Scoped Detour via abort-detour" none scheme-action "task-detour-exit-abort")))
+    ("task-detour-exit-abort" "Exit active Scoped Detour via abort-detour" none scheme-action "task-detour-exit-abort")
+    ("task-human-approve" "Approve human gate and resolve active defeater on focused Task" optional scheme-action "task-human-approve")
+    ("task-fleet-step" "Advance live GraphEngine Fleet one pure ASCENT/FunFlow step" none scheme-action "task-fleet-step")
+    ("task-fleet-checkpoint" "Emit canonical UTF-8 Fleet CAS checkpoint effect" optional scheme-action "task-fleet-checkpoint")))
 
 (def (task-summary-line tab-obj)
   (let ((tid (symbol->string (marlin-ui-task-tab-identity (.ref tab-obj 'id))))
