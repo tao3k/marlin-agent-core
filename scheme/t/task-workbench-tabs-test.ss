@@ -31,11 +31,18 @@
                  make-competing-hypothesis
                  make-hypothesis-branch-proposal
                  make-cas-hit-receipt
+                 make-cas-miss-receipt
+                 make-cas-stored-receipt
                  make-llm-completed-receipt
                  make-effect-error-receipt
                  make-unified-driver-state
                  run-unified-driver-to-quiescence
-                 project-driver-state->workbench-projection))
+                 project-driver-state->workbench-projection
+                 graph-enter-task-actor-detour
+                 make-graph-fleet-state
+                 fleet-spawn-sibling-from-detour
+                 run-graph-fleet-to-quiescence
+                 project-fleet->workbench-projection))
 
 (export task-workbench-tabs-test)
 
@@ -294,5 +301,60 @@
         (check-equal? (.ref run 'cas-hits-count) 1)
         (check-equal? (.ref run 'total-llm-calls) 4)
         (check-equal? (.ref proj 'visible-tab-ids) '(index "task-e2e-01"))
+        (check-equal? (vector? rendered) #t)
+        (check-equal? (vector-ref (vector-ref step1 1) 0) 'select-buffer)))
+
+    (test-case "Multi-Actor Fleet + Cold-to-Warm CAS + Sibling Auto-Archive + Read-Only Peek renders in Marlin TUI (0 Rust edits)"
+      (let* ((cas-table (make-hash-table))
+             (pump (lambda (effs)
+                     (map (lambda (e)
+                            (let ((k (.ref e 'kind)) (id (.ref e 'effect-id)))
+                              (cond
+                               ((eq? k 'cas-get)
+                                (let ((v (hash-get cas-table (.ref e 'key))))
+                                  (if v (make-cas-hit-receipt id v) (make-cas-miss-receipt id))))
+                               ((eq? k 'cas-put)
+                                (hash-put! cas-table (.ref e 'key) (.ref e 'payload))
+                                (make-cas-stored-receipt id))
+                               ((eq? k 'llm-complete)
+                                (make-llm-completed-receipt id (string-append "llm:" id)))
+                               (else (make-effect-error-receipt id "err")))))
+                          effs)))
+             (env (make-capability-envelope "owner" allowed-caps: '(context-read) denied-caps: '(host-egress) egress-allowed?: #f))
+             (ctx (.o bind-these: #f
+                      context-cut: 2
+                      kv-prefix-digest: "sha256:fleet-tui-zone1"
+                      disclosure-depth: 'L3
+                      has-active-defeater?: #f
+                      sandbox-admitted?: #t
+                      cedar-handoff-valid?: #t))
+             (ob-p (make-obligation "ob-p" title: "Parent" required-evidence-ids: '("ev-p")))
+             (det-p (make-deterministic-task-node "det-p" "ob-p" "ev-p" 'f-p "p" effect-class: 'pure-cas read-footprint: '("p") write-footprint: '()))
+             (g-p (make-obligation-graph "g-p" cut: 2 obligations: (list ob-p) evidence: '() det-tasks: (list det-p)))
+             (tr-p (make-context-trunk "tr-p" "ob-p" g-p env shared-context-cut: 2 kv-prefix-digest: "sha256:fleet-tui-zone1"))
+             (p0 (graph-make-task-actor "task-fleet-parent" tr-p '("scope-main") title: "Fleet Parent"))
+             (p-sq (.ref (graph-enter-task-actor-detour p0 'side-quest-active "sq-1") 'actor))
+             (ob-s (make-obligation "ob-s" title: "Sibling" required-evidence-ids: '("ev-s")))
+             (det-s (make-deterministic-task-node "det-s" "ob-s" "ev-s" 'f-s "s" effect-class: 'pure-cas read-footprint: '("s") write-footprint: '()))
+             (g-s (make-obligation-graph "g-s" cut: 2 obligations: (list ob-s) evidence: '() det-tasks: (list det-s)))
+             (fl0 (make-graph-fleet-state (list (make-unified-driver-state p-sq g-p ctx)) peek-set: '("task-fleet-sib")))
+             (fl1 (fleet-spawn-sibling-from-detour fl0 "task-fleet-parent" "task-fleet-sib" "Fleet Sibling" g-s sibling-apex-id: "ob-s"))
+             (p-st (car (.ref fl1 'active-drivers)))
+             (s-st (cadr (.ref fl1 'active-drivers)))
+             (p-blk (.ref (graph-enter-task-actor-detour (.ref p-st 'actor) 'blocker-active "blk-p") 'actor))
+             (fl2 (make-graph-fleet-state
+                   (list (make-unified-driver-state p-blk (.ref p-st 'obligation-graph) ctx) s-st)
+                   peek-set: '("task-fleet-sib")))
+             (run (run-graph-fleet-to-quiescence fl2 pump auto-archive?: #t))
+             (proj (project-fleet->workbench-projection run))
+             (pkg-ui (make-marlin-task-workbench-package proj disclosure-level: 'L3))
+             (sess0 (marlin-ui-session-open
+                     (vector pkg-ui #("gemini-2.5-pro" "fleet-workbench" #() #()) #())))
+             (step1 (marlin-ui-session-dispatch
+                     (vector sess0 'scheme-action '#(task-switch #f))))
+             (rendered (marlin-ui-session-project (vector-ref step1 0))))
+        (check-equal? (.ref run 'active-task-ids) '("task-fleet-parent"))
+        (check-equal? (.ref run 'settled-task-ids) '("task-fleet-sib"))
+        (check-equal? (.ref proj 'visible-tab-ids) '(index "task-fleet-parent" "task-fleet-sib"))
         (check-equal? (vector? rendered) #t)
         (check-equal? (vector-ref (vector-ref step1 1) 0) 'select-buffer)))))
