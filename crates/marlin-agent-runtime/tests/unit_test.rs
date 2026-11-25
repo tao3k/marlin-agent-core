@@ -16,6 +16,8 @@ mod runtime_agent_graph;
 mod runtime_cleanup;
 #[path = "unit/runtime/dependency_boundary.rs"]
 mod runtime_dependency_boundary;
+#[path = "unit/runtime/effect_pump.rs"]
+mod runtime_effect_pump;
 #[path = "unit/runtime/events.rs"]
 mod runtime_events;
 #[path = "unit/runtime/graph_loop_run_registry.rs"]

@@ -10,6 +10,7 @@ pub mod plugin;
 pub mod process;
 
 mod agent_graph;
+mod effect_pump;
 mod graph_loop;
 mod model_gateway;
 mod model_tool_catalog;
@@ -30,6 +31,12 @@ pub use agent_graph::{
     admit_agent_coordination_plan, build_agent_graph_execution_request,
     check_agent_graph_execution_readiness, project_agent_graph_planning_receipt,
     project_agent_graph_projection_request,
+};
+pub use effect_pump::{
+    AtomicEffect, AtomicEffectExecutor, AtomicEffectReceipt, CasGetEffectPayload,
+    CasHitReceiptPayload, CasPutEffectPayload, EffectErrorReceiptPayload, LlmCompleteEffectPayload,
+    LlmCompletedReceiptPayload, SandboxExitedReceiptPayload, SandboxRunEffectPayload,
+    run_atomic_effect_batch,
 };
 pub use graph_loop::{
     AgentFlowLoopStepRequest, GraphLoopRegistryRevision, GraphLoopRunCancelReceipt,

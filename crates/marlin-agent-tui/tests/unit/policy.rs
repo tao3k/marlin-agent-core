@@ -119,4 +119,23 @@ mod declarative_ui_boundary_guard {
             );
         }
     }
+
+    #[test]
+    fn tui_command_enum_forbids_domain_specific_task_detour_or_graph_variants() {
+        let command_rs = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/command.rs");
+        let src = fs::read_to_string(&command_rs).unwrap();
+        for forbidden in [
+            "TaskTabs",
+            "EnterDetour",
+            "ExitDetour",
+            "HypothesisBranch",
+            "Funflow",
+            "DagFrontier",
+        ] {
+            assert!(
+                !src.contains(forbidden),
+                "command.rs must NOT add bespoke high-order domain command `{forbidden}`; route through generic `SchemeAction`"
+            );
+        }
+    }
 }

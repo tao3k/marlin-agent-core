@@ -24,8 +24,10 @@ use std::{
     time::Duration,
 };
 
+#[cfg(feature = "turso-host")]
+use marlin_agent_app_server::TaskActorControlPlane;
 use marlin_agent_app_server::{
-    AppServer, SessionBinding, SessionOpen,
+    AppServer, SessionBinding, SessionOpen, TaskActorPersistenceHandle,
     ui_grpc::MyGoBridgeHost,
     wire::marlin::gate::v1::{GateKind, PendingGate},
 };
@@ -141,6 +143,7 @@ where
         Arc::new(DeterministicLocalGateway { chunk_delay }),
         move |meta| check_bearer(meta, &expected_header),
     )?
+    .with_task_actors(host.task_actors().clone())
     .with_session_lookup(move |_metadata, id, mode| {
         let bindings = Arc::clone(&bindings);
         let storage = storage.clone();
@@ -325,6 +328,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         builder = builder.tls_config(ServerTlsConfig::new().identity(identity))?;
     }
 
+    #[cfg_attr(not(feature = "turso-host"), allow(unused_mut))]
+    let mut persistence_handle: Option<TaskActorPersistenceHandle> = None;
+
     let router = if real_session {
         let delay_ms = env::var("MARLIN_BRIDGE_CHUNK_DELAY_MS")
             .ok()
@@ -345,6 +351,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     batch_transaction_mode: TursoBatchTransactionMode::Immediate,
                 })
                 .await?;
+                let task_project = ProjectId::new("default")?;
+                let task_pointer = marlin_agent_storage::ArtifactPointerKey::new(
+                    "pointer:graph-engine:task-actors",
+                )?;
+                let task_agent = AgentId::new("marlin-mygo-host")?;
+                let task_actors =
+                    TaskActorControlPlane::rehydrate_or_new(&storage, &task_project, &task_pointer)
+                        .await?;
+                persistence_handle = Some(task_actors.spawn_storage_persistence_loop(
+                    storage.clone(),
+                    task_project,
+                    task_pointer,
+                    task_agent,
+                ));
+                let host = host.with_task_actors(task_actors);
                 build_real_session_router(storage, builder, host, expected_header, chunk_delay)?
             }
             #[cfg(not(feature = "turso-host"))]
@@ -372,5 +393,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     router
         .serve_with_incoming_shutdown(TcpListenerStream::new(listener), shutdown_signal())
         .await?;
+    if let Some(handle) = persistence_handle {
+        handle.flush_and_stop().await?;
+    }
     Ok(())
 }

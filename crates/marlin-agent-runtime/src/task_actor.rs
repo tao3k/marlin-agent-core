@@ -204,6 +204,24 @@ impl TaskActorRuntimeRegistry {
             .map(|record| record.cursor.clone())
     }
 
+    /// Reads the currently bound `AdmittedGovernedContext` for `task_id`, if any.
+    pub fn governed_context(&self, task_id: &TaskActorId) -> Option<AdmittedGovernedContext> {
+        self.state
+            .lock()
+            .actors
+            .get(task_id)
+            .and_then(|record| record.governed_context.clone())
+    }
+
+    /// Reads the current Design 165 `DetourState` for `task_id`, if registered.
+    pub fn detour_state(&self, task_id: &TaskActorId) -> Option<DetourState> {
+        self.state
+            .lock()
+            .actors
+            .get(task_id)
+            .map(|record| record.detour_state.clone())
+    }
+
     /// Registers a new Session-free `TaskActor` at `FencingEpoch(1)` in `OpenFocus`.
     pub fn register_actor(
         &self,
@@ -674,7 +692,7 @@ impl TaskActorRuntimeRegistry {
     }
 
     /// Cross-checks `envelope` through `oracle` (Scheme `GraphEngine`) before admitting locally.
-    pub fn admit_dispatch_with_oracle<O: marlin_agent_graph::GraphEngineOracle>(
+    pub fn admit_dispatch_with_oracle<O: marlin_agent_graph::GraphEngineOracle + ?Sized>(
         &self,
         oracle: &O,
         envelope: MarlinDispatchEnvelope,
@@ -687,7 +705,7 @@ impl TaskActorRuntimeRegistry {
     }
 
     /// Cross-checks `receipt` through `oracle` (Scheme `GraphEngine`) and rejects any divergence.
-    pub fn reconcile_receipt_with_oracle<O: marlin_agent_graph::GraphEngineOracle>(
+    pub fn reconcile_receipt_with_oracle<O: marlin_agent_graph::GraphEngineOracle + ?Sized>(
         &self,
         oracle: &O,
         receipt: &MarlinExecutionReceipt,
@@ -710,7 +728,7 @@ impl TaskActorRuntimeRegistry {
     }
 
     /// Cross-checks `capsule` through `oracle` (Scheme `GraphEngine`) before binding locally.
-    pub fn bind_governed_context_with_oracle<O: marlin_agent_graph::GraphEngineOracle>(
+    pub fn bind_governed_context_with_oracle<O: marlin_agent_graph::GraphEngineOracle + ?Sized>(
         &self,
         oracle: &O,
         capsule: GovernedContextCapsule,
@@ -723,7 +741,7 @@ impl TaskActorRuntimeRegistry {
     }
 
     /// Projects the registry's current Workbench tabs through `oracle` and verifies exact parity.
-    pub fn project_workbench_tabs_with_oracle<O: marlin_agent_graph::GraphEngineOracle>(
+    pub fn project_workbench_tabs_with_oracle<O: marlin_agent_graph::GraphEngineOracle + ?Sized>(
         &self,
         oracle: &O,
     ) -> Result<WorkbenchTabProjection, TaskActorRuntimeError> {

@@ -15,7 +15,9 @@ pub use session::{SessionBinding, SessionOpen};
 #[cfg(feature = "grpc")]
 pub mod task_actors;
 #[cfg(feature = "grpc")]
-pub use task_actors::{RegisterTaskActorRequest, TaskActorControlPlane};
+pub use task_actors::{
+    RegisterTaskActorRequest, TaskActorControlPlane, TaskActorPersistenceHandle,
+};
 
 #[cfg(feature = "client")]
 pub mod v1;
