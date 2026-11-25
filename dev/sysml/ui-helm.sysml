@@ -58,10 +58,17 @@ package MarlinUiHelm {
                    Shared Org Context export, or Agent turns carrying verified
                    generation provenance. */
         }
+        part agentSearchTool {
+            doc /* `scheme/tooling/objects.ss` (`workspace_search`) +
+                   `marlin-agent-tooling::ResidentSearchToolHandler`:
+                   exposes the exact same resident `SharedSearchIndexSlot` to
+                   LLM Agent tool invocations with BLAKE3 generation evidence. */
+        }
 
         dependency uiToAbi from helmSchemeUi to helmCAbiBridge;
         dependency abiToSearch from helmCAbiBridge to nativeSearchBackend;
         dependency uiToActions from helmSchemeUi to embarkActionSink;
+        dependency toolToSearch from agentSearchTool to nativeSearchBackend;
     }
 
     state def HelmSessionLifecycle {

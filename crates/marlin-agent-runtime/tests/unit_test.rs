@@ -28,6 +28,8 @@ mod runtime_model_gateway;
 mod runtime_model_tool_catalog;
 #[path = "unit/runtime/observability.rs"]
 mod runtime_observability;
+#[path = "unit/runtime/panel_plugin.rs"]
+mod runtime_panel_plugin;
 #[path = "unit/runtime/process/mod.rs"]
 mod runtime_process;
 #[path = "unit/runtime/resilience.rs"]

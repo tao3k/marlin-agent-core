@@ -20,7 +20,8 @@ pub use lifecycle::{
     EnableWorkflow, PluginHost, ProjectGrant, WorkflowRegistration, WorkflowSettingsValidator,
 };
 pub use panel_lifecycle::{
-    PanelActionRecord, PanelActivationRecord, PanelDisableReceipt, PanelPluginHost,
+    PanelActionRecord, PanelActivationId, PanelActivationRecord, PanelDisableReceipt,
+    PanelGenerationStatus, PanelPluginHost, PanelProjectId, ScopedPanelActionRequest,
 };
 pub use panel_release::{
     PanelCapability, PanelContribution, PanelContributionKind, PanelDescriptor, PanelRuntimeKind,

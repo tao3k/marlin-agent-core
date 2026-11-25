@@ -14,8 +14,9 @@ use std::{
 };
 
 use marlin_agent_runtime::plugin::{
-    CapabilityId, ContributionId, PanelPluginHost, PanelRuntimeKind as RuntimePanelKind,
-    PluginDenial, PluginId, PublisherId, ReleaseAttestation as RuntimeAttestation, ReleaseTrust,
+    CapabilityId, ContributionId, PanelActivationId, PanelPluginHost, PanelProjectId,
+    PanelRuntimeKind as RuntimePanelKind, PluginDenial, PluginId, PublisherId,
+    ReleaseAttestation as RuntimeAttestation, ReleaseTrust, ScopedPanelActionRequest,
     SignedPanelRelease, SlotCardinality as RuntimeSlotCardinality, VerifiedPanelRelease,
 };
 use tokio::sync::broadcast;
@@ -954,7 +955,9 @@ fn summarize_verified_panel(
     panel_host: &PanelPluginHost,
     verified: &VerifiedPanelRelease,
 ) -> InstalledReleaseSummary {
-    let (enabled, active_generation) = panel_host.active_generation_for(verified.id());
+    let status = panel_host.active_generation_for(verified.id());
+    let enabled = status.enabled;
+    let active_generation = status.active_generation;
     let panel_assets: Vec<PanelAssetDescriptor> = verified
         .contributions()
         .iter()
@@ -1119,10 +1122,12 @@ impl PluginService for MyGoBridgeHost {
         };
 
         let mut st = self.state.lock().expect("bridge mutex poisoned");
-        let act = match st
-            .panel_host
-            .enable_panel(req.project_id, &pid, &cid, &req.settings_toml)
-        {
+        let act = match st.panel_host.enable_panel(
+            PanelProjectId::new(req.project_id),
+            &pid,
+            &cid,
+            &req.settings_toml,
+        ) {
             Ok(rec) => rec,
             Err(denial) => {
                 return Ok(Response::new(EnableWorkflowResponse {
@@ -1173,7 +1178,8 @@ impl PluginService for MyGoBridgeHost {
         self.check_auth(&request)?;
         let req = request.into_inner();
         let mut st = self.state.lock().expect("bridge mutex poisoned");
-        match st.panel_host.disable_panel(&req.activation_id) {
+        let activation_id = PanelActivationId::new(req.activation_id);
+        match st.panel_host.disable_panel(&activation_id) {
             Ok(closed) => {
                 let rref = ReceiptRef {
                     receipt_id: format!("rcpt-plugin-disable-{}", closed.closed_generation),
@@ -1232,7 +1238,10 @@ impl PluginService for MyGoBridgeHost {
             caps.push(cap);
         }
         let mut st = self.state.lock().expect("bridge mutex poisoned");
-        match st.panel_host.set_project_grants(req.project_id, pid, caps) {
+        match st
+            .panel_host
+            .set_project_grants(PanelProjectId::new(req.project_id), pid, caps)
+        {
             Ok(granted) => {
                 let rref = mint_receipt(&mut st, "plugin-grant", req.plugin_id.as_bytes());
                 Ok(Response::new(SetProjectGrantsResponse {
@@ -1265,7 +1274,8 @@ impl PluginService for MyGoBridgeHost {
         self.check_auth(&request)?;
         let req = request.into_inner();
         let st = self.state.lock().expect("bridge mutex poisoned");
-        let Some(ev) = st.panel_host.evidence(&req.activation_id) else {
+        let activation_id = PanelActivationId::new(req.activation_id);
+        let Some(ev) = st.panel_host.evidence(&activation_id) else {
             return Err(Status::not_found("activation evidence not found"));
         };
         let effect_receipts: Vec<ReceiptRef> = ev
@@ -1299,8 +1309,9 @@ impl PluginService for MyGoBridgeHost {
             .map_err(|_| Status::invalid_argument("invalid contribution_id"))?;
         let allowed_topics: BTreeSet<String> = {
             let st = self.state.lock().expect("bridge mutex poisoned");
+            let project_id = PanelProjectId::new(req.project_id);
             st.panel_host
-                .active_read_scopes(&req.project_id, &pid, &cid, req.activation_generation)
+                .active_read_scopes(&project_id, &pid, &cid, req.activation_generation)
                 .map_err(|_| Status::failed_precondition("plugin generation not active"))?
         };
         let mut rx = self.panel_tx.subscribe();
@@ -1347,15 +1358,16 @@ impl PluginService for MyGoBridgeHost {
             }));
         };
         let mut st = self.state.lock().expect("bridge mutex poisoned");
-        match st.panel_host.admit_scoped_action(
-            &req.project_id,
-            &pid,
-            &cid,
-            req.activation_generation,
-            &req.action_name,
-            &req.args_json,
-            &req.idempotency_key,
-        ) {
+        let project_id = PanelProjectId::new(req.project_id);
+        match st.panel_host.admit_scoped_action(ScopedPanelActionRequest {
+            project_id: &project_id,
+            plugin_id: &pid,
+            contribution_id: &cid,
+            generation: req.activation_generation,
+            action_name: &req.action_name,
+            args_json: &req.args_json,
+            idempotency_key: &req.idempotency_key,
+        }) {
             Ok(action_rec) => Ok(Response::new(SubmitScopedPanelActionResponse {
                 receipt: Some(ScopedPanelActionReceipt {
                     admitted: true,

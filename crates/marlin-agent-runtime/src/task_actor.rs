@@ -546,68 +546,10 @@ impl TaskActorRuntimeRegistry {
         sibling_task: Option<(TaskActorId, String)>,
     ) -> Result<DetourState, TaskActorRuntimeError> {
         let mut guard = self.state.lock();
-        let (scope_mode, is_terminal, in_detour) =
-            {
-                let record = guard.actors.get(task_id).ok_or_else(|| {
-                    TaskActorRuntimeError::ActorNotFound {
-                        task_id: task_id.clone(),
-                    }
-                })?;
-                (
-                    record.cursor.scope_mode,
-                    record.cursor.status.is_terminal(),
-                    record.detour_state != DetourState::Mainline,
-                )
-            };
-        if is_terminal {
-            let status = guard.actors[task_id].cursor.status;
-            return Err(TaskActorRuntimeError::ActorTerminal {
-                task_id: task_id.clone(),
-                status,
-            });
-        }
-        if !in_detour {
-            return Err(TaskActorRuntimeError::InvalidDetourTransition {
-                task_id: task_id.clone(),
-                reason: "actor is not inside an active scoped detour",
-            });
-        }
-
+        let scope_mode = validate_active_detour(&guard, task_id)?;
         if exit_kind == DetourExitKind::SpawnSiblingTask {
-            let Some((sibling_id, sibling_title)) = sibling_task else {
-                return Err(TaskActorRuntimeError::InvalidDetourTransition {
-                    task_id: task_id.clone(),
-                    reason: "SpawnSiblingTask exit requires a sibling (task_id, title)",
-                });
-            };
-            if guard.actors.contains_key(&sibling_id) {
-                return Err(TaskActorRuntimeError::DuplicateActor {
-                    task_id: sibling_id,
-                });
-            }
-            let title = if sibling_title.trim().is_empty() {
-                sibling_id.as_str().to_owned()
-            } else {
-                sibling_title
-            };
-            guard.read_only_peeks.remove(&sibling_id);
-            guard.actors.insert(
-                sibling_id.clone(),
-                TaskActorRuntimeRecord {
-                    title,
-                    cursor: TaskActorCursor {
-                        task_id: sibling_id,
-                        fencing_epoch: FencingEpoch::new(1).expect("epoch 1 is strictly positive"),
-                        status: TaskActorStatus::OpenFocus,
-                        scope_mode,
-                        pending_steering_branches: 0,
-                    },
-                    governed_context: None,
-                    detour_state: DetourState::Mainline,
-                },
-            );
+            spawn_detour_sibling(&mut guard, task_id, scope_mode, sibling_task)?;
         }
-
         let record = guard
             .actors
             .get_mut(task_id)
@@ -804,4 +746,70 @@ impl TaskActorRuntimeRegistry {
         let decision = self.reconcile_receipt(&receipt)?;
         Ok((admitted, decision))
     }
+}
+
+fn validate_active_detour(
+    state: &RegistryState,
+    task_id: &TaskActorId,
+) -> Result<TaskActorScopeMode, TaskActorRuntimeError> {
+    let record = state
+        .actors
+        .get(task_id)
+        .ok_or_else(|| TaskActorRuntimeError::ActorNotFound {
+            task_id: task_id.clone(),
+        })?;
+    if record.cursor.status.is_terminal() {
+        return Err(TaskActorRuntimeError::ActorTerminal {
+            task_id: task_id.clone(),
+            status: record.cursor.status,
+        });
+    }
+    if record.detour_state == DetourState::Mainline {
+        return Err(TaskActorRuntimeError::InvalidDetourTransition {
+            task_id: task_id.clone(),
+            reason: "actor is not inside an active scoped detour",
+        });
+    }
+    Ok(record.cursor.scope_mode)
+}
+
+fn spawn_detour_sibling(
+    state: &mut RegistryState,
+    task_id: &TaskActorId,
+    scope_mode: TaskActorScopeMode,
+    sibling_task: Option<(TaskActorId, String)>,
+) -> Result<(), TaskActorRuntimeError> {
+    let Some((sibling_id, sibling_title)) = sibling_task else {
+        return Err(TaskActorRuntimeError::InvalidDetourTransition {
+            task_id: task_id.clone(),
+            reason: "SpawnSiblingTask exit requires a sibling (task_id, title)",
+        });
+    };
+    if state.actors.contains_key(&sibling_id) {
+        return Err(TaskActorRuntimeError::DuplicateActor {
+            task_id: sibling_id,
+        });
+    }
+    let title = if sibling_title.trim().is_empty() {
+        sibling_id.as_str().to_owned()
+    } else {
+        sibling_title
+    };
+    state.read_only_peeks.remove(&sibling_id);
+    state.actors.insert(
+        sibling_id.clone(),
+        TaskActorRuntimeRecord {
+            title,
+            cursor: TaskActorCursor {
+                task_id: sibling_id,
+                fencing_epoch: FencingEpoch::new(1).expect("epoch 1 is strictly positive"),
+                status: TaskActorStatus::OpenFocus,
+                scope_mode,
+                pending_steering_branches: 0,
+            },
+            governed_context: None,
+            detour_state: DetourState::Mainline,
+        },
+    );
+    Ok(())
 }
