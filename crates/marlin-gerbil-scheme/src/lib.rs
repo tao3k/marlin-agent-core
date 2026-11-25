@@ -9,6 +9,7 @@ mod agent_policy_routing_abi;
 mod aot_runtime;
 mod brief_to_draft;
 mod deck_runtime_policy;
+mod graph_engine;
 mod graph_loop_continuation;
 mod loop_case_driver;
 mod policy_pack_projection;
@@ -81,6 +82,14 @@ pub use deck_runtime_policy::{
     gerbil_deck_runtime_poo_policy_projection_request,
     gerbil_deck_runtime_poo_policy_projection_type_manifest,
     gerbil_deck_runtime_resolved_loop_policy_pack_projection_request,
+};
+pub use graph_engine::{
+    GraphEngineDispatchProjection, GraphEngineProjectionError, MARLIN_GRAPH_ENGINE_ABI_ID,
+    MARLIN_GRAPH_ENGINE_ABI_VERSION, MARLIN_GRAPH_ENGINE_DISPATCH_SYMBOL,
+    MARLIN_GRAPH_ENGINE_RECONCILE_SYMBOL, MARLIN_GRAPH_ENGINE_WORKBENCH_TABS_SYMBOL,
+    decode_graph_engine_dispatch_vector, decode_graph_engine_reconcile_vector,
+    decode_graph_engine_workbench_tabs_vector, marlin_graph_engine_abi_contract,
+    marlin_graph_engine_readiness_plan,
 };
 pub use graph_loop_continuation::{
     GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_ID,

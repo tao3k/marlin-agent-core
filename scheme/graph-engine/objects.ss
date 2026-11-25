@@ -10,14 +10,20 @@
         (only-in "./funcs.ss"
                  marlin-graph-engine-project-workbench-ui
                  marlin-graph-engine-dispatch->continuation
-                 marlin-graph-engine-execute-turso-dispatch!))
+                 marlin-graph-engine-execute-turso-dispatch!
+                 marlin-graph-engine-project-dispatch-vector
+                 marlin-graph-engine-reconcile-receipt-vector
+                 marlin-graph-engine-project-workbench-tabs-vector))
 
 (export GraphEngineMarlinOperations
         EnableMarlinGraphEngineSqliteTurso)
 
 (.def GraphEngineMarlinOperations
   project-workbench-ui: marlin-graph-engine-project-workbench-ui
-  dispatch->continuation: marlin-graph-engine-dispatch->continuation)
+  dispatch->continuation: marlin-graph-engine-dispatch->continuation
+  project-dispatch-vector: marlin-graph-engine-project-dispatch-vector
+  reconcile-receipt-vector: marlin-graph-engine-reconcile-receipt-vector
+  project-workbench-tabs-vector: marlin-graph-engine-project-workbench-tabs-vector)
 
 (def (EnableMarlinGraphEngineSqliteTurso inherited)
   (.o (:: self inherited)

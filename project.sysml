@@ -38,6 +38,7 @@ package MarlinAgentCORE {
     dependency sharedOrgSessionDesign from project to MarlinOrgBabelSession::target;
     dependency searchEngineDesign from project to MarlinSearchEngine::target;
     dependency modernHelmDesign from project to MarlinUiHelm::target;
+    dependency graphEngineDesign from project to MarlinGraphEngine::target;
     dependency tuiTurnLifecycle from project to MarlinTuiLifecycle::TurnLifecycle;
 
     view projectStructure {
@@ -170,5 +171,19 @@ package MarlinAgentCORE {
 
     view modernHelmFlow : StandardViewDefinitions::ActionFlowView {
         expose MarlinUiHelm::ExecuteHelmSearch;
+    }
+
+    view graphEngineArchitecture {
+        expose MarlinGraphEngine::target;
+        expose MarlinGraphEngine::sessionFreeTaskActorLifecycle;
+        expose MarlinGraphEngine::c4SteeringConvergenceGate;
+        expose MarlinGraphEngine::monotonicFencingEpochAntiSplitBrain;
+        expose MarlinGraphEngine::detachedScopeWriteIsolation;
+        expose MarlinGraphEngine::rootedAbiAndPinnedIndexWorkbench;
+        render asTreeDiagram;
+    }
+
+    view graphEngineDispatchFlow : StandardViewDefinitions::ActionFlowView {
+        expose MarlinGraphEngine::ExecuteGraphDispatch;
     }
 }

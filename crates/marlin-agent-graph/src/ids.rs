@@ -92,6 +92,10 @@ impl AgentGraphValidationError {
     fn empty(type_name: &'static str) -> Self {
         Self { type_name }
     }
+
+    pub(crate) fn empty_named(type_name: &'static str) -> Self {
+        Self::empty(type_name)
+    }
 }
 
 impl fmt::Display for AgentGraphValidationError {
