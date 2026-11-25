@@ -27,7 +27,7 @@
   (ui-tui)
   (ui-mygo)
   (tooling)
-  (search)
+  (search-engine)
   (agent-hooks)
   (scheme-package-hooks)
   (policy)

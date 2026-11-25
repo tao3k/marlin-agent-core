@@ -24,6 +24,7 @@ members = [
     "crates/marlin-agent-test-support",
     "crates/marlin-agent-tui",
     "crates/marlin-agent-tooling",
+    "crates/marlin-agent-search-engine",
     "crates/marlin-agent-ui",
     "crates/marlin-deck-runtime",
     "crates/marlin-gerbil-ir",
@@ -96,6 +97,10 @@ marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir", version = "0.1.0" }
 marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme", version = "0.1.0" }
 marlin-agent-ui = { path = "crates/marlin-agent-ui", version = "0.1.0" }
 marlin-agent-tooling = { path = "crates/marlin-agent-tooling", version = "0.1.0" }
+marlin-agent-search-engine = { path = "crates/marlin-agent-search-engine", version = "0.1.0" }
+agent-semantic-search = { git = "https://github.com/tao3k/agent-semantic-protocols", rev = "b95fc121a00f669bfccadd346542bd6270ebc50d", version = "0.1.0" }
+agent-semantic-search-playbook = { git = "https://github.com/tao3k/agent-semantic-protocols", rev = "b95fc121a00f669bfccadd346542bd6270ebc50d", version = "0.1.0" }
+agent-semantic-topology = { git = "https://github.com/tao3k/agent-semantic-protocols", rev = "b95fc121a00f669bfccadd346542bd6270ebc50d", version = "0.1.0" }
 marlin-agent-gitops = { path = "crates/marlin-agent-gitops", version = "0.1.0" }
 marlin-agent-telemetry = { path = "crates/marlin-agent-telemetry", version = "0.1.0" }
 marlin-context-org-model = { path = "crates/marlin-agent-context/parts/org-model", version = "0.1.0" }

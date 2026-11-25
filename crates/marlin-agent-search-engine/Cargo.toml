@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+[package]
+license.workspace = true
+name = "marlin-agent-search-engine"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+agent-semantic-search.workspace = true
+agent-semantic-search-playbook.workspace = true
+agent-semantic-topology.workspace = true
+futures-executor.workspace = true
+gerbil-scheme.workspace = true
+marlin-agent-storage.workspace = true
+marlin-context-org-model.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+asp-rust.workspace = true
+
+[[test]]
+name = "unit_test"
+path = "tests/unit_test.rs"

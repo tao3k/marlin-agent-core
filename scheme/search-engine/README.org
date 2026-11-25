@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin Search Engine Module
+#+language: en
+
+This module replaces legacy pseudo S-expression text parsing with real Gerbil
+Scheme POO declarations and functional composition for Marlin's ASP-backed
+search engine.
+
+- =types.ss=: POO contracts for projected search vectors and scope exports.
+- =objects.ss=: POO prototypes (=RgLeaf.=, =TantivyLeaf.=, =TopologyLeaf.=,
+  =SyntaxLeaf.=, =NativeSyntaxLeaf.=, =GraphLeaf.=, =ChainPlan.=,
+  =IntersectPlan.=, =SearchPlan.=) and =DefaultSearchPlanValue=.
+- =funcs.ss=: pure constructors and =project-search-plan= producing bounded
+  rooted Scheme vectors decoded directly by =crates/marlin-agent-search-engine=.
+- =config.ss= / =interface.ss=: Yuanxu module registration mounted in =init.ss=.

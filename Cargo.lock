@@ -54,6 +54,218 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent-semantic-artifacts"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "agent-semantic-config",
+ "agent-semantic-content-identity",
+ "agent-semantic-provider-protocol",
+ "asp-rust-project-harness-policy",
+ "blake3",
+ "fs2",
+ "libc",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "agent-semantic-client-protocol"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "agent-semantic-artifacts",
+ "agent-semantic-content-identity",
+ "asp-rust-project-harness-policy",
+ "blake3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "agent-semantic-config"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "asp-rust-project-harness-policy",
+ "serde",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "agent-semantic-content-identity"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "asp-rust-project-harness-policy",
+ "base64 0.22.1",
+ "blake3",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "agent-semantic-mrr"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "ascent",
+ "asp-rust-project-harness-policy",
+ "blake3",
+ "gql-catalog",
+ "gql-compiler",
+ "gql-ir",
+ "meta-relational-reasoning 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "agent-semantic-provider-protocol"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "agent-semantic-config",
+ "agent-semantic-schema-manager",
+ "asp-rust-project-harness-policy",
+ "serde",
+ "serde_json",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "agent-semantic-schema-manager"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "agent-semantic-content-identity",
+ "agent-semantic-workspace-scheduler",
+ "asp-rust-project-harness-policy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "agent-semantic-search"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "agent-semantic-client-protocol",
+ "agent-semantic-config",
+ "agent-semantic-content-identity",
+ "agent-semantic-mrr",
+ "agent-semantic-search-playbook",
+ "agent-semantic-search-projection",
+ "agent-semantic-topology",
+ "agent-semantic-tree-sitter",
+ "asp-rust-project-harness-policy",
+ "blake3",
+ "bytes",
+ "globset",
+ "ignore",
+ "memchr",
+ "memmap2",
+ "regex",
+ "regex-syntax",
+ "rustc-hash 2.1.3",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tantivy",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "toml 0.9.12+spec-1.1.0",
+ "which 8.0.6",
+]
+
+[[package]]
+name = "agent-semantic-search-playbook"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "asp-rust-project-harness-policy",
+ "blake3",
+ "serde",
+ "tantivy-query-grammar",
+]
+
+[[package]]
+name = "agent-semantic-search-projection"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "agent-semantic-content-identity",
+ "agent-semantic-topology",
+ "asp-rust-project-harness-policy",
+ "blake3",
+ "rustc-hash 2.1.3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "agent-semantic-topology"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "agent-semantic-content-identity",
+ "agent-semantic-mrr",
+ "agent-semantic-workspace-scheduler",
+ "asp-rust 0.1.2 (git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d)",
+ "asp-rust-project-harness-policy",
+ "blake3",
+ "globset",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "agent-semantic-tree-sitter"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "agent-semantic-client-protocol",
+ "agent-semantic-provider-protocol",
+ "asp-rust-project-harness-policy",
+ "base64 0.23.1",
+ "blake3",
+ "regex-automata",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-tsquery",
+]
+
+[[package]]
+name = "agent-semantic-workspace-scheduler"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "asp-rust-project-harness-policy",
+ "libc",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "ahash"
+version = "0.8.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fca89247609239eeb6915e6991111866b92d7b31025e69302bbf430cc4d2c38"
+dependencies = [
+ "cfg-if",
+ "getrandom 0.4.3",
+ "once_cell",
+ "version_check",
+ "zerocopy",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -243,6 +455,50 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
+name = "ascent"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b69c5a0326edc45aea8469a51f84be0ff28ea1e3a4d087665468793be061682"
+dependencies = [
+ "ascent_base",
+ "ascent_macro",
+ "boxcar",
+ "cfg-if",
+ "dashmap 5.5.3",
+ "hashbrown 0.14.5",
+ "once_cell",
+ "pastey",
+ "rayon",
+ "rustc-hash 2.1.3",
+ "web-time",
+]
+
+[[package]]
+name = "ascent_base"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "792af0babe403e49368d8717763605fe978b3a1eb7d51b52e3d0a5cb97e6eb74"
+dependencies = [
+ "pastey",
+]
+
+[[package]]
+name = "ascent_macro"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ac2662b20bf37fd66d21687c0ef91f1c64320a7ca985a34d1c3e60cc9ba940a"
+dependencies = [
+ "ascent_base",
+ "derive-syn-parse",
+ "duplicate",
+ "itertools 0.15.0",
+ "petgraph",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "askama"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -292,9 +548,52 @@ dependencies = [
 [[package]]
 name = "asp-rust"
 version = "0.1.2"
+source = "git+https://github.com/tao3k/asp-rust?rev=b64f80401c8e2688d7aa7809de714d5f22890ebf#b64f80401c8e2688d7aa7809de714d5f22890ebf"
+dependencies = [
+ "asp-rust-build-support 0.1.0 (git+https://github.com/tao3k/asp-rust?rev=b64f80401c8e2688d7aa7809de714d5f22890ebf)",
+ "blake3",
+ "cargo-lock",
+ "cargo_toml",
+ "globset",
+ "libc",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "syn 3.0.10",
+ "toml 1.2.1+spec-1.1.0",
+]
+
+[[package]]
+name = "asp-rust"
+version = "0.1.2"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "asp-rust-build-support 0.1.0 (git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d)",
+ "blake3",
+ "cargo_toml",
+ "globset",
+ "libc",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "syn 3.0.10",
+ "toml 1.2.1+spec-1.1.0",
+]
+
+[[package]]
+name = "asp-rust"
+version = "0.1.2"
 source = "git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd#dd9bf7188bb9900cdfc6540fee2bfd28f43496fd"
 dependencies = [
- "asp-rust-build-support",
+ "asp-rust-build-support 0.1.0 (git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd)",
  "blake3",
  "cargo_toml",
  "globset",
@@ -313,9 +612,36 @@ dependencies = [
 [[package]]
 name = "asp-rust-build-support"
 version = "0.1.0"
+source = "git+https://github.com/tao3k/asp-rust?rev=b64f80401c8e2688d7aa7809de714d5f22890ebf#b64f80401c8e2688d7aa7809de714d5f22890ebf"
+dependencies = [
+ "blake3",
+]
+
+[[package]]
+name = "asp-rust-build-support"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "blake3",
+]
+
+[[package]]
+name = "asp-rust-build-support"
+version = "0.1.0"
 source = "git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd#dd9bf7188bb9900cdfc6540fee2bfd28f43496fd"
 dependencies = [
  "blake3",
+]
+
+[[package]]
+name = "asp-rust-project-harness-policy"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d#b95fc121a00f669bfccadd346542bd6270ebc50d"
+dependencies = [
+ "asp-rust-build-support 0.1.0 (git+https://github.com/tao3k/agent-semantic-protocols?rev=b95fc121a00f669bfccadd346542bd6270ebc50d)",
+ "blake3",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -512,7 +838,7 @@ dependencies = [
  "lazy_static",
  "lazycell",
  "log",
- "prettyplease",
+ "prettyplease 0.2.37",
  "proc-macro2",
  "quote",
  "regex",
@@ -546,6 +872,15 @@ name = "bitflags"
 version = "2.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
+
+[[package]]
+name = "bitpacking"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96a7139abd3d9cebf8cd6f920a389cf3dc9576172e32f4563f188cae3c3eb019"
+dependencies = [
+ "crunchy",
+]
 
 [[package]]
 name = "bitvec"
@@ -611,6 +946,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "bon"
+version = "3.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a05442cd7005532d0cfedec676b5b9333d2b4c7c3afabe2b1a9ce2742fbe2ee6"
+dependencies = [
+ "bon-macros",
+]
+
+[[package]]
+name = "bon-macros"
+version = "3.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93833e97ac7c46ba97045afcf247238c27057538fcf2f06344662ddd5f567be6"
+dependencies = [
+ "darling 0.24.1",
+ "ident_case",
+ "prettyplease 0.3.0",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
+
+[[package]]
 name = "borsh"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -633,6 +991,12 @@ dependencies = [
  "quote",
  "syn 3.0.10",
 ]
+
+[[package]]
+name = "boxcar"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38c99613cb3cd7429889a08dfcf651721ca971c86afa30798461f8eee994de47"
 
 [[package]]
 name = "branches"
@@ -771,6 +1135,12 @@ dependencies = [
  "libc",
  "shlex 2.0.1",
 ]
+
+[[package]]
+name = "census"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f4c707c6a209cbe82d10abd08e1ea8995e9ea937d2550646e02798948992be0"
 
 [[package]]
 name = "cexpr"
@@ -1034,6 +1404,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
 
 [[package]]
+name = "countme"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7704b5fdd17b18ae31c4c1da5a2e0305a2bf17b5249300a9ee9ed7b72114c636"
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1271,6 +1647,20 @@ dependencies = [
 
 [[package]]
 name = "dashmap"
+version = "5.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
+ "rayon",
+]
+
+[[package]]
+name = "dashmap"
 version = "6.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6361d5c062261c78a176addb82d4c821ae42bed6089de0e12603cd25de2059c"
@@ -1306,8 +1696,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
 dependencies = [
  "data-encoding",
- "syn 2.0.119",
+ "syn 3.0.10",
 ]
+
+[[package]]
+name = "datasketches"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c286de4e81ea2590afc24d754e0f83810c566f50a1388fa75ebd57928c0d9745"
 
 [[package]]
 name = "deadpool"
@@ -1342,6 +1738,20 @@ name = "deranged"
 version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e9de72ce2ad1f90dc62fa25f0f430ef85eb4b0d8fa0be4f30373bc40a21d28e"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
+name = "derive-syn-parse"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d65d7ce8132b7c0e54497a4d9a55a1c2a0912a0d786cf894472ba818fba45762"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "derive_builder"
@@ -1438,10 +1848,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "downcast-rs"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
+
+[[package]]
 name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
+
+[[package]]
+name = "duplicate"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e92f10a49176cbffacaedabfaa11d51db1ea0f80a83c26e1873b43cd1742c24"
 
 [[package]]
 name = "dyn-clone"
@@ -1512,6 +1934,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
 
 [[package]]
+name = "erased-serde"
+version = "0.4.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e59b668157f32d3459d4bd634861a06ffa2503a461ca5f0916b9f0252605e66"
+dependencies = [
+ "serde",
+ "serde_core",
+ "typeid",
+]
+
+[[package]]
 name = "errno"
 version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1547,6 +1980,12 @@ dependencies = [
  "libm",
  "siphasher",
 ]
+
+[[package]]
+name = "fastdivide"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9afc2bd4d5a73106dd53d10d73d3401c2f32730ba2c0b93ddb888a8983680471"
 
 [[package]]
 name = "fastrand"
@@ -1618,6 +2057,16 @@ checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
 dependencies = [
  "libc",
  "winapi",
+]
+
+[[package]]
+name = "fs4"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8640e34b88f7652208ce9e88b1a37a2ae95227d84abec377ccd3c5cfeb141ed4"
+dependencies = [
+ "rustix 1.1.6",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1899,6 +2348,88 @@ dependencies = [
 ]
 
 [[package]]
+name = "gql-ast"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "gql-source",
+ "gql-syntax",
+ "mrr-asp-rust-project-policy",
+]
+
+[[package]]
+name = "gql-catalog"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "gql-types",
+ "mrr-asp-rust-project-policy",
+]
+
+[[package]]
+name = "gql-compiler"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "gql-ast",
+ "gql-catalog",
+ "gql-sema",
+ "gql-source",
+ "gql-syntax",
+ "gql-types",
+ "mrr-asp-rust-project-policy",
+]
+
+[[package]]
+name = "gql-ir"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "gql-types",
+ "mrr-asp-rust-project-policy",
+]
+
+[[package]]
+name = "gql-sema"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "gql-ast",
+ "gql-catalog",
+ "gql-ir",
+ "gql-source",
+ "gql-types",
+ "mrr-asp-rust-project-policy",
+]
+
+[[package]]
+name = "gql-source"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "mrr-asp-rust-project-policy",
+]
+
+[[package]]
+name = "gql-syntax"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "gql-source",
+ "icu_properties",
+ "mrr-asp-rust-project-policy",
+ "rowan",
+]
+
+[[package]]
+name = "gql-types"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "mrr-asp-rust-project-policy",
+]
+
+[[package]]
 name = "h2"
 version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1933,6 +2464,11 @@ name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+dependencies = [
+ "ahash",
+ "allocator-api2 0.2.21",
+ "rayon",
+]
 
 [[package]]
 name = "hashbrown"
@@ -1991,6 +2527,12 @@ checksum = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d"
 dependencies = [
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "htmlescape"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9025058dae765dee5070ec375f591e2ba14638c63feff74f13805a72e523163"
 
 [[package]]
 name = "http"
@@ -2403,6 +2945,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "inventory"
+version = "0.3.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6928282826c822ad91bf1c9a1cb90a30ba1c26770749929b4656cd6be829cd7c"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "io-uring"
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2459,6 +3010,15 @@ name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
 dependencies = [
  "either",
 ]
@@ -2589,6 +3149,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
+name = "levenshtein_automata"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c2cdeb66e45e9f36bfad5bbdb4d2384e70936afbee843c6f6543f0c551ebb25"
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2696,6 +3262,15 @@ dependencies = [
 
 [[package]]
 name = "lru"
+version = "0.16.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f66e8d5d03f609abc3a39e6f08e4164ebf1447a732906d39eb9b99b7919ef39"
+dependencies = [
+ "hashbrown 0.16.1",
+]
+
+[[package]]
+name = "lru"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef9ac18847474e638e3702b76c65d4eb93428471a74778ef0f1be711717f89b5"
@@ -2708,6 +3283,12 @@ name = "lru-slab"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
+
+[[package]]
+name = "lz4_flex"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a027efd2ad3c4dbb4123b5c018e3efbe7f6236da7c7612f122dad030f5d2de5"
 
 [[package]]
 name = "marlin-agent-app-server"
@@ -2854,7 +3435,7 @@ dependencies = [
 name = "marlin-agent-kernel"
 version = "0.1.0"
 dependencies = [
- "asp-rust",
+ "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd)",
  "marlin-agent-hooks",
  "marlin-agent-protocol",
  "marlin-agent-runtime",
@@ -2868,7 +3449,7 @@ dependencies = [
 name = "marlin-agent-policy-routing-abi"
 version = "0.1.0"
 dependencies = [
- "asp-rust",
+ "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd)",
  "criterion",
  "marlin-agent-graph",
  "marlin-gerbil-aot-link",
@@ -2892,7 +3473,7 @@ name = "marlin-agent-runtime"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
- "asp-rust",
+ "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd)",
  "async-trait",
  "criterion",
  "globset",
@@ -2922,6 +3503,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "marlin-agent-search-engine"
+version = "0.1.0"
+dependencies = [
+ "agent-semantic-search",
+ "agent-semantic-search-playbook",
+ "agent-semantic-topology",
+ "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd)",
+ "futures-executor",
+ "gerbil-scheme",
+ "marlin-agent-storage",
+ "marlin-context-org-model",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "marlin-agent-sessions"
 version = "0.1.0"
 dependencies = [
@@ -2936,7 +3532,7 @@ dependencies = [
 name = "marlin-agent-storage"
 version = "0.1.0"
 dependencies = [
- "asp-rust",
+ "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd)",
  "marlin-agent-context",
  "marlin-agent-gitops",
  "marlin-agent-protocol",
@@ -2974,7 +3570,7 @@ dependencies = [
 name = "marlin-agent-telemetry"
 version = "0.1.0"
 dependencies = [
- "asp-rust",
+ "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd)",
  "http",
  "libc",
  "marlin-agent-protocol",
@@ -3012,7 +3608,7 @@ dependencies = [
 name = "marlin-agent-tooling"
 version = "0.1.0"
 dependencies = [
- "asp-rust",
+ "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd)",
  "gerbil-scheme",
  "marlin-agent-protocol",
  "marlin-agent-runtime",
@@ -3022,7 +3618,7 @@ dependencies = [
 name = "marlin-agent-tui"
 version = "0.1.0"
 dependencies = [
- "asp-rust",
+ "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd)",
  "async-stream",
  "criterion",
  "gerbil-scheme",
@@ -3062,7 +3658,7 @@ dependencies = [
 name = "marlin-agent-ui"
 version = "0.1.0"
 dependencies = [
- "asp-rust",
+ "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd)",
  "criterion",
  "gerbil-scheme",
  "marlin-agent-app-server",
@@ -3149,7 +3745,7 @@ dependencies = [
 name = "marlin-rust-project-harness-policy"
 version = "0.1.0"
 dependencies = [
- "asp-rust",
+ "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd)",
 ]
 
 [[package]]
@@ -3190,10 +3786,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
+name = "measure_time"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51c55d61e72fc3ab704396c5fa16f4c184db37978ae4e94ca8959693a235fc0e"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+
+[[package]]
+name = "memmap2"
+version = "0.9.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b0ca1155a9ecc25aa12e8313a119f32edf0255fea2f44839c4ac0a12b2ac157"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "memo-map"
@@ -3213,21 +3827,40 @@ dependencies = [
 [[package]]
 name = "meta-relational-reasoning"
 version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "mrr-ascent",
+ "mrr-asp-rust-project-policy",
+ "mrr-bundle 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-intent 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-lineage 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-logic 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-query 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-revision 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-transition 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "meta-relational-reasoning"
+version = "0.1.0"
 source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70#c202aa2753678c02dc7daafdec853f66f3368a70"
 dependencies = [
  "ciborium",
  "ed25519-dalek",
- "mrr-bundle",
+ "mrr-bundle 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
  "mrr-deduction",
- "mrr-identity",
- "mrr-intent",
- "mrr-lineage",
- "mrr-logic",
- "mrr-query",
- "mrr-relation",
- "mrr-revision",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-intent 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-lineage 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-logic 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-query 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-revision 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
  "mrr-search",
- "mrr-transition",
+ "mrr-transition 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
  "serde",
  "sha2 0.10.9",
 ]
@@ -3321,16 +3954,57 @@ dependencies = [
 ]
 
 [[package]]
+name = "mrr-ascent"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "ascent",
+ "mrr-asp-rust-project-policy",
+ "mrr-bundle 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-logic 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-query 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "mrr-asp-rust-project-policy"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=b64f80401c8e2688d7aa7809de714d5f22890ebf)",
+ "asp-rust-build-support 0.1.0 (git+https://github.com/tao3k/asp-rust?rev=b64f80401c8e2688d7aa7809de714d5f22890ebf)",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mrr-bundle"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "ciborium",
+ "mrr-asp-rust-project-policy",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-logic 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-query 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-transition 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "serde",
+]
+
+[[package]]
 name = "mrr-bundle"
 version = "0.1.0"
 source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70#c202aa2753678c02dc7daafdec853f66f3368a70"
 dependencies = [
  "ciborium",
- "mrr-identity",
- "mrr-logic",
- "mrr-query",
- "mrr-relation",
- "mrr-transition",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-logic 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-query 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-transition 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
  "serde",
  "sha2 0.10.9",
 ]
@@ -3362,7 +4036,7 @@ version = "0.1.0"
 source = "git+https://github.com/tao3k/mrr-data?rev=daa6487820f798f0583713de8d03110aeac5d1fd#daa6487820f798f0583713de8d03110aeac5d1fd"
 dependencies = [
  "cid",
- "meta-relational-reasoning",
+ "meta-relational-reasoning 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
  "mrr-data-profile",
  "multihash-codetable",
  "serde",
@@ -3381,11 +4055,21 @@ name = "mrr-deduction"
 version = "0.1.0"
 source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70#c202aa2753678c02dc7daafdec853f66f3368a70"
 dependencies = [
- "mrr-bundle",
- "mrr-identity",
- "mrr-logic",
- "mrr-query",
- "mrr-relation",
+ "mrr-bundle 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-logic 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-query 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "mrr-identity"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "mrr-asp-rust-project-policy",
+ "serde",
  "sha2 0.10.9",
 ]
 
@@ -3401,10 +4085,30 @@ dependencies = [
 [[package]]
 name = "mrr-intent"
 version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "mrr-asp-rust-project-policy",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "mrr-intent"
+version = "0.1.0"
 source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70#c202aa2753678c02dc7daafdec853f66f3368a70"
 dependencies = [
- "mrr-identity",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "mrr-lineage"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "mrr-asp-rust-project-policy",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
 ]
 
 [[package]]
@@ -3412,8 +4116,20 @@ name = "mrr-lineage"
 version = "0.1.0"
 source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70#c202aa2753678c02dc7daafdec853f66f3368a70"
 dependencies = [
- "mrr-identity",
- "mrr-relation",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+]
+
+[[package]]
+name = "mrr-logic"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "mrr-asp-rust-project-policy",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-query 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "serde",
 ]
 
 [[package]]
@@ -3421,9 +4137,21 @@ name = "mrr-logic"
 version = "0.1.0"
 source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70#c202aa2753678c02dc7daafdec853f66f3368a70"
 dependencies = [
- "mrr-identity",
- "mrr-query",
- "mrr-relation",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-query 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "serde",
+]
+
+[[package]]
+name = "mrr-query"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "ciborium",
+ "mrr-asp-rust-project-policy",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
  "serde",
 ]
 
@@ -3433,8 +4161,18 @@ version = "0.1.0"
 source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70#c202aa2753678c02dc7daafdec853f66f3368a70"
 dependencies = [
  "ciborium",
- "mrr-identity",
- "mrr-relation",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "serde",
+]
+
+[[package]]
+name = "mrr-relation"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "mrr-asp-rust-project-policy",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
  "serde",
 ]
 
@@ -3443,8 +4181,17 @@ name = "mrr-relation"
 version = "0.1.0"
 source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70#c202aa2753678c02dc7daafdec853f66f3368a70"
 dependencies = [
- "mrr-identity",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
  "serde",
+]
+
+[[package]]
+name = "mrr-revision"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "mrr-asp-rust-project-policy",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
 ]
 
 [[package]]
@@ -3452,7 +4199,7 @@ name = "mrr-revision"
 version = "0.1.0"
 source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70#c202aa2753678c02dc7daafdec853f66f3368a70"
 dependencies = [
- "mrr-identity",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
  "sha2 0.10.9",
 ]
 
@@ -3461,9 +4208,20 @@ name = "mrr-search"
 version = "0.1.0"
 source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70#c202aa2753678c02dc7daafdec853f66f3368a70"
 dependencies = [
- "mrr-identity",
- "mrr-lineage",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-lineage 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "mrr-transition"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be#305e967b06d98efe362b56dc26f43463e34657be"
+dependencies = [
+ "mrr-asp-rust-project-policy",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=305e967b06d98efe362b56dc26f43463e34657be)",
+ "serde",
 ]
 
 [[package]]
@@ -3471,8 +4229,8 @@ name = "mrr-transition"
 version = "0.1.0"
 source = "git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70#c202aa2753678c02dc7daafdec853f66f3368a70"
 dependencies = [
- "mrr-identity",
- "mrr-relation",
+ "mrr-identity 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
+ "mrr-relation 0.1.0 (git+https://github.com/tao3k/meta-relational-reasoning.git?rev=c202aa2753678c02dc7daafdec853f66f3368a70)",
  "serde",
 ]
 
@@ -3544,6 +4302,12 @@ name = "multimap"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
+
+[[package]]
+name = "murmurhash32"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2195bf6aa996a481483b29d62a7663eed3fe39600c460e323f8ff41e90bdd89b"
 
 [[package]]
 name = "nix"
@@ -3756,6 +4520,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "oneshot"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "269bca4c2591a28585d6bf10d9ed0332b7d76900a1b02bec41bdc3a2cdcda107"
+
+[[package]]
 name = "oorandom"
 version = "11.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3850,10 +4620,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
+name = "ordered-float"
+version = "5.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f59006ce1e204c30956638535b74d317bca99477b9356dfaec54c37f6f600ab"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "osc8"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b2d2086a3a477709f0208181e65857a9c062064ab2b3bb9abaf64f17d148bf3"
+
+[[package]]
+name = "ownedbytes"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2fbd56f7631767e61784dc43f8580f403f4475bd4aaa4da003e6295e1bab4a7e"
+dependencies = [
+ "stable_deref_trait",
+]
 
 [[package]]
 name = "owo-colors"
@@ -3969,6 +4757,7 @@ dependencies = [
  "fixedbitset",
  "hashbrown 0.15.5",
  "indexmap",
+ "serde",
 ]
 
 [[package]]
@@ -4131,6 +4920,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prettyplease"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bfe0f4c752e450fc2faf62654f1c134747922825d5b04ca717b8874f41a40c0"
+dependencies = [
+ "proc-macro2",
+ "syn 3.0.10",
+]
+
+[[package]]
 name = "proc-macro-crate"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4203,7 +5002,7 @@ dependencies = [
  "log",
  "multimap",
  "petgraph",
- "prettyplease",
+ "prettyplease 0.2.37",
  "prost",
  "prost-types",
  "pulldown-cmark",
@@ -4481,7 +5280,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "itertools 0.14.0",
  "kasuari",
- "lru",
+ "lru 0.18.5",
  "palette",
  "serde",
  "strum 0.28.0",
@@ -4741,6 +5540,28 @@ checksum = "18bd8a37d17a58532776dcdf6041ce64929adca78e8489d5cacbafe99229d3e1"
 dependencies = [
  "bytemuck",
  "byteorder",
+]
+
+[[package]]
+name = "rowan"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "417a3a9f582e349834051b8a10c8d71ca88da4211e4093528e36b9845f6b5f21"
+dependencies = [
+ "countme",
+ "hashbrown 0.14.5",
+ "rustc-hash 1.1.0",
+ "text-size",
+]
+
+[[package]]
+name = "rust-stemmers"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e46a2036019fdb888131db7a4c847a1063a7493f971ed94ea82c67eada63ca54"
+dependencies = [
+ "serde",
+ "serde_derive",
 ]
 
 [[package]]
@@ -5076,6 +5897,8 @@ version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
 dependencies = [
+ "foldhash 0.2.0",
+ "indexmap",
  "itoa",
  "memchr",
  "serde",
@@ -5287,6 +6110,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
+name = "sketches-ddsketch"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e53e2f8d4e9c692f23a90208fad6a64862f413e286d533f1f649f160e2d5caee"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5335,6 +6167,12 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "string-width"
@@ -5506,6 +6344,154 @@ dependencies = [
 ]
 
 [[package]]
+name = "tantivy"
+version = "0.26.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "861facfabd71044968f364837f9a083b56464ba5a59079f88706ee5c451ca069"
+dependencies = [
+ "aho-corasick",
+ "arc-swap",
+ "base64 0.22.1",
+ "bitpacking",
+ "bon",
+ "byteorder",
+ "census",
+ "crc32fast",
+ "crossbeam-channel",
+ "datasketches",
+ "downcast-rs",
+ "fastdivide",
+ "fnv",
+ "fs4",
+ "htmlescape",
+ "itertools 0.14.0",
+ "levenshtein_automata",
+ "log",
+ "lru 0.16.4",
+ "lz4_flex",
+ "measure_time",
+ "memmap2",
+ "once_cell",
+ "oneshot",
+ "rayon",
+ "regex",
+ "rust-stemmers",
+ "rustc-hash 2.1.3",
+ "serde",
+ "serde_json",
+ "sketches-ddsketch",
+ "smallvec",
+ "tantivy-bitpacker",
+ "tantivy-columnar",
+ "tantivy-common",
+ "tantivy-fst",
+ "tantivy-query-grammar",
+ "tantivy-stacker",
+ "tantivy-tokenizer-api",
+ "tempfile",
+ "thiserror 2.0.21",
+ "time",
+ "typetag",
+ "uuid",
+ "winapi",
+]
+
+[[package]]
+name = "tantivy-bitpacker"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fed3d674429bcd2de5d0a6d1aa5495fed8afd9c5ecce993019caf7615f53fa4"
+dependencies = [
+ "bitpacking",
+]
+
+[[package]]
+name = "tantivy-columnar"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c57166f5bcfd478f370ab8445afb4678dce44801fa5ce5c451aaf8595583c5dc"
+dependencies = [
+ "downcast-rs",
+ "fastdivide",
+ "itertools 0.14.0",
+ "serde",
+ "tantivy-bitpacker",
+ "tantivy-common",
+ "tantivy-sstable",
+ "tantivy-stacker",
+]
+
+[[package]]
+name = "tantivy-common"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbf10915aa75da3c3b0d58b58853d2e889efbaf32d4982a4c3715dde6bba23e5"
+dependencies = [
+ "async-trait",
+ "byteorder",
+ "ownedbytes",
+ "serde",
+ "time",
+]
+
+[[package]]
+name = "tantivy-fst"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d60769b80ad7953d8a7b2c70cdfe722bbcdcac6bccc8ac934c40c034d866fc18"
+dependencies = [
+ "byteorder",
+ "regex-syntax",
+ "utf8-ranges",
+]
+
+[[package]]
+name = "tantivy-query-grammar"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfadb8526b6da90704feb293b0701a6aae62ea14983143344be2dc5ce30f1d82"
+dependencies = [
+ "fnv",
+ "nom",
+ "ordered-float",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "tantivy-sstable"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a2cfc3ac5164cbadc28965ffb145a8f47582a60ae5897859ad8d4316596c606"
+dependencies = [
+ "futures-util",
+ "itertools 0.14.0",
+ "tantivy-bitpacker",
+ "tantivy-common",
+ "tantivy-fst",
+ "zstd",
+]
+
+[[package]]
+name = "tantivy-stacker"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cbb051742da9d53ca9e8fff43a9b10e319338b24e2c0e15d0372df19ffeb951"
+dependencies = [
+ "murmurhash32",
+ "tantivy-common",
+]
+
+[[package]]
+name = "tantivy-tokenizer-api"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eac258c2c6390673f2685813afeeafcb8c4e0ee7de8dd3fc46838dcc37263f98"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5543,6 +6529,12 @@ dependencies = [
  "libc",
  "numtoa",
 ]
+
+[[package]]
+name = "text-size"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f18aa187839b2bdb1ad2fa35ead8c4c2976b64e4363c386d45ac0f7ee85c9233"
 
 [[package]]
 name = "thiserror"
@@ -5699,6 +6691,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -5844,7 +6837,7 @@ version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c68f61875ac5293cf72e6c8cf0158086428c82c37229e98c840878f1706b0322"
 dependencies = [
- "prettyplease",
+ "prettyplease 0.2.37",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -5867,7 +6860,7 @@ version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "654e5643eff75d7f8c99197ce1440ed19a3474eada74c12bbac488b2cafdae27"
 dependencies = [
- "prettyplease",
+ "prettyplease 0.2.37",
  "proc-macro2",
  "prost-build",
  "prost-types",
@@ -6025,6 +7018,36 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
+]
+
+[[package]]
+name = "tree-sitter"
+version = "0.26.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17ebdd3a5a7e28a1890b876fdbd0c3c0fe0a6336cffaa104f11b9f720c9daa29"
+dependencies = [
+ "cc",
+ "regex",
+ "regex-syntax",
+ "serde_json",
+ "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-language"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0af592be68c579aa78a16846bd19422978c3c52e438523d45ff5d1bff1f9d4a"
+
+[[package]]
+name = "tree-sitter-tsquery"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1b31e95ea85379972abf3b6857a59b2f6fb7ef3b5e47e9a4fb6c07111dee5e6"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
 ]
 
 [[package]]
@@ -6243,10 +7266,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "typeid"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c"
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
+
+[[package]]
+name = "typetag"
+version = "0.2.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c90e86058a30d42a1a928dfb4b49bb33c98c3a2b4909492e6b0881cd94798ec2"
+dependencies = [
+ "erased-serde",
+ "inventory",
+ "once_cell",
+ "serde",
+ "typetag-impl",
+]
+
+[[package]]
+name = "typetag-impl"
+version = "0.2.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f153acc4e99a5f2a5aefa09fb078be54e26271b2813f6041200b224c098d8328"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
 
 [[package]]
 name = "unarray"
@@ -6361,6 +7414,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "utf8-ranges"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fcfc827f90e53a02eaef5e535ee14266c1d569214c6aa70133a624d8a3164ba"
+
+[[package]]
 name = "utf8_iter"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6389,6 +7448,7 @@ checksum = "bed99139f7dac9b5cfe5f17be4d66dc7079a34dee1d74bcc77217119240e267c"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
+ "serde_core",
  "sha1_smol",
  "wasm-bindgen",
 ]
@@ -6768,6 +7828,15 @@ dependencies = [
 
 [[package]]
 name = "windows-sys"
+version = "0.59.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
+dependencies = [
+ "windows-targets",
+]
+
+[[package]]
+name = "windows-sys"
 version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
@@ -6906,7 +7975,7 @@ dependencies = [
  "chrono",
  "color-print",
  "crossbeam-channel",
- "dashmap",
+ "dashmap 6.2.1",
  "dirs",
  "dunce",
  "etcetera",
@@ -7115,3 +8184,31 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[package]]
+name = "zstd"
+version = "0.13.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b04655dc7bf4abd8ebe23dac6bef20fceea52a29ad19e37a4101b3951d7e8b45"
+dependencies = [
+ "zstd-safe",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "7.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df2575690b2a3eccad509fe7898cdde32a5afca06a06449ff4dcfb318c7b7281"
+dependencies = [
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.2.0+zstd.1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3f4089cda6dda4dc43c43dd9f8964140064fd2f752f3da46c3a483c3c175160"
+dependencies = [
+ "cc",
+ "pkg-config",
+]
