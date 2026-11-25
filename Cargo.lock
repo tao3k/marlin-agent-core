@@ -3511,10 +3511,12 @@ dependencies = [
  "agent-semantic-search-playbook",
  "agent-semantic-topology",
  "asp-rust 0.1.2 (git+https://github.com/tao3k/asp-rust?rev=dd9bf7188bb9900cdfc6540fee2bfd28f43496fd)",
+ "criterion",
  "futures-executor",
  "gerbil-scheme",
  "marlin-agent-storage",
  "marlin-context-org-model",
+ "proptest",
  "thiserror 2.0.21",
 ]
 

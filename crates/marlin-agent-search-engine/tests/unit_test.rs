@@ -6,3 +6,5 @@
 mod bridge;
 #[path = "unit/policy.rs"]
 mod policy;
+#[path = "unit/state_machine.rs"]
+mod state_machine;

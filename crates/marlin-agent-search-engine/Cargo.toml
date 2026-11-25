@@ -22,7 +22,14 @@ thiserror.workspace = true
 
 [dev-dependencies]
 asp-rust.workspace = true
+criterion.workspace = true
+proptest.workspace = true
 
 [[test]]
 name = "unit_test"
 path = "tests/unit_test.rs"
+
+[[bench]]
+name = "search_engine_bridge"
+path = "benches/search_engine_bridge.rs"
+harness = false

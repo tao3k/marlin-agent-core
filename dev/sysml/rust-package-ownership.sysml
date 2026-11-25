@@ -26,6 +26,13 @@ package MarlinRustPackageOwnership {
         part stream { doc /* marlin-agent-stream: adapt provider gateway responses to typed model streams. */ }
         part context { doc /* marlin-agent-context: Context admission and scope, Org loading and document, query, view and status projection. */ }
         part contextOrg { doc /* marlin-context-org-model: Org identity and workspace data model. */ }
+        part searchEngine {
+            doc /* marlin-agent-search-engine: native Rust bridge connecting
+                   Marlin's Gerbil `scheme/search-engine` module, unified
+                   `AgentStorage`, and `marlin-context-org-model` directly to
+                   ASP's in-process search crates with zero gRPC, zero orgize
+                   FFI, and zero duplicate Turso runtime. */
+        }
         part gitOps {
             doc /* marlin-agent-gitops: bounded Git repository discovery, status
                    and diff, and typed GitWorktree and Worktrunk plans,
@@ -73,6 +80,10 @@ package MarlinRustPackageOwnership {
     dependency uiProjectsNativeFacts from packages::ui to scheme;
     dependency routingSubmitsNativeInputs from packages::policyRoutingAbi to scheme;
     dependency deckSubmitsNativeRequests from packages::deck to scheme;
+    dependency searchEngineProjectsScheme from packages::searchEngine to scheme;
+    dependency searchEngineUsesStorage from packages::searchEngine to packages::storage;
+    dependency searchEngineUsesOrgModel from packages::searchEngine to packages::contextOrg;
+    dependency searchEngineUsesGerbilScheme from packages::searchEngine to packages::gerbilScheme;
 
     requirement <'MAR-PKG-R01'> observationAndAuthority {
         doc /* Local samples cross the protocol port without involving an OTLP

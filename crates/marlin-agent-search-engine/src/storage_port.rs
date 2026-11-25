@@ -81,8 +81,7 @@ impl<S: AgentStorage> MarlinAgentStorageSearchPort<S> {
         let record = TopologyEdgeRecord {
             project_id: ProjectId::new(edge.project_id.as_str())
                 .map_err(|error| map_storage_error(error, None))?,
-            edge_id: TopologyEdgeId::new(edge.edge_id.as_str())
-                .map_err(|error| map_storage_error(error, None))?,
+            edge_id: scoped_topology_edge_id(&edge.generation_digest, &edge.edge_id)?,
             from_node_id: TopologyNodeId::new(edge.from_node.as_str())
                 .map_err(|error| map_storage_error(error, None))?,
             to_node_id: TopologyNodeId::new(edge.to_node.as_str())
@@ -164,6 +163,31 @@ fn scoped_pointer_key(
         pointer_key.as_str()
     ))
     .map_err(|error| map_storage_error(error, Some(pointer_key)))
+}
+
+fn scoped_topology_edge_id(
+    generation_digest: &SearchGenerationDigest,
+    edge_id: &SearchTopologyEdgeId,
+) -> Result<TopologyEdgeId, SearchStoragePortError> {
+    TopologyEdgeId::new(format!(
+        "{}{}{}",
+        generation_digest.as_str(),
+        POINTER_KEY_SEPARATOR,
+        edge_id.as_str()
+    ))
+    .map_err(|error| map_storage_error(error, None))
+}
+
+fn decode_scoped_topology_edge_id(
+    generation_digest: &SearchGenerationDigest,
+    stored_edge_id: &TopologyEdgeId,
+) -> Result<SearchTopologyEdgeId, SearchStoragePortError> {
+    let prefix = format!("{}{}", generation_digest.as_str(), POINTER_KEY_SEPARATOR);
+    let raw = stored_edge_id
+        .as_str()
+        .strip_prefix(&prefix)
+        .unwrap_or(stored_edge_id.as_str());
+    SearchTopologyEdgeId::new(raw)
 }
 
 fn encode_pointer_event_id(
@@ -368,7 +392,7 @@ impl<S: AgentStorage> SearchEngineStoragePort for MarlinAgentStorageSearchPort<S
                     edges.push(SearchTopologyEdgeRecord {
                         project_id: project_id.clone(),
                         generation_digest: generation_digest.clone(),
-                        edge_id: SearchTopologyEdgeId::new(item.edge_id.as_str())?,
+                        edge_id: decode_scoped_topology_edge_id(generation_digest, &item.edge_id)?,
                         from_node: item.from_node_id.as_str().to_owned(),
                         to_node: item.to_node_id.as_str().to_owned(),
                         relation: item.edge_kind,

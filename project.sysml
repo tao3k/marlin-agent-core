@@ -36,6 +36,7 @@ package MarlinAgentCORE {
     dependency contextOrgLifecycle from project to MarlinContextOrgLifecycle::OrgTurnLifecycle;
     dependency gitOpsContextDesign from project to MarlinGitOpsContext::target;
     dependency sharedOrgSessionDesign from project to MarlinOrgBabelSession::target;
+    dependency searchEngineDesign from project to MarlinSearchEngine::target;
     dependency tuiTurnLifecycle from project to MarlinTuiLifecycle::TurnLifecycle;
 
     view projectStructure {
@@ -137,5 +138,22 @@ package MarlinAgentCORE {
         expose MarlinOrgBabelSession::taskAsTabAutoArchiveProjection;
         expose MarlinOrgBabelSession::funflowCasDagAndGovernanceScopeIsolation;
         render asTreeDiagram;
+    }
+
+    view searchEngineArchitecture {
+        expose MarlinSearchEngine::actual;
+        expose MarlinSearchEngine::target;
+        expose MarlinSearchEngine::nativeRustIntegration;
+        expose MarlinSearchEngine::rootedSchemeAbiOnly;
+        expose MarlinSearchEngine::singleOwnerPorts;
+        expose MarlinSearchEngine::atomicCasAndEdgeIsolation;
+        expose MarlinSearchEngine::zeroSubmodulePackaging;
+        expose MarlinSearchEngine::formalAndStatefulVerification;
+        expose MarlinSearchEngine::highPerformanceQualification;
+        render asTreeDiagram;
+    }
+
+    view searchEngineQueryFlow : StandardViewDefinitions::ActionFlowView {
+        expose MarlinSearchEngine::ExecuteConvergedSearch;
     }
 }

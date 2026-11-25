@@ -72,6 +72,7 @@ files remain local outputs regardless of their extension.
 | [[file:context-org-lifecycle.sysml][context-org-lifecycle.sysml]] | Target Org turn persistence, current-use admission and uncertainty | [[file:../../docs/40-rfcs/40.181-context-org-ownership.org][Context-owned Org architecture]] |
 | [[file:gitops-context.sysml][gitops-context.sysml]] | Git identity, source locator ownership, retention, Context restore and Org link qualification | [[file:../../docs/40-rfcs/40.182-gitops-context-discovery.org][Lab audit and GitOps Context design review]] |
 | [[file:org-babel-session.sysml][org-babel-session.sysml]] | MAR-ORG-R01/R14 Shared Org-as-Context, Org Elements to GQL, ASCENT progressive disclosure & dynamic facets, two-stage repair, POO-constrained macro governance & CLOS dispatch, Three-State FunFlow CAS DAG, Scoped Detour 4-exit re-anchoring, Zero-SubAgent concurrent `:ID:` ownership (Extend-Never-Overwrite), Governance isolation, Durable orchestrator, and Task-as-Tab Auto-Archive | [[file:../../docs/40-rfcs/40.183-org-elements-gql-shared-context.org][RFC 40.183 Shared Org-as-Context]] and [[file:../../scheme/context-system/org-contract/templates/README.org][Marlin Org Seed Catalog]] |
+| [[file:search-engine.sysml][search-engine.sysml]] | MAR-SRCH-R01/R07 Native Rust ASP search-engine convergence, Gerbil `RootedSchemeObject` ABI, single-owner Storage/Org ports, atomic CAS generation lifecycle, Quint formal verification, and Criterion benchmark qualification | [[file:../../scheme/search-engine/README.org][Search Engine Scheme module]] and [[file:../quint/search-engine.qnt][Search Engine Quint model]] |
 
 #+NAME: plugin-requirement-trace
 | Requirement | Planned owner | Org responsibility |
@@ -93,6 +94,7 @@ files remain local outputs regardless of their extension.
 | MAR-UI-R25 | Scheme layout policy and generic Ratatui input mapping | [[file:../verification/README.org::#minibuffer-echo][Shared echo qualification]] |
 | MAR-GCTX-R01–R09 | GitOps, resource owner, discovery index, Lab Context, MRR/Data and TUI | [[file:../../docs/40-rfcs/40.182-gitops-context-discovery.org::*Qualification plan][GitOps Context qualification plan]] |
 | MAR-ORG-R01–R10 | Lab OrgElements/GQL/ASCENT, FunFlow CAS DAG, Governance & Durable engine, Marlin declarative Scheme Interface plane, Plan-A Index/Artifacts, and Task-as-Tab Org/Markdown workbench | [[file:../../docs/40-rfcs/40.183-org-elements-gql-shared-context.org::#qualification-plan][RFC 40.183 qualification plan]] |
+| MAR-SRCH-R01–R07 | `scheme/search-engine`, `marlin-agent-search-engine`, native ASP search crates, unified Storage/Org ports, Quint models, stateful tests, and Criterion benchmarks | [[file:../../scheme/search-engine/README.org][Search Engine README]] and [[file:../quint/search-engine.qnt][Search Engine Quint model]] |
 
 The actual package references the Rust run registry, policy IR, Scheme C ABI
 bridge, and graph admission at the inspected Marlin revision

@@ -22,7 +22,7 @@ rust-dev-gate:
   cargo test --locked -p marlin-rust-project-harness-policy --test workspace_policy
 
 # Authored Quint models and reproducible trace checks.
-property-model-gate: app-server-model-gate gitops-context-model-gate
+property-model-gate: app-server-model-gate gitops-context-model-gate search-engine-model-gate
   quint typecheck dev/quint/host-observer.qnt
   quint run dev/quint/host-observer.qnt --seed=42 --max-samples=100 --max-steps=8 --invariant=safe --verbosity=1
   @output=$(quint run dev/quint/host-observer.qnt --step=badStep --invariant=safe --seed=42 --max-samples=100 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in host exit negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
@@ -108,8 +108,24 @@ gitops-context-symbolic-gate apalache="apalache-mc":
     rg "Checker reports no error up to computation length 16" "$module-apalache.log"
   done
 
+# MAR-SRCH: converged native search engine CAS publication, Scheme ABI admission, and edge custody.
+search-engine-model-gate:
+  quint typecheck dev/quint/search-engine.qnt
+  quint test dev/quint/search-engine.qnt --main=searchGenerationPublication
+  quint test dev/quint/search-engine.qnt --main=searchPlanAbiAdmission
+  quint test dev/quint/search-engine.qnt --main=searchTopologyEdgeCustody
+  quint run dev/quint/search-engine.qnt --main=searchGenerationPublication --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/search-engine.qnt --main=searchPlanAbiAdmission --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/search-engine.qnt --main=searchTopologyEdgeCustody --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  @for control in searchGenerationPublication:publishWithoutBlobMutation searchGenerationPublication:bypassCasMutation searchGenerationPublication:nonMonotonicRevisionMutation searchPlanAbiAdmission:bypassAdmissionMutation searchPlanAbiAdmission:staleGenerationMutation searchTopologyEdgeCustody:crossGenerationLeakMutation searchTopologyEdgeCustody:duplicateCountMutation; do result=0; output=$(quint run dev/quint/search-engine.qnt --main="${control%:*}" --step="${control#*:}" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
+
+# Multi-scale Criterion benchmarks for Marlin converged search engine bridge.
+search-engine-bench:
+  cargo bench --locked -p marlin-agent-search-engine --bench search_engine_bridge
+
 # One project gate: architecture, model, native Scheme PBT and Rust properties.
 property-gate: sysml-check property-model-gate scheme-property-gate
+  cargo test --locked -p marlin-agent-search-engine
   cargo test --locked -p marlin-agent-telemetry
   cargo test --locked -p marlin-agent-runtime --test unit_test process::quota
   cargo test --locked -p marlin-agent-runtime --test unit_test process::containment
