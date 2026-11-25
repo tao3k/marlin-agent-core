@@ -269,13 +269,18 @@ fn rooted_scheme_plans_and_compiled_module_project_into_asp() {
                 report.hits
             );
 
-            // 5. Scheme-owned `HelmIndexPolicy.` drives resident trigram index (`skip-dirs`, limits).
+            // 5. Scheme-owned `HelmIndexPolicy.` drives converged 4-axis resident index
+            //    (Trigram+SIMD `rg` + `rg-regex` + ASP `FileLocatorIndex` + RAM Tantivy BM25/Fuzzy).
             let index_cfg =
                 project_helm_index_config(&runtime, scheme_dir.to_str().expect("utf-8 scheme dir"))
                     .expect("project Scheme HelmIndexPolicy.");
             assert!(index_cfg.skip_dirs.iter().any(|dir| dir == "target"));
             assert!(index_cfg.skip_dirs.iter().any(|dir| dir == ".gerbil"));
             assert_eq!(index_cfg.max_file_bytes, 2 * 1024 * 1024);
+            assert_eq!(index_cfg.fuzzy_distance, 1);
+            assert!(index_cfg.enable_tantivy);
+            assert!(index_cfg.enable_file_locator);
+            assert!(index_cfg.enable_rg_regex);
 
             let resident = WorkspaceSearchIndex::build_with_config(workspace_root, index_cfg);
             let fast_report = resident.query(&WorkspaceSearchQuery {
@@ -287,15 +292,13 @@ fn rooted_scheme_plans_and_compiled_module_project_into_asp() {
                 max_hits: 32,
                 context_radius: 4,
             });
+            assert!(fast_report.hits.iter().any(|hit| hit.path
+                == "crates/marlin-agent-search-engine/src/engine.rs"
+                && hit.matched_axes.iter().any(|a| a == "rg")
+                && hit.matched_axes.iter().any(|a| a == "bm25")));
             assert!(
-                fast_report
-                    .hits
-                    .iter()
-                    .any(|hit| hit.path == "crates/marlin-agent-search-engine/src/engine.rs")
-            );
-            assert!(
-                fast_report.elapsed_micros < 5_000,
-                "resident trigram query should be near/sub-ms even in debug build, got {}µs",
+                fast_report.elapsed_micros < 15_000,
+                "converged 4-axis query should stay ultra-fast even in debug build, got {}µs",
                 fast_report.elapsed_micros
             );
         }

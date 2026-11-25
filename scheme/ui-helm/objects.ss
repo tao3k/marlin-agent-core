@@ -21,7 +21,11 @@
   max-line-matches: 6
   max-line-preview-chars: 220
   max-hits: 64
-  context-radius: 5)
+  context-radius: 5
+  fuzzy-distance: 1
+  enable-tantivy?: #t
+  enable-file-locator?: #t
+  enable-rg-regex?: #t)
 
 (.def HelmWindowPolicy.
   window-style: 'bottom-split

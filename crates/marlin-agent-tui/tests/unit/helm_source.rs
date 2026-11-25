@@ -24,6 +24,10 @@ fn scheme_like_config() -> WorkspaceIndexConfig {
         max_file_bytes: 2 * 1024 * 1024,
         max_line_matches_per_hit: 6,
         max_line_preview_chars: 220,
+        fuzzy_distance: 1,
+        enable_tantivy: true,
+        enable_file_locator: true,
+        enable_rg_regex: true,
     }
 }
 
@@ -221,4 +225,108 @@ fn emacs_bottom_split_helm_window_renders_source_headers_preview_modeline_and_mi
         .join("\n");
     assert!(act_text.contains("Helm Actions"));
     assert!(act_text.contains("HELM-ACT"));
+}
+
+#[test]
+fn converged_helm_supports_rg_regex_asp_fuzzy_path_tantivy_bm25_and_typo_fuzzy() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("workspace root")
+        .to_path_buf();
+    let cfg = scheme_like_config();
+    let warm_index = Arc::new(WorkspaceSearchIndex::build_with_config(
+        &workspace_root,
+        cfg.clone(),
+    ));
+
+    // 1. Built-in resident `rg` regex search (`re:...`)
+    let rg_overlay = HelmOverlay::open(
+        Some("@lang:rust re:pub\\s+fn\\s+marlin_search_engine"),
+        workspace_root.clone(),
+        &[],
+        cfg.clone(),
+        Some(warm_index.clone()),
+        rt.handle(),
+    );
+    eprintln!("rg-regex query elapsed: {}", rg_overlay.format_latency());
+    assert!(
+        rg_overlay.search_candidates.iter().any(|c| c
+            .display
+            .contains("crates/marlin-agent-search-engine/src/engine.rs")
+            && c.badge.contains("rg-regex")),
+        "expected rg-regex hit on engine.rs, got {:?}",
+        rg_overlay.search_candidates
+    );
+
+    // 2. ASP FileLocator + Emacs/fzf subsequence fuzzy path (`helm_render`)
+    let path_overlay = HelmOverlay::open(
+        Some("hlmrndr"),
+        workspace_root.clone(),
+        &[],
+        cfg.clone(),
+        Some(warm_index.clone()),
+        rt.handle(),
+    );
+    eprintln!(
+        "fuzzy-path query elapsed: {}",
+        path_overlay.format_latency()
+    );
+    assert!(
+        path_overlay
+            .search_candidates
+            .iter()
+            .any(|c| c.display.contains("helm_render.rs")),
+        "expected fuzzy subsequence hit on helm_render.rs, got {:?}",
+        path_overlay.search_candidates
+    );
+
+    // 3. In-RAM Tantivy BM25 multi-term query (`rooted scheme search playbook`)
+    let bm25_overlay = HelmOverlay::open(
+        Some("@lang:rust rooted scheme search playbook"),
+        workspace_root.clone(),
+        &[],
+        cfg.clone(),
+        Some(warm_index.clone()),
+        rt.handle(),
+    );
+    eprintln!(
+        "tantivy-bm25 query elapsed: {}",
+        bm25_overlay.format_latency()
+    );
+    assert!(
+        bm25_overlay.search_candidates.iter().any(|c| c
+            .display
+            .contains("crates/marlin-agent-search-engine/src/projection.rs")
+            && c.badge.contains("bm25")),
+        "expected Tantivy BM25 hit on projection.rs, got {:?}",
+        bm25_overlay.search_candidates
+    );
+
+    // 4. In-RAM Tantivy `FuzzyTermQuery` typo-tolerant search (`playbok` -> `playbook`)
+    let typo_overlay = HelmOverlay::open(
+        Some("@lang:rust @prefix:crates/marlin-agent-search-engine/ playbok"),
+        workspace_root,
+        &[],
+        cfg,
+        Some(warm_index),
+        rt.handle(),
+    );
+    eprintln!(
+        "tantivy-fuzzy typo query elapsed: {}",
+        typo_overlay.format_latency()
+    );
+    assert!(
+        !typo_overlay.search_candidates.is_empty()
+            && typo_overlay
+                .search_candidates
+                .iter()
+                .any(|c| c.badge.contains("fuzzy")),
+        "expected Tantivy FuzzyTermQuery hit for typo `playbok`, got {:?}",
+        typo_overlay.search_candidates
+    );
 }

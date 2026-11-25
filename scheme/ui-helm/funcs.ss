@@ -525,13 +525,18 @@
         action-elements))))
 
 ;;; Project Scheme-owned resident search index policy into a rooted native vector:
-;;; #(skip-dirs-vector max-file-bytes max-line-matches max-line-preview-chars)
+;;; #(skip-dirs-vector max-file-bytes max-line-matches max-line-preview-chars
+;;;   fuzzy-distance enable-tantivy? enable-file-locator? enable-rg-regex?)
 (def (helm-project-index-config (policy HelmIndexPolicy.))
   (vector
     (list->vector (.get policy skip-dirs))
     (.get policy max-file-bytes)
     (.get policy max-line-matches)
-    (.get policy max-line-preview-chars)))
+    (.get policy max-line-preview-chars)
+    (.get policy fuzzy-distance)
+    (.get policy enable-tantivy?)
+    (.get policy enable-file-locator?)
+    (.get policy enable-rg-regex?)))
 
 ;;; Project Scheme-owned Emacs Helm window layout policy into a rooted native vector:
 ;;; #(window-style height-percent preview-width-percent preview-min-width

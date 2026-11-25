@@ -17,7 +17,6 @@
 //!    wired via [`MarlinAgentStorageSearchPort`] implementing [`SearchEngineStoragePort`].
 
 mod engine;
-mod index;
 mod org_port;
 mod projection;
 mod storage_port;
@@ -28,7 +27,8 @@ pub use agent_semantic_search::{
     SearchArtifactBlob, SearchArtifactHash, SearchEngineStoragePort, SearchGenerationDigest,
     SearchGenerationPointerRecord, SearchGenerationPointerSwapRequest, SearchPointerKey,
     SearchProjectId, SearchStoragePortError, SearchTopologyEdgeId, SearchTopologyEdgeRecord,
-    SearchWorkspaceId, execute_admitted_playbook,
+    SearchWorkspaceId, WorkspaceContextLine, WorkspaceIndexConfig, WorkspaceSearchHit,
+    WorkspaceSearchIndex, WorkspaceSearchQuery, WorkspaceSearchReport, execute_admitted_playbook,
 };
 pub use agent_semantic_search_playbook::{
     GraphNativeBlock, ProducerNativeBlock, ProgressiveSearchPlaybookError,
@@ -40,10 +40,6 @@ pub use agent_semantic_topology::{
     OrgOverlayDocumentProjection, OrgProjectionPortError, OrgPropertyEntry, OrgSectionProjection,
 };
 pub use engine::marlin_search_engine;
-pub use index::{
-    WorkspaceContextLine, WorkspaceIndexConfig, WorkspaceSearchHit, WorkspaceSearchIndex,
-    WorkspaceSearchQuery, WorkspaceSearchReport,
-};
 pub use org_port::{
     MarlinContextOrgPort, parse_live_org_nodes, project_org_nodes_to_document,
     project_org_nodes_to_overlay,

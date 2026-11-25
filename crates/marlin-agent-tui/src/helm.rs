@@ -792,16 +792,39 @@ impl HelmOverlay {
 }
 
 fn admit_helm_playbook(parsed: &HelmParsedInput) -> Result<(), String> {
-    let pattern = if parsed.async_pattern.is_empty() {
+    let raw = if parsed.async_pattern.is_empty() {
         "marlin"
     } else {
         parsed.async_pattern.as_str()
     };
+    let rg_pattern = raw
+        .strip_prefix("re:")
+        .or_else(|| raw.strip_prefix("rg:"))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(raw);
+    let tantivy_expr = if raw.contains("title:") || raw.contains("body:") {
+        raw.to_owned()
+    } else {
+        let safe_phrase: String = rg_pattern
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | ' ' | '.'))
+            .collect();
+        let trimmed = safe_phrase.trim();
+        let term = if trimmed.is_empty() {
+            "marlin"
+        } else {
+            trimmed
+        };
+        format!("title:\"{term}\"^2 OR body:\"{term}\"")
+    };
     let mut leaves = vec![
-        SearchPlaybookComposition::Leaf(SearchPlaybookLeaf::Rg(vec!["-n".into(), pattern.into()])),
-        SearchPlaybookComposition::Leaf(SearchPlaybookLeaf::Tantivy(vec![format!(
-            "title:\"{pattern}\"^2 OR body:{pattern}"
-        )])),
+        SearchPlaybookComposition::Leaf(SearchPlaybookLeaf::Rg(vec![
+            "-n".into(),
+            "-e".into(),
+            rg_pattern.into(),
+        ])),
+        SearchPlaybookComposition::Leaf(SearchPlaybookLeaf::Tantivy(vec![tantivy_expr])),
     ];
     if parsed.path_prefix.is_some() || parsed.extension.is_some() {
         leaves.push(SearchPlaybookComposition::Leaf(
@@ -899,7 +922,20 @@ fn hit_to_candidate(hit: WorkspaceSearchHit) -> HelmCandidate {
         _ => hit.path.clone(),
     };
     let citation = Some(format!("@{display}"));
-    let badge = hit.language.clone().unwrap_or_else(|| "file".to_owned());
+    let lang = hit.language.as_deref().unwrap_or("file");
+    let axes_tag: String = hit
+        .matched_axes
+        .iter()
+        .filter(|a| *a != "topology" && *a != "index")
+        .take(2)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("+");
+    let badge = if axes_tag.is_empty() {
+        lang.to_owned()
+    } else {
+        format!("{lang}·{axes_tag}")
+    };
     HelmCandidate {
         id: format!("search:{display}"),
         source: HelmSourceKind::Search,

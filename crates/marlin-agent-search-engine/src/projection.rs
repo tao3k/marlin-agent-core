@@ -384,13 +384,23 @@ fn decode_u64(value: RootedSchemeObject<'_>) -> Result<u64, SearchPlanProjection
     }
 }
 
+fn decode_bool(value: RootedSchemeObject<'_>) -> Result<bool, SearchPlanProjectionError> {
+    match native(value.as_ref().scalar())? {
+        SchemeScalar::Boolean(flag) => Ok(flag),
+        _ => Err(SearchPlanProjectionError::Invalid(
+            "expected boolean scalar",
+        )),
+    }
+}
+
 /// Decode Scheme-owned `HelmIndexPolicy.` rooted vector into [`crate::WorkspaceIndexConfig`]:
-/// `#(skip-dirs-vector max-file-bytes max-line-matches max-line-preview-chars)`.
+/// `#(skip-dirs-vector max-file-bytes max-line-matches max-line-preview-chars
+///   fuzzy-distance enable-tantivy? enable-file-locator? enable-rg-regex?)`.
 pub fn decode_workspace_index_config(
     value: RootedSchemeObject<'_>,
 ) -> Result<crate::WorkspaceIndexConfig, SearchPlanProjectionError> {
     let tuple = native(value.into_collection(CollectionKind::Vector))?;
-    if tuple.len() != 4 {
+    if tuple.len() != 8 {
         return Err(SearchPlanProjectionError::Invalid(
             "workspace index config arity",
         ));
@@ -401,11 +411,19 @@ pub fn decode_workspace_index_config(
         usize::try_from(decode_u64(native(tuple.element(2))?)?).unwrap_or(6);
     let max_line_preview_chars =
         usize::try_from(decode_u64(native(tuple.element(3))?)?).unwrap_or(220);
+    let fuzzy_distance = u8::try_from(decode_u64(native(tuple.element(4))?)?.min(2)).unwrap_or(1);
+    let enable_tantivy = decode_bool(native(tuple.element(5))?)?;
+    let enable_file_locator = decode_bool(native(tuple.element(6))?)?;
+    let enable_rg_regex = decode_bool(native(tuple.element(7))?)?;
     Ok(crate::WorkspaceIndexConfig {
         skip_dirs,
         max_file_bytes: max_file_bytes.max(1024),
         max_line_matches_per_hit: max_line_matches_per_hit.max(1),
         max_line_preview_chars: max_line_preview_chars.max(32),
+        fuzzy_distance,
+        enable_tantivy,
+        enable_file_locator,
+        enable_rg_regex,
     })
 }
 
