@@ -9,13 +9,15 @@ use std::collections::BTreeSet;
 use std::fmt::{self, Display};
 
 use gerbil_scheme::{
-    CollectionKind, IdentifierBuffer, IdentifierKind, ObjectKind, RootedSchemeObject, SchemeScalar,
+    CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
+    RootedSchemeObject, SchemeScalar,
 };
 use marlin_agent_graph::{
-    AdmittedMarlinDispatch, DispatchRequestId, FencingEpoch, GraphConvergenceNodeId,
-    GraphDispatchOperation, GraphDispatchRejection, GraphSubstrateTarget, MarlinDispatchEnvelope,
-    ReceiptReconciliationDecision, ReceiptReconciliationReason, TaskActorId, TaskActorScopeMode,
-    TaskActorStatus, WorkbenchTabEntry, WorkbenchTabKind, WorkbenchTabProjection,
+    AdmittedMarlinDispatch, DispatchRequestId, ExecutionReceiptStatus, FencingEpoch,
+    GraphConvergenceNodeId, GraphDispatchOperation, GraphDispatchRejection, GraphSubstrateTarget,
+    MarlinDispatchEnvelope, MarlinExecutionReceipt, ReceiptReconciliationDecision,
+    ReceiptReconciliationReason, TaskActorCursor, TaskActorId, TaskActorScopeMode, TaskActorStatus,
+    WorkbenchActiveTaskInput, WorkbenchTabEntry, WorkbenchTabKind, WorkbenchTabProjection,
     admit_marlin_dispatch,
 };
 
@@ -444,6 +446,332 @@ pub fn decode_graph_engine_workbench_tabs_vector(
     })
 }
 
+/// Linked native C-ABI function pointers exported by `scheme/c-abi/graph-engine.ss`.
+#[derive(Clone, Copy, Debug)]
+pub struct GraphEngineLinkedExports {
+    /// Exported symbol `marlin_graph_engine_dispatch_vector`.
+    pub dispatch_vector: unsafe extern "C" fn(i64) -> i64,
+    /// Exported symbol `marlin_graph_engine_reconcile_receipt_vector`.
+    pub reconcile_receipt_vector: unsafe extern "C" fn(i64) -> i64,
+    /// Exported symbol `marlin_graph_engine_workbench_tabs_vector`.
+    pub workbench_tabs_vector: unsafe extern "C" fn(i64) -> i64,
+}
+
+/// Active-task row encoded into `marlin_graph_engine_workbench_tabs_vector`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GraphEngineWorkbenchTaskRow {
+    /// Active task metadata.
+    pub task: WorkbenchActiveTaskInput,
+    /// Scope isolation mode for the active task.
+    pub scope_mode: TaskActorScopeMode,
+}
+
+fn operation_symbol(operation: GraphDispatchOperation) -> &'static str {
+    match operation {
+        GraphDispatchOperation::ExecuteFrontier => "execute-frontier",
+        GraphDispatchOperation::ApplySteering => "apply-steering",
+        GraphDispatchOperation::ConvergeApex => "converge-apex",
+        GraphDispatchOperation::CommitSettlement => "commit-settlement",
+    }
+}
+
+fn scope_mode_symbol(scope_mode: TaskActorScopeMode) -> &'static str {
+    match scope_mode {
+        TaskActorScopeMode::Project => "project",
+        TaskActorScopeMode::Detached => "detached",
+    }
+}
+
+fn substrate_symbol(substrate: GraphSubstrateTarget) -> &'static str {
+    match substrate {
+        GraphSubstrateTarget::PureMemory => "pure-memory",
+        GraphSubstrateTarget::SqliteTurso => "sqlite-turso",
+    }
+}
+
+fn actor_status_symbol(status: TaskActorStatus) -> &'static str {
+    match status {
+        TaskActorStatus::OpenFocus => "open-focus",
+        TaskActorStatus::Running => "running",
+        TaskActorStatus::WaitingSteering => "waiting-steering",
+        TaskActorStatus::Settled => "settled",
+        TaskActorStatus::Failed => "failed",
+        TaskActorStatus::Aborted => "aborted",
+    }
+}
+
+fn receipt_status_symbol(status: ExecutionReceiptStatus) -> &'static str {
+    match status {
+        ExecutionReceiptStatus::Ok => "ok",
+        ExecutionReceiptStatus::Settled => "settled",
+        ExecutionReceiptStatus::Failed => "failed",
+        ExecutionReceiptStatus::Rejected => "rejected",
+    }
+}
+
+fn encode_u64<'vm>(
+    runtime: &'vm GerbilRuntime,
+    value: u64,
+) -> Result<RootedSchemeObject<'vm>, GraphEngineProjectionError> {
+    let fixnum = isize::try_from(value)
+        .map_err(|_| GraphEngineProjectionError::Invalid("u64 overflows fixnum"))?;
+    native(runtime.scalar_object(SchemeScalar::Fixnum(fixnum)))
+}
+
+fn encode_optional_str<'vm>(
+    runtime: &'vm GerbilRuntime,
+    value: Option<&str>,
+) -> Result<RootedSchemeObject<'vm>, GraphEngineProjectionError> {
+    match value {
+        Some(text) => Ok(native(runtime.string_from_utf8(text))?.into_object()),
+        None => native(runtime.scalar_object(SchemeScalar::Boolean(false))),
+    }
+}
+
+/// Encodes a `MarlinDispatchEnvelope` into the 7-slot rooted vector expected by
+/// `marlin_graph_engine_dispatch_vector`.
+pub fn encode_graph_engine_dispatch_request<'vm>(
+    runtime: &'vm GerbilRuntime,
+    envelope: &MarlinDispatchEnvelope,
+) -> Result<RootedSchemeObject<'vm>, GraphEngineProjectionError> {
+    let request_id = native(runtime.string_from_utf8(envelope.request_id.as_str()))?.into_object();
+    let task_id = native(runtime.string_from_utf8(envelope.task_id.as_str()))?.into_object();
+    let op = native(
+        runtime.intern_identifier(IdentifierKind::Symbol, operation_symbol(envelope.operation)),
+    )?;
+    let epoch = encode_u64(runtime, envelope.fencing_epoch.value())?;
+    let scope = native(
+        runtime.intern_identifier(
+            IdentifierKind::Symbol,
+            scope_mode_symbol(envelope.scope_mode),
+        ),
+    )?;
+    let join = encode_optional_str(
+        runtime,
+        envelope.join_node_id.as_ref().map(|id| id.as_str()),
+    )?;
+    let substrate = native(runtime.intern_identifier(
+        IdentifierKind::Symbol,
+        substrate_symbol(envelope.substrate_target),
+    ))?;
+    Ok(native(runtime.collection_from_objects(
+        CollectionKind::Vector,
+        &[
+            &request_id,
+            &task_id,
+            &op,
+            &epoch,
+            &scope,
+            &join,
+            &substrate,
+        ],
+    ))?
+    .into_object())
+}
+
+/// Encodes a `(TaskActorCursor, MarlinExecutionReceipt)` pair into the 8-slot rooted vector
+/// expected by `marlin_graph_engine_reconcile_receipt_vector`.
+pub fn encode_graph_engine_reconcile_request<'vm>(
+    runtime: &'vm GerbilRuntime,
+    cursor: &TaskActorCursor,
+    receipt: &MarlinExecutionReceipt,
+) -> Result<RootedSchemeObject<'vm>, GraphEngineProjectionError> {
+    let actor_task_id = native(runtime.string_from_utf8(cursor.task_id.as_str()))?.into_object();
+    let actor_epoch = encode_u64(runtime, cursor.fencing_epoch.value())?;
+    let actor_status = native(
+        runtime.intern_identifier(IdentifierKind::Symbol, actor_status_symbol(cursor.status)),
+    )?;
+    let pending_steering = encode_u64(runtime, u64::from(cursor.pending_steering_branches))?;
+    let receipt_req_id =
+        native(runtime.string_from_utf8(receipt.request_id.as_str()))?.into_object();
+    let receipt_task_id = native(runtime.string_from_utf8(receipt.task_id.as_str()))?.into_object();
+    let receipt_epoch = encode_u64(runtime, receipt.fencing_epoch.value())?;
+    let receipt_status = native(
+        runtime.intern_identifier(IdentifierKind::Symbol, receipt_status_symbol(receipt.status)),
+    )?;
+    Ok(native(runtime.collection_from_objects(
+        CollectionKind::Vector,
+        &[
+            &actor_task_id,
+            &actor_epoch,
+            &actor_status,
+            &pending_steering,
+            &receipt_req_id,
+            &receipt_task_id,
+            &receipt_epoch,
+            &receipt_status,
+        ],
+    ))?
+    .into_object())
+}
+
+/// Encodes Workbench tab inputs into the 3-slot rooted vector expected by
+/// `marlin_graph_engine_workbench_tabs_vector`.
+pub fn encode_graph_engine_workbench_tabs_request<'vm>(
+    runtime: &'vm GerbilRuntime,
+    focused_task_id: Option<&TaskActorId>,
+    active_tasks: &[GraphEngineWorkbenchTaskRow],
+    peek_task_ids: &[TaskActorId],
+) -> Result<RootedSchemeObject<'vm>, GraphEngineProjectionError> {
+    let focused = encode_optional_str(runtime, focused_task_id.map(|id| id.as_str()))?;
+    let mut active_rows = Vec::with_capacity(active_tasks.len());
+    for row in active_tasks {
+        let tid = native(runtime.string_from_utf8(row.task.task_id.as_str()))?.into_object();
+        let title = native(runtime.string_from_utf8(&row.task.title))?.into_object();
+        let status = native(
+            runtime.intern_identifier(IdentifierKind::Symbol, actor_status_symbol(row.task.status)),
+        )?;
+        let scope = native(
+            runtime.intern_identifier(IdentifierKind::Symbol, scope_mode_symbol(row.scope_mode)),
+        )?;
+        let epoch = encode_u64(runtime, row.task.fencing_epoch.value())?;
+        let vec = native(runtime.collection_from_objects(
+            CollectionKind::Vector,
+            &[&tid, &title, &status, &scope, &epoch],
+        ))?
+        .into_object();
+        active_rows.push(vec);
+    }
+    let active_refs: Vec<&RootedSchemeObject<'vm>> = active_rows.iter().collect();
+    let active_vec =
+        native(runtime.collection_from_objects(CollectionKind::Vector, &active_refs))?
+            .into_object();
+
+    let mut peek_objs = Vec::with_capacity(peek_task_ids.len());
+    for peek_id in peek_task_ids {
+        peek_objs.push(native(runtime.string_from_utf8(peek_id.as_str()))?.into_object());
+    }
+    let peek_refs: Vec<&RootedSchemeObject<'vm>> = peek_objs.iter().collect();
+    let peek_vec =
+        native(runtime.collection_from_objects(CollectionKind::Vector, &peek_refs))?.into_object();
+
+    Ok(native(runtime.collection_from_objects(
+        CollectionKind::Vector,
+        &[&focused, &active_vec, &peek_vec],
+    ))?
+    .into_object())
+}
+
+/// Invokes the linked `marlin_graph_engine_dispatch_vector` C-ABI symbol and decodes the result.
+///
+/// # Safety
+/// `export` must belong to `runtime`'s initialized linked programme and return a fresh strong root.
+pub unsafe fn invoke_linked_graph_engine_dispatch(
+    runtime: &GerbilRuntime,
+    export: unsafe extern "C" fn(i64) -> i64,
+    envelope: &MarlinDispatchEnvelope,
+) -> Result<GraphEngineDispatchProjection, GraphEngineProjectionError> {
+    let procedure = native(unsafe { runtime.bind_object_export(export) })?;
+    let input = encode_graph_engine_dispatch_request(runtime, envelope)?;
+    let output = native(procedure.call(&input).into_result())?;
+    decode_graph_engine_dispatch_vector(output)
+}
+
+/// Invokes the linked `marlin_graph_engine_reconcile_receipt_vector` C-ABI symbol and decodes the result.
+///
+/// # Safety
+/// `export` must belong to `runtime`'s initialized linked programme and return a fresh strong root.
+pub unsafe fn invoke_linked_graph_engine_reconcile(
+    runtime: &GerbilRuntime,
+    export: unsafe extern "C" fn(i64) -> i64,
+    cursor: &TaskActorCursor,
+    receipt: &MarlinExecutionReceipt,
+) -> Result<ReceiptReconciliationDecision, GraphEngineProjectionError> {
+    let procedure = native(unsafe { runtime.bind_object_export(export) })?;
+    let input = encode_graph_engine_reconcile_request(runtime, cursor, receipt)?;
+    let output = native(procedure.call(&input).into_result())?;
+    decode_graph_engine_reconcile_vector(output)
+}
+
+/// Invokes the linked `marlin_graph_engine_workbench_tabs_vector` C-ABI symbol and decodes the result.
+///
+/// # Safety
+/// `export` must belong to `runtime`'s initialized linked programme and return a fresh strong root.
+pub unsafe fn invoke_linked_graph_engine_workbench_tabs(
+    runtime: &GerbilRuntime,
+    export: unsafe extern "C" fn(i64) -> i64,
+    focused_task_id: Option<&TaskActorId>,
+    active_tasks: &[GraphEngineWorkbenchTaskRow],
+    peek_task_ids: &[TaskActorId],
+) -> Result<WorkbenchTabProjection, GraphEngineProjectionError> {
+    let procedure = native(unsafe { runtime.bind_object_export(export) })?;
+    let input = encode_graph_engine_workbench_tabs_request(
+        runtime,
+        focused_task_id,
+        active_tasks,
+        peek_task_ids,
+    )?;
+    let output = native(procedure.call(&input).into_result())?;
+    decode_graph_engine_workbench_tabs_vector(output)
+}
+
+/// Borrowed bridge binding a live `GerbilRuntime` with `scheme/c-abi/graph-engine.ss` exports.
+pub struct GraphEngineLinkedBridge<'vm> {
+    runtime: &'vm GerbilRuntime,
+    exports: GraphEngineLinkedExports,
+}
+
+impl<'vm> GraphEngineLinkedBridge<'vm> {
+    /// Creates a bridge over a live `GerbilRuntime` and its linked `GraphEngine` C-ABI symbols.
+    ///
+    /// # Safety
+    /// All symbols in `exports` must belong to `runtime`'s initialized linked programme.
+    pub unsafe fn new(runtime: &'vm GerbilRuntime, exports: GraphEngineLinkedExports) -> Self {
+        Self { runtime, exports }
+    }
+
+    /// Projects and gates a `MarlinDispatchEnvelope` across the rooted Scheme C-ABI.
+    pub fn project_dispatch(
+        &self,
+        envelope: &MarlinDispatchEnvelope,
+    ) -> Result<GraphEngineDispatchProjection, GraphEngineProjectionError> {
+        // SAFETY: `self.exports` were validated against `self.runtime` at construction.
+        unsafe {
+            invoke_linked_graph_engine_dispatch(
+                self.runtime,
+                self.exports.dispatch_vector,
+                envelope,
+            )
+        }
+    }
+
+    /// Reconciles an execution receipt against a `TaskActorCursor` across the rooted Scheme C-ABI.
+    pub fn reconcile_receipt(
+        &self,
+        cursor: &TaskActorCursor,
+        receipt: &MarlinExecutionReceipt,
+    ) -> Result<ReceiptReconciliationDecision, GraphEngineProjectionError> {
+        // SAFETY: `self.exports` were validated against `self.runtime` at construction.
+        unsafe {
+            invoke_linked_graph_engine_reconcile(
+                self.runtime,
+                self.exports.reconcile_receipt_vector,
+                cursor,
+                receipt,
+            )
+        }
+    }
+
+    /// Projects pinned-Index Workbench tabs across the rooted Scheme C-ABI.
+    pub fn project_workbench_tabs(
+        &self,
+        focused_task_id: Option<&TaskActorId>,
+        active_tasks: &[GraphEngineWorkbenchTaskRow],
+        peek_task_ids: &[TaskActorId],
+    ) -> Result<WorkbenchTabProjection, GraphEngineProjectionError> {
+        // SAFETY: `self.exports` were validated against `self.runtime` at construction.
+        unsafe {
+            invoke_linked_graph_engine_workbench_tabs(
+                self.runtime,
+                self.exports.workbench_tabs_vector,
+                focused_task_id,
+                active_tasks,
+                peek_task_ids,
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -468,6 +796,53 @@ mod tests {
         assert_eq!(
             plan.exported_symbols[2].as_str(),
             MARLIN_GRAPH_ENGINE_WORKBENCH_TABS_SYMBOL
+        );
+    }
+
+    #[test]
+    fn symbol_tables_round_trip_between_rust_and_scheme_names() {
+        for op in [
+            GraphDispatchOperation::ExecuteFrontier,
+            GraphDispatchOperation::ApplySteering,
+            GraphDispatchOperation::ConvergeApex,
+            GraphDispatchOperation::CommitSettlement,
+        ] {
+            assert_eq!(parse_operation(operation_symbol(op)).unwrap(), op);
+        }
+        for scope in [TaskActorScopeMode::Project, TaskActorScopeMode::Detached] {
+            assert_eq!(parse_scope_mode(scope_mode_symbol(scope)).unwrap(), scope);
+        }
+        for substrate in [
+            GraphSubstrateTarget::PureMemory,
+            GraphSubstrateTarget::SqliteTurso,
+        ] {
+            assert_eq!(parse_substrate(substrate_symbol(substrate)).unwrap(), substrate);
+        }
+        for status in [
+            TaskActorStatus::OpenFocus,
+            TaskActorStatus::Running,
+            TaskActorStatus::WaitingSteering,
+            TaskActorStatus::Settled,
+            TaskActorStatus::Failed,
+            TaskActorStatus::Aborted,
+        ] {
+            assert_eq!(
+                parse_actor_status(actor_status_symbol(status)).unwrap(),
+                status
+            );
+        }
+        assert_eq!(receipt_status_symbol(ExecutionReceiptStatus::Ok), "ok");
+        assert_eq!(
+            receipt_status_symbol(ExecutionReceiptStatus::Settled),
+            "settled"
+        );
+        assert_eq!(
+            receipt_status_symbol(ExecutionReceiptStatus::Failed),
+            "failed"
+        );
+        assert_eq!(
+            receipt_status_symbol(ExecutionReceiptStatus::Rejected),
+            "rejected"
         );
     }
 }

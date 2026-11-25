@@ -17,6 +17,7 @@ mod model_tooling;
 mod process_executor;
 mod project_envrc;
 mod resilience;
+mod task_actor;
 mod tokio_runtime;
 
 pub use agent_graph::{
@@ -64,6 +65,17 @@ pub use project_envrc::{EnvrcIntent, EnvrcPlan, EnvrcStatus, ProjectEnvrc, Proje
 pub use resilience::{
     RuntimeEdgeLayer, RuntimeEdgePolicy, RuntimeEdgePolicyError, RuntimeEdgePolicyReceipt,
     RuntimeEdgeService,
+};
+pub use task_actor::{
+    TaskActorRuntimeError, TaskActorRuntimeRecord, TaskActorRuntimeRegistry,
+    TaskActorRuntimeSnapshot,
+};
+pub use marlin_agent_graph::{
+    AdmittedMarlinDispatch, DispatchRequestId, ExecutionReceiptStatus, FencingEpoch,
+    GraphConvergenceNodeId, GraphDispatchOperation, GraphDispatchRejection, GraphSubstrateTarget,
+    MarlinDispatchEnvelope, MarlinExecutionReceipt, ReceiptReconciliationDecision,
+    ReceiptReconciliationReason, TaskActorCursor, TaskActorId, TaskActorScopeMode, TaskActorStatus,
+    WorkbenchActiveTaskInput, WorkbenchTabEntry, WorkbenchTabKind, WorkbenchTabProjection,
 };
 pub use tokio_runtime::MAX_RUNTIME_EVENT_HEAP_BYTES;
 pub use tokio_runtime::RuntimeProcessBudget;

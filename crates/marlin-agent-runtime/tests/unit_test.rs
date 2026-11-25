@@ -36,6 +36,8 @@ mod runtime_resilience;
 mod runtime_session;
 #[path = "unit/runtime/spawn_config.rs"]
 mod runtime_spawn_config;
+#[path = "unit/runtime/task_actor_runtime.rs"]
+mod runtime_task_actor_runtime;
 #[path = "unit/runtime/task_tracker.rs"]
 mod runtime_task_tracker;
 #[path = "unit/runtime/working_copy.rs"]
