@@ -77,6 +77,7 @@
         (status (symbol->string (opt-ref tab-obj 'status 'todo)))
         (mode (symbol->string (opt-ref tab-obj 'mode 'active)))
         (detour (opt-ref tab-obj 'detour-mode 'mainline))
+        (phase (opt-ref tab-obj 'driver-phase #f))
         (wt (opt-ref tab-obj 'worktree "main"))
         (done-c (opt-ref tab-obj 'checklist-done 0))
         (total-c (opt-ref tab-obj 'checklist-total 0)))
@@ -84,6 +85,9 @@
                    (if (eq? detour 'mainline)
                      ""
                      (string-append "/" (symbol->string detour)))
+                   (if phase
+                     (string-append " · " (symbol->string phase))
+                     "")
                    "]  " label
                    "  (" (number->string done-c) "/" (number->string total-c) ")  wt:" wt)))
 
@@ -138,9 +142,15 @@
               (let ((hid (opt-ref h 'hypothesis-id "H?"))
                     (claim (opt-ref h 'claim ""))
                     (contras (opt-ref h 'contradictions '()))
-                    (opens (opt-ref h 'open-questions '())))
+                    (opens (opt-ref h 'open-questions '()))
+                    (obs-b (opt-ref h 'observed-branches #f))
+                    (tot-b (opt-ref h 'total-branches #f)))
                 (cons 'normal
                       (string-append "  • [" hid "] " claim
+                                     (if (and obs-b tot-b)
+                                       (string-append " [observed:" (number->string obs-b)
+                                                      "/" (number->string tot-b) "]")
+                                       "")
                                      " (contradictions:" (number->string (length contras))
                                      ", open:" (number->string (length opens)) ")"))))
             (take hyps (min 4 (length hyps)))))
@@ -153,6 +163,8 @@
          (status (opt-ref tab-obj 'status 'todo))
          (detour (opt-ref tab-obj 'detour-mode 'mainline))
          (detour-node (opt-ref tab-obj 'detour-node-id #f))
+         (phase (opt-ref tab-obj 'driver-phase #f))
+         (pending-effs (opt-ref tab-obj 'pending-effects-count 0))
          (wt (opt-ref tab-obj 'worktree "main"))
          (done-c (opt-ref tab-obj 'checklist-done 0))
          (total-c (opt-ref tab-obj 'checklist-total 0))
@@ -162,6 +174,10 @@
            (list (cons 'accent (string-append "Task: " (symbol->string id) " · " label))
                  (cons 'info (string-append "Status: " (symbol->string status)
                                             " · Mode: " (symbol->string mode)
+                                            (if phase
+                                              (string-append " · Phase: " (symbol->string phase)
+                                                             " (effects:" (number->string pending-effs) ")")
+                                              "")
                                             " · Worktree: " wt))
                  (detour-badge-line detour detour-node)
                  (cons 'normal (string-append "Checklist: [" (number->string done-c)

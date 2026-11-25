@@ -20,7 +20,22 @@
         (only-in :marlin-agent-core/ui/session
                  marlin-ui-session-open
                  marlin-ui-session-project
-                 marlin-ui-session-dispatch))
+                 marlin-ui-session-dispatch)
+        (only-in :tao3k/agentic-ai-lab/modules/graph-engine/interface
+                 make-capability-envelope
+                 make-obligation
+                 make-deterministic-task-node
+                 make-obligation-graph
+                 make-context-trunk
+                 graph-make-task-actor
+                 make-competing-hypothesis
+                 make-hypothesis-branch-proposal
+                 make-cas-hit-receipt
+                 make-llm-completed-receipt
+                 make-effect-error-receipt
+                 make-unified-driver-state
+                 run-unified-driver-to-quiescence
+                 project-driver-state->workbench-projection))
 
 (export task-workbench-tabs-test)
 
@@ -218,4 +233,66 @@
         (check-equal? (and (member '#(normal #(SPC o d x) task-detour-exit-abort) keys) #t) #t)
         ;; Live UiNativeSession admits and dispatches Detour scheme-actions end-to-end
         (check-equal? (vector-ref (vector-ref step-blk 1) 0) 'select-buffer)
-        (check-equal? (vector-ref (vector-ref step-sib 1) 0) 'select-buffer)))))
+        (check-equal? (vector-ref (vector-ref step-sib 1) 0) 'select-buffer)))
+
+    (test-case "Full Scheme-to-Scheme closure: Lab ASCENT + FunFlow CAS + Competing Hypotheses -> Marlin Declarative TUI (0 Rust edits)"
+      (let* ((env (make-capability-envelope
+                   "owner"
+                   allowed-caps: '(context-read)
+                   denied-caps: '(host-egress)
+                   egress-allowed?: #f))
+             (ob (make-obligation "ob-e2e" title: "Verify Integrity" required-evidence-ids: '("ev-cas")))
+             (det (make-deterministic-task-node
+                   "det-cas-1" "ob-e2e" "ev-cas" 'funflow-check "digest"
+                   effect-class: 'pure-cas read-footprint: '("a.ss") write-footprint: '()))
+             (g0 (make-obligation-graph "g-e2e" cut: 1 obligations: (list ob) evidence: '() det-tasks: (list det)))
+             (trunk (make-context-trunk "trunk-e2e" "ob-e2e" g0 env
+                                        shared-context-cut: 1
+                                        kv-prefix-digest: "sha256:e2e-zone1"))
+             (actor (graph-make-task-actor "task-e2e-01" trunk '("scope-main") title: "E2E Closure"))
+             (ctx (.o bind-these: #f
+                      context-cut: 1
+                      kv-prefix-digest: "sha256:e2e-zone1"
+                      disclosure-depth: 'L3
+                      has-active-defeater?: #f
+                      sandbox-admitted?: #t
+                      cedar-handoff-valid?: #t))
+             (h1 (make-competing-hypothesis
+                  "H1" "Build cache poisoning"
+                  evidence-lineage: '("ev:hash")
+                  contradictions: '("repro-ok")
+                  open-questions: '("verify-signer?")))
+             (h2 (make-competing-hypothesis
+                  "H2" "Timestamp drift"
+                  evidence-lineage: '("ev:mtime")
+                  contradictions: '()
+                  open-questions: '("epoch-env?")))
+             (b1 (make-hypothesis-branch-proposal "B1" "Check signature"))
+             (b2 (make-hypothesis-branch-proposal "B2" "Inspect archive"))
+             (st0 (make-unified-driver-state
+                   actor g0 ctx
+                   competing-hypotheses: (list h1 h2)
+                   branch-proposals: (list b1 b2)))
+             (thin-pump
+              (lambda (effs)
+                (map (lambda (e)
+                       (let ((k (.ref e 'kind)) (id (.ref e 'effect-id)))
+                         (cond
+                          ((eq? k 'cas-get) (make-cas-hit-receipt id "cas-evidence-ok"))
+                          ((eq? k 'llm-complete) (make-llm-completed-receipt id (string-append "eval:" id)))
+                          (else (make-effect-error-receipt id "unexpected")))))
+                     effs)))
+             (run (run-unified-driver-to-quiescence st0 thin-pump))
+             (proj (project-driver-state->workbench-projection run))
+             (pkg-ui (make-marlin-task-workbench-package proj disclosure-level: 'L3))
+             (sess0 (marlin-ui-session-open
+                     (vector pkg-ui #("gemini-2.5-pro" "scheme-closure" #() #()) #())))
+             (step1 (marlin-ui-session-dispatch
+                     (vector sess0 'scheme-action '#(task-switch #f))))
+             (rendered (marlin-ui-session-project (vector-ref step1 0))))
+        (check-equal? (.ref run 'final-phase) 'quiescent-fixed-point)
+        (check-equal? (.ref run 'cas-hits-count) 1)
+        (check-equal? (.ref run 'total-llm-calls) 4)
+        (check-equal? (.ref proj 'visible-tab-ids) '(index "task-e2e-01"))
+        (check-equal? (vector? rendered) #t)
+        (check-equal? (vector-ref (vector-ref step1 1) 0) 'select-buffer)))))
