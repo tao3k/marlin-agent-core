@@ -98,9 +98,9 @@ marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme", version = "0.1.0"
 marlin-agent-ui = { path = "crates/marlin-agent-ui", version = "0.1.0" }
 marlin-agent-tooling = { path = "crates/marlin-agent-tooling", version = "0.1.0" }
 marlin-agent-search-engine = { path = "crates/marlin-agent-search-engine", version = "0.1.0" }
-agent-semantic-search = { git = "https://github.com/tao3k/agent-semantic-protocols", rev = "b95fc121a00f669bfccadd346542bd6270ebc50d", version = "0.1.0" }
-agent-semantic-search-playbook = { git = "https://github.com/tao3k/agent-semantic-protocols", rev = "b95fc121a00f669bfccadd346542bd6270ebc50d", version = "0.1.0" }
-agent-semantic-topology = { git = "https://github.com/tao3k/agent-semantic-protocols", rev = "b95fc121a00f669bfccadd346542bd6270ebc50d", version = "0.1.0" }
+agent-semantic-search = { git = "https://github.com/tao3k/agent-semantic-protocols", rev = "f612ef808e98d4eb667b0ac5ddbaf9b7157501b1", version = "0.1.0" }
+agent-semantic-search-playbook = { git = "https://github.com/tao3k/agent-semantic-protocols", rev = "f612ef808e98d4eb667b0ac5ddbaf9b7157501b1", version = "0.1.0" }
+agent-semantic-topology = { git = "https://github.com/tao3k/agent-semantic-protocols", rev = "f612ef808e98d4eb667b0ac5ddbaf9b7157501b1", version = "0.1.0" }
 marlin-agent-gitops = { path = "crates/marlin-agent-gitops", version = "0.1.0" }
 marlin-agent-telemetry = { path = "crates/marlin-agent-telemetry", version = "0.1.0" }
 marlin-context-org-model = { path = "crates/marlin-agent-context/parts/org-model", version = "0.1.0" }
