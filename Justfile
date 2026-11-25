@@ -105,7 +105,7 @@ gitops-context-symbolic-gate apalache="apalache-mc":
   for module in gitopsContextAdmission gitopsContextRetention gitopsOrgLinkEvidence gitopsCrossRepoPublication gitopsWorkingCopyPolicy; do
     quint compile "$model_path" --main="$module" --invariant=safe --target=json > "$module.qnt.json"
     {{ quote(apalache) }} check --init=init --next=step --inv=safe --length=16 "$module.qnt.json" > "$module-apalache.log" 2>&1 || { tail -n 30 "$module-apalache.log"; exit 1; }
-    rg "Checker reports no error up to computation length 16" "$module-apalache.log"
+    grep -F "Checker reports no error up to computation length 16" "$module-apalache.log"
   done
 
 # MAR-SRCH: converged native search engine CAS publication, Scheme ABI admission, and edge custody.
@@ -176,20 +176,17 @@ scheme-property-gate:
   just scheme-test
   just scheme-test t/ui-native-test.ss
 
-# Gerbil owns discovery and assertions; retain its complete receipt because
-# the tool can return zero after a failing Harness.
+# Gerbil owns discovery and assertions; invoke :gerbil/tools/gxtest directly so
+# its structured return value (0 vs 42) governs the process exit status instead
+# of `gerbil test` discarding it and scraping stdout with rg/grep.
 scheme-test module="t/all-test.ss":
   #!/usr/bin/env bash
   set -euo pipefail
-  mkdir -p .cache/scheme-tests
-  log=$(mktemp "$PWD/.cache/scheme-tests/$(basename '{{module}}' .ss).XXXXXX")
+  watchdog=$(command -v timeout || command -v gtimeout)
   export GAMBOPT="${GAMBOPT:+$GAMBOPT,}max-heap=2G,debug=q"
+  export MARLIN_SCHEME_TEST_MODULE={{ quote(module) }}
   cd scheme
-  timeout --signal=TERM --kill-after=5s 600s gxpkg env gerbil -:max-heap=2G,debug=q test '{{module}}' 2>&1 | tee "$log"
-  rg -q -F -x 'MODULE-OK {{module}}' "$log"
-  rg -q '^HARNESS-OK ' "$log"
-  rg -q '^OK$' "$log"
-  ! rg -q 'ERROR CASE|ERROR CHECK|ERROR HARNESS|Heap overflow|Stack overflow' "$log"
+  "$watchdog" --foreground --signal=TERM --kill-after=5s 600s gxpkg env gxi -:max-heap=2G,debug=q -e '(import :gerbil/tools/gxtest) (let (rc (main (getenv "MARLIN_SCHEME_TEST_MODULE"))) (exit (if (eqv? rc 0) 0 (if (fixnum? rc) rc 1))))'
 
 # Install the dependency declared by the workspace Scheme package.
 scheme-deps:
