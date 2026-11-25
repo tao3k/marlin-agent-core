@@ -158,6 +158,32 @@
                            fleet)))
         (build-controller next-fleet disc model-label session-label '())))
 
+     ((eq? action-sym 'task-propose-branch)
+      (if (not target)
+        controller
+        (let* ((target-st (find (lambda (d) (equal? (.ref (.ref d 'actor) 'task-id) target))
+                                (.ref fleet 'active-drivers)))
+               (existing-count (if target-st (length (.ref target-st 'branch-proposals)) 0))
+               (raw-arg (if (and (string? arg) (> (string-length arg) 0))
+                          arg
+                          "Investigator branch inquiry"))
+               (colon-idx (let loop ((i 0))
+                            (cond
+                             ((>= i (string-length raw-arg)) #f)
+                             ((char=? (string-ref raw-arg i) #\:) i)
+                             (else (loop (+ i 1))))))
+               (bid (if (and colon-idx (> colon-idx 0))
+                      (substring raw-arg 0 colon-idx)
+                      (string-append "B" (number->string (+ existing-count 1)))))
+               (question (if (and colon-idx (< (+ colon-idx 1) (string-length raw-arg)))
+                           (substring raw-arg (+ colon-idx 1) (string-length raw-arg))
+                           raw-arg))
+               (proposal ((lab-fn 'make-hypothesis-branch-proposal)
+                          bid question proposer: 'investigator))
+               (next-fleet ((lab-fn 'fleet-propose-hypothesis-branch)
+                            fleet target proposal)))
+          (build-controller next-fleet disc model-label session-label '()))))
+
      ((memq action-sym '(task-detour-blocker task-detour-sidequest))
       (let* ((mode (if (eq? action-sym 'task-detour-blocker) 'blocker-active 'side-quest-active))
              (prefix (if (eq? mode 'blocker-active) "blk-" "sq-"))

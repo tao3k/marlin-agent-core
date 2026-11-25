@@ -328,7 +328,8 @@
                                    task-detour-blocker task-detour-sidequest
                                    task-detour-exit-return task-detour-exit-absorb
                                    task-detour-exit-sibling task-detour-exit-abort
-                                   task-human-approve task-fleet-step task-fleet-checkpoint))
+                                   task-human-approve task-propose-branch
+                                   task-fleet-step task-fleet-checkpoint))
                 cur-buf)
                (else #f))))
         (if target-buf

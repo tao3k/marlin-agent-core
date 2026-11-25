@@ -55,6 +55,7 @@
     ((SPC o d n) task-detour-exit-sibling "Exit Detour: Spawn Sibling Task")
     ((SPC o d x) task-detour-exit-abort "Exit Detour: Abort Detour")
     ((SPC o h a) task-human-approve "Approve human gate and resolve active defeater")
+    ((SPC o h b) task-propose-branch "Propose bounded hypothesis branch for HxB evaluation")
     ((SPC o f s) task-fleet-step "Advance live GraphEngine Fleet one pure step")
     ((SPC o f c) task-fleet-checkpoint "Emit Fleet CAS checkpoint effect")))
 
@@ -74,6 +75,7 @@
     ("task-detour-exit-sibling" "Exit active Scoped Detour by spawning a sibling Task tab" optional scheme-action "task-detour-exit-sibling")
     ("task-detour-exit-abort" "Exit active Scoped Detour via abort-detour" none scheme-action "task-detour-exit-abort")
     ("task-human-approve" "Approve human gate and resolve active defeater on focused Task" optional scheme-action "task-human-approve")
+    ("task-propose-branch" "Append bounded HypothesisBranchProposal to focused Task for HxB evaluation" optional scheme-action "task-propose-branch")
     ("task-fleet-step" "Advance live GraphEngine Fleet one pure ASCENT/FunFlow step" none scheme-action "task-fleet-step")
     ("task-fleet-checkpoint" "Emit canonical UTF-8 Fleet CAS checkpoint effect" optional scheme-action "task-fleet-checkpoint")))
 

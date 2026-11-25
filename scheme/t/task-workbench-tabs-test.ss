@@ -50,6 +50,8 @@
                  make-graph-fleet-state
                  fleet-spawn-sibling-from-detour
                  fleet-apply-bitemporal-event
+                 fleet-propose-hypothesis-branch
+                 fleet-propagate-shared-defeater
                  plan-fleet-cas-checkpoint
                  restore-fleet-from-cas-receipt
                  run-graph-fleet-to-quiescence
@@ -507,4 +509,74 @@
         (check-equal? (length (.ref fl-restored 'active-drivers)) 2)
         ;; After `task-drill-l3`: disclosure updated and native Ratatui vector projected cleanly
         (check-equal? (.ref fc6 'disclosure-level) 'L3)
-        (check-equal? (vector? vec6) #t)))))
+        (check-equal? (vector? vec6) #t)))
+
+    (test-case "Round S8: TUI SPC o h b proposes bounded hypothesis branch -> full HxB re-evaluation + shared defeater propagation (0 Rust edits)"
+      (let* ((env (make-capability-envelope "owner" allowed-caps: '(context-read) denied-caps: '(host-egress) egress-allowed?: #f))
+             (ctx (.o bind-these: #f
+                      context-cut: 1
+                      kv-prefix-digest: "sha256:s8-tui-zone1"
+                      disclosure-depth: 'L3
+                      has-active-defeater?: #f
+                      sandbox-admitted?: #t
+                      cedar-handoff-valid?: #t))
+             (ob-a (make-obligation "ob-s8-a" title: "Security Inference Gate"
+                                    required-evidence-ids: '() premise-ids: '("prem-shared-sig")))
+             (g-a (make-obligation-graph "g-s8-a" cut: 1 obligations: (list ob-a) evidence: '() det-tasks: '()))
+             (tr-a (make-context-trunk "tr-s8-a" "ob-s8-a" g-a env shared-context-cut: 1 kv-prefix-digest: "sha256:s8-tui-zone1"))
+             (act-a (graph-make-task-actor "task-s8-a" tr-a '("scope-main") title: "Incident Triage"))
+             (ob-b (make-obligation "ob-s8-b" title: "Independent Task"
+                                    required-evidence-ids: '() premise-ids: '("prem-other")))
+             (g-b (make-obligation-graph "g-s8-b" cut: 1 obligations: (list ob-b) evidence: '() det-tasks: '()))
+             (tr-b (make-context-trunk "tr-s8-b" "ob-s8-b" g-b env shared-context-cut: 1 kv-prefix-digest: "sha256:s8-tui-zone1"))
+             (act-b (graph-make-task-actor "task-s8-b" tr-b '("scope-main") title: "Unrelated Cleanup"))
+             (h1 (make-competing-hypothesis "H1" "Compromised CI key"
+                                            evidence-lineage: '("ev:ci")
+                                            contradictions: '("hsm-pin-intact")
+                                            open-questions: '("key-export-log?")))
+             (h2 (make-competing-hypothesis "H2" "Stale manifest cache"
+                                            evidence-lineage: '("ev:cache")
+                                            contradictions: '()
+                                            open-questions: '("ttl-window?")))
+             (b1 (make-hypothesis-branch-proposal "B1" "Inspect CI audit trail"))
+             (fl0 (make-graph-fleet-state
+                   (list (make-unified-driver-state act-a g-a ctx
+                                                    competing-hypotheses: (list h1 h2)
+                                                    branch-proposals: (list b1))
+                         (make-unified-driver-state act-b g-b ctx))
+                   focused-task-id: "task-s8-a"))
+             (fc0 (make-marlin-fleet-workbench-controller fl0 disclosure-level: 'L3))
+             (keys0 (vector->list ((.get (.get (.ref fc0 'session) ui) keymap-entries))))
+             ;; 1. First `task-fleet-step` emits 2x1=2 read-only HxB LLM effects
+             (fc1 (marlin-fleet-workbench-controller-apply-action fc0 'task-fleet-step auto-archive?: #f))
+             (effs1 (.ref fc1 'last-effects))
+             (rcpts1 (map (lambda (e) (make-llm-completed-receipt (.ref e 'effect-id) "obs-round1")) effs1))
+             (fc2 (marlin-fleet-workbench-controller-apply-action fc1 'task-fleet-step receipts: rcpts1 auto-archive?: #f))
+             ;; 2. User presses `SPC o h b` (`task-propose-branch`) to add B2!
+             (fc3 (marlin-fleet-workbench-controller-apply-action
+                   fc2 'task-propose-branch arg: "B2:Verify offline HSM audit log"))
+             ;; 3. Next `task-fleet-step` emits full 2x2=4 read-only HxB LLM effects across BOTH H1 & H2!
+             (fc4 (marlin-fleet-workbench-controller-apply-action fc3 'task-fleet-step auto-archive?: #f))
+             (effs4 (.ref fc4 'last-effects))
+             (rcpts4 (map (lambda (e) (make-llm-completed-receipt (.ref e 'effect-id) "obs-round2")) effs4))
+             (fc5 (marlin-fleet-workbench-controller-apply-action fc4 'task-fleet-step receipts: rcpts4 auto-archive?: #f))
+             (mat5 (.ref (car (.ref (.ref fc5 'fleet) 'active-drivers)) 'hypothesis-matrix))
+             (vec5 (marlin-fleet-workbench-controller-project fc5))
+             ;; 4. Shared defeater propagation blocks ONLY task-s8-a (watching prem-shared-sig), leaving task-s8-b mainline!
+             (fl-prop (fleet-propagate-shared-defeater (.ref fc5 'fleet) "def-sig-mismatch" "prem-shared-sig"))
+             (fc-prop (make-marlin-fleet-workbench-controller fl-prop disclosure-level: 'L3))
+             (tabs-prop (.ref (.ref fc-prop 'projection) 'dynamic-tabs)))
+        (check-equal? (and (member '#(normal #(SPC o h b) task-propose-branch) keys0) #t) #t)
+        (check-equal? (length effs1) 2)
+        (check-equal? (length effs4) 4)
+        (check-equal? (.ref fc4 'authorizes-effect?) #f)
+        (check-equal? (length (.ref mat5 'cells)) 4)
+        (check-equal? (.ref mat5 'preserved-hypothesis-count) 2)
+        (check-equal? (.ref mat5 'favored-path-collapsed?) #f)
+        (check-equal? (.ref mat5 'authenticates-evidence?) #f)
+        (check-equal? (.ref mat5 'authorizes-effect?) #f)
+        (check-equal? (vector? vec5) #t)
+        (check-equal? (.ref (car tabs-prop) 'detour-mode) 'blocker-active)
+        (check-equal? (.ref (car tabs-prop) 'active-defeaters-count) 1)
+        (check-equal? (.ref (cadr tabs-prop) 'detour-mode) 'mainline)
+        (check-equal? (.ref (cadr tabs-prop) 'active-defeaters-count) 0)))))
