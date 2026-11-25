@@ -127,8 +127,28 @@ runs:
           chmod +x "$crash_dir/bin/gxtags"
           export PATH="$crash_dir/bin:$PATH"
         fi
-        # gxpkg captures gxtags stdout. Send uncaught Gambit errors to stderr.
-        (cd scheme && GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+" gerbil deps --install) || {
+        # Align with Lab's packages/automation/runtime-dependencies.ss:
+        # use Gerbil's official :gerbil/tools/gxpkg API so recursive dependency
+        # installation and compilation stay Gerbil-owned without editor TAGS
+        # indexing, unless trace-dependency-crash explicitly exercises gxtags.
+        install_deps() {
+          if [[ "$TRACE_DEPENDENCY_CRASH" == true ]]; then
+            (cd scheme && GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+" gerbil deps --install)
+          else
+            (
+              cd scheme
+              GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+" gxi -e '
+                (import (only-in :gerbil/tools/gxpkg pkg-install with-pkg-build-env))
+                (let* ((properties (call-with-input-file "gerbil.pkg" read))
+                       (dependencies (pgetq depend: properties (list))))
+                  (unless (and (list? dependencies) (andmap string? dependencies))
+                    (error "expected runtime package dependency strings" "gerbil.pkg"))
+                  (with-pkg-build-env
+                    (for-each pkg-install dependencies)))'
+            )
+          fi
+        }
+        install_deps || {
           status=$?
           if [[ -n "${crash_dir:-}" ]]; then
             orgize_crashed=false
