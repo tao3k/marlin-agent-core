@@ -15,7 +15,8 @@
                  make-marlin-task-workbench-package
                  marlin-task-workbench-peek-set-add
                  marlin-task-workbench-peek-set-remove
-                 marlin-task-workbench-next-disclosure)
+                 marlin-task-workbench-next-disclosure
+                 marlin-task-workbench-apply-detour-action)
         (only-in :marlin-agent-core/ui/session
                  marlin-ui-session-open
                  marlin-ui-session-project
@@ -162,4 +163,59 @@
           (check-equal? (vector-ref step1 1) '#(select-buffer index))
           (check-equal? (vector-ref (vector-ref step2 1) 0) 'select-buffer)
           (check-equal? (vector-ref (vector-ref step3 1) 0) 'select-buffer)
-          (check-equal? (vector? (marlin-ui-session-project sess2)) #t))))))
+          (check-equal? (vector? (marlin-ui-session-project sess2)) #t))))
+
+    (test-case "Scheme-only Scoped Detour 4-Exit controls and Competing Hypothesis L3 view require ZERO Rust edits"
+      (let* ((hyps (list (.o bind-these: #f
+                             hypothesis-id: "H1"
+                             claim: "Compromised CI credential"
+                             contradictions: '("clock-skew")
+                             open-questions: '("token-rotated?"))
+                         (.o bind-these: #f
+                             hypothesis-id: "H2"
+                             claim: "Release automation drift"
+                             contradictions: '()
+                             open-questions: '("approver-id?"))))
+             (proj0 (.o bind-these: #f
+                        pinned-tab: 'index
+                        dynamic-tabs:
+                        (list (.o bind-these: #f
+                                  id: "task-sec-01"
+                                  label: "Security Investigation"
+                                  status: 'in-progress
+                                  mode: 'active
+                                  detour-mode: 'mainline
+                                  detour-node-id: #f
+                                  worktree: "wt/sec"
+                                  checklist-done: 1
+                                  checklist-total: 3
+                                  competing-hypotheses: hyps))
+                        archived-index: '()
+                        visible-tab-ids: '(index "task-sec-01")))
+             ;; Enter blocker-active detour in pure Scheme
+             (proj-blk (marlin-task-workbench-apply-detour-action
+                        proj0 "task-sec-01" 'task-detour-blocker "blk-ci-token"))
+             ;; Exit via spawn-sibling-task -> adds sibling tab dynamically!
+             (proj-sib (marlin-task-workbench-apply-detour-action
+                        proj-blk "task-sec-01" 'task-detour-exit-sibling "task-sec-sib"))
+             (pkg-ui (make-marlin-task-workbench-package proj-sib disclosure-level: 'L3))
+             (keys (vector->list ((.get pkg-ui keymap-entries))))
+             (sess0 (marlin-ui-session-open
+                     (vector pkg-ui #("gemini-2.5-pro" "detour-workbench" #() #()) #())))
+             (step-blk (marlin-ui-session-dispatch
+                        (vector sess0 'scheme-action '#(task-detour-blocker "blk-ci-token"))))
+             (step-sib (marlin-ui-session-dispatch
+                        (vector (vector-ref step-blk 0) 'scheme-action '#(task-detour-exit-sibling "task-sec-sib")))))
+        (check-equal? (.ref (car (.ref proj-blk 'dynamic-tabs)) 'detour-mode) 'blocker-active)
+        (check-equal? (.ref proj-sib 'visible-tab-ids) '(index "task-sec-01" "task-sec-sib"))
+        (check-equal? (.ref (car (.ref proj-sib 'dynamic-tabs)) 'detour-mode) 'mainline)
+        ;; SPC o d * keybindings registered via generic scheme-action
+        (check-equal? (and (member '#(normal #(SPC o d b) task-detour-blocker) keys) #t) #t)
+        (check-equal? (and (member '#(normal #(SPC o d s) task-detour-sidequest) keys) #t) #t)
+        (check-equal? (and (member '#(normal #(SPC o d r) task-detour-exit-return) keys) #t) #t)
+        (check-equal? (and (member '#(normal #(SPC o d a) task-detour-exit-absorb) keys) #t) #t)
+        (check-equal? (and (member '#(normal #(SPC o d n) task-detour-exit-sibling) keys) #t) #t)
+        (check-equal? (and (member '#(normal #(SPC o d x) task-detour-exit-abort) keys) #t) #t)
+        ;; Live UiNativeSession admits and dispatches Detour scheme-actions end-to-end
+        (check-equal? (vector-ref (vector-ref step-blk 1) 0) 'select-buffer)
+        (check-equal? (vector-ref (vector-ref step-sib 1) 0) 'select-buffer)))))

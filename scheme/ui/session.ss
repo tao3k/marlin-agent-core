@@ -18,7 +18,8 @@
                  make-marlin-task-workbench-package
                  marlin-task-workbench-peek-set-add
                  marlin-task-workbench-peek-set-remove
-                 marlin-task-workbench-next-disclosure)
+                 marlin-task-workbench-next-disclosure
+                 marlin-task-workbench-apply-detour-action)
         (only-in "./helm-workbench.ss"
                  make-marlin-helm-workbench-package))
 (export marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch
@@ -30,6 +31,7 @@
         marlin-task-workbench-peek-set-add
         marlin-task-workbench-peek-set-remove
         marlin-task-workbench-next-disclosure
+        marlin-task-workbench-apply-detour-action
         make-marlin-helm-workbench-package)
 
 ;;; Each event returns a successor; older frames keep their own rooted state.
@@ -319,7 +321,10 @@
                   (and (memq sym buf-ids) sym)))
                ((and (eq? action-sym 'task-tab-unpeek) (memq 'index buf-ids))
                 'index)
-               ((memq action-sym '(task-drill-l0 task-drill-l1 task-drill-l2 task-drill-l3))
+               ((memq action-sym '(task-drill-l0 task-drill-l1 task-drill-l2 task-drill-l3
+                                   task-detour-blocker task-detour-sidequest
+                                   task-detour-exit-return task-detour-exit-absorb
+                                   task-detour-exit-sibling task-detour-exit-abort))
                 cur-buf)
                (else #f))))
         (if target-buf
