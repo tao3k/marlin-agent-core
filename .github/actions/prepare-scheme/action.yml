@@ -30,9 +30,6 @@ runs:
         # Orgize belongs to Lab's Scheme dependency graph, never Cargo's graph.
         orgize_repo=github.com/tao3k/orgize
         orgize_checkout="$GERBIL_PATH/pkg/$orgize_repo"
-        yuanxu_repo=github.com/tao3k/gebril-yuanxu
-        yuanxu_revision=$(sed -nE 's/.*"github\.com\/tao3k\/gebril-yuanxu@([0-9a-f]{40})".*/\1/p' scheme/gerbil.pkg)
-        [[ "$yuanxu_revision" =~ ^[0-9a-f]{40}$ ]]
         lab_repo=github.com/tao3k/agentic-ai-lab
         lab_revision=$(sed -nE 's/.*"github\.com\/tao3k\/agentic-ai-lab@([0-9a-f]{40})".*/\1/p' scheme/gerbil.pkg)
         [[ "$lab_revision" =~ ^[0-9a-f]{40}$ ]]
@@ -50,7 +47,6 @@ runs:
               (pkg-update (getenv "GERBIL_PACKAGE_REVISION"))'
           )
         }
-        seed_revision "$yuanxu_repo" "$yuanxu_revision"
         seed_revision "$lab_repo" "$lab_revision"
         git -C "$GERBIL_PATH/pkg/$lab_repo" submodule update --init --checkout core
         orgize_revision=$(git -C "$GERBIL_PATH/pkg/$lab_repo" show "$lab_revision:gerbil.pkg" |
@@ -242,9 +238,17 @@ runs:
           fi
           exit "$status"
         }
-        test "$(git -C "$GERBIL_PATH/pkg/$yuanxu_repo" rev-parse HEAD)" = "$yuanxu_revision"
         test "$(git -C "$orgize_checkout" rev-parse HEAD)" = "$orgize_revision"
         test "$(git -C "$GERBIL_PATH/pkg/$lab_repo" rev-parse HEAD)" = "$lab_revision"
+        # Align with Lab's own CI (dev/just/ci.just & nix.yml): build Lab's
+        # vendored Core (Yuanxu) into GERBIL_PATH so cross-package on-demand
+        # prerequisite compilation is active without causing a gxpkg diamond
+        # tag conflict against upstream gerbil-parser/orgize/gerbil-ascent.
+        (
+          cd "$GERBIL_PATH/pkg/$lab_repo/core"
+          GERBIL_LOADPATH="$GERBIL_PATH/lib${GERBIL_LOADPATH:+:$GERBIL_LOADPATH}" gerbil clean
+          GERBIL_LOADPATH="$GERBIL_PATH/lib${GERBIL_LOADPATH:+:$GERBIL_LOADPATH}" gerbil build
+        )
     - name: Save installed Scheme dependencies
       if: steps.dependencies.outputs.cache-hit != 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

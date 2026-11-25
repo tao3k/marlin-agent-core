@@ -3,5 +3,4 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 (package: marlin-agent-core
- depend: ("github.com/tao3k/gebril-yuanxu@811b428bf329feb61d769cfaf7cd8a6fde5e7947"
-          "github.com/tao3k/agentic-ai-lab@bc00c85cbfcd060a9d0ad7b285ecd39e429f9178"))
+ depend: ("github.com/tao3k/agentic-ai-lab@df4322e4a439fcd519d3fe624df01809614f6623"))
