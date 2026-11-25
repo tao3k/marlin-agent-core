@@ -14,7 +14,7 @@ use marlin_agent_app_server::{
 use marlin_agent_runtime::plugin::{PublisherId, ReleaseTrust};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
-use tonic::{Status, transport::Server};
+use tonic::Status;
 
 fn decode_hex_32(hex: &str) -> Result<[u8; 32], String> {
     let trimmed = hex.trim();
@@ -69,13 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let local_addr = listener.local_addr()?;
     println!("READY {local_addr}");
 
-    Server::builder()
-        .add_service(host.app_service())
-        .add_service(host.ui_service())
-        .add_service(host.gate_service())
-        .add_service(host.plugin_service())
-        .add_service(host.device_service())
-        .add_service(host.projection_service())
+    host.into_standalone_router()
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await?;
     Ok(())

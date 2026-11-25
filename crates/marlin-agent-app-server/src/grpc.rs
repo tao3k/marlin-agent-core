@@ -119,6 +119,19 @@ impl AppServer {
 }
 
 impl<S: marlin_agent_storage::SessionEventStore + Clone + 'static> AppServer<S> {
+    /// Compose this real `AppServer` (backed by a host `ModelStreamingGateway`
+    /// and durable `SessionBinding`) with `MyGoBridgeHost`'s 5 orthogonal UI,
+    /// Gate, Plugin, Device, and Projection services on one shared HTTP/2 router.
+    #[cfg(feature = "ui-grpc")]
+    pub fn into_ui_router(
+        self,
+        bridge: crate::ui_grpc::MyGoBridgeHost,
+    ) -> tonic::transport::server::Router {
+        let base = tonic::transport::Server::builder()
+            .add_service(app_server_server::AppServerServer::new(self));
+        bridge.attach_ui_services(base)
+    }
+
     async fn resolve_session(
         &self,
         metadata: MetadataMap,

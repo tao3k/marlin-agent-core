@@ -14,9 +14,9 @@ use std::{
 };
 
 use marlin_agent_runtime::plugin::{
-    ContributionId, PanelRuntimeKind as RuntimePanelKind, PluginDenial, PublisherId,
-    ReleaseAttestation as RuntimeAttestation, ReleaseTrust, SignedPanelRelease,
-    SlotCardinality as RuntimeSlotCardinality, VerifiedPanelRelease,
+    CapabilityId, ContributionId, PanelPluginHost, PanelRuntimeKind as RuntimePanelKind,
+    PluginDenial, PluginId, PublisherId, ReleaseAttestation as RuntimeAttestation, ReleaseTrust,
+    SignedPanelRelease, SlotCardinality as RuntimeSlotCardinality, VerifiedPanelRelease,
 };
 use tokio::sync::broadcast;
 use tokio_stream::Stream;
@@ -100,12 +100,56 @@ pub struct SchemeOverlayProjection {
     pub slots: Vec<SlotDeclaration>,
 }
 
+impl SchemeOverlayProjection {
+    /// Enforce the exact Scheme `ui-mygo` and Quint formal security invariants:
+    /// 1. `approval.gate` must exist, be locked (`allow_untrusted_plugin == false`),
+    ///    and be owned by Tier-0 `host.gate`.
+    /// 2. No slot may reference legacy `native.*` renderers.
+    /// 3. iOS/Android overlays permit `Declarative` packs only (App Store policy).
+    pub fn validate(&self) -> Result<(), String> {
+        let mut saw_gate = false;
+        for sl in &self.slots {
+            if sl.fallback_renderer.starts_with("native.") {
+                return Err(format!(
+                    "slot {:?} uses disallowed legacy native.* renderer {:?}",
+                    sl.slot_id, sl.fallback_renderer
+                ));
+            }
+            if sl.slot_id == "approval.gate" {
+                saw_gate = true;
+                if sl.allow_untrusted_plugin || sl.fallback_renderer != "host.gate" {
+                    return Err(
+                        "approval.gate must disable untrusted plugins and bind host.gate"
+                            .to_owned(),
+                    );
+                }
+            }
+        }
+        if !saw_gate {
+            return Err("profile overlay missing mandatory approval.gate slot".to_owned());
+        }
+        if matches!(
+            self.target_kind,
+            TargetKind::MobileIos | TargetKind::MobileAndroid
+        ) && self
+            .allowed_runtimes
+            .iter()
+            .any(|r| *r != PanelRuntimeKind::Declarative)
+        {
+            return Err(format!(
+                "mobile target {:?} permits declarative runtimes only",
+                self.target_kind
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Shared authoritative state for all 6 MyGo gRPC services
 /// (`marlin.{app,ui,gate,plugin,device,projection}.v1`).
 #[derive(Clone)]
 pub struct MyGoBridgeHost {
     authorize: Arc<AuthorizeFn>,
-    trust: Arc<ReleaseTrust>,
     state: Arc<Mutex<BridgeState>>,
     wb_tx: broadcast::Sender<UiWorkbenchSnapshot>,
     gate_tx: broadcast::Sender<PendingGate>,
@@ -124,8 +168,7 @@ struct BridgeState {
     sessions: BTreeSet<String>,
     pending_gates: BTreeMap<String, PendingGate>,
     claimed_gates: BTreeMap<String, GateDecisionReceipt>,
-    installed_releases: BTreeMap<String, InstalledPanelRecord>,
-    active_generations: BTreeMap<(String, String), ActivePanel>,
+    panel_host: PanelPluginHost,
     receipt_seq: u64,
     registered_devices: BTreeMap<String, String>,
     device_capabilities: BTreeMap<String, Vec<DeviceCapabilityDescriptor>>,
@@ -134,30 +177,23 @@ struct BridgeState {
     artifacts: BTreeMap<String, Vec<u8>>,
 }
 
-struct InstalledPanelRecord {
-    verified: VerifiedPanelRelease,
-    summary: InstalledReleaseSummary,
-}
-
-struct ActivePanel {
-    generation: u64,
-    declared_actions: BTreeSet<String>,
-    read_scopes: BTreeSet<String>,
-}
-
 impl MyGoBridgeHost {
     pub fn new(
         trust: ReleaseTrust,
         authorize: impl Fn(&MetadataMap) -> Result<(), Status> + Send + Sync + 'static,
     ) -> Self {
         Self::with_profile_overlays(trust, default_profile_overlays(), authorize)
+            .expect("built-in Scheme profile overlays must satisfy invariants")
     }
 
     pub fn with_profile_overlays(
         trust: ReleaseTrust,
         overlays: Vec<SchemeOverlayProjection>,
         authorize: impl Fn(&MetadataMap) -> Result<(), Status> + Send + Sync + 'static,
-    ) -> Self {
+    ) -> Result<Self, String> {
+        for o in &overlays {
+            o.validate()?;
+        }
         let (wb_tx, _) = broadcast::channel(64);
         let (gate_tx, _) = broadcast::channel(64);
         let (panel_tx, _) = broadcast::channel(128);
@@ -177,8 +213,7 @@ impl MyGoBridgeHost {
             sessions: BTreeSet::from(["default".to_owned()]),
             pending_gates: BTreeMap::new(),
             claimed_gates: BTreeMap::new(),
-            installed_releases: BTreeMap::new(),
-            active_generations: BTreeMap::new(),
+            panel_host: PanelPluginHost::new(trust),
             receipt_seq: 0,
             registered_devices: BTreeMap::new(),
             device_capabilities: BTreeMap::new(),
@@ -186,15 +221,35 @@ impl MyGoBridgeHost {
             capture_keys: BTreeSet::new(),
             artifacts: BTreeMap::new(),
         };
-        Self {
+        Ok(Self {
             authorize: Arc::new(authorize),
-            trust: Arc::new(trust),
             state: Arc::new(Mutex::new(state)),
             wb_tx,
             gate_tx,
             panel_tx,
             device_inv_tx,
-        }
+        })
+    }
+
+    /// Attach the 5 orthogonal UI/Gate/Plugin/Device/Projection services to an
+    /// existing Tonic router (e.g. one already serving the real `AppServer`).
+    pub fn attach_ui_services(
+        &self,
+        router: tonic::transport::server::Router,
+    ) -> tonic::transport::server::Router {
+        router
+            .add_service(self.ui_service())
+            .add_service(self.gate_service())
+            .add_service(self.plugin_service())
+            .add_service(self.device_service())
+            .add_service(self.projection_service())
+    }
+
+    /// Attach all 6 services (`marlin.{app,ui,gate,plugin,device,projection}.v1`)
+    /// onto a fresh Tonic `Server` builder.
+    pub fn into_standalone_router(self) -> tonic::transport::server::Router {
+        let base = tonic::transport::Server::builder().add_service(self.app_service());
+        self.attach_ui_services(base)
     }
 
     /// Enqueue an authoritative pending approval gate visible to connected MyGo shells.
@@ -882,6 +937,40 @@ impl ApprovalGateService for MyGoBridgeHost {
     }
 }
 
+fn summarize_verified_panel(
+    panel_host: &PanelPluginHost,
+    verified: &VerifiedPanelRelease,
+) -> InstalledReleaseSummary {
+    let (enabled, active_generation) = panel_host.active_generation_for(verified.id());
+    let panel_assets: Vec<PanelAssetDescriptor> = verified
+        .contributions()
+        .iter()
+        .map(|(cid, c)| PanelAssetDescriptor {
+            contribution_id: cid.as_str().to_owned(),
+            runtime: to_proto_runtime(c.panel.runtime),
+            slot_id: c.panel.slot_id.as_str().to_owned(),
+            cardinality: to_proto_cardinality(c.panel.cardinality),
+            slot_key: c.panel.slot_key.clone(),
+            entry_path: c.panel.entry_path.clone().unwrap_or_default(),
+            archive_sha256: verified.digest().as_bytes().to_vec(),
+            byte_size: 0,
+            read_scopes: c.panel.read_scopes.clone(),
+            declared_actions: c.panel.declared_actions.clone(),
+        })
+        .collect();
+    InstalledReleaseSummary {
+        plugin_id: verified.id().as_str().to_owned(),
+        version: format!("{:?}", verified.version()),
+        publisher_id: verified.attestation().publisher.as_str().to_owned(),
+        bundle_digest_sha256: verified.digest().as_bytes().to_vec(),
+        enabled,
+        active_generation,
+        declared_capabilities: Vec::new(),
+        granted_capabilities: Vec::new(),
+        panel_assets,
+    }
+}
+
 #[tonic::async_trait]
 impl PluginService for MyGoBridgeHost {
     type OpenScopedPanelStreamStream = BoxStream<OpenScopedPanelStreamResponse>;
@@ -894,9 +983,9 @@ impl PluginService for MyGoBridgeHost {
         let st = self.state.lock().expect("bridge mutex poisoned");
         Ok(Response::new(ListReleasesResponse {
             releases: st
-                .installed_releases
-                .values()
-                .map(|r| r.summary.clone())
+                .panel_host
+                .installed_releases()
+                .map(|v| summarize_verified_panel(&st.panel_host, v))
                 .collect(),
         }))
     }
@@ -951,7 +1040,8 @@ impl PluginService for MyGoBridgeHost {
             }));
         };
 
-        let verified = match self.trust.verify_panel(SignedPanelRelease {
+        let mut st = self.state.lock().expect("bridge mutex poisoned");
+        let installed_id = match st.panel_host.install(SignedPanelRelease {
             manifest: &env.manifest_toml,
             attestation: RuntimeAttestation {
                 publisher,
@@ -960,7 +1050,7 @@ impl PluginService for MyGoBridgeHost {
             },
             signature: &sig_arr,
         }) {
-            Ok(v) => v,
+            Ok(verified) => verified.id().clone(),
             Err(denial) => {
                 return Ok(Response::new(InstallSignedReleaseResponse {
                     installed: false,
@@ -969,43 +1059,14 @@ impl PluginService for MyGoBridgeHost {
                 }));
             }
         };
-
-        let panel_assets: Vec<PanelAssetDescriptor> = verified
-            .contributions()
-            .iter()
-            .map(|(cid, c)| PanelAssetDescriptor {
-                contribution_id: cid.as_str().to_owned(),
-                runtime: to_proto_runtime(c.panel.runtime),
-                slot_id: c.panel.slot_id.as_str().to_owned(),
-                cardinality: to_proto_cardinality(c.panel.cardinality),
-                slot_key: c.panel.slot_key.clone(),
-                entry_path: c.panel.entry_path.clone().unwrap_or_default(),
-                archive_sha256: verified.digest().as_bytes().to_vec(),
-                byte_size: env.manifest_toml.len() as u64,
-                read_scopes: c.panel.read_scopes.clone(),
-                declared_actions: c.panel.declared_actions.clone(),
-            })
-            .collect();
-
-        let summary = InstalledReleaseSummary {
-            plugin_id: verified.id().as_str().to_owned(),
-            version: format!("{:?}", verified.version()),
-            publisher_id: verified.attestation().publisher.as_str().to_owned(),
-            bundle_digest_sha256: verified.digest().as_bytes().to_vec(),
-            enabled: false,
-            active_generation: 0,
-            declared_capabilities: Vec::new(),
-            granted_capabilities: Vec::new(),
-            panel_assets,
-        };
-        let mut st = self.state.lock().expect("bridge mutex poisoned");
-        st.installed_releases.insert(
-            verified.id().as_str().to_owned(),
-            InstalledPanelRecord {
-                verified,
-                summary: summary.clone(),
-            },
-        );
+        let verified = st
+            .panel_host
+            .get_release(&installed_id)
+            .expect("just installed release must exist");
+        let mut summary = summarize_verified_panel(&st.panel_host, verified);
+        for asset in &mut summary.panel_assets {
+            asset.byte_size = env.manifest_toml.len() as u64;
+        }
         Ok(Response::new(InstallSignedReleaseResponse {
             installed: true,
             summary: Some(summary),
@@ -1019,8 +1080,7 @@ impl PluginService for MyGoBridgeHost {
     ) -> Result<Response<EnableWorkflowResponse>, Status> {
         self.check_auth(&request)?;
         let req = request.into_inner();
-        let mut st = self.state.lock().expect("bridge mutex poisoned");
-        let Some(rec) = st.installed_releases.get(&req.plugin_id) else {
+        let Ok(pid) = PluginId::try_from(req.plugin_id.clone()) else {
             return Ok(Response::new(EnableWorkflowResponse {
                 receipt: Some(WorkflowActivationReceipt {
                     activated: false,
@@ -1028,12 +1088,7 @@ impl PluginService for MyGoBridgeHost {
                     generation: 0,
                     effective_settings_sha256: Vec::new(),
                     receipt: None,
-                    denial: Some(TypedDenial {
-                        code: DenialCode::NotFound as i32,
-                        message: "plugin release not installed".to_owned(),
-                        owner_id: Some("marlin.plugin.v1".to_owned()),
-                        details: HashMap::new(),
-                    }),
+                    denial: Some(map_denial(PluginDenial::InvalidDeclaration)),
                 }),
             }));
         };
@@ -1049,57 +1104,39 @@ impl PluginService for MyGoBridgeHost {
                 }),
             }));
         };
-        let Some(contrib) = rec.verified.contribution(&cid) else {
-            return Ok(Response::new(EnableWorkflowResponse {
-                receipt: Some(WorkflowActivationReceipt {
-                    activated: false,
-                    activation_id: String::new(),
-                    generation: 0,
-                    effective_settings_sha256: Vec::new(),
-                    receipt: None,
-                    denial: Some(TypedDenial {
-                        code: DenialCode::NotFound as i32,
-                        message: "contribution not found in installed release".to_owned(),
-                        owner_id: Some("marlin.plugin.v1".to_owned()),
-                        details: HashMap::new(),
+
+        let mut st = self.state.lock().expect("bridge mutex poisoned");
+        let act = match st
+            .panel_host
+            .enable_panel(req.project_id, &pid, &cid, &req.settings_toml)
+        {
+            Ok(rec) => rec,
+            Err(denial) => {
+                return Ok(Response::new(EnableWorkflowResponse {
+                    receipt: Some(WorkflowActivationReceipt {
+                        activated: false,
+                        activation_id: String::new(),
+                        generation: 0,
+                        effective_settings_sha256: Vec::new(),
+                        receipt: None,
+                        denial: Some(map_denial(denial)),
                     }),
-                }),
-            }));
+                }));
+            }
         };
-        let declared_actions: BTreeSet<String> =
-            contrib.panel.declared_actions.iter().cloned().collect();
-        let read_scopes: BTreeSet<String> = contrib.panel.read_scopes.iter().cloned().collect();
-        let key = (req.plugin_id.clone(), req.contribution_id.clone());
-        let next_gen = st
-            .active_generations
-            .get(&key)
-            .map(|a| a.generation + 1)
-            .unwrap_or(1);
-        st.active_generations.insert(
-            key,
-            ActivePanel {
-                generation: next_gen,
-                declared_actions,
-                read_scopes,
-            },
-        );
-        if let Some(rec_mut) = st.installed_releases.get_mut(&req.plugin_id) {
-            rec_mut.summary.enabled = true;
-            rec_mut.summary.active_generation = next_gen;
-        }
-        let first_scope = st
-            .active_generations
-            .get(&(req.plugin_id.clone(), req.contribution_id.clone()))
-            .and_then(|a| a.read_scopes.iter().find(|t| t.as_str() != "host.secrets"))
+        let first_scope = act
+            .read_scopes
+            .iter()
+            .find(|t| t.as_str() != "host.secrets")
             .cloned();
-        let rref = mint_receipt(&mut st, "plugin-activate", req.plugin_id.as_bytes());
+        let rref = mint_receipt(&mut st, "plugin-activate", act.activation_id.as_bytes());
         let event_seq = st.receipt_seq;
         drop(st);
         if let Some(topic) = first_scope {
             let _ = self.panel_tx.send(ScopedPanelEvent {
                 event_id: format!("ev-activate-{event_seq}"),
-                plugin_id: req.plugin_id.clone(),
-                activation_generation: next_gen,
+                plugin_id: req.plugin_id,
+                activation_generation: act.generation,
                 topic,
                 payload_json: br#"{"nodeId":"verify_receipts","status":"activated"}"#.to_vec(),
             });
@@ -1107,9 +1144,9 @@ impl PluginService for MyGoBridgeHost {
         Ok(Response::new(EnableWorkflowResponse {
             receipt: Some(WorkflowActivationReceipt {
                 activated: true,
-                activation_id: format!("act-{}-{next_gen}", req.plugin_id),
-                generation: next_gen,
-                effective_settings_sha256: rref.digest_sha256.clone(),
+                activation_id: act.activation_id,
+                generation: act.generation,
+                effective_settings_sha256: act.settings_digest.to_vec(),
                 receipt: Some(rref),
                 denial: None,
             }),
@@ -1123,15 +1160,32 @@ impl PluginService for MyGoBridgeHost {
         self.check_auth(&request)?;
         let req = request.into_inner();
         let mut st = self.state.lock().expect("bridge mutex poisoned");
-        let rref = mint_receipt(&mut st, "plugin-disable", req.activation_id.as_bytes());
-        Ok(Response::new(DisableWorkflowResponse {
-            receipt: Some(WorkflowDisableReceipt {
-                disabled: true,
-                closed_generation: 1,
-                receipt: Some(rref),
-                denial: None,
-            }),
-        }))
+        match st.panel_host.disable_panel(&req.activation_id) {
+            Ok(closed) => {
+                let rref = ReceiptRef {
+                    receipt_id: format!("rcpt-plugin-disable-{}", closed.closed_generation),
+                    owner_domain: "marlin-agent-runtime".to_owned(),
+                    digest_sha256: closed.closure_digest.to_vec(),
+                    committed_at_unix_ms: now_unix_ms(),
+                };
+                Ok(Response::new(DisableWorkflowResponse {
+                    receipt: Some(WorkflowDisableReceipt {
+                        disabled: true,
+                        closed_generation: closed.closed_generation,
+                        receipt: Some(rref),
+                        denial: None,
+                    }),
+                }))
+            }
+            Err(denial) => Ok(Response::new(DisableWorkflowResponse {
+                receipt: Some(WorkflowDisableReceipt {
+                    disabled: false,
+                    closed_generation: 0,
+                    receipt: None,
+                    denial: Some(map_denial(denial)),
+                }),
+            })),
+        }
     }
 
     async fn set_project_grants(
@@ -1140,16 +1194,55 @@ impl PluginService for MyGoBridgeHost {
     ) -> Result<Response<SetProjectGrantsResponse>, Status> {
         self.check_auth(&request)?;
         let req = request.into_inner();
+        let Ok(pid) = PluginId::try_from(req.plugin_id.clone()) else {
+            return Ok(Response::new(SetProjectGrantsResponse {
+                receipt: Some(ProjectGrantReceipt {
+                    updated: false,
+                    granted_capabilities: Vec::new(),
+                    receipt: None,
+                    denial: Some(map_denial(PluginDenial::InvalidDeclaration)),
+                }),
+            }));
+        };
+        let mut caps = Vec::with_capacity(req.granted_capabilities.len());
+        for raw in req.granted_capabilities {
+            let Ok(cap) = CapabilityId::try_from(raw) else {
+                return Ok(Response::new(SetProjectGrantsResponse {
+                    receipt: Some(ProjectGrantReceipt {
+                        updated: false,
+                        granted_capabilities: Vec::new(),
+                        receipt: None,
+                        denial: Some(map_denial(PluginDenial::InvalidDeclaration)),
+                    }),
+                }));
+            };
+            caps.push(cap);
+        }
         let mut st = self.state.lock().expect("bridge mutex poisoned");
-        let rref = mint_receipt(&mut st, "plugin-grant", req.plugin_id.as_bytes());
-        Ok(Response::new(SetProjectGrantsResponse {
-            receipt: Some(ProjectGrantReceipt {
-                updated: true,
-                granted_capabilities: req.granted_capabilities,
-                receipt: Some(rref),
-                denial: None,
-            }),
-        }))
+        match st.panel_host.set_project_grants(req.project_id, pid, caps) {
+            Ok(granted) => {
+                let rref = mint_receipt(&mut st, "plugin-grant", req.plugin_id.as_bytes());
+                Ok(Response::new(SetProjectGrantsResponse {
+                    receipt: Some(ProjectGrantReceipt {
+                        updated: true,
+                        granted_capabilities: granted
+                            .into_iter()
+                            .map(|c| c.as_str().to_owned())
+                            .collect(),
+                        receipt: Some(rref),
+                        denial: None,
+                    }),
+                }))
+            }
+            Err(denial) => Ok(Response::new(SetProjectGrantsResponse {
+                receipt: Some(ProjectGrantReceipt {
+                    updated: false,
+                    granted_capabilities: Vec::new(),
+                    receipt: None,
+                    denial: Some(map_denial(denial)),
+                }),
+            })),
+        }
     }
 
     async fn get_workflow_evidence(
@@ -1158,11 +1251,25 @@ impl PluginService for MyGoBridgeHost {
     ) -> Result<Response<GetWorkflowEvidenceResponse>, Status> {
         self.check_auth(&request)?;
         let req = request.into_inner();
+        let st = self.state.lock().expect("bridge mutex poisoned");
+        let Some(ev) = st.panel_host.evidence(&req.activation_id) else {
+            return Err(Status::not_found("activation evidence not found"));
+        };
+        let effect_receipts: Vec<ReceiptRef> = ev
+            .actions
+            .iter()
+            .map(|a| ReceiptRef {
+                receipt_id: a.receipt_id.clone(),
+                owner_domain: "marlin-agent-runtime".to_owned(),
+                digest_sha256: a.receipt_digest.to_vec(),
+                committed_at_unix_ms: now_unix_ms(),
+            })
+            .collect();
         Ok(Response::new(GetWorkflowEvidenceResponse {
-            activation_id: req.activation_id,
-            bundle_digest_sha256: vec![0u8; 32],
-            project_digest_sha256: vec![0u8; 32],
-            effect_receipts: Vec::new(),
+            activation_id: ev.activation_id.clone(),
+            bundle_digest_sha256: ev.bundle_digest.as_bytes().to_vec(),
+            project_digest_sha256: ev.settings_digest.to_vec(),
+            effect_receipts,
             replay_bundle: None,
         }))
     }
@@ -1173,15 +1280,15 @@ impl PluginService for MyGoBridgeHost {
     ) -> Result<Response<Self::OpenScopedPanelStreamStream>, Status> {
         self.check_auth(&request)?;
         let req = request.into_inner();
+        let pid = PluginId::try_from(req.plugin_id.clone())
+            .map_err(|_| Status::invalid_argument("invalid plugin_id"))?;
+        let cid = ContributionId::try_from(req.contribution_id.clone())
+            .map_err(|_| Status::invalid_argument("invalid contribution_id"))?;
         let allowed_topics: BTreeSet<String> = {
             let st = self.state.lock().expect("bridge mutex poisoned");
-            let key = (req.plugin_id.clone(), req.contribution_id.clone());
-            match st.active_generations.get(&key) {
-                Some(active) if active.generation == req.activation_generation => {
-                    active.read_scopes.clone()
-                }
-                _ => return Err(Status::failed_precondition("plugin generation not active")),
-            }
+            st.panel_host
+                .active_read_scopes(&req.project_id, &pid, &cid, req.activation_generation)
+                .map_err(|_| Status::failed_precondition("plugin generation not active"))?
         };
         let mut rx = self.panel_tx.subscribe();
         let plugin_id = req.plugin_id;
@@ -1206,65 +1313,58 @@ impl PluginService for MyGoBridgeHost {
     ) -> Result<Response<SubmitScopedPanelActionResponse>, Status> {
         self.check_auth(&request)?;
         let req = request.into_inner();
-        let mut st = self.state.lock().expect("bridge mutex poisoned");
-        let key = (req.plugin_id.clone(), req.contribution_id.clone());
-        let Some(active) = st.active_generations.get(&key) else {
+        let Ok(pid) = PluginId::try_from(req.plugin_id.clone()) else {
             return Ok(Response::new(SubmitScopedPanelActionResponse {
                 receipt: Some(ScopedPanelActionReceipt {
                     admitted: false,
                     result_json: None,
                     receipt: None,
-                    denial: Some(TypedDenial {
-                        code: DenialCode::NotFound as i32,
-                        message: "plugin contribution is not active".to_owned(),
-                        owner_id: Some("marlin.plugin.v1".to_owned()),
-                        details: HashMap::new(),
-                    }),
+                    denial: Some(map_denial(PluginDenial::InvalidDeclaration)),
                 }),
             }));
         };
-        if active.generation != req.activation_generation {
+        let Ok(cid) = ContributionId::try_from(req.contribution_id.clone()) else {
             return Ok(Response::new(SubmitScopedPanelActionResponse {
                 receipt: Some(ScopedPanelActionReceipt {
                     admitted: false,
                     result_json: None,
                     receipt: None,
-                    denial: Some(TypedDenial {
-                        code: DenialCode::StaleGeneration as i32,
-                        message: format!(
-                            "stale plugin generation {} != active {}",
-                            req.activation_generation, active.generation
-                        ),
-                        owner_id: Some("marlin.plugin.v1".to_owned()),
-                        details: HashMap::new(),
-                    }),
+                    denial: Some(map_denial(PluginDenial::InvalidDeclaration)),
                 }),
             }));
-        }
-        if !active.declared_actions.contains(&req.action_name) {
-            return Ok(Response::new(SubmitScopedPanelActionResponse {
+        };
+        let mut st = self.state.lock().expect("bridge mutex poisoned");
+        match st.panel_host.admit_scoped_action(
+            &req.project_id,
+            &pid,
+            &cid,
+            req.activation_generation,
+            &req.action_name,
+            &req.args_json,
+            &req.idempotency_key,
+        ) {
+            Ok(action_rec) => Ok(Response::new(SubmitScopedPanelActionResponse {
+                receipt: Some(ScopedPanelActionReceipt {
+                    admitted: true,
+                    result_json: Some(br#"{"status":"admitted"}"#.to_vec()),
+                    receipt: Some(ReceiptRef {
+                        receipt_id: action_rec.receipt_id,
+                        owner_domain: "marlin-agent-runtime".to_owned(),
+                        digest_sha256: action_rec.receipt_digest.to_vec(),
+                        committed_at_unix_ms: now_unix_ms(),
+                    }),
+                    denial: None,
+                }),
+            })),
+            Err(denial) => Ok(Response::new(SubmitScopedPanelActionResponse {
                 receipt: Some(ScopedPanelActionReceipt {
                     admitted: false,
                     result_json: None,
                     receipt: None,
-                    denial: Some(TypedDenial {
-                        code: DenialCode::CapabilityNotGranted as i32,
-                        message: format!("action {:?} not in declared_actions", req.action_name),
-                        owner_id: Some("marlin.plugin.v1".to_owned()),
-                        details: HashMap::new(),
-                    }),
+                    denial: Some(map_denial(denial)),
                 }),
-            }));
+            })),
         }
-        let rref = mint_receipt(&mut st, "plugin-action", req.action_name.as_bytes());
-        Ok(Response::new(SubmitScopedPanelActionResponse {
-            receipt: Some(ScopedPanelActionReceipt {
-                admitted: true,
-                result_json: Some(br#"{"status":"admitted"}"#.to_vec()),
-                receipt: Some(rref),
-                denial: None,
-            }),
-        }))
     }
 }
 

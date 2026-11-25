@@ -4,10 +4,18 @@
 
 #![cfg(feature = "ui-grpc")]
 
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use marlin_agent_app_server::{
-    ui_grpc::MyGoBridgeHost,
+    AppServer,
+    ui_grpc::{MyGoBridgeHost, SchemeOverlayProjection},
+    v1::{
+        ConversationMessage, MessageRole, StreamTurnRequest,
+        app_server_client::AppServerClient as V1AppServerClient, turn_event,
+    },
     wire::marlin::{
         app::v1::{GetCapabilitiesRequest, app_server_client::AppServerClient},
         common::v1::{DenialCode, TargetKind},
@@ -20,8 +28,8 @@ use marlin_agent_app_server::{
             approval_gate_service_client::ApprovalGateServiceClient,
         },
         plugin::v1::{
-            EnableWorkflowRequest, InstallSignedReleaseRequest, ReleaseAttestation,
-            SignedReleaseEnvelope, SubmitScopedPanelActionRequest,
+            EnableWorkflowRequest, InstallSignedReleaseRequest, PanelRuntimeKind,
+            ReleaseAttestation, SignedReleaseEnvelope, SubmitScopedPanelActionRequest,
             plugin_service_client::PluginServiceClient,
         },
         projection::v1::{
@@ -29,16 +37,24 @@ use marlin_agent_app_server::{
             projection_query_service_client::ProjectionQueryServiceClient,
         },
         ui::v1::{
-            DispatchUiEventRequest, OpenWorkbenchRequest, dispatch_ui_event_request,
-            ui_workbench_service_client::UiWorkbenchServiceClient,
+            DispatchUiEventRequest, OpenWorkbenchRequest, SlotCardinality, SlotDeclaration,
+            dispatch_ui_event_request, ui_workbench_service_client::UiWorkbenchServiceClient,
         },
     },
+};
+use marlin_agent_protocol::{
+    ModelEndpoint, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse,
+    ModelGatewayFuture, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
+    assistant_gateway_message,
 };
 use marlin_agent_runtime::plugin::{
     PublisherId, ReleaseAttestation as RuntimeAttestation, ReleaseTrust, SignedPanelRelease,
 };
+use marlin_agent_stream::{
+    ModelGatewayEventStream, ModelStreamChunk, ModelStreamEvent, ModelStreamingGateway,
+};
 use tokio::net::TcpListener;
-use tokio_stream::wrappers::TcpListenerStream;
+use tokio_stream::{StreamExt, wrappers::TcpListenerStream};
 use tonic::{Code, Request, Status, transport::Server};
 
 fn auth_req<T>(msg: T) -> Request<T> {
@@ -303,6 +319,138 @@ async fn mygo_bridge_enforces_ui_slots_one_shot_gates_signed_panels_and_device_o
         .await
         .unwrap_err();
     assert_eq!(secret_err.code(), Code::PermissionDenied);
+
+    server.abort();
+}
+
+struct EchoGateway;
+
+impl ModelStreamingGateway for EchoGateway {
+    fn stream(
+        &self,
+        _request: ModelGatewayRequest,
+    ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayEventStream>> {
+        Box::pin(async move {
+            let stream = async_stream::try_stream! {
+                yield ModelStreamEvent::Started { transport: ModelGatewayTransport::Sse };
+                yield ModelStreamEvent::Chunk(ModelStreamChunk::new(1, "cohosted-ok"));
+                yield ModelStreamEvent::Completed {
+                    response: ModelGatewayCompletionResponse::new(
+                        "cohost-fixture",
+                        "gpt-fixture",
+                        vec![ModelGatewayCompletionChoice::new(
+                            0,
+                            assistant_gateway_message("cohosted-ok"),
+                            None,
+                        )],
+                    ),
+                };
+            };
+            Ok(Box::pin(stream) as ModelGatewayEventStream)
+        })
+    }
+}
+
+#[tokio::test]
+async fn real_app_server_cohosts_with_mygo_bridge_and_validates_scheme_overlays() {
+    // 1. SchemeOverlayProjection::validate enforces mobile App Store and host.gate invariants.
+    let bad_ios = SchemeOverlayProjection {
+        target_kind: TargetKind::MobileIos,
+        profile_name: "ios-bad".to_owned(),
+        layout_kind: "mobile-stack".to_owned(),
+        allowed_runtimes: vec![PanelRuntimeKind::WebviewUntrusted],
+        device_protocols: Vec::new(),
+        slots: vec![SlotDeclaration {
+            slot_id: "approval.gate".to_owned(),
+            cardinality: SlotCardinality::Single as i32,
+            fallback_renderer: "host.gate".to_owned(),
+            allow_untrusted_plugin: false,
+        }],
+    };
+    assert!(bad_ios.validate().is_err());
+
+    let bad_legacy_ns = SchemeOverlayProjection {
+        target_kind: TargetKind::DesktopMacos,
+        profile_name: "legacy-bad".to_owned(),
+        layout_kind: "desktop-split".to_owned(),
+        allowed_runtimes: vec![PanelRuntimeKind::Declarative],
+        device_protocols: Vec::new(),
+        slots: vec![SlotDeclaration {
+            slot_id: "approval.gate".to_owned(),
+            cardinality: SlotCardinality::Single as i32,
+            fallback_renderer: "native.gate".to_owned(),
+            allow_untrusted_plugin: false,
+        }],
+    };
+    assert!(bad_legacy_ns.validate().is_err());
+
+    // 2. Real AppServer<S> co-hosted with MyGoBridgeHost via AppServer::into_ui_router!
+    let app_server = AppServer::new(
+        ModelEndpoint::new("openai", "gpt-fixture"),
+        Arc::new(EchoGateway),
+        |meta| match meta.get("authorization") {
+            Some(v) if v == "Bearer test-token" => Ok(()),
+            _ => Err(Status::unauthenticated("missing bearer token")),
+        },
+    )
+    .unwrap();
+    let bridge = MyGoBridgeHost::new(ReleaseTrust::new(BTreeMap::new()), |meta| {
+        match meta.get("authorization") {
+            Some(v) if v == "Bearer test-token" => Ok(()),
+            _ => Err(Status::unauthenticated("missing bearer token")),
+        }
+    });
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        app_server
+            .into_ui_router(bridge)
+            .serve_with_incoming(TcpListenerStream::new(listener))
+            .await
+            .unwrap();
+    });
+
+    let endpoint = format!("http://{addr}");
+
+    // Real AppServer StreamTurn serves live model gateway chunks on the shared port.
+    let mut v1_client = V1AppServerClient::connect(endpoint.clone()).await.unwrap();
+    let mut stream = v1_client
+        .stream_turn(auth_req(StreamTurnRequest {
+            messages: vec![ConversationMessage {
+                role: MessageRole::User as i32,
+                text: "hello".to_owned(),
+            }],
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    let mut text = String::new();
+    while let Some(ev) = stream.next().await {
+        if let Some(turn_event::Event::TextDelta(delta)) = ev.unwrap().event {
+            text.push_str(&delta.text);
+        }
+    }
+    assert_eq!(text, "cohosted-ok");
+
+    // On the EXACT SAME HTTP/2 port, MyGoBridgeHost UiWorkbenchService serves locked host.gate.
+    let mut ui_client = UiWorkbenchServiceClient::connect(endpoint).await.unwrap();
+    let wb = ui_client
+        .open_workbench(auth_req(OpenWorkbenchRequest {
+            session_id: "cohosted-s1".to_owned(),
+            client_target_kind: TargetKind::DesktopMacos as i32,
+            preferred_profile: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .workbench
+        .unwrap();
+    assert!(wb.slots.iter().any(|s| {
+        s.slot_id == "approval.gate"
+            && s.fallback_renderer == "host.gate"
+            && !s.allow_untrusted_plugin
+    }));
 
     server.abort();
 }
