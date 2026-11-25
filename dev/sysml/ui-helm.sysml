@@ -46,9 +46,12 @@ package MarlinUiHelm {
                    vectors admitted by ASP without text S-expression parsing. */
         }
         part nativeSearchBackend {
-            doc /* `MarlinConvergedSearchEngine::execute_admitted_playbook`:
-                   pure-Rust in-process multi-axis workspace execution returning
-                   BLAKE3 generation-bound hits in milliseconds. */
+            doc /* `WorkspaceSearchIndex::open_or_build_cached`,
+                   `WorkspaceSearchIndex::sync_workspace_from_disk`, and
+                   `MarlinConvergedSearchEngine::execute_admitted_playbook_with_index`:
+                   pure-Rust resident multi-axis workspace engine with zero-copy
+                   mmap cold-start snapshots, in-place incremental delta sync on
+                   refresh (`C-l`), and BLAKE3 generation-bound hits in microseconds. */
         }
         part embarkActionSink {
             doc /* Dispatches confirmed/marked Helm hits to buffer navigation,

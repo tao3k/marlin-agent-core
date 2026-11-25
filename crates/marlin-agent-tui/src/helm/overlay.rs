@@ -7,225 +7,32 @@
 //!
 //! - When the resident index is warm in RAM, queries execute synchronously in
 //!   **< 0.5 ms** (zero thread-spawn lag, zero 16ms polling jitter, zero disk I/O).
-//! - When warming on first boot or on manual `C-l` refresh, builds asynchronously
-//!   with exact-epoch fencing (`dev/quint/ui-helm.qnt`).
+//! - On first boot, loads via zero-copy `mmap` cached snapshots (`open_or_build_cached`),
+//!   and on manual `C-l` refresh runs in-place incremental disk sync
+//!   (`sync_workspace_from_disk`) with exact-epoch fencing (`dev/quint/ui-helm.qnt`).
 //! - Organizes results into authentic Emacs Helm source groups (`Workspace Search`,
 //!   `Buffers`, `Commands (M-x)`), supports `C-o` next-source jump, `C-SPC`/`M-m`
 //!   mark-and-advance, `M-a` mark-all, `C-z` live follow-mode split preview, and
 //!   `TAB` interactive Action Transformer menu.
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use marlin_agent_search_engine::{
-    SearchPlaybookComposition, SearchPlaybookLeaf, SearchPlaybookPlanInput,
-    TopologyOwnerMembershipBlock, WorkspaceContextLine, WorkspaceIndexConfig, WorkspaceSearchHit,
-    WorkspaceSearchIndex, WorkspaceSearchQuery, admit_search_playbook_plan,
+    WorkspaceIndexConfig, WorkspaceSearchIndex, WorkspaceSearchQuery,
+    default_workspace_snapshot_path,
 };
-use marlin_agent_ui::{UiBufferId, UiCommand, UiCommandName};
+use marlin_agent_ui::UiCommand;
 use tokio::sync::oneshot;
+
+use super::types::{
+    HelmAction, HelmCandidate, HelmDisplayRow, HelmMenuActionItem, HelmMenuActionKind,
+    HelmParsedInput, HelmSourceKind, SharedSearchIndex, admit_helm_playbook,
+    build_static_candidates, hit_to_candidate,
+};
 
 const MAX_HELM_HITS: usize = 64;
 const PREVIEW_CONTEXT_RADIUS: usize = 5;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum HelmSourceKind {
-    All,
-    Search,
-    Buffers,
-    Commands,
-}
-
-impl HelmSourceKind {
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::All => "all",
-            Self::Search => "search",
-            Self::Buffers => "buffers",
-            Self::Commands => "commands",
-        }
-    }
-
-    pub(crate) fn section_title(self) -> &'static str {
-        match self {
-            Self::All => "All Sources",
-            Self::Search => "Workspace Search",
-            Self::Buffers => "Buffers",
-            Self::Commands => "Commands (M-x)",
-        }
-    }
-
-    fn next(self) -> Self {
-        match self {
-            Self::All => Self::Search,
-            Self::Search => Self::Buffers,
-            Self::Buffers => Self::Commands,
-            Self::Commands => Self::All,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct HelmParsedInput {
-    pub(crate) async_pattern: String,
-    pub(crate) local_tokens: Vec<String>,
-    pub(crate) languages: Vec<String>,
-    pub(crate) documents: Vec<String>,
-    pub(crate) path_prefix: Option<String>,
-    pub(crate) extension: Option<String>,
-}
-
-impl HelmParsedInput {
-    pub(crate) fn parse(raw: &str) -> Self {
-        let (async_raw, local_raw) = match raw.find('#') {
-            Some(idx) => (raw[..idx].trim(), raw[idx + 1..].trim()),
-            None => (raw.trim(), ""),
-        };
-        let mut pattern_parts = Vec::new();
-        let mut languages = Vec::new();
-        let mut documents = Vec::new();
-        let mut path_prefix = None;
-        let mut extension = None;
-
-        for token in async_raw.split_whitespace() {
-            if let Some(val) = token.strip_prefix("@lang:") {
-                if !val.is_empty() && !languages.iter().any(|item| item == val) {
-                    languages.push(val.to_owned());
-                }
-            } else if let Some(val) = token.strip_prefix("@doc:") {
-                if !val.is_empty() && !documents.iter().any(|item| item == val) {
-                    documents.push(val.to_owned());
-                }
-            } else if let Some(val) = token.strip_prefix("@prefix:") {
-                if !val.is_empty() {
-                    path_prefix = Some(val.to_owned());
-                }
-            } else if let Some(val) = token.strip_prefix("@ext:") {
-                if !val.is_empty() {
-                    extension = Some(val.to_owned());
-                }
-            } else {
-                pattern_parts.push(token);
-            }
-        }
-
-        let local_tokens = local_raw
-            .split_whitespace()
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-
-        Self {
-            async_pattern: pattern_parts.join(" "),
-            local_tokens,
-            languages,
-            documents,
-            path_prefix,
-            extension,
-        }
-    }
-
-    fn async_key(&self) -> (&str, &[String], &[String], Option<&str>, Option<&str>) {
-        (
-            &self.async_pattern,
-            &self.languages,
-            &self.documents,
-            self.path_prefix.as_deref(),
-            self.extension.as_deref(),
-        )
-    }
-
-    pub(crate) fn highlight_needles(&self) -> Vec<String> {
-        let mut needles = Vec::new();
-        if !self.async_pattern.is_empty() {
-            needles.push(self.async_pattern.clone());
-        }
-        for tok in &self.local_tokens {
-            if !tok.is_empty() && !tok.starts_with('!') {
-                needles.push(tok.clone());
-            }
-        }
-        needles
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct HelmCandidate {
-    pub(crate) id: String,
-    pub(crate) source: HelmSourceKind,
-    pub(crate) display: String,
-    pub(crate) path: Option<String>,
-    pub(crate) language: Option<String>,
-    pub(crate) snippet: String,
-    pub(crate) citation: Option<String>,
-    pub(crate) badge: String,
-    pub(crate) context_lines: Vec<WorkspaceContextLine>,
-    pub(crate) buffer_id: Option<UiBufferId>,
-    pub(crate) command_name: Option<UiCommandName>,
-}
-
-impl HelmCandidate {
-    fn matches_tokens(&self, tokens: &[String]) -> bool {
-        if tokens.is_empty() {
-            return true;
-        }
-        let haystack = format!(
-            "{} {} {} {}",
-            self.display.to_lowercase(),
-            self.snippet.to_lowercase(),
-            self.badge.to_lowercase(),
-            self.source.label()
-        );
-        tokens.iter().all(|token| {
-            if token.is_empty() {
-                true
-            } else if let Some(neg) = token.strip_prefix('!') {
-                if neg.is_empty() {
-                    true
-                } else {
-                    !haystack.contains(&neg.to_lowercase())
-                }
-            } else {
-                haystack.contains(&token.to_lowercase())
-            }
-        })
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum HelmDisplayRow {
-    SourceHeader {
-        source: HelmSourceKind,
-        count: usize,
-        meta: String,
-    },
-    Candidate {
-        filtered_pos: usize,
-        raw_index: usize,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum HelmMenuActionKind {
-    Primary,
-    ExportCitations,
-    ScopeDirectory,
-    ScopeLanguage,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct HelmMenuActionItem {
-    pub(crate) kind: HelmMenuActionKind,
-    pub(crate) key: &'static str,
-    pub(crate) label: String,
-    pub(crate) detail: String,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub(crate) enum HelmAction {
-    InsertCitations(String),
-    SelectBuffer(UiBufferId),
-    PrepareCommand(UiCommandName),
-}
 
 pub(crate) struct HelmOverlay {
     pub(crate) input: String,
@@ -247,9 +54,10 @@ pub(crate) struct HelmOverlay {
     pub(crate) last_error: Option<String>,
     pub(crate) indexing: bool,
     workspace_root: PathBuf,
+    snapshot_path: PathBuf,
     index_config: WorkspaceIndexConfig,
-    index: Option<Arc<WorkspaceSearchIndex>>,
-    index_receiver: Option<oneshot::Receiver<Arc<WorkspaceSearchIndex>>>,
+    index: Option<SharedSearchIndex>,
+    index_receiver: Option<oneshot::Receiver<SharedSearchIndex>>,
 }
 
 impl HelmOverlay {
@@ -258,16 +66,22 @@ impl HelmOverlay {
         workspace_root: PathBuf,
         command_catalog: &[UiCommand],
         index_config: WorkspaceIndexConfig,
-        warm_index: Option<Arc<WorkspaceSearchIndex>>,
+        warm_index: Option<SharedSearchIndex>,
         runtime: &tokio::runtime::Handle,
     ) -> Self {
         let input = initial_query.unwrap_or("").trim().to_owned();
         let parsed = HelmParsedInput::parse(&input);
         let static_candidates = build_static_candidates(command_catalog);
-        let indexed_files = warm_index.as_ref().map_or(0, |idx| idx.file_count());
-        let generation_digest = warm_index
+        let snapshot_path = default_workspace_snapshot_path(&workspace_root);
+        let (indexed_files, generation_digest) = warm_index
             .as_ref()
-            .map(|idx| idx.generation_digest().as_str().to_owned());
+            .and_then(|shared| shared.read().ok())
+            .map_or((0, None), |idx| {
+                (
+                    idx.file_count(),
+                    Some(idx.generation_digest().as_str().to_owned()),
+                )
+            });
 
         let mut overlay = Self {
             input,
@@ -289,6 +103,7 @@ impl HelmOverlay {
             last_error: None,
             indexing: warm_index.is_none(),
             workspace_root,
+            snapshot_path,
             index_config,
             index: warm_index,
             index_receiver: None,
@@ -303,9 +118,11 @@ impl HelmOverlay {
         overlay
     }
 
-    pub(crate) fn attach_warm_index(&mut self, index: Arc<WorkspaceSearchIndex>) {
-        self.indexed_files = index.file_count();
-        self.generation_digest = Some(index.generation_digest().as_str().to_owned());
+    pub(crate) fn attach_warm_index(&mut self, index: SharedSearchIndex) {
+        if let Ok(guard) = index.read() {
+            self.indexed_files = guard.file_count();
+            self.generation_digest = Some(guard.generation_digest().as_str().to_owned());
+        }
         self.index = Some(index);
         self.index_receiver = None;
         self.indexing = false;
@@ -317,22 +134,43 @@ impl HelmOverlay {
     }
 
     pub(crate) fn refresh_index(&mut self, runtime: &tokio::runtime::Handle) {
-        self.spawn_index_build(runtime);
+        if let Some(existing) = self.index.clone() {
+            let snapshot_path = self.snapshot_path.clone();
+            let (tx, rx) = oneshot::channel();
+            self.indexing = true;
+            self.index_receiver = Some(rx);
+            runtime.spawn_blocking(move || {
+                if let Ok(mut guard) = existing.write() {
+                    let receipt = guard.sync_workspace_from_disk();
+                    if receipt.upserted_files > 0 || receipt.deleted_files > 0 {
+                        let _ = guard.save_snapshot(&snapshot_path);
+                    }
+                }
+                let _ = tx.send(existing);
+            });
+        } else {
+            self.spawn_index_build(runtime);
+        }
     }
 
     fn spawn_index_build(&mut self, runtime: &tokio::runtime::Handle) {
         let root = self.workspace_root.clone();
+        let snapshot_path = self.snapshot_path.clone();
         let config = self.index_config.clone();
         let (tx, rx) = oneshot::channel();
         self.indexing = true;
         self.index_receiver = Some(rx);
         runtime.spawn_blocking(move || {
-            let built = Arc::new(WorkspaceSearchIndex::build_with_config(&root, config));
+            let built = Arc::new(RwLock::new(WorkspaceSearchIndex::open_or_build_cached(
+                &root,
+                &snapshot_path,
+                config,
+            )));
             let _ = tx.send(built);
         });
     }
 
-    pub(crate) fn poll(&mut self) -> Option<Arc<WorkspaceSearchIndex>> {
+    pub(crate) fn poll(&mut self) -> Option<SharedSearchIndex> {
         let rx = self.index_receiver.as_mut()?;
         match rx.try_recv() {
             Ok(built) => {
@@ -389,7 +227,7 @@ impl HelmOverlay {
     }
 
     fn run_resident_query(&mut self) {
-        let Some(index) = self.index.as_ref() else {
+        let Some(shared) = self.index.clone() else {
             self.rebuild_view();
             return;
         };
@@ -399,6 +237,10 @@ impl HelmOverlay {
             || self.parsed.extension.is_some();
 
         if self.parsed.async_pattern.is_empty() && !has_filters {
+            let Ok(index) = shared.read() else {
+                self.rebuild_view();
+                return;
+            };
             let report = index.query(&WorkspaceSearchQuery {
                 pattern: "",
                 languages: &[],
@@ -408,6 +250,7 @@ impl HelmOverlay {
                 max_hits: 24,
                 context_radius: PREVIEW_CONTEXT_RADIUS,
             });
+            drop(index);
             self.generation_digest = Some(report.generation_digest.as_str().to_owned());
             self.last_query_micros = Some(report.elapsed_micros);
             self.last_error = None;
@@ -423,6 +266,10 @@ impl HelmOverlay {
             return;
         }
 
+        let Ok(index) = shared.read() else {
+            self.rebuild_view();
+            return;
+        };
         let report = index.query(&WorkspaceSearchQuery {
             pattern: &self.parsed.async_pattern,
             languages: &self.parsed.languages,
@@ -432,6 +279,7 @@ impl HelmOverlay {
             max_hits: MAX_HELM_HITS,
             context_radius: PREVIEW_CONTEXT_RADIUS,
         });
+        drop(index);
         self.generation_digest = Some(report.generation_digest.as_str().to_owned());
         self.last_query_micros = Some(report.elapsed_micros);
         self.last_error = None;
@@ -595,9 +443,9 @@ impl HelmOverlay {
         items
     }
 
-    /// Execute the active action. Returns `Ok(Some(action))` when Helm should close
-    /// and hand off to the TUI host, or `Ok(None)` when an in-Helm transformer
-    /// action (like scoping `@prefix:` or `@lang:`) updated Helm live!
+    /// Execute the active action. Returns `(true, Some(action))` when Helm should close
+    /// and hand off to the TUI host, or `(false, None)` when an in-Helm transformer
+    /// action (like scoping `@prefix:` or `@lang:`) updated Helm live.
     pub(crate) fn accept(&mut self, export_citations_only: bool) -> (bool, Option<HelmAction>) {
         if self.action_mode {
             let actions = self.available_actions();
@@ -730,7 +578,6 @@ impl HelmOverlay {
             if !cand.matches_tokens(local_tokens) {
                 continue;
             }
-            // For buffers & commands, also filter by the main async pattern when typed.
             if cand.source != HelmSourceKind::Search
                 && !async_query.is_empty()
                 && !cand.display.to_lowercase().contains(&async_query)
@@ -780,7 +627,6 @@ impl HelmOverlay {
             self.selected = self.filtered_indices.len() - 1;
         }
 
-        // Prune dangling marks (`s.marks.subseteq(s.candidates)`).
         let valid_ids: Vec<String> = self
             .filtered_indices
             .iter()
@@ -790,167 +636,3 @@ impl HelmOverlay {
             .retain(|mid| valid_ids.iter().any(|valid| valid == mid));
     }
 }
-
-fn admit_helm_playbook(parsed: &HelmParsedInput) -> Result<(), String> {
-    let raw = if parsed.async_pattern.is_empty() {
-        "marlin"
-    } else {
-        parsed.async_pattern.as_str()
-    };
-    let rg_pattern = raw
-        .strip_prefix("re:")
-        .or_else(|| raw.strip_prefix("rg:"))
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(raw);
-    let tantivy_expr = if raw.contains("title:") || raw.contains("body:") {
-        raw.to_owned()
-    } else {
-        let safe_phrase: String = rg_pattern
-            .chars()
-            .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | ' ' | '.'))
-            .collect();
-        let trimmed = safe_phrase.trim();
-        let term = if trimmed.is_empty() {
-            "marlin"
-        } else {
-            trimmed
-        };
-        format!("title:\"{term}\"^2 OR body:\"{term}\"")
-    };
-    let mut leaves = vec![
-        SearchPlaybookComposition::Leaf(SearchPlaybookLeaf::Rg(vec![
-            "-n".into(),
-            "-e".into(),
-            rg_pattern.into(),
-        ])),
-        SearchPlaybookComposition::Leaf(SearchPlaybookLeaf::Tantivy(vec![tantivy_expr])),
-    ];
-    if parsed.path_prefix.is_some() || parsed.extension.is_some() {
-        leaves.push(SearchPlaybookComposition::Leaf(
-            SearchPlaybookLeaf::Topology(TopologyOwnerMembershipBlock {
-                kind: "file".into(),
-                exact_path: None,
-                path_prefix: parsed.path_prefix.clone(),
-                extension: parsed.extension.clone(),
-                path_glob: None,
-            }),
-        ));
-    }
-    let languages = if parsed.languages.is_empty() && parsed.documents.is_empty() {
-        vec!["rust".into()]
-    } else {
-        parsed.languages.clone()
-    };
-    let input = SearchPlaybookPlanInput {
-        workspace: Some("marlin-tui".into()),
-        languages,
-        documents: parsed.documents.clone(),
-        composition: SearchPlaybookComposition::Intersect(leaves),
-    };
-    admit_search_playbook_plan(input)
-        .map(|_| ())
-        .map_err(|err| format!("Playbook rejected: {err}"))
-}
-
-fn build_static_candidates(command_catalog: &[UiCommand]) -> Vec<HelmCandidate> {
-    let mut out = Vec::new();
-    let default_buffers = [
-        ("conversation", "Active chat transcript buffer"),
-        ("messages", "UI diagnostics and system messages"),
-        ("help", "Keyboard shortcuts and Meow bindings"),
-        ("processes", "Managed Runtime processes"),
-        ("models", "Configured model routes and aliases"),
-        ("sessions", "Recorded conversation sessions"),
-    ];
-    for (id, desc) in default_buffers {
-        if let Ok(buffer_id) = UiBufferId::new(id) {
-            out.push(HelmCandidate {
-                id: format!("buf:{id}"),
-                source: HelmSourceKind::Buffers,
-                display: format!("*{id}*"),
-                path: None,
-                language: None,
-                snippet: desc.to_owned(),
-                citation: None,
-                badge: "buffer".to_owned(),
-                context_lines: vec![WorkspaceContextLine {
-                    line_number: 1,
-                    text: format!("Buffer *{id}* — {desc}"),
-                    is_match: true,
-                }],
-                buffer_id: Some(buffer_id),
-                command_name: None,
-            });
-        }
-    }
-    for cmd in command_catalog {
-        if cmd.name.as_str() == "helm" {
-            continue;
-        }
-        out.push(HelmCandidate {
-            id: format!("cmd:{}", cmd.name.as_str()),
-            source: HelmSourceKind::Commands,
-            display: cmd.name.as_str().to_owned(),
-            path: None,
-            language: None,
-            snippet: cmd.description.clone(),
-            citation: None,
-            badge: "M-x".to_owned(),
-            context_lines: vec![
-                WorkspaceContextLine {
-                    line_number: 1,
-                    text: format!("Command: M-x {}", cmd.name.as_str()),
-                    is_match: true,
-                },
-                WorkspaceContextLine {
-                    line_number: 2,
-                    text: cmd.description.clone(),
-                    is_match: false,
-                },
-            ],
-            buffer_id: None,
-            command_name: Some(cmd.name.clone()),
-        });
-    }
-    out
-}
-
-fn hit_to_candidate(hit: WorkspaceSearchHit) -> HelmCandidate {
-    let display = match hit.first_line {
-        Some(line) if !hit.line_matches.is_empty() => format!("{}:{line}", hit.path),
-        _ => hit.path.clone(),
-    };
-    let citation = Some(format!("@{display}"));
-    let lang = hit.language.as_deref().unwrap_or("file");
-    let axes_tag: String = hit
-        .matched_axes
-        .iter()
-        .filter(|a| *a != "topology" && *a != "index")
-        .take(2)
-        .cloned()
-        .collect::<Vec<_>>()
-        .join("+");
-    let badge = if axes_tag.is_empty() {
-        lang.to_owned()
-    } else {
-        format!("{lang}·{axes_tag}")
-    };
-    HelmCandidate {
-        id: format!("search:{display}"),
-        source: HelmSourceKind::Search,
-        display,
-        path: Some(hit.path),
-        language: hit.language,
-        snippet: hit.first_line_text.trim().to_owned(),
-        citation,
-        badge,
-        context_lines: hit.context_lines,
-        buffer_id: None,
-        command_name: None,
-    }
-}
-
-#[cfg(test)]
-#[path = "../tests/unit/helm_source.rs"]
-mod tests;

@@ -30,7 +30,7 @@ pub use agent_semantic_search::{
     SearchWorkspaceId, TrigramQuery, TrigramSnapshotError, WorkspaceContextLine,
     WorkspaceDeltaReceipt, WorkspaceFileDelta, WorkspaceIndexConfig, WorkspaceSearchHit,
     WorkspaceSearchIndex, WorkspaceSearchQuery, WorkspaceSearchReport, compile_regex_trigram_query,
-    execute_admitted_playbook,
+    execute_admitted_playbook, execute_admitted_playbook_with_index,
 };
 pub use agent_semantic_search_playbook::{
     GraphNativeBlock, ProducerNativeBlock, ProgressiveSearchPlaybookError,
@@ -41,7 +41,7 @@ pub use agent_semantic_topology::{
     AgentTopologyRelationship, OrgDocumentProjection, OrgDocumentProjectionPort,
     OrgOverlayDocumentProjection, OrgProjectionPortError, OrgPropertyEntry, OrgSectionProjection,
 };
-pub use engine::marlin_search_engine;
+pub use engine::{default_workspace_snapshot_path, marlin_search_engine};
 pub use org_port::{
     MarlinContextOrgPort, parse_live_org_nodes, project_org_nodes_to_document,
     project_org_nodes_to_overlay,

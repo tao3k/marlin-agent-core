@@ -2,12 +2,16 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use super::{HelmAction, HelmOverlay, HelmParsedInput, HelmSourceKind};
+use super::{HelmAction, HelmOverlay, HelmParsedInput, HelmSourceKind, SharedSearchIndex};
 use crate::helm_render::render_helm_window;
 use marlin_agent_search_engine::{WorkspaceIndexConfig, WorkspaceSearchIndex};
 use marlin_agent_ui::{UiRgb, UiTheme};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+
+fn wrap_index(index: WorkspaceSearchIndex) -> SharedSearchIndex {
+    Arc::new(RwLock::new(index))
+}
 
 fn scheme_like_config() -> WorkspaceIndexConfig {
     WorkspaceIndexConfig {
@@ -70,11 +74,9 @@ fn warm_trigram_helm_executes_instantly_and_supports_emacs_source_jump_mark_and_
         .expect("workspace root")
         .to_path_buf();
     let cfg = scheme_like_config();
-    let warm_index = Arc::new(WorkspaceSearchIndex::build_with_config(
-        &workspace_root,
-        cfg.clone(),
-    ));
-    assert!(warm_index.file_count() > 50);
+    let raw_index = WorkspaceSearchIndex::build_with_config(&workspace_root, cfg.clone());
+    assert!(raw_index.file_count() > 50);
+    let warm_index = wrap_index(raw_index);
 
     let mut overlay = HelmOverlay::open(
         Some("@lang:rust @prefix:crates/marlin-agent-search-engine/src/ marlin_search_engine"),
@@ -150,7 +152,7 @@ fn emacs_bottom_split_helm_window_renders_source_headers_preview_modeline_and_mi
         .expect("workspace root")
         .to_path_buf();
     let cfg = scheme_like_config();
-    let warm_index = Arc::new(WorkspaceSearchIndex::build_with_config(
+    let warm_index = wrap_index(WorkspaceSearchIndex::build_with_config(
         &workspace_root,
         cfg.clone(),
     ));
@@ -239,7 +241,7 @@ fn converged_helm_supports_rg_regex_asp_fuzzy_path_tantivy_bm25_and_typo_fuzzy()
         .expect("workspace root")
         .to_path_buf();
     let cfg = scheme_like_config();
-    let warm_index = Arc::new(WorkspaceSearchIndex::build_with_config(
+    let warm_index = wrap_index(WorkspaceSearchIndex::build_with_config(
         &workspace_root,
         cfg.clone(),
     ));
@@ -328,5 +330,87 @@ fn converged_helm_supports_rg_regex_asp_fuzzy_path_tantivy_bm25_and_typo_fuzzy()
                 .any(|c| c.badge.contains("fuzzy")),
         "expected Tantivy FuzzyTermQuery hit for typo `playbok`, got {:?}",
         typo_overlay.search_candidates
+    );
+}
+
+#[test]
+fn cached_mmap_warm_start_and_incremental_refresh_detects_disk_edits_and_deletions() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let workspace = tempfile::tempdir().expect("temp workspace");
+    let cache_dir = tempfile::tempdir().expect("temp cache");
+    let snapshot_path = cache_dir.path().join("helm-test.asp-index.bin");
+
+    std::fs::create_dir_all(workspace.path().join("src")).unwrap();
+    std::fs::write(
+        workspace.path().join("src/alpha.rs"),
+        "pub fn alpha_initial_marker() -> usize { 1 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        workspace.path().join("src/beta.rs"),
+        "pub fn beta_removable_marker() -> usize { 2 }\n",
+    )
+    .unwrap();
+
+    let cfg = scheme_like_config();
+    // Cold build creates the mmap binary snapshot on disk.
+    let first =
+        WorkspaceSearchIndex::open_or_build_cached(workspace.path(), &snapshot_path, cfg.clone());
+    assert!(snapshot_path.exists());
+    assert_eq!(first.file_count(), 2);
+
+    // Second open loads via zero-copy mmap + disk delta sync.
+    let cached = wrap_index(WorkspaceSearchIndex::open_or_build_cached(
+        workspace.path(),
+        &snapshot_path,
+        cfg.clone(),
+    ));
+    let mut overlay = HelmOverlay::open(
+        Some("zebra_refreshed_symbol"),
+        workspace.path().to_path_buf(),
+        &[],
+        cfg,
+        Some(cached),
+        rt.handle(),
+    );
+    assert!(
+        overlay.search_candidates.is_empty(),
+        "unexpected pre-edit hit: {:?}",
+        overlay.search_candidates
+    );
+    let digest_before = overlay.generation_digest.clone();
+
+    // Edit alpha.rs and remove beta.rs on disk, then trigger incremental `C-l` refresh.
+    std::fs::write(
+        workspace.path().join("src/alpha.rs"),
+        "pub fn zebra_refreshed_symbol() -> usize { 42 }\n",
+    )
+    .unwrap();
+    std::fs::remove_file(workspace.path().join("src/beta.rs")).unwrap();
+
+    overlay.refresh_index(rt.handle());
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while overlay.poll().is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out waiting for incremental Helm index refresh"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    assert!(!overlay.is_indexing());
+    assert_eq!(overlay.indexed_files, 1);
+    assert_ne!(overlay.generation_digest, digest_before);
+    assert!(
+        overlay
+            .search_candidates
+            .iter()
+            .any(|cand| cand.display.contains("src/alpha.rs")),
+        "expected refreshed alpha.rs hit, got {:?}",
+        overlay.search_candidates
     );
 }

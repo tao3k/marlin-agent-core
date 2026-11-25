@@ -75,11 +75,10 @@ pub(crate) struct App {
     pub(super) prompt_history: PromptHistory,
     pub(crate) history_search: Option<HistorySearch>,
     pub(crate) helm: Option<super::HelmOverlay>,
-    pub(crate) search_index: Option<Arc<marlin_agent_search_engine::WorkspaceSearchIndex>>,
+    pub(crate) search_index: Option<crate::helm::SharedSearchIndex>,
     pub(crate) search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig,
-    pub(super) search_index_warming: Option<
-        tokio::sync::oneshot::Receiver<Arc<marlin_agent_search_engine::WorkspaceSearchIndex>>,
-    >,
+    pub(super) search_index_warming:
+        Option<tokio::sync::oneshot::Receiver<crate::helm::SharedSearchIndex>>,
     pub(crate) command_draft: Option<Composer>,
     pub(crate) command_menu: Option<CommandMenu>,
     pub(crate) command_selection: Option<(String, UiCommandName)>,
@@ -527,15 +526,18 @@ impl App {
             .clone()
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let snapshot_path =
+            marlin_agent_search_engine::default_workspace_snapshot_path(&workspace_root);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.search_index_warming = Some(rx);
         runtime.spawn_blocking(move || {
-            let built = Arc::new(
-                marlin_agent_search_engine::WorkspaceSearchIndex::build_with_config(
+            let built = Arc::new(std::sync::RwLock::new(
+                marlin_agent_search_engine::WorkspaceSearchIndex::open_or_build_cached(
                     &workspace_root,
+                    &snapshot_path,
                     config,
                 ),
-            );
+            ));
             let _ = tx.send(built);
         });
     }

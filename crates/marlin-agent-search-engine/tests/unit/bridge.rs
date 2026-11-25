@@ -283,6 +283,21 @@ fn rooted_scheme_plans_and_compiled_module_project_into_asp() {
             assert!(index_cfg.enable_rg_regex);
 
             let resident = WorkspaceSearchIndex::build_with_config(workspace_root, index_cfg);
+            let resident_playbook_report = engine
+                .execute_admitted_playbook_with_index(&resident, &helm_admitted)
+                .expect("ASP executes admitted playbook directly against shared resident index");
+            assert_eq!(
+                resident_playbook_report.execution_mode,
+                "pure-rust-resident-index"
+            );
+            assert!(
+                resident_playbook_report
+                    .hits
+                    .iter()
+                    .any(|hit| hit.path == "crates/marlin-agent-search-engine/src/engine.rs"),
+                "expected engine.rs in resident playbook hits: {:?}",
+                resident_playbook_report.hits
+            );
             let fast_report = resident.query(&WorkspaceSearchQuery {
                 pattern: "marlin_search_engine",
                 languages: &["rust".to_owned()],
