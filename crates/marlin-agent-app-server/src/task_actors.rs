@@ -143,6 +143,36 @@ impl TaskActorControlPlane {
     pub fn subscribe_workbench_tabs(&self) -> watch::Receiver<WorkbenchTabProjection> {
         self.registry.subscribe_workbench_tabs()
     }
+
+    /// Atomically persists all TaskActor cursors, governed contexts, and detour states to `path`.
+    pub fn save_checkpoint_file(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<TaskActorRuntimeSnapshot, TaskActorRuntimeError> {
+        self.registry.save_checkpoint_file(path)
+    }
+
+    /// Restores a Session-free `TaskActorControlPlane` from a durable checkpoint file.
+    pub fn load_checkpoint_file(path: &std::path::Path) -> Result<Self, TaskActorRuntimeError> {
+        Ok(Self::with_registry(
+            TaskActorRuntimeRegistry::load_checkpoint_file(path)?,
+        ))
+    }
+
+    /// Executes an admitted dispatch against an async runtime executor and reconciles its receipt.
+    pub async fn execute_and_reconcile<F, Fut>(
+        &self,
+        envelope: MarlinDispatchEnvelope,
+        executor: F,
+    ) -> Result<(AdmittedMarlinDispatch, ReceiptReconciliationDecision), TaskActorRuntimeError>
+    where
+        F: FnOnce(AdmittedMarlinDispatch) -> Fut,
+        Fut: std::future::Future<Output = MarlinExecutionReceipt>,
+    {
+        self.registry
+            .execute_and_reconcile(envelope, executor)
+            .await
+    }
 }
 
 #[cfg(test)]

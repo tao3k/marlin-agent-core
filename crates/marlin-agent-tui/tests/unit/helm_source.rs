@@ -2,8 +2,11 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use super::{HelmAction, HelmOverlay, HelmParsedInput, HelmSourceKind, SharedSearchIndex};
-use crate::helm_render::render_helm_window;
+use super::{
+    HelmAction, HelmOverlay, HelmParsedInput, HelmSourceKind, SharedSearchIndex, helm_window_area,
+    project_helm_ui_element,
+};
+use crate::ui_elements::render_overlay_element;
 use marlin_agent_search_engine::{WorkspaceIndexConfig, WorkspaceSearchIndex};
 use marlin_agent_ui::{UiRgb, UiTheme};
 use std::path::Path;
@@ -172,7 +175,9 @@ fn emacs_bottom_split_helm_window_renders_source_headers_preview_modeline_and_mi
     let theme = sample_theme();
     terminal
         .draw(|frame| {
-            render_helm_window(&overlay, frame, frame.area(), &theme);
+            let window = helm_window_area(frame.area()).expect("helm window area");
+            let tree = project_helm_ui_element(&overlay, window);
+            render_overlay_element(frame, window, &tree, &theme);
         })
         .expect("render bottom-split Helm window");
 
@@ -214,7 +219,9 @@ fn emacs_bottom_split_helm_window_renders_source_headers_preview_modeline_and_mi
     overlay.toggle_action_mode();
     terminal
         .draw(|frame| {
-            render_helm_window(&overlay, frame, frame.area(), &theme);
+            let window = helm_window_area(frame.area()).expect("helm window area");
+            let tree = project_helm_ui_element(&overlay, window);
+            render_overlay_element(frame, window, &tree, &theme);
         })
         .expect("render Helm action transformer");
     let act_buf = terminal.backend().buffer();
@@ -267,9 +274,9 @@ fn converged_helm_supports_rg_regex_asp_fuzzy_path_tantivy_bm25_and_typo_fuzzy()
         rg_overlay.search_candidates
     );
 
-    // 2. ASP FileLocator + Emacs/fzf subsequence fuzzy path (`helm_render`)
+    // 2. ASP FileLocator + Emacs/fzf subsequence fuzzy path (`helm/view.rs`)
     let path_overlay = HelmOverlay::open(
-        Some("hlmrndr"),
+        Some("hlmvw"),
         workspace_root.clone(),
         &[],
         cfg.clone(),
@@ -284,8 +291,8 @@ fn converged_helm_supports_rg_regex_asp_fuzzy_path_tantivy_bm25_and_typo_fuzzy()
         path_overlay
             .search_candidates
             .iter()
-            .any(|c| c.display.contains("helm_render.rs")),
-        "expected fuzzy subsequence hit on helm_render.rs, got {:?}",
+            .any(|c| c.display.contains("helm/view.rs")),
+        "expected fuzzy subsequence hit on helm/view.rs, got {:?}",
         path_overlay.search_candidates
     );
 
@@ -469,8 +476,10 @@ fn helm_symbol_and_graph_axes_locate_definitions_callers_and_action_transformer_
         sym_overlay
             .search_candidates
             .iter()
-            .any(|c| c.path.as_deref() == Some("crates/marlin-agent-search-engine/src/engine.rs")
-                && c.badge.contains("graph")),
+            .any(
+                |c| c.path.as_deref() == Some("crates/marlin-agent-search-engine/src/engine.rs")
+                    && c.badge.contains("graph")
+            ),
         "expected definer in @graph: results, got {:?}",
         sym_overlay.search_candidates
     );

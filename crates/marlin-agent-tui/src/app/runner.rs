@@ -25,9 +25,9 @@ use std::{
 use super::runtime_probe::RuntimeProbe;
 use super::tool_review::{open_tool_review, poll_tool_review, submit_tool_review};
 use super::ui_events::{
-    activate_deferred_command, apply_editor_mode, apply_ui_request, browse_menu,
-    command_menu_active, handle_helm_input, release_interrupted_key_sequence, route_frame_click,
-    route_terminal_key, stage_ui_package,
+    activate_deferred_command, apply_editor_mode, apply_ui_request, apply_wheel_scroll,
+    browse_menu, command_menu_active, handle_helm_input, release_interrupted_key_sequence,
+    route_frame_click, route_terminal_key, stage_ui_package,
 };
 use termion::input::TermReadEventsAndRaw;
 
@@ -629,56 +629,7 @@ pub(super) fn run(
             };
             let received = keys_rx.recv_timeout(wait);
             if let Some((up, pulses, column, row)) = wheel_steps.take_steps() {
-                let hit = if column > 0 && row > 0 {
-                    super::super::ui_elements::hit_test_scroll(
-                        &painted_regions,
-                        column - 1,
-                        row - 1,
-                    )
-                } else {
-                    None
-                };
-                let target = hit.and_then(|region| region.scroll_target());
-                let units = pulses.saturating_mul(usize::from(
-                    hit.and_then(|region| region.scroll_step()).unwrap_or(0),
-                ));
-                if target == Some("transcript")
-                    && let Some(prompt) = app.tool_review_prompt.as_mut()
-                {
-                    prompt.scroll = if up {
-                        prompt
-                            .scroll
-                            .saturating_sub(u16::try_from(units).unwrap_or(u16::MAX))
-                    } else {
-                        prompt
-                            .scroll
-                            .saturating_add(u16::try_from(units).unwrap_or(u16::MAX))
-                    };
-                } else if target == Some("candidates") && app.tool_review_prompt.is_some() {
-                    if let Some(prompt) = app.tool_review_prompt.as_mut() {
-                        prompt.selected = if up {
-                            prompt.selected.saturating_sub(units)
-                        } else {
-                            prompt
-                                .selected
-                                .saturating_add(units)
-                                .min(prompt.menu.choices.len().saturating_sub(1))
-                        };
-                    }
-                } else if target == Some("candidates") && command_menu_active(&app, &ui) {
-                    browse_menu(
-                        &mut app,
-                        &ui,
-                        if up {
-                            UiBrowseDirection::Previous
-                        } else {
-                            UiBrowseDirection::Next
-                        },
-                        u16::try_from(units).unwrap_or(u16::MAX),
-                    );
-                } else if target == Some("transcript") {
-                    app.scroll_lines(up, units);
-                }
+                apply_wheel_scroll(&mut app, &ui, &painted_regions, up, pulses, column, row);
                 schedule.mark_dirty();
             }
             signal_exit = signals.observed_exit_code();

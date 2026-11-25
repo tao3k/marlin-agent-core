@@ -40,13 +40,13 @@ mod declarative_ui_boundary_guard {
         collect_rs_files(&tui_src, &mut files);
 
         // Strictly bounded allowlist of files permitted to touch `ratatui::widgets`
-        // or call `.render_widget(`. `helm_render.rs` is quarantined legacy debt and
-        // MUST NOT be copied or expanded with any new custom renderer files.
+        // or call `.render_widget(`. Zero domain-specific renderers are allowed;
+        // every UI feature (including Helm and Task Tabs) projects to `UiElement`s
+        // rendered through `ui_elements`.
         let allowed_widget_owners = [
             "ui_elements/core.rs",
             "ui_elements/widgets.rs",
             "render_main.rs",
-            "helm_render.rs",
         ];
 
         let mut violations = Vec::new();

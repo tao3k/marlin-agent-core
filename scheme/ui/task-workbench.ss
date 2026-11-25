@@ -48,23 +48,28 @@
 
 (def (marlin-task-workbench-commands)
   '(("task-index" "Focus pinned Task Index buffer" none select-buffer "index")
-    ("task-switch" "Switch among visible active Task tabs" none workspace "task-switch")
-    ("task-peek" "Peek an archived Task in read-only mode" optional inspect "task-peek")
-    ("task-reopen" "Durably reopen an archived Task into active tabs" optional workspace "task-reopen")
-    ("task-drill-l0" "Set progressive Org disclosure to L0 Skeleton" none inspect "L0")
-    ("task-drill-l1" "Set progressive Org disclosure to L1 Contract & Checklist" none inspect "L1")
-    ("task-drill-l2" "Set progressive Org disclosure to L2 Synthesis Body" none inspect "L2")
-    ("task-drill-l3" "Set progressive Org disclosure to L3 Full Evidence" none inspect "L3")))
+    ("task-switch" "Switch among visible active Task tabs" none scheme-action "task-switch")
+    ("task-peek" "Peek an archived Task in read-only mode" optional scheme-action "task-peek")
+    ("task-reopen" "Durably reopen an archived Task into active tabs" optional scheme-action "task-reopen")
+    ("task-drill-l0" "Set progressive Org disclosure to L0 Skeleton" none scheme-action "L0")
+    ("task-drill-l1" "Set progressive Org disclosure to L1 Contract & Checklist" none scheme-action "L1")
+    ("task-drill-l2" "Set progressive Org disclosure to L2 Synthesis Body" none scheme-action "L2")
+    ("task-drill-l3" "Set progressive Org disclosure to L3 Full Evidence" none scheme-action "L3")))
 
 (def (task-summary-line tab-obj)
   (let ((tid (symbol->string (marlin-ui-task-tab-identity (.ref tab-obj 'id))))
         (label (opt-ref tab-obj 'label ""))
         (status (symbol->string (opt-ref tab-obj 'status 'todo)))
         (mode (symbol->string (opt-ref tab-obj 'mode 'active)))
+        (detour (opt-ref tab-obj 'detour-mode 'mainline))
         (wt (opt-ref tab-obj 'worktree "main"))
         (done-c (opt-ref tab-obj 'checklist-done 0))
         (total-c (opt-ref tab-obj 'checklist-total 0)))
-    (string-append tid "  [" status "/" mode "]  " label
+    (string-append tid "  [" status "/" mode
+                   (if (eq? detour 'mainline)
+                     ""
+                     (string-append "/" (symbol->string detour)))
+                   "]  " label
                    "  (" (number->string done-c) "/" (number->string total-c) ")  wt:" wt)))
 
 (def (archived-summary-line rec)

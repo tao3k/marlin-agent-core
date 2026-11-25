@@ -43,8 +43,8 @@ pub use marlin_agent_graph::{
     AdmittedGovernedContext, AdmittedMarlinDispatch, DetourExitKind, DetourMode, DetourNodeId,
     DetourState, DisclosureDepth, DispatchRequestId, ExecutionReceiptStatus, FencingEpoch,
     GovernedContextCapsule, GovernedContextRejection, GraphConvergenceNodeId,
-    GraphDispatchOperation, GraphDispatchRejection, GraphSubstrateTarget, KvPrefixDigest,
-    MarlinDispatchEnvelope, MarlinExecutionReceipt, ReceiptReconciliationDecision,
+    GraphDispatchOperation, GraphDispatchRejection, GraphEngineOracle, GraphSubstrateTarget,
+    KvPrefixDigest, MarlinDispatchEnvelope, MarlinExecutionReceipt, ReceiptReconciliationDecision,
     ReceiptReconciliationReason, TaskActorCursor, TaskActorId, TaskActorScopeMode, TaskActorStatus,
     WorkbenchActiveTaskInput, WorkbenchTabEntry, WorkbenchTabKind, WorkbenchTabProjection,
 };

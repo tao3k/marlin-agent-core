@@ -106,6 +106,12 @@ pub enum TaskActorRuntimeError {
     /// No pending C4 steering branches remain to complete.
     #[error("no pending steering branches for task actor: {task_id}")]
     NoPendingSteeringBranches { task_id: TaskActorId },
+    /// Authoritative Scheme `GraphEngineOracle` failed or disagreed with Rust state.
+    #[error("scheme graph-engine oracle rejected transition: {reason}")]
+    OracleDivergence { reason: String },
+    /// Durable checkpoint serialization or file persistence failed.
+    #[error("task actor durable persistence error: {reason}")]
+    PersistenceError { reason: String },
 }
 
 #[derive(Debug)]
@@ -625,5 +631,177 @@ impl TaskActorRuntimeRegistry {
                 decision.reason,
                 ReceiptReconciliationReason::StaleFencingEpoch
             )
+    }
+
+    /// Reconstructs a `TaskActorRuntimeRegistry` from a previously persisted durable snapshot,
+    /// preserving monotonic `FencingEpoch` cursors, `GovernedContextCapsule` cuts,
+    /// `DetourState` (`BlockerActive` / `SideQuestActive`), focus, and read-only peeks.
+    pub fn from_snapshot(snapshot: TaskActorRuntimeSnapshot) -> Self {
+        let mut read_only_peeks = BTreeSet::new();
+        for tab in &snapshot.workbench_tabs.tabs {
+            if tab.kind == marlin_agent_graph::WorkbenchTabKind::ReadOnlyPeek
+                && let Ok(id) = TaskActorId::new(tab.id.clone())
+            {
+                read_only_peeks.insert(id);
+            }
+        }
+        let state = RegistryState {
+            actors: snapshot.actors,
+            focused_task_id: snapshot.workbench_tabs.focused_task_id,
+            read_only_peeks,
+        };
+        let tabs = state.project_tabs();
+        let (tabs_tx, _rx) = watch::channel(tabs);
+        Self {
+            state: Arc::new(Mutex::new(state)),
+            tabs_tx: Arc::new(tabs_tx),
+        }
+    }
+
+    /// Atomically persists the full `TaskActorRuntimeSnapshot` to `path` as JSON
+    /// (write temp file in parent directory + atomic rename) for restart recovery.
+    pub fn save_checkpoint_file(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<TaskActorRuntimeSnapshot, TaskActorRuntimeError> {
+        let snapshot = self.snapshot();
+        let bytes = serde_json::to_vec_pretty(&snapshot).map_err(|err| {
+            TaskActorRuntimeError::PersistenceError {
+                reason: format!("serialize snapshot: {err}"),
+            }
+        })?;
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent).map_err(|err| {
+                TaskActorRuntimeError::PersistenceError {
+                    reason: format!("create checkpoint parent dir: {err}"),
+                }
+            })?;
+        }
+        let tmp = path.with_extension("checkpoint.tmp");
+        std::fs::write(&tmp, &bytes).map_err(|err| TaskActorRuntimeError::PersistenceError {
+            reason: format!("write temp checkpoint: {err}"),
+        })?;
+        std::fs::rename(&tmp, path).map_err(|err| TaskActorRuntimeError::PersistenceError {
+            reason: format!("rename checkpoint atomically: {err}"),
+        })?;
+        Ok(snapshot)
+    }
+
+    /// Loads and restores a `TaskActorRuntimeRegistry` from a JSON checkpoint file.
+    pub fn load_checkpoint_file(path: &std::path::Path) -> Result<Self, TaskActorRuntimeError> {
+        let bytes = std::fs::read(path).map_err(|err| TaskActorRuntimeError::PersistenceError {
+            reason: format!("read checkpoint file: {err}"),
+        })?;
+        let snapshot: TaskActorRuntimeSnapshot = serde_json::from_slice(&bytes).map_err(|err| {
+            TaskActorRuntimeError::PersistenceError {
+                reason: format!("parse checkpoint snapshot: {err}"),
+            }
+        })?;
+        Ok(Self::from_snapshot(snapshot))
+    }
+
+    /// Cross-checks `envelope` through `oracle` (Scheme `GraphEngine`) before admitting locally.
+    pub fn admit_dispatch_with_oracle<O: marlin_agent_graph::GraphEngineOracle>(
+        &self,
+        oracle: &O,
+        envelope: MarlinDispatchEnvelope,
+    ) -> Result<AdmittedMarlinDispatch, TaskActorRuntimeError> {
+        match oracle.project_dispatch(&envelope) {
+            Ok(Ok(_)) => self.admit_dispatch(envelope),
+            Ok(Err(rejection)) => Err(TaskActorRuntimeError::DispatchRejected(rejection)),
+            Err(reason) => Err(TaskActorRuntimeError::OracleDivergence { reason }),
+        }
+    }
+
+    /// Cross-checks `receipt` through `oracle` (Scheme `GraphEngine`) and rejects any divergence.
+    pub fn reconcile_receipt_with_oracle<O: marlin_agent_graph::GraphEngineOracle>(
+        &self,
+        oracle: &O,
+        receipt: &MarlinExecutionReceipt,
+    ) -> Result<ReceiptReconciliationDecision, TaskActorRuntimeError> {
+        let cursor =
+            self.cursor(&receipt.task_id)
+                .ok_or_else(|| TaskActorRuntimeError::ActorNotFound {
+                    task_id: receipt.task_id.clone(),
+                })?;
+        let scheme_decision = oracle
+            .reconcile_receipt(&cursor, receipt)
+            .map_err(|reason| TaskActorRuntimeError::OracleDivergence { reason })?;
+        let runtime_decision = self.reconcile_receipt(receipt)?;
+        if scheme_decision != runtime_decision {
+            return Err(TaskActorRuntimeError::OracleDivergence {
+                reason: "scheme/runtime receipt reconciliation divergence".to_owned(),
+            });
+        }
+        Ok(runtime_decision)
+    }
+
+    /// Cross-checks `capsule` through `oracle` (Scheme `GraphEngine`) before binding locally.
+    pub fn bind_governed_context_with_oracle<O: marlin_agent_graph::GraphEngineOracle>(
+        &self,
+        oracle: &O,
+        capsule: GovernedContextCapsule,
+    ) -> Result<AdmittedGovernedContext, TaskActorRuntimeError> {
+        match oracle.project_governed_context(&capsule) {
+            Ok(Ok(_)) => self.bind_governed_context(capsule),
+            Ok(Err(rejection)) => Err(TaskActorRuntimeError::GovernedContextRejected(rejection)),
+            Err(reason) => Err(TaskActorRuntimeError::OracleDivergence { reason }),
+        }
+    }
+
+    /// Projects the registry's current Workbench tabs through `oracle` and verifies exact parity.
+    pub fn project_workbench_tabs_with_oracle<O: marlin_agent_graph::GraphEngineOracle>(
+        &self,
+        oracle: &O,
+    ) -> Result<WorkbenchTabProjection, TaskActorRuntimeError> {
+        let snapshot = self.snapshot();
+        let active_tasks: Vec<WorkbenchActiveTaskInput> = snapshot
+            .actors
+            .values()
+            .filter(|rec| !rec.cursor.status.is_terminal())
+            .map(|rec| WorkbenchActiveTaskInput {
+                task_id: rec.cursor.task_id.clone(),
+                title: rec.title.clone(),
+                status: rec.cursor.status,
+                fencing_epoch: rec.cursor.fencing_epoch,
+            })
+            .collect();
+        let peek_ids: Vec<TaskActorId> = snapshot
+            .workbench_tabs
+            .tabs
+            .iter()
+            .filter(|tab| tab.kind == marlin_agent_graph::WorkbenchTabKind::ReadOnlyPeek)
+            .filter_map(|tab| TaskActorId::new(tab.id.clone()).ok())
+            .collect();
+        let focused = snapshot.workbench_tabs.focused_task_id.as_ref();
+        let scheme_tabs = oracle
+            .project_workbench_tabs(focused, &active_tasks, &peek_ids)
+            .map_err(|reason| TaskActorRuntimeError::OracleDivergence { reason })?;
+        if scheme_tabs != snapshot.workbench_tabs {
+            return Err(TaskActorRuntimeError::OracleDivergence {
+                reason: "scheme/runtime workbench tab projection divergence".to_owned(),
+            });
+        }
+        Ok(scheme_tabs)
+    }
+
+    /// Executes an admitted dispatch envelope asynchronously against a caller-supplied
+    /// runtime executor (e.g. FunFlow / Marlin tool / turn boundary), then automatically
+    /// reconciles the returned `MarlinExecutionReceipt` against the actor's `FencingEpoch`.
+    pub async fn execute_and_reconcile<F, Fut>(
+        &self,
+        envelope: MarlinDispatchEnvelope,
+        executor: F,
+    ) -> Result<(AdmittedMarlinDispatch, ReceiptReconciliationDecision), TaskActorRuntimeError>
+    where
+        F: FnOnce(AdmittedMarlinDispatch) -> Fut,
+        Fut: Future<Output = MarlinExecutionReceipt>,
+    {
+        let admitted = self.admit_dispatch(envelope)?;
+        let receipt = executor(admitted.clone()).await;
+        let decision = self.reconcile_receipt(&receipt)?;
+        Ok((admitted, decision))
     }
 }

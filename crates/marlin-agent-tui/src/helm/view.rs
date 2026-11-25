@@ -2,74 +2,79 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Authentic Emacs Helm bottom-split Ratatui renderer.
+//! Pure declarative `UiElement` projection for the Emacs Helm bottom-split window.
 //!
-//! Renders Helm as a native bottom Emacs window (never a boxed floating modal):
-//! - Sleek 1-row top window divider keeping the main conversation visible above
-//! - Full-width `helm-source-header` group bars (`Workspace Search`, `Buffers`, `Commands`)
-//! - Inline `helm-match` + Orderless multi-token highlighting
-//! - Side-by-side `helm-follow-mode` source context preview (right pane with line numbers)
-//! - Selectable `TAB` Action Transformer view
-//! - Doom-style `helm-mode-line` + syntax-highlighted bottom minibuffer prompt
+//! Produces only host-neutral `marlin_agent_ui::UiElement` trees rendered by
+//! `crate::ui_elements::render_overlay_element` (zero direct Ratatui widget calls).
 
-use marlin_agent_ui::{UiRgb, UiTheme};
-use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Clear, Paragraph},
-};
+use marlin_agent_ui::{UiBackground, UiElement, UiSize, UiTemplateSpan, UiTemplateValue, UiTone};
+use ratatui::layout::Rect;
 use unicode_width::UnicodeWidthStr;
 
-use crate::helm::{HelmCandidate, HelmDisplayRow, HelmOverlay};
+use super::{HelmCandidate, HelmDisplayRow, HelmOverlay};
 
-pub(crate) fn render_helm_window(
-    helm: &HelmOverlay,
-    frame: &mut Frame<'_>,
-    area: Rect,
-    theme: &UiTheme,
-) {
+/// Computes the bottom-split Emacs window rectangle for Helm, leaving the top
+/// conversation view unobstructed.
+pub(crate) fn helm_window_area(area: Rect) -> Option<Rect> {
     if area.width < 24 || area.height < 8 {
-        return;
+        return None;
     }
     let helm_height = (area.height * 54 / 100)
         .max(10)
         .min(area.height.saturating_sub(2));
-    let window_area = Rect {
+    Some(Rect {
         x: area.x,
         y: area.bottom().saturating_sub(helm_height),
         width: area.width,
         height: helm_height,
-    };
-    frame.render_widget(Clear, window_area);
-    frame.buffer_mut().set_style(
-        window_area,
-        Style::default().bg(rgb(theme.canvas)).fg(rgb(theme.ink)),
-    );
-
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // Top Emacs window divider
-            Constraint::Min(3),    // Main Helm body (grouped candidates + optional right preview)
-            Constraint::Length(1), // Authentic Helm modeline (`helm-mode-line`)
-            Constraint::Length(1), // Bottom Emacs minibuffer prompt (`Helm> ...`)
-        ])
-        .split(window_area);
-
-    render_top_divider(helm, frame, sections[0], theme);
-    if helm.action_mode {
-        render_action_transformer(helm, frame, sections[1], theme);
-    } else {
-        render_candidate_workspace(helm, frame, sections[1], theme);
-    }
-    render_helm_modeline(helm, frame, sections[2], theme);
-    render_helm_minibuffer(helm, frame, sections[3], theme);
+    })
 }
 
-fn render_top_divider(helm: &HelmOverlay, frame: &mut Frame<'_>, area: Rect, theme: &UiTheme) {
-    let width = usize::from(area.width);
+/// Projects the live `HelmOverlay` state into a declarative `UiElement` tree.
+pub(crate) fn project_helm_ui_element(helm: &HelmOverlay, window_area: Rect) -> UiElement {
+    let body_height = window_area.height.saturating_sub(3).max(1);
+    let body = if helm.action_mode {
+        project_action_transformer(helm, window_area.width, body_height)
+    } else {
+        project_candidate_workspace(helm, window_area.width, body_height)
+    };
+    UiElement::Rows(vec![
+        UiElement::Sized {
+            size: UiSize::Cells(1),
+            child: Box::new(project_top_divider(helm, window_area.width)),
+        },
+        UiElement::Sized {
+            size: UiSize::Flex(1),
+            child: Box::new(body),
+        },
+        UiElement::Sized {
+            size: UiSize::Cells(1),
+            child: Box::new(project_helm_modeline(helm, window_area.width)),
+        },
+        UiElement::Sized {
+            size: UiSize::Cells(1),
+            child: Box::new(project_helm_minibuffer(helm, window_area.width)),
+        },
+    ])
+}
+
+fn span(text: impl Into<String>, tone: UiTone, bold: bool) -> UiTemplateSpan {
+    UiTemplateSpan {
+        value: UiTemplateValue::Literal(text.into()),
+        tone,
+        bold,
+    }
+}
+
+fn line_row(background: UiBackground, spans: Vec<UiTemplateSpan>) -> UiElement {
+    UiElement::Sized {
+        size: UiSize::Cells(1),
+        child: Box::new(UiElement::Template { background, spans }),
+    }
+}
+
+fn project_top_divider(helm: &HelmOverlay, width: u16) -> UiElement {
+    let width = usize::from(width);
     let label = if helm.action_mode {
         " Helm Actions "
     } else {
@@ -78,70 +83,59 @@ fn render_top_divider(helm: &HelmOverlay, frame: &mut Frame<'_>, area: Rect, the
     let left_rule = "━━";
     let used = UnicodeWidthStr::width(left_rule) + UnicodeWidthStr::width(label);
     let right_rule = "━".repeat(width.saturating_sub(used));
-    let line = Line::from(vec![
-        Span::styled(left_rule, Style::default().fg(rgb(theme.accent))),
-        Span::styled(
-            label,
-            Style::default()
-                .fg(rgb(theme.accent))
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(right_rule, Style::default().fg(rgb(theme.bar))),
-    ]);
-    frame.render_widget(Paragraph::new(line), area);
+    UiElement::Template {
+        background: UiBackground::Canvas,
+        spans: vec![
+            span(left_rule, UiTone::Accent, false),
+            span(label, UiTone::Accent, true),
+            span(right_rule, UiTone::Muted, false),
+        ],
+    }
 }
 
-fn render_candidate_workspace(
-    helm: &HelmOverlay,
-    frame: &mut Frame<'_>,
-    area: Rect,
-    theme: &UiTheme,
-) {
+fn project_candidate_workspace(helm: &HelmOverlay, width: u16, height: u16) -> UiElement {
     let show_preview = helm.follow_preview
-        && area.width >= 88
+        && width >= 88
         && helm
             .selected_candidate()
             .is_some_and(|cand| !cand.context_lines.is_empty());
 
     if show_preview {
-        let cols = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(56),
-                Constraint::Length(1),
-                Constraint::Percentage(44),
-            ])
-            .split(area);
-        render_grouped_candidates(helm, frame, cols[0], theme);
-        render_vertical_divider(frame, cols[1], theme);
-        render_follow_preview(helm, frame, cols[2], theme);
+        let left_width = ((u32::from(width.saturating_sub(1)) * 56) / 100).max(1) as u16;
+        let right_width = width.saturating_sub(left_width).saturating_sub(1).max(1);
+        let divider_rows: Vec<UiElement> = (0..height)
+            .map(|_| line_row(UiBackground::Canvas, vec![span("│", UiTone::Muted, false)]))
+            .collect();
+        UiElement::Columns(vec![
+            UiElement::Sized {
+                size: UiSize::Flex(56),
+                child: Box::new(project_grouped_candidates(helm, left_width, height)),
+            },
+            UiElement::Sized {
+                size: UiSize::Cells(1),
+                child: Box::new(UiElement::Rows(divider_rows)),
+            },
+            UiElement::Sized {
+                size: UiSize::Flex(44),
+                child: Box::new(project_follow_preview(helm, right_width, height)),
+            },
+        ])
     } else {
-        render_grouped_candidates(helm, frame, area, theme);
+        project_grouped_candidates(helm, width, height)
     }
 }
 
-fn render_vertical_divider(frame: &mut Frame<'_>, area: Rect, theme: &UiTheme) {
-    let lines: Vec<Line<'_>> = (0..area.height)
-        .map(|_| Line::from(Span::styled("│", Style::default().fg(rgb(theme.bar)))))
-        .collect();
-    frame.render_widget(Paragraph::new(lines), area);
-}
-
-fn render_grouped_candidates(
-    helm: &HelmOverlay,
-    frame: &mut Frame<'_>,
-    area: Rect,
-    theme: &UiTheme,
-) {
-    let visible_rows = usize::from(area.height).max(1);
-    let width = usize::from(area.width);
+fn project_grouped_candidates(helm: &HelmOverlay, width: u16, height: u16) -> UiElement {
+    let visible_rows = usize::from(height).max(1);
+    let width = usize::from(width);
     if helm.display_rows.is_empty() {
         let msg = helm.last_error.as_deref().unwrap_or(
             "  No matches · try pattern, @sym:name, @graph:target, @lang:rust, @prefix:crates/, or #local !neg",
         );
-        let line = Line::from(Span::styled(msg, Style::default().fg(rgb(theme.muted))));
-        frame.render_widget(Paragraph::new(line), area);
-        return;
+        return UiElement::Rows(vec![line_row(
+            UiBackground::Canvas,
+            vec![span(clip_width(msg, width), UiTone::Muted, false)],
+        )]);
     }
 
     let selected_row_idx = helm
@@ -159,7 +153,7 @@ fn render_grouped_candidates(
     );
     let needles = helm.parsed.highlight_needles();
 
-    let mut lines = Vec::with_capacity(visible_rows);
+    let mut rows = Vec::with_capacity(visible_rows);
     for row in helm.display_rows.iter().skip(offset).take(visible_rows) {
         match row {
             HelmDisplayRow::SourceHeader {
@@ -167,12 +161,11 @@ fn render_grouped_candidates(
                 count,
                 meta,
             } => {
-                lines.push(render_source_header(
+                rows.push(project_source_header(
                     source.section_title(),
                     *count,
                     meta,
                     width,
-                    theme,
                 ));
             }
             HelmDisplayRow::Candidate {
@@ -182,29 +175,21 @@ fn render_grouped_candidates(
                 if let Some(cand) = helm.candidate_at(*raw_index) {
                     let is_selected = *filtered_pos == helm.selected;
                     let is_marked = helm.marked_ids.iter().any(|mid| mid == &cand.id);
-                    lines.push(render_candidate_row(
+                    rows.push(project_candidate_row(
                         cand,
                         is_selected,
                         is_marked,
                         &needles,
                         width,
-                        theme,
                     ));
                 }
             }
         }
     }
-    frame.render_widget(Paragraph::new(lines), area);
+    UiElement::Rows(rows)
 }
 
-fn render_source_header(
-    title: &str,
-    count: usize,
-    meta: &str,
-    width: usize,
-    theme: &UiTheme,
-) -> Line<'static> {
-    let header_bg = Style::default().bg(rgb(theme.bar));
+fn project_source_header(title: &str, count: usize, meta: &str, width: usize) -> UiElement {
     let left_text = format!("▌ {title} ({count})");
     let right_text = if meta.is_empty() {
         String::new()
@@ -214,35 +199,34 @@ fn render_source_header(
     let used =
         UnicodeWidthStr::width(left_text.as_str()) + UnicodeWidthStr::width(right_text.as_str());
     let pad = " ".repeat(width.saturating_sub(used));
-    Line::from(vec![
-        Span::styled(
-            left_text,
-            header_bg.fg(rgb(theme.accent)).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(pad, header_bg),
-        Span::styled(right_text, header_bg.fg(rgb(theme.muted))),
-    ])
+    line_row(
+        UiBackground::Bar,
+        vec![
+            span(left_text, UiTone::Accent, true),
+            span(pad, UiTone::Muted, false),
+            span(right_text, UiTone::Muted, false),
+        ],
+    )
 }
 
-fn render_candidate_row<'a>(
-    cand: &'a HelmCandidate,
+fn project_candidate_row(
+    cand: &HelmCandidate,
     is_selected: bool,
     is_marked: bool,
     needles: &[String],
     width: usize,
-    theme: &UiTheme,
-) -> Line<'a> {
-    let base_style = if is_selected {
-        Style::default().bg(rgb(theme.bar))
+) -> UiElement {
+    let bg = if is_selected {
+        UiBackground::Bar
     } else {
-        Style::default().bg(rgb(theme.canvas))
+        UiBackground::Canvas
     };
 
-    let (gutter, gutter_color) = match (is_selected, is_marked) {
-        (true, true) => ("▸*", theme.warning),
-        (true, false) => ("▸ ", theme.accent),
-        (false, true) => (" *", theme.warning),
-        (false, false) => ("  ", theme.muted),
+    let (gutter, gutter_tone) = match (is_selected, is_marked) {
+        (true, true) => ("▸*", UiTone::Warning),
+        (true, false) => ("▸ ", UiTone::Accent),
+        (false, true) => (" *", UiTone::Warning),
+        (false, false) => ("  ", UiTone::Muted),
     };
 
     let badge = if cand.badge.is_empty() {
@@ -262,62 +246,51 @@ fn render_candidate_row<'a>(
         String::new()
     };
 
-    let mut spans = Vec::new();
-    spans.push(Span::styled(
-        format!("{gutter} "),
-        base_style
-            .fg(rgb(gutter_color))
-            .add_modifier(Modifier::BOLD),
-    ));
-
-    let primary_style = base_style.fg(rgb(if is_selected { theme.info } else { theme.ink }));
-    let match_style = base_style
-        .fg(rgb(theme.accent))
-        .add_modifier(Modifier::BOLD);
+    let mut spans = vec![span(format!("{gutter} "), gutter_tone, true)];
+    let primary_tone = if is_selected {
+        UiTone::Info
+    } else {
+        UiTone::Normal
+    };
     push_highlighted_spans(
         &mut spans,
         &primary_text,
         needles,
-        primary_style,
-        match_style,
+        primary_tone,
+        UiTone::Accent,
     );
 
     let mut used = 3 + primary_used;
     if !snippet_text.is_empty() {
-        spans.push(Span::styled("  ", base_style));
-        let snippet_style = base_style.fg(rgb(theme.muted));
-        let snippet_match = base_style
-            .fg(rgb(theme.warning))
-            .add_modifier(Modifier::BOLD);
+        spans.push(span("  ", UiTone::Muted, false));
         push_highlighted_spans(
             &mut spans,
             &snippet_text,
             needles,
-            snippet_style,
-            snippet_match,
+            UiTone::Muted,
+            UiTone::Warning,
         );
         used += 2 + UnicodeWidthStr::width(snippet_text.as_str());
     }
 
     let pad = width.saturating_sub(used + badge_width);
     if pad > 0 {
-        spans.push(Span::styled(" ".repeat(pad), base_style));
+        spans.push(span(" ".repeat(pad), UiTone::Normal, false));
     }
     if !badge.is_empty() {
-        spans.push(Span::styled(badge, base_style.fg(rgb(theme.muted))));
+        spans.push(span(badge, UiTone::Muted, false));
     }
-    Line::from(spans)
+    line_row(bg, spans)
 }
 
-fn render_follow_preview(helm: &HelmOverlay, frame: &mut Frame<'_>, area: Rect, theme: &UiTheme) {
+fn project_follow_preview(helm: &HelmOverlay, width: u16, height: u16) -> UiElement {
     let Some(cand) = helm.selected_candidate() else {
-        return;
+        return UiElement::Rows(Vec::new());
     };
-    let width = usize::from(area.width);
-    let height = usize::from(area.height);
+    let width = usize::from(width);
+    let height = usize::from(height);
     let needles = helm.parsed.highlight_needles();
 
-    let header_bg = Style::default().bg(rgb(theme.bar));
     let raw_title = if let Some(rel) = cand.graph_relations.first() {
         format!(" ▎ {} · {rel}", cand.display)
     } else {
@@ -325,73 +298,76 @@ fn render_follow_preview(helm: &HelmOverlay, frame: &mut Frame<'_>, area: Rect, 
     };
     let title_text = clip_width(&raw_title, width);
     let pad = " ".repeat(width.saturating_sub(UnicodeWidthStr::width(title_text.as_str())));
-    let mut lines = Vec::with_capacity(height);
-    lines.push(Line::from(vec![
-        Span::styled(
-            title_text,
-            header_bg.fg(rgb(theme.info)).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(pad, header_bg),
-    ]));
+    let mut rows = Vec::with_capacity(height);
+    rows.push(line_row(
+        UiBackground::Bar,
+        vec![
+            span(title_text, UiTone::Info, true),
+            span(pad, UiTone::Normal, false),
+        ],
+    ));
 
     let code_budget = width.saturating_sub(8);
     for ctx in cand.context_lines.iter().take(height.saturating_sub(1)) {
         let row_bg = if ctx.is_match {
-            Style::default().bg(rgb(theme.bar))
+            UiBackground::Bar
         } else {
-            Style::default().bg(rgb(theme.canvas))
+            UiBackground::Canvas
         };
         let gutter = if ctx.is_match { "▸" } else { " " };
         let line_no = format!("{gutter}{:>4} │ ", ctx.line_number);
         let code_text = clip_width(&ctx.text, code_budget);
         let code_used = UnicodeWidthStr::width(code_text.as_str());
-        let mut spans = vec![Span::styled(
+        let mut spans = vec![span(
             line_no,
-            row_bg.fg(rgb(if ctx.is_match {
-                theme.accent
+            if ctx.is_match {
+                UiTone::Accent
             } else {
-                theme.muted
-            })),
+                UiTone::Muted
+            },
+            false,
         )];
-        let code_style = row_bg.fg(rgb(theme.ink));
-        let match_style = row_bg.fg(rgb(theme.warning)).add_modifier(Modifier::BOLD);
-        push_highlighted_spans(&mut spans, &code_text, &needles, code_style, match_style);
+        push_highlighted_spans(
+            &mut spans,
+            &code_text,
+            &needles,
+            UiTone::Normal,
+            UiTone::Warning,
+        );
         let tail_pad = width.saturating_sub(8 + code_used);
         if tail_pad > 0 {
-            spans.push(Span::styled(" ".repeat(tail_pad), row_bg));
+            spans.push(span(" ".repeat(tail_pad), UiTone::Normal, false));
         }
-        lines.push(Line::from(spans));
+        rows.push(line_row(row_bg, spans));
     }
 
-    frame.render_widget(Paragraph::new(lines), area);
+    UiElement::Rows(rows)
 }
 
-fn render_action_transformer(
-    helm: &HelmOverlay,
-    frame: &mut Frame<'_>,
-    area: Rect,
-    theme: &UiTheme,
-) {
-    let width = usize::from(area.width);
+fn project_action_transformer(helm: &HelmOverlay, width: u16, height: u16) -> UiElement {
+    let width = usize::from(width);
     let actions = helm.available_actions();
     let target_label = helm
         .selected_candidate()
         .map_or("(none)", |c| c.display.as_str());
-    let mut lines = Vec::with_capacity(actions.len() + 2);
-    lines.push(render_source_header(
+    let mut rows = Vec::with_capacity(actions.len() + 1);
+    rows.push(project_source_header(
         "Helm Actions",
         actions.len(),
         &format!("target: {}", clip_width(target_label, width / 2)),
         width,
-        theme,
     ));
 
-    for (idx, item) in actions.iter().enumerate() {
+    for (idx, item) in actions
+        .iter()
+        .enumerate()
+        .take(usize::from(height).saturating_sub(1))
+    {
         let is_selected = idx == helm.action_selected;
         let bg = if is_selected {
-            Style::default().bg(rgb(theme.bar))
+            UiBackground::Bar
         } else {
-            Style::default().bg(rgb(theme.canvas))
+            UiBackground::Canvas
         };
         let gutter = if is_selected { "▸ " } else { "  " };
         let key_part = format!("[{:^3}] ", item.key);
@@ -401,29 +377,30 @@ fn render_action_transformer(
             + UnicodeWidthStr::width(label_part.as_str())
             + UnicodeWidthStr::width(item.detail.as_str());
         let pad = " ".repeat(width.saturating_sub(used));
-        lines.push(Line::from(vec![
-            Span::styled(
-                gutter,
-                bg.fg(rgb(theme.accent)).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                key_part,
-                bg.fg(rgb(theme.warning)).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                label_part,
-                bg.fg(rgb(if is_selected { theme.info } else { theme.ink })),
-            ),
-            Span::styled(item.detail.clone(), bg.fg(rgb(theme.muted))),
-            Span::styled(pad, bg),
-        ]));
+        rows.push(line_row(
+            bg,
+            vec![
+                span(gutter, UiTone::Accent, true),
+                span(key_part, UiTone::Warning, true),
+                span(
+                    label_part,
+                    if is_selected {
+                        UiTone::Info
+                    } else {
+                        UiTone::Normal
+                    },
+                    false,
+                ),
+                span(item.detail.clone(), UiTone::Muted, false),
+                span(pad, UiTone::Normal, false),
+            ],
+        ));
     }
-    frame.render_widget(Paragraph::new(lines), area);
+    UiElement::Rows(rows)
 }
 
-fn render_helm_modeline(helm: &HelmOverlay, frame: &mut Frame<'_>, area: Rect, theme: &UiTheme) {
-    let width = usize::from(area.width);
-    let bar_style = Style::default().bg(rgb(theme.bar));
+fn project_helm_modeline(helm: &HelmOverlay, width: u16) -> UiElement {
+    let width = usize::from(width);
     let badge = if helm.action_mode {
         " HELM-ACT "
     } else {
@@ -475,80 +452,68 @@ fn render_helm_modeline(helm: &HelmOverlay, frame: &mut Frame<'_>, area: Rect, t
     };
 
     let mut spans = vec![
-        Span::styled(
-            badge,
-            Style::default()
-                .bg(rgb(theme.accent))
-                .fg(rgb(theme.canvas))
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(left_info, bar_style.fg(rgb(theme.ink))),
-        Span::styled(" ".repeat(pad), bar_style),
+        span(badge, UiTone::Accent, true),
+        span(left_info, UiTone::Normal, false),
+        span(" ".repeat(pad), UiTone::Normal, false),
     ];
     if show_hints {
-        spans.push(Span::styled(hints, bar_style.fg(rgb(theme.muted))));
+        spans.push(span(hints, UiTone::Muted, false));
     }
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    UiElement::Template {
+        background: UiBackground::Bar,
+        spans,
+    }
 }
 
-fn render_helm_minibuffer(helm: &HelmOverlay, frame: &mut Frame<'_>, area: Rect, theme: &UiTheme) {
-    let width = usize::from(area.width);
+fn project_helm_minibuffer(helm: &HelmOverlay, width: u16) -> UiElement {
+    let width = usize::from(width);
     let prompt_label = "Helm> ";
     let scope_pill = format!(" [{}] ", helm.active_source.label());
-    let mut spans = vec![Span::styled(
-        prompt_label,
-        Style::default()
-            .fg(rgb(theme.accent))
-            .add_modifier(Modifier::BOLD),
-    )];
+    let mut spans = vec![span(prompt_label, UiTone::Accent, true)];
 
-    // Syntax-color `@lang:`, `@doc:`, `@prefix:`, `@ext:`, `#local`, `!neg` right in the minibuffer!
     let mut in_local = false;
     for (idx, part) in helm.input.split(' ').enumerate() {
         if idx > 0 {
-            spans.push(Span::styled(" ", Style::default().fg(rgb(theme.ink))));
+            spans.push(span(" ", UiTone::Normal, false));
         }
         if part.starts_with('#') {
             in_local = true;
         }
-        let style = if part.starts_with("@lang:")
+        let (tone, bold) = if part.starts_with("@lang:")
             || part.starts_with("@doc:")
             || part.starts_with("@prefix:")
             || part.starts_with("@ext:")
             || part.starts_with("@sym:")
             || part.starts_with("@graph:")
         {
-            Style::default()
-                .fg(rgb(theme.info))
-                .add_modifier(Modifier::BOLD)
+            (UiTone::Info, true)
         } else if in_local && part.starts_with('!') {
-            Style::default()
-                .fg(rgb(theme.warning))
-                .add_modifier(Modifier::BOLD)
+            (UiTone::Warning, true)
         } else if in_local {
-            Style::default().fg(rgb(theme.success))
+            (UiTone::Success, false)
         } else {
-            Style::default().fg(rgb(theme.ink))
+            (UiTone::Normal, false)
         };
-        spans.push(Span::styled(part, style));
+        spans.push(span(part, tone, bold));
     }
-    spans.push(Span::styled("▏", Style::default().fg(rgb(theme.accent))));
+    spans.push(span("▏", UiTone::Accent, false));
 
     let used =
         UnicodeWidthStr::width(prompt_label) + UnicodeWidthStr::width(helm.input.as_str()) + 1;
     let pill_w = UnicodeWidthStr::width(scope_pill.as_str());
     if width > used + pill_w {
-        spans.push(Span::styled(
+        spans.push(span(
             " ".repeat(width - used - pill_w),
-            Style::default(),
+            UiTone::Normal,
+            false,
         ));
-        spans.push(Span::styled(
-            scope_pill,
-            Style::default().fg(rgb(theme.muted)),
-        ));
+        spans.push(span(scope_pill, UiTone::Muted, false));
     }
 
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    UiElement::Template {
+        background: UiBackground::Canvas,
+        spans,
+    }
 }
 
 fn compute_display_offset(
@@ -561,7 +526,6 @@ fn compute_display_offset(
         return 0;
     }
     let mut start = selected_row.saturating_sub(visible_rows / 3);
-    // Keep the immediate SourceHeader directly above the first candidate of a group visible.
     if selected_row > 0
         && start == selected_row
         && matches!(
@@ -574,15 +538,15 @@ fn compute_display_offset(
     start.min(total_rows.saturating_sub(visible_rows))
 }
 
-fn push_highlighted_spans<'a>(
-    out: &mut Vec<Span<'a>>,
+fn push_highlighted_spans(
+    out: &mut Vec<UiTemplateSpan>,
     text: &str,
     needles: &[String],
-    normal: Style,
-    highlight: Style,
+    normal: UiTone,
+    highlight: UiTone,
 ) {
     if needles.is_empty() || text.is_empty() {
-        out.push(Span::styled(text.to_owned(), normal));
+        out.push(span(text, normal, false));
         return;
     }
     let lower = text.to_ascii_lowercase();
@@ -611,17 +575,19 @@ fn push_highlighted_spans<'a>(
     for (byte_idx, _) in text.char_indices().skip(1) {
         let hl = mask[byte_idx];
         if hl != seg_hl {
-            out.push(Span::styled(
-                text[seg_start..byte_idx].to_owned(),
+            out.push(span(
+                &text[seg_start..byte_idx],
                 if seg_hl { highlight } else { normal },
+                seg_hl,
             ));
             seg_start = byte_idx;
             seg_hl = hl;
         }
     }
-    out.push(Span::styled(
-        text[seg_start..].to_owned(),
+    out.push(span(
+        &text[seg_start..],
         if seg_hl { highlight } else { normal },
+        seg_hl,
     ));
 }
 
@@ -645,8 +611,4 @@ fn clip_width(text: &str, max_width: usize) -> String {
     }
     out.push('…');
     out
-}
-
-fn rgb(value: UiRgb) -> Color {
-    Color::Rgb(value.red, value.green, value.blue)
 }

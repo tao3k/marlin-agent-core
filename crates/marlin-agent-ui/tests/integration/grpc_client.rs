@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use marlin_agent_ui::grpc::v1::{
-    FILE_DESCRIPTOR_SET, StartSessionTurnRequest, app_server_client::AppServerClient,
+    FILE_DESCRIPTOR_SET, GetWorkbenchTabsRequest, RegisterTaskActorRequest,
+    StartSessionTurnRequest, TaskActorScopeModeProto, app_server_client::AppServerClient,
 };
 
 #[test]
@@ -14,7 +15,14 @@ fn exposes_the_generated_session_client_and_descriptor() {
         after_turn: 0,
         submission_id: "send-1".into(),
     };
+    let actor_request = RegisterTaskActorRequest {
+        task_id: "task-grpc-01".into(),
+        title: "GraphEngine Task".into(),
+        scope_mode: TaskActorScopeModeProto::Project.into(),
+    };
+    let _tabs_request = GetWorkbenchTabsRequest {};
     assert_eq!(request.submission_id, "send-1");
+    assert_eq!(actor_request.task_id, "task-grpc-01");
     assert!(
         FILE_DESCRIPTOR_SET
             .windows(b"marlin.app.v1".len())

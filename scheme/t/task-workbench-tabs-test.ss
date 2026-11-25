@@ -15,7 +15,11 @@
                  make-marlin-task-workbench-package
                  marlin-task-workbench-peek-set-add
                  marlin-task-workbench-peek-set-remove
-                 marlin-task-workbench-next-disclosure))
+                 marlin-task-workbench-next-disclosure)
+        (only-in :marlin-agent-core/ui/session
+                 marlin-ui-session-open
+                 marlin-ui-session-project
+                 marlin-ui-session-dispatch))
 
 (export task-workbench-tabs-test)
 
@@ -143,4 +147,19 @@
         (check-equal? (and (member (vector 'normal (vector 'SPC 'o (string->symbol "3")) 'task-drill-l3) keys) #t) #t)
         ;; Progressive disclosure validator accepts L0..L3 and rejects invalid levels
         (check-equal? (marlin-task-workbench-next-disclosure 'L1 'L3) 'L3)
-        (check-exception (marlin-task-workbench-next-disclosure 'L1 'L9) TypeError?)))))
+        (check-exception (marlin-task-workbench-next-disclosure 'L1 'L9) TypeError?)
+        ;; Live UiNativeSession executes pure-Scheme scheme-action commands end-to-end
+        (let* ((sess0 (marlin-ui-session-open
+                        (vector pkg-ui #("gemini-2.5-pro" "task-workbench" #() #()) #())))
+               (step1 (marlin-ui-session-dispatch
+                        (vector sess0 'scheme-action '#(task-tab-index #f))))
+               (sess1 (vector-ref step1 0))
+               (step2 (marlin-ui-session-dispatch
+                        (vector sess1 'scheme-action '#(task-switch #f))))
+               (sess2 (vector-ref step2 0))
+               (step3 (marlin-ui-session-dispatch
+                        (vector sess2 'scheme-action '#(task-drill-l2 #f)))))
+          (check-equal? (vector-ref step1 1) '#(select-buffer index))
+          (check-equal? (vector-ref (vector-ref step2 1) 0) 'select-buffer)
+          (check-equal? (vector-ref (vector-ref step3 1) 0) 'select-buffer)
+          (check-equal? (vector? (marlin-ui-session-project sess2)) #t))))))

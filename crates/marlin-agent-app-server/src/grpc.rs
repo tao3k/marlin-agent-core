@@ -214,6 +214,8 @@ impl<S: marlin_agent_storage::SessionEventStore + Clone + 'static> app_server_se
     for AppServer<S>
 {
     type StreamTurnStream = Pin<Box<dyn Stream<Item = Result<TurnEvent, Status>> + Send>>;
+    type WatchWorkbenchTabsStream =
+        Pin<Box<dyn Stream<Item = Result<crate::v1::WorkbenchTabsResponse, Status>> + Send>>;
 
     async fn get_capabilities(
         &self,
@@ -430,6 +432,177 @@ impl<S: marlin_agent_storage::SessionEventStore + Clone + 'static> app_server_se
         };
         Ok(Response::new(Box::pin(stream)))
     }
+
+    async fn register_task_actor(
+        &self,
+        request: Request<crate::v1::RegisterTaskActorRequest>,
+    ) -> Result<Response<crate::v1::TaskActorCursorResponse>, Status> {
+        (self.authorize)(request.metadata())?;
+        let req = request.into_inner();
+        let task_id = marlin_agent_runtime::TaskActorId::new(req.task_id)
+            .map_err(|err| Status::invalid_argument(format!("invalid task_id: {err}")))?;
+        let scope_mode = scope_mode_from_proto(req.scope_mode)?;
+        let cursor = self
+            .task_actors
+            .register_actor(crate::RegisterTaskActorRequest {
+                task_id,
+                title: req.title,
+                scope_mode,
+            })
+            .map_err(task_actor_error_status)?;
+        Ok(Response::new(crate::v1::TaskActorCursorResponse {
+            cursor: Some(cursor_to_proto(&cursor)),
+        }))
+    }
+
+    async fn dispatch_task_actor(
+        &self,
+        request: Request<crate::v1::DispatchTaskActorRequest>,
+    ) -> Result<Response<crate::v1::DispatchTaskActorResponse>, Status> {
+        (self.authorize)(request.metadata())?;
+        let req = request.into_inner();
+        let request_id = marlin_agent_runtime::DispatchRequestId::new(req.request_id)
+            .map_err(|err| Status::invalid_argument(format!("invalid request_id: {err}")))?;
+        let task_id = marlin_agent_runtime::TaskActorId::new(req.task_id)
+            .map_err(|err| Status::invalid_argument(format!("invalid task_id: {err}")))?;
+        let fencing_epoch = marlin_agent_runtime::FencingEpoch::new(req.fencing_epoch)
+            .map_err(|err| Status::invalid_argument(format!("invalid fencing_epoch: {err}")))?;
+        let operation = operation_from_proto(req.operation)?;
+        let substrate_target = substrate_from_proto(req.substrate_target)?;
+        let scope_mode = scope_mode_from_proto(req.scope_mode)?;
+        let join_node_id = req
+            .join_node_id
+            .map(|raw| {
+                marlin_agent_runtime::GraphConvergenceNodeId::new(raw)
+                    .map_err(|err| Status::invalid_argument(format!("invalid join_node_id: {err}")))
+            })
+            .transpose()?;
+        let envelope = marlin_agent_runtime::MarlinDispatchEnvelope {
+            request_id,
+            task_id,
+            operation,
+            fencing_epoch,
+            scope_mode,
+            join_node_id,
+            substrate_target,
+        };
+        let admitted = self
+            .task_actors
+            .admit_dispatch(envelope)
+            .map_err(task_actor_error_status)?;
+        let env = admitted.envelope();
+        Ok(Response::new(crate::v1::DispatchTaskActorResponse {
+            request_id: env.request_id.as_str().to_owned(),
+            task_id: env.task_id.as_str().to_owned(),
+            fencing_epoch: env.fencing_epoch.value(),
+            operation: operation_to_proto(env.operation),
+            substrate_target: substrate_to_proto(env.substrate_target),
+        }))
+    }
+
+    async fn reconcile_task_receipt(
+        &self,
+        request: Request<crate::v1::ReconcileTaskReceiptRequest>,
+    ) -> Result<Response<crate::v1::ReconcileTaskReceiptResponse>, Status> {
+        (self.authorize)(request.metadata())?;
+        let req = request.into_inner();
+        let request_id = marlin_agent_runtime::DispatchRequestId::new(req.request_id)
+            .map_err(|err| Status::invalid_argument(format!("invalid request_id: {err}")))?;
+        let task_id = marlin_agent_runtime::TaskActorId::new(req.task_id)
+            .map_err(|err| Status::invalid_argument(format!("invalid task_id: {err}")))?;
+        let fencing_epoch = marlin_agent_runtime::FencingEpoch::new(req.fencing_epoch)
+            .map_err(|err| Status::invalid_argument(format!("invalid fencing_epoch: {err}")))?;
+        let status = receipt_status_from_proto(req.status)?;
+        let receipt = marlin_agent_runtime::MarlinExecutionReceipt {
+            request_id,
+            task_id,
+            fencing_epoch,
+            status,
+        };
+        let decision = self
+            .task_actors
+            .reconcile_receipt(&receipt)
+            .map_err(task_actor_error_status)?;
+        Ok(Response::new(crate::v1::ReconcileTaskReceiptResponse {
+            accepted: decision.accepted,
+            reason: format!("{:?}", decision.reason),
+            next_epoch: decision.next_epoch.value(),
+            next_status: status_to_proto(decision.next_status),
+        }))
+    }
+
+    async fn bind_governed_context(
+        &self,
+        request: Request<crate::v1::BindGovernedContextRequest>,
+    ) -> Result<Response<crate::v1::BindGovernedContextResponse>, Status> {
+        (self.authorize)(request.metadata())?;
+        let req = request.into_inner();
+        let task_id = marlin_agent_runtime::TaskActorId::new(req.task_id)
+            .map_err(|err| Status::invalid_argument(format!("invalid task_id: {err}")))?;
+        let disclosure_depth = disclosure_depth_from_proto(req.disclosure_depth)?;
+        let kv_prefix_digest = marlin_agent_runtime::KvPrefixDigest::new(req.kv_prefix_digest)
+            .map_err(|err| Status::invalid_argument(format!("invalid kv_prefix_digest: {err}")))?;
+        let detour_mode = detour_mode_from_proto(req.detour_mode)?;
+        let capsule = marlin_agent_runtime::GovernedContextCapsule {
+            task_id,
+            context_cut: req.context_cut,
+            kv_prefix_digest,
+            disclosure_depth,
+            has_active_defeater: req.has_active_defeater,
+            quarantined_memory_count: req.quarantined_memory_count,
+            sandbox_admitted: req.sandbox_admitted,
+            cedar_handoff_valid: req.cedar_handoff_valid,
+            detour_mode,
+            auto_archive_enabled: req.auto_archive_enabled,
+        };
+        let admitted = self
+            .task_actors
+            .bind_governed_context(capsule)
+            .map_err(task_actor_error_status)?;
+        let cap = admitted.capsule();
+        Ok(Response::new(crate::v1::BindGovernedContextResponse {
+            task_id: cap.task_id.as_str().to_owned(),
+            context_cut: cap.context_cut,
+            disclosure_depth: disclosure_depth_to_proto(cap.disclosure_depth),
+            kv_prefix_digest: cap.kv_prefix_digest.as_str().to_owned(),
+            detour_mode: detour_mode_to_proto(cap.detour_mode),
+            auto_archive_enabled: cap.auto_archive_enabled,
+        }))
+    }
+
+    async fn get_workbench_tabs(
+        &self,
+        request: Request<crate::v1::GetWorkbenchTabsRequest>,
+    ) -> Result<Response<crate::v1::WorkbenchTabsResponse>, Status> {
+        (self.authorize)(request.metadata())?;
+        let tabs = self.task_actors.snapshot().workbench_tabs;
+        Ok(Response::new(workbench_tabs_to_proto(&tabs)))
+    }
+
+    async fn watch_workbench_tabs(
+        &self,
+        request: Request<crate::v1::WatchWorkbenchTabsRequest>,
+    ) -> Result<Response<Self::WatchWorkbenchTabsStream>, Status> {
+        (self.authorize)(request.metadata())?;
+        let permit = self
+            .session_watches
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                Status::resource_exhausted("App Server has reached its active watch limit")
+            })?;
+        let mut rx = self.task_actors.subscribe_workbench_tabs();
+        let initial = workbench_tabs_to_proto(&rx.borrow_and_update());
+        let stream = async_stream::try_stream! {
+            let _permit = permit;
+            yield initial;
+            while rx.changed().await.is_ok() {
+                let next = workbench_tabs_to_proto(&rx.borrow());
+                yield next;
+            }
+        };
+        Ok(Response::new(Box::pin(stream)))
+    }
 }
 
 async fn forward_turn(
@@ -623,4 +796,238 @@ fn gateway_status(error: ModelGatewayError) -> Status {
 
 fn session_unavailable() -> Status {
     Status::failed_precondition("the host has not bound a Session")
+}
+
+fn task_actor_error_status(err: marlin_agent_runtime::TaskActorRuntimeError) -> Status {
+    use marlin_agent_runtime::TaskActorRuntimeError as E;
+    match err {
+        E::DuplicateActor { .. } => Status::already_exists(err.to_string()),
+        E::ActorNotFound { .. } => Status::not_found(err.to_string()),
+        E::ActorTerminal { .. }
+        | E::FencingEpochMismatch { .. }
+        | E::ScopeModeMismatch { .. }
+        | E::DispatchRejected(_)
+        | E::GovernedContextRejected(_)
+        | E::StaleContextCut { .. }
+        | E::InvalidDetourTransition { .. }
+        | E::BlockerDetourActive { .. }
+        | E::CannotPeekActiveActor { .. }
+        | E::NoPendingSteeringBranches { .. } => Status::failed_precondition(err.to_string()),
+        E::OracleDivergence { .. } | E::PersistenceError { .. } => {
+            Status::internal(err.to_string())
+        }
+    }
+}
+
+fn scope_mode_from_proto(raw: i32) -> Result<marlin_agent_runtime::TaskActorScopeMode, Status> {
+    match crate::v1::TaskActorScopeModeProto::try_from(raw) {
+        Ok(crate::v1::TaskActorScopeModeProto::Project) => {
+            Ok(marlin_agent_runtime::TaskActorScopeMode::Project)
+        }
+        Ok(crate::v1::TaskActorScopeModeProto::Detached) => {
+            Ok(marlin_agent_runtime::TaskActorScopeMode::Detached)
+        }
+        _ => Err(Status::invalid_argument("invalid scope_mode")),
+    }
+}
+
+fn scope_mode_to_proto(mode: marlin_agent_runtime::TaskActorScopeMode) -> i32 {
+    match mode {
+        marlin_agent_runtime::TaskActorScopeMode::Project => {
+            crate::v1::TaskActorScopeModeProto::Project.into()
+        }
+        marlin_agent_runtime::TaskActorScopeMode::Detached => {
+            crate::v1::TaskActorScopeModeProto::Detached.into()
+        }
+    }
+}
+
+fn status_to_proto(status: marlin_agent_runtime::TaskActorStatus) -> i32 {
+    match status {
+        marlin_agent_runtime::TaskActorStatus::OpenFocus => {
+            crate::v1::TaskActorStatusProto::OpenFocus.into()
+        }
+        marlin_agent_runtime::TaskActorStatus::Running => {
+            crate::v1::TaskActorStatusProto::Running.into()
+        }
+        marlin_agent_runtime::TaskActorStatus::WaitingSteering => {
+            crate::v1::TaskActorStatusProto::WaitingSteering.into()
+        }
+        marlin_agent_runtime::TaskActorStatus::Settled => {
+            crate::v1::TaskActorStatusProto::Settled.into()
+        }
+        marlin_agent_runtime::TaskActorStatus::Failed => {
+            crate::v1::TaskActorStatusProto::Failed.into()
+        }
+        marlin_agent_runtime::TaskActorStatus::Aborted => {
+            crate::v1::TaskActorStatusProto::Aborted.into()
+        }
+    }
+}
+
+fn operation_from_proto(raw: i32) -> Result<marlin_agent_runtime::GraphDispatchOperation, Status> {
+    match crate::v1::GraphDispatchOperationProto::try_from(raw) {
+        Ok(crate::v1::GraphDispatchOperationProto::ExecuteFrontier) => {
+            Ok(marlin_agent_runtime::GraphDispatchOperation::ExecuteFrontier)
+        }
+        Ok(crate::v1::GraphDispatchOperationProto::ApplySteering) => {
+            Ok(marlin_agent_runtime::GraphDispatchOperation::ApplySteering)
+        }
+        Ok(crate::v1::GraphDispatchOperationProto::ConvergeApex) => {
+            Ok(marlin_agent_runtime::GraphDispatchOperation::ConvergeApex)
+        }
+        Ok(crate::v1::GraphDispatchOperationProto::CommitSettlement) => {
+            Ok(marlin_agent_runtime::GraphDispatchOperation::CommitSettlement)
+        }
+        _ => Err(Status::invalid_argument("invalid dispatch operation")),
+    }
+}
+
+fn operation_to_proto(op: marlin_agent_runtime::GraphDispatchOperation) -> i32 {
+    match op {
+        marlin_agent_runtime::GraphDispatchOperation::ExecuteFrontier => {
+            crate::v1::GraphDispatchOperationProto::ExecuteFrontier.into()
+        }
+        marlin_agent_runtime::GraphDispatchOperation::ApplySteering => {
+            crate::v1::GraphDispatchOperationProto::ApplySteering.into()
+        }
+        marlin_agent_runtime::GraphDispatchOperation::ConvergeApex => {
+            crate::v1::GraphDispatchOperationProto::ConvergeApex.into()
+        }
+        marlin_agent_runtime::GraphDispatchOperation::CommitSettlement => {
+            crate::v1::GraphDispatchOperationProto::CommitSettlement.into()
+        }
+    }
+}
+
+fn substrate_from_proto(raw: i32) -> Result<marlin_agent_runtime::GraphSubstrateTarget, Status> {
+    match crate::v1::GraphSubstrateTargetProto::try_from(raw) {
+        Ok(crate::v1::GraphSubstrateTargetProto::PureMemory) => {
+            Ok(marlin_agent_runtime::GraphSubstrateTarget::PureMemory)
+        }
+        Ok(crate::v1::GraphSubstrateTargetProto::SqliteTurso) => {
+            Ok(marlin_agent_runtime::GraphSubstrateTarget::SqliteTurso)
+        }
+        _ => Err(Status::invalid_argument("invalid substrate target")),
+    }
+}
+
+fn substrate_to_proto(target: marlin_agent_runtime::GraphSubstrateTarget) -> i32 {
+    match target {
+        marlin_agent_runtime::GraphSubstrateTarget::PureMemory => {
+            crate::v1::GraphSubstrateTargetProto::PureMemory.into()
+        }
+        marlin_agent_runtime::GraphSubstrateTarget::SqliteTurso => {
+            crate::v1::GraphSubstrateTargetProto::SqliteTurso.into()
+        }
+    }
+}
+
+fn receipt_status_from_proto(
+    raw: i32,
+) -> Result<marlin_agent_runtime::ExecutionReceiptStatus, Status> {
+    match crate::v1::ExecutionReceiptStatusProto::try_from(raw) {
+        Ok(crate::v1::ExecutionReceiptStatusProto::Ok) => {
+            Ok(marlin_agent_runtime::ExecutionReceiptStatus::Ok)
+        }
+        Ok(crate::v1::ExecutionReceiptStatusProto::Settled) => {
+            Ok(marlin_agent_runtime::ExecutionReceiptStatus::Settled)
+        }
+        Ok(crate::v1::ExecutionReceiptStatusProto::Failed) => {
+            Ok(marlin_agent_runtime::ExecutionReceiptStatus::Failed)
+        }
+        Ok(crate::v1::ExecutionReceiptStatusProto::Rejected) => {
+            Ok(marlin_agent_runtime::ExecutionReceiptStatus::Rejected)
+        }
+        _ => Err(Status::invalid_argument("invalid receipt status")),
+    }
+}
+
+fn disclosure_depth_from_proto(raw: i32) -> Result<marlin_agent_runtime::DisclosureDepth, Status> {
+    match crate::v1::DisclosureDepthProto::try_from(raw) {
+        Ok(crate::v1::DisclosureDepthProto::L0) => Ok(marlin_agent_runtime::DisclosureDepth::L0),
+        Ok(crate::v1::DisclosureDepthProto::L1) => Ok(marlin_agent_runtime::DisclosureDepth::L1),
+        Ok(crate::v1::DisclosureDepthProto::L2) => Ok(marlin_agent_runtime::DisclosureDepth::L2),
+        Ok(crate::v1::DisclosureDepthProto::L3) => Ok(marlin_agent_runtime::DisclosureDepth::L3),
+        _ => Err(Status::invalid_argument("invalid disclosure_depth")),
+    }
+}
+
+fn disclosure_depth_to_proto(depth: marlin_agent_runtime::DisclosureDepth) -> i32 {
+    match depth {
+        marlin_agent_runtime::DisclosureDepth::L0 => crate::v1::DisclosureDepthProto::L0.into(),
+        marlin_agent_runtime::DisclosureDepth::L1 => crate::v1::DisclosureDepthProto::L1.into(),
+        marlin_agent_runtime::DisclosureDepth::L2 => crate::v1::DisclosureDepthProto::L2.into(),
+        marlin_agent_runtime::DisclosureDepth::L3 => crate::v1::DisclosureDepthProto::L3.into(),
+    }
+}
+
+fn detour_mode_from_proto(raw: i32) -> Result<marlin_agent_runtime::DetourMode, Status> {
+    match crate::v1::DetourModeProto::try_from(raw) {
+        Ok(crate::v1::DetourModeProto::Mainline) => Ok(marlin_agent_runtime::DetourMode::Mainline),
+        Ok(crate::v1::DetourModeProto::BlockerActive) => {
+            Ok(marlin_agent_runtime::DetourMode::BlockerActive)
+        }
+        Ok(crate::v1::DetourModeProto::SideQuestActive) => {
+            Ok(marlin_agent_runtime::DetourMode::SideQuestActive)
+        }
+        _ => Err(Status::invalid_argument("invalid detour_mode")),
+    }
+}
+
+fn detour_mode_to_proto(mode: marlin_agent_runtime::DetourMode) -> i32 {
+    match mode {
+        marlin_agent_runtime::DetourMode::Mainline => crate::v1::DetourModeProto::Mainline.into(),
+        marlin_agent_runtime::DetourMode::BlockerActive => {
+            crate::v1::DetourModeProto::BlockerActive.into()
+        }
+        marlin_agent_runtime::DetourMode::SideQuestActive => {
+            crate::v1::DetourModeProto::SideQuestActive.into()
+        }
+    }
+}
+
+fn cursor_to_proto(
+    cursor: &marlin_agent_runtime::TaskActorCursor,
+) -> crate::v1::TaskActorCursorProto {
+    crate::v1::TaskActorCursorProto {
+        task_id: cursor.task_id.as_str().to_owned(),
+        fencing_epoch: cursor.fencing_epoch.value(),
+        status: status_to_proto(cursor.status),
+        scope_mode: scope_mode_to_proto(cursor.scope_mode),
+        pending_steering_branches: cursor.pending_steering_branches,
+    }
+}
+
+fn workbench_tabs_to_proto(
+    tabs: &marlin_agent_runtime::WorkbenchTabProjection,
+) -> crate::v1::WorkbenchTabsResponse {
+    crate::v1::WorkbenchTabsResponse {
+        focused_task_id: tabs
+            .focused_task_id
+            .as_ref()
+            .map(|id| id.as_str().to_owned()),
+        tabs: tabs
+            .tabs
+            .iter()
+            .map(|entry| crate::v1::WorkbenchTabEntryProto {
+                kind: match entry.kind {
+                    marlin_agent_runtime::WorkbenchTabKind::PinnedIndex => {
+                        crate::v1::WorkbenchTabKindProto::PinnedIndex.into()
+                    }
+                    marlin_agent_runtime::WorkbenchTabKind::ActiveTask => {
+                        crate::v1::WorkbenchTabKindProto::ActiveTask.into()
+                    }
+                    marlin_agent_runtime::WorkbenchTabKind::ReadOnlyPeek => {
+                        crate::v1::WorkbenchTabKindProto::ReadOnlyPeek.into()
+                    }
+                },
+                id: entry.id.clone(),
+                title: entry.title.clone(),
+                status_label: entry.status_label.clone(),
+                focused: entry.focused,
+                fencing_epoch: entry.fencing_epoch,
+            })
+            .collect(),
+    }
 }

@@ -45,3 +45,36 @@ pub use topology::{
     AgentCoordinationPlan, AgentDelegation, AgentEdge, AgentEdgeCondition, AgentEdgeKind,
     AgentGraph, AgentGraphTopologyError, AgentNode, AgentTopologyPolicy, GraphLoopEntryRef,
 };
+
+/// Dependency-inverted bridge trait allowing `marlin-agent-runtime` to cross-check
+/// `TaskActor` dispatch, receipt reconciliation, governed context admission, and
+/// Workbench tab projection against an authoritative Scheme `GraphEngine` oracle
+/// (e.g. `marlin-gerbil-scheme::GraphEngineLinkedBridge`) without cyclic crate edges.
+pub trait GraphEngineOracle {
+    /// Projects and gates a `MarlinDispatchEnvelope` via the Scheme `GraphEngine`.
+    fn project_dispatch(
+        &self,
+        envelope: &MarlinDispatchEnvelope,
+    ) -> Result<Result<AdmittedMarlinDispatch, GraphDispatchRejection>, String>;
+
+    /// Reconciles an execution receipt against `cursor` via the Scheme `GraphEngine`.
+    fn reconcile_receipt(
+        &self,
+        cursor: &TaskActorCursor,
+        receipt: &MarlinExecutionReceipt,
+    ) -> Result<ReceiptReconciliationDecision, String>;
+
+    /// Projects canonical pinned-Index Workbench tabs via the Scheme `GraphEngine`.
+    fn project_workbench_tabs(
+        &self,
+        focused_task_id: Option<&TaskActorId>,
+        active_tasks: &[WorkbenchActiveTaskInput],
+        peek_task_ids: &[TaskActorId],
+    ) -> Result<WorkbenchTabProjection, String>;
+
+    /// Projects and gates a governed `ai-agentic-context` + Design 165 capsule.
+    fn project_governed_context(
+        &self,
+        capsule: &GovernedContextCapsule,
+    ) -> Result<Result<AdmittedGovernedContext, GovernedContextRejection>, String>;
+}

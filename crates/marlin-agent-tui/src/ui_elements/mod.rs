@@ -9,8 +9,9 @@ mod widgets;
 
 use core::terminal_text;
 pub use core::{
-    UiRenderInputs, UiSlotRenderer, render_element, render_prompt, render_template,
-    render_with_facts, render_with_regions, render_with_scroll, render_with_slots, resolve_choice,
+    UiRenderInputs, UiSlotRenderer, render_element, render_overlay_element, render_prompt,
+    render_template, render_with_facts, render_with_regions, render_with_scroll, render_with_slots,
+    resolve_choice,
 };
 pub(crate) use core::{fits_area, fits_width, inline_text, tone_color};
 pub use geometry::{

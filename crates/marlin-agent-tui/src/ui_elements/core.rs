@@ -10,7 +10,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -78,6 +78,31 @@ pub fn render_element(
     theme: &UiTheme,
 ) {
     render_with_regions(frame, area, element, theme, &mut Vec::new());
+}
+
+/// Clear an overlay rectangle onto the theme canvas and render a declarative `UiElement` tree.
+pub fn render_overlay_element(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    element: &UiElement,
+    theme: &UiTheme,
+) {
+    let area = area.intersection(frame.area());
+    if area.is_empty() {
+        return;
+    }
+    frame.render_widget(Clear, area);
+    frame.buffer_mut().set_style(
+        area,
+        Style::default()
+            .bg(Color::Rgb(
+                theme.canvas.red,
+                theme.canvas.green,
+                theme.canvas.blue,
+            ))
+            .fg(Color::Rgb(theme.ink.red, theme.ink.green, theme.ink.blue)),
+    );
+    render_element(frame, area, element, theme);
 }
 
 /// Render a Scheme-declared line with typed, named host values.

@@ -976,6 +976,81 @@ impl<'vm> GraphEngineLinkedBridge<'vm> {
     }
 }
 
+impl<'vm> marlin_agent_graph::GraphEngineOracle for GraphEngineLinkedBridge<'vm> {
+    fn project_dispatch(
+        &self,
+        envelope: &MarlinDispatchEnvelope,
+    ) -> Result<Result<AdmittedMarlinDispatch, GraphDispatchRejection>, String> {
+        match self.project_dispatch(envelope).map_err(|e| e.to_string())? {
+            GraphEngineDispatchProjection::Admitted(admitted) => Ok(Ok(admitted)),
+            GraphEngineDispatchProjection::Rejected { reason } => match reason.as_str() {
+                "invalid-fencing-epoch" => Ok(Err(GraphDispatchRejection::InvalidFencingEpoch)),
+                "steering-requires-join-node-id" => {
+                    Ok(Err(GraphDispatchRejection::SteeringRequiresJoinNode))
+                }
+                "detached-scope-cannot-commit-project-settlement" => Ok(Err(
+                    GraphDispatchRejection::DetachedScopeCannotCommitProjectSettlement,
+                )),
+                _ => Err(format!("scheme dispatch rejected: {reason}")),
+            },
+        }
+    }
+
+    fn reconcile_receipt(
+        &self,
+        cursor: &TaskActorCursor,
+        receipt: &MarlinExecutionReceipt,
+    ) -> Result<ReceiptReconciliationDecision, String> {
+        self.reconcile_receipt(cursor, receipt)
+            .map_err(|e| e.to_string())
+    }
+
+    fn project_workbench_tabs(
+        &self,
+        focused_task_id: Option<&TaskActorId>,
+        active_tasks: &[marlin_agent_graph::WorkbenchActiveTaskInput],
+        peek_task_ids: &[TaskActorId],
+    ) -> Result<WorkbenchTabProjection, String> {
+        let rows: Vec<GraphEngineWorkbenchTaskRow> = active_tasks
+            .iter()
+            .map(|row| GraphEngineWorkbenchTaskRow {
+                task: row.clone(),
+                scope_mode: TaskActorScopeMode::Project,
+            })
+            .collect();
+        self.project_workbench_tabs(focused_task_id, &rows, peek_task_ids)
+            .map_err(|e| e.to_string())
+    }
+
+    fn project_governed_context(
+        &self,
+        capsule: &GovernedContextCapsule,
+    ) -> Result<Result<AdmittedGovernedContext, GovernedContextRejection>, String> {
+        match self
+            .project_governed_context(capsule)
+            .map_err(|e| e.to_string())?
+        {
+            GraphEngineGovernedContextProjection::Admitted(admitted) => Ok(Ok(admitted)),
+            GraphEngineGovernedContextProjection::Rejected { reason } => match reason.as_str() {
+                "invalid-context-cut" => Ok(Err(GovernedContextRejection::InvalidContextCut)),
+                "active-defeater-requires-l3-disclosure" => Ok(Err(
+                    GovernedContextRejection::ActiveDefeaterRequiresL3Disclosure,
+                )),
+                "sandbox-lethal-trifecta-denied" => {
+                    Ok(Err(GovernedContextRejection::SandboxLethalTrifectaDenied))
+                }
+                "invalid-cedar-policy-handoff" => {
+                    Ok(Err(GovernedContextRejection::InvalidCedarHandoff))
+                }
+                "blocker-detour-must-disable-auto-archive" => Ok(Err(
+                    GovernedContextRejection::BlockerDetourMustDisableAutoArchive,
+                )),
+                _ => Err(format!("scheme governed context rejected: {reason}")),
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

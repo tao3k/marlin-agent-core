@@ -425,3 +425,94 @@ fn governed_context_and_scoped_detour_four_exits_enforce_confinement_and_monoton
         3
     );
 }
+
+#[tokio::test]
+async fn durable_checkpoint_round_trip_and_async_executor_preserve_epoch_and_detour() {
+    use marlin_agent_runtime::{
+        DetourMode, DetourNodeId, DisclosureDepth, GovernedContextCapsule, KvPrefixDigest,
+    };
+
+    let registry = TaskActorRuntimeRegistry::new();
+    let task_id = TaskActorId::new("task-durable-01").unwrap();
+    let peek_id = TaskActorId::new("task-archived-99").unwrap();
+    registry
+        .register_actor(
+            task_id.clone(),
+            "Durable Graph Task",
+            TaskActorScopeMode::Project,
+        )
+        .unwrap();
+    registry.set_focus(Some(task_id.clone())).unwrap();
+    registry.open_read_only_peek(peek_id.clone()).unwrap();
+    registry
+        .bind_governed_context(GovernedContextCapsule {
+            task_id: task_id.clone(),
+            context_cut: 4,
+            kv_prefix_digest: KvPrefixDigest::new("sha256:durable-kv-cut-4").unwrap(),
+            disclosure_depth: DisclosureDepth::L2,
+            has_active_defeater: false,
+            quarantined_memory_count: 2,
+            sandbox_admitted: true,
+            cedar_handoff_valid: true,
+            detour_mode: DetourMode::Mainline,
+            auto_archive_enabled: true,
+        })
+        .unwrap();
+
+    // Execute through async executor boundary and automatically reconcile receipt -> epoch 2.
+    let (admitted, decision) = registry
+        .execute_and_reconcile(
+            MarlinDispatchEnvelope {
+                request_id: DispatchRequestId::new("req-exec-1").unwrap(),
+                task_id: task_id.clone(),
+                operation: GraphDispatchOperation::ExecuteFrontier,
+                fencing_epoch: FencingEpoch::new(1).unwrap(),
+                scope_mode: TaskActorScopeMode::Project,
+                join_node_id: None,
+                substrate_target: GraphSubstrateTarget::SqliteTurso,
+            },
+            |admitted| async move {
+                MarlinExecutionReceipt {
+                    request_id: admitted.envelope().request_id.clone(),
+                    task_id: admitted.envelope().task_id.clone(),
+                    fencing_epoch: admitted.envelope().fencing_epoch,
+                    status: ExecutionReceiptStatus::Ok,
+                }
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(admitted.envelope().fencing_epoch.value(), 1);
+    assert!(decision.accepted);
+    assert_eq!(decision.next_epoch.value(), 2);
+
+    // Enter a BlockerActive detour before checkpointing.
+    registry
+        .enter_detour(
+            &task_id,
+            DetourMode::BlockerActive,
+            DetourNodeId::new("detour-durable-blocker").unwrap(),
+        )
+        .unwrap();
+
+    // Save atomic checkpoint and restore into a brand-new registry instance.
+    let dir = tempfile::tempdir().unwrap();
+    let checkpoint = dir.path().join("task-actors-checkpoint.json");
+    let saved = registry.save_checkpoint_file(&checkpoint).unwrap();
+    let restored = TaskActorRuntimeRegistry::load_checkpoint_file(&checkpoint).unwrap();
+    assert_eq!(restored.snapshot(), saved);
+
+    // After restart, epoch 1 late receipt MUST still be rejected as split-brain!
+    let late = restored
+        .reconcile_receipt(&MarlinExecutionReceipt {
+            request_id: DispatchRequestId::new("req-exec-1").unwrap(),
+            task_id: task_id.clone(),
+            fencing_epoch: FencingEpoch::new(1).unwrap(),
+            status: ExecutionReceiptStatus::Ok,
+        })
+        .unwrap();
+    assert!(TaskActorRuntimeRegistry::is_stale_split_brain_rejection(
+        &late
+    ));
+    assert_eq!(restored.cursor(&task_id).unwrap().fencing_epoch.value(), 2);
+}

@@ -337,3 +337,60 @@ pub(super) fn handle_helm_input(
     }
     Ok(false)
 }
+
+pub(super) fn apply_wheel_scroll(
+    app: &mut App,
+    ui: &UiHost<'_>,
+    painted_regions: &[super::super::ui_elements::HitRegion],
+    up: bool,
+    pulses: usize,
+    column: u16,
+    row: u16,
+) {
+    let hit = if column > 0 && row > 0 {
+        super::super::ui_elements::hit_test_scroll(painted_regions, column - 1, row - 1)
+    } else {
+        None
+    };
+    let target = hit.and_then(|region| region.scroll_target());
+    let units = pulses.saturating_mul(usize::from(
+        hit.and_then(|region| region.scroll_step()).unwrap_or(0),
+    ));
+    if target == Some("transcript")
+        && let Some(prompt) = app.tool_review_prompt.as_mut()
+    {
+        prompt.scroll = if up {
+            prompt
+                .scroll
+                .saturating_sub(u16::try_from(units).unwrap_or(u16::MAX))
+        } else {
+            prompt
+                .scroll
+                .saturating_add(u16::try_from(units).unwrap_or(u16::MAX))
+        };
+    } else if target == Some("candidates") && app.tool_review_prompt.is_some() {
+        if let Some(prompt) = app.tool_review_prompt.as_mut() {
+            prompt.selected = if up {
+                prompt.selected.saturating_sub(units)
+            } else {
+                prompt
+                    .selected
+                    .saturating_add(units)
+                    .min(prompt.menu.choices.len().saturating_sub(1))
+            };
+        }
+    } else if target == Some("candidates") && command_menu_active(app, ui) {
+        browse_menu(
+            app,
+            ui,
+            if up {
+                UiBrowseDirection::Previous
+            } else {
+                UiBrowseDirection::Next
+            },
+            u16::try_from(units).unwrap_or(u16::MAX),
+        );
+    } else if target == Some("transcript") {
+        app.scroll_lines(up, units);
+    }
+}
