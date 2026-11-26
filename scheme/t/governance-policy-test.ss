@@ -396,7 +396,46 @@
         (check (vector->list (vector-ref out-clean 12)) => '())))
 
     ;; -----------------------------------------------------------------------
-    ;; 10. Official Yuanxu PolicyScope Publication Check
+    ;; 11. Defense-in-Depth Scope Cedar `unless` Policy Synthesis on Exfil
+    ;; -----------------------------------------------------------------------
+    (test-case "scope exfiltration synthesizes both target forbid and external-scope unless-declassified Cedar policy"
+      (let* ((req-exfil
+              (vector
+               #() #() #() #() #() #()
+               #(#(secret-key private))
+               #(#(secret-key ext-hook))
+               #(#(ext-hook external))
+               #()
+               #() #()
+               #()
+               6
+               4))
+             (req-declass
+              (vector
+               #() #() #() #() #() #()
+               #(#(secret-key private))
+               #(#(secret-key ext-hook))
+               #(#(ext-hook external))
+               #(secret-key)
+               #() #()
+               #()
+               7
+               5))
+             (out-exfil (marlin-governance-project-vector req-exfil))
+             (out-declass (marlin-governance-project-vector req-declass))
+             (exfil-ids (map (lambda (p) (vector-ref p 0))
+                             (vector->list (vector-ref out-exfil 13))))
+             (declass-ids (map (lambda (p) (vector-ref p 0))
+                               (vector->list (vector-ref out-declass 13)))))
+        (check (vector-ref out-exfil 1) => #f)
+        (check (and (member "marlin.ascent.forbid.exfil.secret-key.ext-hook" exfil-ids) #t) => #t)
+        (check (and (member "marlin.ascent.forbid.scope.external-unless-declassified" exfil-ids) #t) => #t)
+        (check (vector-ref out-declass 1) => #t)
+        (check (member "marlin.ascent.forbid.exfil.secret-key.ext-hook" declass-ids) => #f)
+        (check (member "marlin.ascent.forbid.scope.external-unless-declassified" declass-ids) => #f)))
+
+    ;; -----------------------------------------------------------------------
+    ;; 12. Official Yuanxu PolicyScope Publication Check
     ;; -----------------------------------------------------------------------
     (test-case "Marlin PolicyScope publishes both security-governance and governance bundles"
       (let* ((gov (.get PolicyScope governance))

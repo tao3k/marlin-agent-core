@@ -733,8 +733,19 @@
                     (string-append
                      "forbid (principal, action, resource == Marlin::Resource::\"" target-str
                      "\");"))))
-               exfil-rows)))
-    (append baseline-policies ascent-fenced-policies ascent-tool-policies ascent-exfil-policies)))
+               exfil-rows))
+         (ascent-scope-guard-policies
+          (if (pair? exfil-rows)
+            (list
+             (agentic-ai-lab-cedar-policy
+              "marlin.ascent.forbid.scope.external-unless-declassified"
+              "forbid (principal, action, resource in Marlin::Scope::\"external\") unless { context.declassified == true };"))
+            '())))
+    (append baseline-policies
+            ascent-fenced-policies
+            ascent-tool-policies
+            ascent-exfil-policies
+            ascent-scope-guard-policies)))
 
 ;;; Fail-closed higher-order synthesis gate: constructs a proof-bound
 ;;; `CedarAuthoritySnapshot` + its runtime boundary hash projection ONLY IF:

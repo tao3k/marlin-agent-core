@@ -18,7 +18,7 @@ flowchart TD
         POO["scheme/policy/governance.ss<br/>Atomic POO Profiles & Combinators"]
         ASCENT["gerbil-ascent<br/>Higher-Order Fixpoint, Stratified CaMeL Taint,<br/>Multi-Hop OBO Revocation & 5-Scope Exfiltration"]
         BTM["agentic-ai-lab/temporal-causality<br/>Bi-Temporal Cuts (valid x knowledge)<br/>& Reverse-Dependency Truth Maintenance"]
-        CEDAR_SYN["Dynamic Cedar Policy Synthesis<br/>Role Forbid/Permit + Actor/Tool/Resource Forbids"]
+        CEDAR_SYN["Dynamic Cedar Policy Synthesis<br/>Role Forbid/Permit + Actor/Tool/Resource/Scope-Unless Forbids"]
         POO --> ASCENT --> BTM --> CEDAR_SYN
     end
 
@@ -40,7 +40,7 @@ flowchart TD
     subgraph Go["Thin-Client Control Plane & Studio UI (marlin-mygo)"]
         SIDECAR["control/grpcwire/governance_sidecar.go<br/>Zero-Config Auto-Discover marlin-scheme-host-aot"]
         BRIDGE["control/grpcwire/governance_bridge.go<br/>HTTP/2 gRPC RustGovernanceAuthority"]
-        UI["runtime/mygoshell/governance_view.go + governance_cedar_panel.go<br/>Tier-0 Console, Cedar Inspector, Probe Form & Delegation Builder"]
+        UI["runtime/mygoshell/governance_view.go + governance_cedar_panel.go<br/>Tier-0 Console, Cedar Inspector & 12/12 Interactive Fact Builders"]
         SIDECAR --> BRIDGE --> UI
     end
 
@@ -55,8 +55,9 @@ flowchart TD
 1. **Assessment Is Never Authority**: Scheme emits pure functional proof envelopes (`runtime-executed?: #f`) with 5 canonical `sha256:` digests (`assessment`, `taint`, `fixpoint`, `temporal`, `invalidation`). Only Rust's `GovernanceAdmissionGate` and `ExecutionCircuitBreaker` execute physical OS side effects.
 2. **Zero JSON on Internal Scheme↔Rust Boundary**: All runtime requests and proof projections cross Gambit FFI via 16-slot input / 14-slot output rooted heap vectors (`scheme/c-abi/graph-engine.ss`, `crates/marlin-gerbil-scheme/src/governance_policy_abi.rs`).
 3. **Structured Cedar `forbid`-Overrides-`permit` (Fail-Closed)**:
-   - Every synthesized Cedar policy is parsed by `marlin-agent-kernel/src/governance_cedar.rs` before installation; malformed syntax is rejected atomically (`InvalidCedarPolicy`).
+   - Every synthesized Cedar policy is parsed by `marlin-agent-kernel/src/governance_cedar.rs` (supporting `when`, `unless`, `==`, `!=`, `!context.<k>`, and `Marlin::Scope::"..."` resource groups) before installation; malformed syntax or missing condition keys fail closed (`InvalidCedarPolicy`).
    - Any matching `forbid` overrides every `permit` (including `VerifiedHuman` with `context.step_up_fresh == true`).
+   - On un-declassified `private -> external` escalation, Scheme synthesizes BOTH a target-specific resource `forbid` (`Marlin::Resource::"<target>"`) and a defense-in-depth scope guard (`forbid (principal, action, resource in Marlin::Scope::"external") unless { context.declassified == true };`).
    - `LoopProgramRuntimeSideEffectExecutor` routes both process spawns and file writes through `authorize_side_effect_on_resource`, physically blocking resource-scoped exfiltration targets (e.g. `Marlin::Resource::"ext-webhook.txt"`).
 4. **One-Shot RFC 9470 Human-Only Step-Up Re-Arm**:
    - `DispatchUiEvent("scheme:governance-rearm ...")` is rejected fail-closed.
@@ -97,7 +98,7 @@ just scheme-host-aot-build
 # 2. In marlin-agent-core: run full Scheme + Rust Cedar + 10-countermodel Quint MBT + Live VM + AOT gate
 just governance-gate
 
-# 3. In .data/marlin-mygo: run all 5 zero-.ss Linked-AOT cross-process E2E suites
+# 3. In .data/marlin-mygo: run all 7 zero-.ss Linked-AOT cross-process E2E suites (incl. GPU UI & restart resilience)
 just governance-aot-e2e
 
 # 4. Launch desktop Studio with zero-config auto-discovered Linked-AOT Governance Authority

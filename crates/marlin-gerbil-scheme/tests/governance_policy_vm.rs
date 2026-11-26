@@ -12,12 +12,13 @@
 //! and drives Rust `GovernanceAdmissionGate` + `ExecutionCircuitBreaker` +
 //! `LoopProgramRuntimeSideEffectExecutor` to physically block/allow real `/bin/sh` OS spawns.
 
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use gerbil_scheme::{GerbilRuntime, IdentifierKind, PackageResolutionProgress};
 use marlin_agent_kernel::{
-    AgentFlowLoopProgramRuntimeHandoffExecutor, BreakerActor, BreakerActorId, CedarPolicyId,
-    DerivationId, ExecutionCircuitBreaker, GenericLoopMachineReceipt, GenericLoopMachineStepIndex,
+    AgentFlowLoopProgramRuntimeHandoffExecutor, BreakerActor, BreakerActorId, CedarContextValue,
+    CedarEntityRef, CedarEvaluationDecision, CedarEvaluationRequest, CedarPolicyId, DerivationId,
+    ExecutionCircuitBreaker, GenericLoopMachineReceipt, GenericLoopMachineStepIndex,
     GovernanceProofDigest, GovernedSubjectName, GovernanceAdmissionError,
     GovernanceAdmissionGate, GovernanceProofEnvelope, GovernanceProofEpoch,
     LoopProgramFileSandbox, LoopProgramFileWriteSideEffectStatus, LoopProgramFileWriteTemplate,
@@ -358,9 +359,53 @@ async fn live_gerbil_vm_governance_policy_drives_rust_breaker_and_blocks_real_os
         "expected Scheme ASCENT to synthesize resource-scoped Cedar exfil forbid, got {:?}",
         proj_exfil.cedar_policies
     );
+    assert!(
+        proj_exfil
+            .cedar_policies
+            .iter()
+            .any(|(id, _)| id == "marlin.ascent.forbid.scope.external-unless-declassified"),
+        "expected Scheme ASCENT to synthesize defense-in-depth external scope unless-declassified Cedar forbid, got {:?}",
+        proj_exfil.cedar_policies
+    );
 
     let env_exfil = into_kernel_envelope(&proj_exfil);
     gate_arc.synchronize_proof_envelope(&env_exfil).unwrap();
+
+    // Verify defense-in-depth scope Cedar `unless { context.declassified == true }` policy
+    // synthesized by live Gambit VM blocks unrelated external-scope sibling `ext-partner-mirror`
+    // when un-declassified, and lifts when `declassified == true`!
+    let mut sibling_req = CedarEvaluationRequest {
+        principal: CedarEntityRef::actor("ops-alice"),
+        principal_roles: vec![CedarEntityRef::role("VerifiedHuman")],
+        action: CedarEntityRef::action("rearm_breaker"),
+        resource: CedarEntityRef::resource("ext-partner-mirror"),
+        resource_groups: vec![CedarEntityRef::scope("external")],
+        context: BTreeMap::from([
+            ("step_up_fresh".to_owned(), CedarContextValue::Bool(true)),
+            ("declassified".to_owned(), CedarContextValue::Bool(false)),
+        ]),
+    };
+    assert_eq!(
+        gate_arc.evaluate_cedar_request(&sibling_req).unwrap(),
+        CedarEvaluationDecision::Deny {
+            matching_forbids: vec![
+                CedarPolicyId::new("marlin.ascent.forbid.scope.external-unless-declassified")
+                    .unwrap()
+            ],
+        }
+    );
+    sibling_req
+        .context
+        .insert("declassified".to_owned(), CedarContextValue::Bool(true));
+    assert_eq!(
+        gate_arc.evaluate_cedar_request(&sibling_req).unwrap(),
+        CedarEvaluationDecision::Allow {
+            matching_permits: vec![
+                CedarPolicyId::new("marlin.permit.verified-human-governance").unwrap()
+            ],
+        }
+    );
+
     // Re-arm breaker so ONLY the compiled Scheme Cedar resource forbid guards disk writes!
     breaker.rearm(&human).unwrap();
     assert!(!breaker.snapshot().unwrap().tripped);
