@@ -10,7 +10,7 @@ use std::{
 };
 
 use marlin_agent_app_server::{
-    AppServer,
+    AppServer, CompositeAtomicEffectExecutor, RegisterTaskActorRequest, TaskActorControlPlane,
     ui_grpc::{MyGoBridgeHost, SchemeOverlayProjection},
     v1::{
         ConversationMessage, MessageRole, StreamTurnRequest,
@@ -24,7 +24,8 @@ use marlin_agent_app_server::{
             device_bridge_service_client::DeviceBridgeServiceClient,
         },
         gate::v1::{
-            GateKind, PendingGate, SubmitToolReviewDecisionRequest, ToolReviewDecision,
+            GateKind, GetGateReceiptRequest, GraphHumanDecision, PendingGate,
+            SubmitGraphHumanDecisionRequest, SubmitToolReviewDecisionRequest, ToolReviewDecision,
             approval_gate_service_client::ApprovalGateServiceClient,
         },
         plugin::v1::{
@@ -43,12 +44,21 @@ use marlin_agent_app_server::{
     },
 };
 use marlin_agent_protocol::{
-    ModelEndpoint, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse,
+    ModelEndpoint, ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse,
     ModelGatewayFuture, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
-    assistant_gateway_message,
+    assistant_gateway_message, user_gateway_message,
 };
-use marlin_agent_runtime::plugin::{
-    PublisherId, ReleaseAttestation as RuntimeAttestation, ReleaseTrust, SignedPanelRelease,
+use marlin_agent_runtime::{
+    AtomicEffect, AtomicEffectReceipt, CasGetEffectPayload, CasPutEffectPayload, DetourMode,
+    DetourNodeId, DetourState, FencingEpoch, LlmCompleteEffectPayload, SandboxRunEffectPayload,
+    TaskActorId, TaskActorScopeMode,
+    plugin::{
+        PublisherId, ReleaseAttestation as RuntimeAttestation, ReleaseTrust, SignedPanelRelease,
+    },
+};
+use marlin_agent_storage::{
+    AgentId, ArtifactPointerKey, ProjectId, SessionId, TursoAgentStorage, TursoAgentStorageConfig,
+    TursoBatchTransactionMode, TursoOptimizationProfile,
 };
 use marlin_agent_stream::{
     ModelGatewayEventStream, ModelStreamChunk, ModelStreamEvent, ModelStreamingGateway,
@@ -351,6 +361,30 @@ impl ModelStreamingGateway for EchoGateway {
     }
 }
 
+impl ModelGateway for EchoGateway {
+    fn complete(
+        &self,
+        request: ModelGatewayRequest,
+    ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayCompletionResponse>> {
+        let prompt = request
+            .messages()
+            .last()
+            .map(|m| m.content.clone())
+            .unwrap_or_default();
+        Box::pin(async move {
+            Ok(ModelGatewayCompletionResponse::new(
+                "cohost-atomic-fixture",
+                "gpt-fixture",
+                vec![ModelGatewayCompletionChoice::new(
+                    0,
+                    assistant_gateway_message(format!("atomic-echo:{prompt}")),
+                    None,
+                )],
+            ))
+        })
+    }
+}
+
 #[tokio::test]
 async fn real_app_server_cohosts_with_mygo_bridge_and_validates_scheme_overlays() {
     // 1. SchemeOverlayProjection::validate enforces mobile App Store and host.gate invariants.
@@ -453,4 +487,318 @@ async fn real_app_server_cohosts_with_mygo_bridge_and_validates_scheme_overlays(
     }));
 
     server.abort();
+}
+
+#[tokio::test]
+async fn mygo_bridge_cohosted_grpc_graph_human_gate_and_turso_atomic_pump_survive_restart() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let cfg = TursoAgentStorageConfig {
+        path: dir.path().join("cohosted-s14.db"),
+        optimization_profile: TursoOptimizationProfile::AsyncIoWithMvcc,
+        batch_transaction_mode: TursoBatchTransactionMode::Concurrent,
+    };
+    let project = ProjectId::new("proj-s14").unwrap();
+    let session = SessionId::new("sess-s14").unwrap();
+    let agent = AgentId::new("agent-s14").unwrap();
+    let pointer_key = ArtifactPointerKey::new("ptr:s14:actors").unwrap();
+    let task_id = TaskActorId::new("task-s14-main").unwrap();
+    let detour_node_id = DetourNodeId::new("detour-s14-gate").unwrap();
+    let cas_key = "k:s14:fleet-checkpoint";
+    let checkpoint_bytes = b"(fleet-wire-v1 (round . 14) (gate . \"gate-graph-s14\"))".to_vec();
+
+    // -------------------------------------------------------------------------
+    // Boot #1: Real disk Turso WAL + co-hosted AppServer/MyGoBridgeHost over HTTP/2
+    // -------------------------------------------------------------------------
+    let storage1 = TursoAgentStorage::open_local(cfg.clone())
+        .await
+        .expect("open turso #1");
+    let task_actors1 = TaskActorControlPlane::rehydrate_or_new(&storage1, &project, &pointer_key)
+        .await
+        .expect("rehydrate empty control plane");
+    let persist1 = task_actors1.spawn_storage_persistence_loop(
+        storage1.clone(),
+        project.clone(),
+        pointer_key.clone(),
+        agent.clone(),
+    );
+    task_actors1
+        .register_actor(RegisterTaskActorRequest {
+            task_id: task_id.clone(),
+            title: "S14 Graph Human Gate Actor".to_owned(),
+            scope_mode: TaskActorScopeMode::Project,
+        })
+        .expect("register actor");
+    task_actors1
+        .enter_detour(&task_id, DetourMode::BlockerActive, detour_node_id.clone())
+        .expect("enter blocker detour");
+
+    let atomic1 = Arc::new(CompositeAtomicEffectExecutor::new(
+        storage1.clone(),
+        EchoGateway,
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+    ));
+    let bridge1 = MyGoBridgeHost::new(ReleaseTrust::new(BTreeMap::new()), |meta| {
+        match meta.get("authorization") {
+            Some(v) if v == "Bearer test-token" => Ok(()),
+            _ => Err(Status::unauthenticated("missing bearer token")),
+        }
+    })
+    .with_task_actors(task_actors1.clone())
+    .with_atomic_executor(atomic1);
+
+    bridge1.enqueue_pending_gate(PendingGate {
+        gate_id: "gate-graph-s14".to_owned(),
+        kind: GateKind::GraphHumanGate as i32,
+        turn: None,
+        call_id: None,
+        tool_or_node_name: "node-human-approve-s14".to_owned(),
+        prompt: "Approve bounded graph branch?".to_owned(),
+        details_heading: "GraphEngine Human Gate".to_owned(),
+        choices: Vec::new(),
+        card: None,
+        created_at_unix_ms: 14,
+        expires_at_unix_ms: None,
+    });
+
+    let app_server1 = AppServer::new(
+        ModelEndpoint::new("openai", "gpt-fixture"),
+        Arc::new(EchoGateway),
+        |meta| match meta.get("authorization") {
+            Some(v) if v == "Bearer test-token" => Ok(()),
+            _ => Err(Status::unauthenticated("missing bearer token")),
+        },
+    )
+    .unwrap()
+    .with_task_actors(task_actors1.clone());
+
+    let listener1 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr1 = listener1.local_addr().unwrap();
+    let bridge1_srv = bridge1.clone();
+    let server1 = tokio::spawn(async move {
+        app_server1
+            .into_ui_router(bridge1_srv)
+            .serve_with_incoming(TcpListenerStream::new(listener1))
+            .await
+            .unwrap();
+    });
+    let endpoint1 = format!("http://{addr1}");
+
+    // 1a. Co-hosted UiWorkbenchService serves locked host.gate on the same HTTP/2 listener.
+    let mut ui_client = UiWorkbenchServiceClient::connect(endpoint1.clone())
+        .await
+        .unwrap();
+    let wb = ui_client
+        .open_workbench(auth_req(OpenWorkbenchRequest {
+            session_id: "s14-live".to_owned(),
+            client_target_kind: TargetKind::DesktopMacos as i32,
+            preferred_profile: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .workbench
+        .unwrap();
+    assert!(wb.slots.iter().any(|s| {
+        s.slot_id == "approval.gate"
+            && s.fallback_renderer == "host.gate"
+            && !s.allow_untrusted_plugin
+    }));
+
+    // 1b. ApprovalGateService::submit_graph_human_decision enforces auth + one-shot claim.
+    let mut gate_client = ApprovalGateServiceClient::connect(endpoint1).await.unwrap();
+    let unauth_err = gate_client
+        .submit_graph_human_decision(SubmitGraphHumanDecisionRequest {
+            turn: None,
+            gate_id: "gate-graph-s14".to_owned(),
+            decision: GraphHumanDecision::Approve as i32,
+            idempotency_key: "idem-unauth".to_owned(),
+            note: None,
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(unauth_err.code(), Code::Unauthenticated);
+
+    let first_claim = gate_client
+        .submit_graph_human_decision(auth_req(SubmitGraphHumanDecisionRequest {
+            turn: None,
+            gate_id: "gate-graph-s14".to_owned(),
+            decision: GraphHumanDecision::Approve as i32,
+            idempotency_key: "idem-s14-1".to_owned(),
+            note: Some("approved over HTTP/2".to_owned()),
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .receipt
+        .unwrap();
+    assert!(first_claim.claimed);
+    assert_eq!(first_claim.kind, GateKind::GraphHumanGate as i32);
+    assert!(first_claim.denial.is_none());
+    let minted_receipt_id = first_claim
+        .receipt
+        .as_ref()
+        .expect("minted receipt")
+        .receipt_id
+        .clone();
+    assert!(!minted_receipt_id.is_empty());
+
+    // Fetch durable receipt via GetGateReceipt over gRPC.
+    let fetched = gate_client
+        .get_gate_receipt(auth_req(GetGateReceiptRequest {
+            gate_id: "gate-graph-s14".to_owned(),
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .receipt
+        .unwrap();
+    assert!(fetched.claimed);
+    assert_eq!(
+        fetched.receipt.as_ref().unwrap().receipt_id,
+        minted_receipt_id
+    );
+
+    // Duplicate claim on the same gate MUST be rejected with DenialCode::StaleOrdinal.
+    let dup_claim = gate_client
+        .submit_graph_human_decision(auth_req(SubmitGraphHumanDecisionRequest {
+            turn: None,
+            gate_id: "gate-graph-s14".to_owned(),
+            decision: GraphHumanDecision::Approve as i32,
+            idempotency_key: "idem-s14-2".to_owned(),
+            note: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .receipt
+        .unwrap();
+    assert!(!dup_claim.claimed);
+    assert!(dup_claim.receipt.is_none());
+    assert_eq!(
+        dup_claim.denial.unwrap().code,
+        DenialCode::StaleOrdinal as i32
+    );
+
+    // Unknown gate ID MUST be rejected with DenialCode::NotFound.
+    let missing_claim = gate_client
+        .submit_graph_human_decision(auth_req(SubmitGraphHumanDecisionRequest {
+            turn: None,
+            gate_id: "gate-graph-nonexistent".to_owned(),
+            decision: GraphHumanDecision::Reject as i32,
+            idempotency_key: "idem-s14-3".to_owned(),
+            note: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .receipt
+        .unwrap();
+    assert!(!missing_claim.claimed);
+    assert_eq!(
+        missing_claim.denial.unwrap().code,
+        DenialCode::NotFound as i32
+    );
+
+    // 1c. Concurrent 4-primitive atomic pump on the exact same live MyGoBridgeHost:
+    //     CasPut -> Turso WAL, LlmComplete -> EchoGateway, SandboxRun -> fail-closed Deny.
+    let rcpts1 = bridge1
+        .run_atomic_effects(vec![
+            AtomicEffect::CasPut(CasPutEffectPayload {
+                effect_id: "e-s14-put".to_owned(),
+                key: cas_key.to_owned(),
+                bytes: checkpoint_bytes.clone(),
+            }),
+            AtomicEffect::LlmComplete(LlmCompleteEffectPayload {
+                effect_id: "e-s14-llm".to_owned(),
+                request: ModelGatewayRequest::new(
+                    ModelEndpoint::new("openai", "gpt-fixture"),
+                    vec![user_gateway_message("s14-prompt")],
+                ),
+            }),
+            AtomicEffect::SandboxRun(SandboxRunEffectPayload {
+                effect_id: "e-s14-sandbox-deny".to_owned(),
+                program: "/bin/echo".to_owned(),
+                args: vec!["should-not-run".to_owned()],
+                cwd: None,
+            }),
+        ])
+        .await
+        .expect("mounted atomic executor runs batch");
+    assert_eq!(rcpts1.len(), 3);
+    assert!(matches!(
+        &rcpts1[0],
+        AtomicEffectReceipt::CasStored(id) if id == "e-s14-put"
+    ));
+    assert!(matches!(
+        &rcpts1[1],
+        AtomicEffectReceipt::LlmCompleted(p)
+            if p.effect_id == "e-s14-llm" && p.content == "atomic-echo:s14-prompt"
+    ));
+    assert!(matches!(
+        &rcpts1[2],
+        AtomicEffectReceipt::EffectError(p)
+            if p.effect_id == "e-s14-sandbox-deny" && p.message.contains("denied")
+    ));
+
+    // Flush TaskActorControlPlane write-through loop, shut down Boot #1 completely.
+    persist1.flush_and_stop().await.expect("flush boot #1");
+    server1.abort();
+    let _ = server1.await;
+    drop(bridge1);
+    drop(task_actors1);
+    drop(storage1);
+
+    // -------------------------------------------------------------------------
+    // Boot #2: Full cold restart on the same disk Turso WAL database
+    // -------------------------------------------------------------------------
+    let storage2 = TursoAgentStorage::open_local(cfg)
+        .await
+        .expect("open turso #2");
+    let task_actors2 = TaskActorControlPlane::rehydrate_or_new(&storage2, &project, &pointer_key)
+        .await
+        .expect("rehydrate boot #2 control plane");
+    let snap2 = task_actors2.snapshot();
+    let restored_actor = snap2
+        .actors
+        .get(&task_id)
+        .expect("actor survived turso restart");
+    assert_eq!(restored_actor.cursor.task_id, task_id);
+    assert_eq!(
+        restored_actor.detour_state,
+        DetourState::Active {
+            mode: DetourMode::BlockerActive,
+            origin_epoch: FencingEpoch::new(1).unwrap(),
+            detour_node_id,
+        }
+    );
+
+    let bridge2 = MyGoBridgeHost::new(ReleaseTrust::new(BTreeMap::new()), |meta| {
+        match meta.get("authorization") {
+            Some(v) if v == "Bearer test-token" => Ok(()),
+            _ => Err(Status::unauthenticated("missing bearer token")),
+        }
+    })
+    .with_task_actors(task_actors2)
+    .with_atomic_executor(Arc::new(CompositeAtomicEffectExecutor::new(
+        storage2,
+        EchoGateway,
+        project,
+        session,
+        agent,
+    )));
+
+    let rcpts2 = bridge2
+        .run_atomic_effects(vec![AtomicEffect::CasGet(CasGetEffectPayload {
+            effect_id: "e-s14-get".to_owned(),
+            key: cas_key.to_owned(),
+        })])
+        .await
+        .expect("boot #2 cas get");
+    assert!(matches!(
+        rcpts2.as_slice(),
+        [AtomicEffectReceipt::CasHit(p)]
+            if p.effect_id == "e-s14-get" && p.bytes == checkpoint_bytes
+    ));
 }

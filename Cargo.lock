@@ -3335,6 +3335,7 @@ dependencies = [
  "criterion",
  "futures-executor",
  "gerbil-scheme",
+ "marlin-agent-app-server",
  "marlin-agent-context",
  "marlin-agent-gitops",
  "marlin-agent-graph",
