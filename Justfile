@@ -398,7 +398,76 @@ scheme-host-aot-build: scheme-build
 scheme-host-aot-release: scheme-build
   GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" cargo build --release -p marlin-agent-core --features linked-scheme-host --bin marlin-scheme-host-aot
 
-# Full Scheme POO x ASCENT x Bi-Temporal TM x Cedar x 10-countermodel Quint MBT x Linked-AOT governance gate.
+# Verify standalone zero-`.ss` boot, READY binding, and clean SIGTERM exit=0 on a Linked-AOT daemon binary.
+scheme-host-aot-smoke binary="target/debug/marlin-scheme-host-aot":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  binary={{ quote(binary) }}
+  if [[ ! -f "$binary" || ! -x "$binary" ]]; then
+    printf 'Expected an executable Linked-AOT daemon at %s\n' "$binary" >&2
+    exit 1
+  fi
+  smoke_dir=$(mktemp -d "${TMPDIR:-/tmp}/marlin-scheme-aot-smoke.XXXXXX")
+  pid=""
+  cleanup() {
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+    rm -rf "$smoke_dir"
+  }
+  trap cleanup EXIT
+  MARLIN_SCHEME_DIR=/nonexistent-zero-scheme-dir \
+  MARLIN_BRIDGE_ADDR=127.0.0.1:0 \
+  MARLIN_BRIDGE_TOKEN=smoke-tok \
+  MARLIN_BRIDGE_TURSO_PATH="$smoke_dir/smoke.db" \
+  MARLIN_SCHEME_GOVERNANCE_MODE=clean \
+  "$binary" >"$smoke_dir/daemon.log" 2>&1 &
+  pid=$!
+  ready_line=""
+  for _ in $(seq 1 100); do
+    if grep -qE '^READY 127\.0\.0\.1:[0-9]+' "$smoke_dir/daemon.log" 2>/dev/null; then
+      ready_line=$(grep -E '^READY 127\.0\.0\.1:[0-9]+' "$smoke_dir/daemon.log" | head -n1)
+      break
+    fi
+    sleep 0.1
+  done
+  if [[ -z "$ready_line" ]]; then
+    printf 'FAIL: %s did not emit READY without .ss files:\n' "$binary" >&2
+    cat "$smoke_dir/daemon.log" >&2
+    exit 1
+  fi
+  kill -TERM "$pid"
+  wait "$pid"
+  pid=""
+  printf 'OK: zero-.ss Linked-AOT smoke passed (%s -> %s, clean SIGTERM exit=0)\n' "$binary" "$ready_line"
+
+# Stage a standalone release `marlin-scheme-host-aot` binary with Darwin HFS compression and zero-`.ss` smoke check.
+scheme-host-aot-stage-release directory binary="target/release/marlin-scheme-host-aot":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  binary={{ quote(binary) }}
+  directory={{ quote(directory) }}
+  if [[ ! -f "$binary" || ! -x "$binary" ]]; then
+    printf 'Expected a built executable at %s\n' "$binary" >&2
+    exit 1
+  fi
+  mkdir -p -- "$directory"
+  destination="$directory/marlin-scheme-host-aot"
+  if [[ -d "$destination" ]]; then
+    printf 'Expected an executable path at %s\n' "$destination" >&2
+    exit 1
+  fi
+  staging=$(mktemp -d "$directory/.marlin-scheme-host-aot.XXXXXX")
+  trap 'rm -f -- "$staging/marlin-scheme-host-aot"; rmdir -- "$staging"' EXIT
+  case "$(uname -s)" in
+    Darwin) /usr/bin/ditto --hfsCompression "$binary" "$staging/marlin-scheme-host-aot" ;;
+    *) install -m 0755 -- "$binary" "$staging/marlin-scheme-host-aot" ;;
+  esac
+  mv -f -- "$staging/marlin-scheme-host-aot" "$destination"
+  just scheme-host-aot-smoke "$destination"
+
+# Full Scheme POO x ASCENT x Bi-Temporal TM x Cedar x 12-countermodel Quint MBT x Linked-AOT governance gate.
 governance-gate: scheme-build
   just scheme-test t/governance-policy-test.ss
   just scheme-test t/graph-engine-c-abi-test.ss
@@ -411,3 +480,4 @@ governance-gate: scheme-build
   cargo test -p marlin-gerbil-scheme --features app-server-host --lib governance_host
   cargo test -p marlin-gerbil-scheme --test governance_policy_vm
   GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" cargo build -p marlin-agent-core --features linked-scheme-host --bin marlin-scheme-host-aot
+  just scheme-host-aot-smoke target/debug/marlin-scheme-host-aot

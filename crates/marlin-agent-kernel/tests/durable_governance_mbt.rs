@@ -369,6 +369,17 @@ fn incident_envelope(epoch: u64) -> GovernanceProofEnvelope {
                 source: "forbid(principal == Marlin::Actor::\"agent-sub\", action, resource);"
                     .to_owned(),
             },
+            SynthesizedCedarPolicy {
+                policy_id: CedarPolicyId::new(
+                    "marlin.ascent.forbid.scope.external-unless-declassified",
+                )
+                .unwrap(),
+                source: "forbid (principal, action, resource in Marlin::Scope::\"external\") unless { context.declassified == true };".to_owned(),
+            },
+            SynthesizedCedarPolicy {
+                policy_id: CedarPolicyId::new("marlin.permit.trusted-channel-export").unwrap(),
+                source: "permit (principal in Marlin::Role::\"VerifiedHuman\", action == Marlin::Action::\"export\", resource) when { context.step_up_fresh && context.channel_scope != \"untrusted\" };".to_owned(),
+            },
         ],
     }
 }
@@ -391,6 +402,8 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
             "stepCorruptFactGraphFailsOpen",
             "stepCedarForbidBypassedByPermit",
             "stepRetractedDerivationCommits",
+            "stepScopeUnlessBypassSiblingExfil",
+            "stepMissingContextKeyBypassesCondition",
         ],
     );
 
@@ -432,6 +445,10 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                 b(next, "cedarForbidBypassed") && !b(prev, "cedarForbidBypassed");
             let retracted_deriv_committed = b(next, "retractedDerivationCommitted")
                 && !b(prev, "retractedDerivationCommitted");
+            let scope_unless_bypassed =
+                b(next, "scopeUnlessBypassed") && !b(prev, "scopeUnlessBypassed");
+            let missing_context_bypassed =
+                b(next, "missingContextBypassed") && !b(prev, "missingContextBypassed");
 
             if exec_tripped {
                 let (did, _) = active_lease.as_ref().unwrap();
@@ -642,6 +659,55 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                 countermodels_refused += 1;
                 break;
             }
+            if scope_unless_bypassed {
+                // Real Rust compiled Cedar engine MUST deny un-declassified sibling external-scope resource
+                // via `forbid (... resource in Marlin::Scope::"external") unless { context.declassified == true }`!
+                let req = CedarEvaluationRequest {
+                    principal: CedarEntityRef::actor("ops-alice"),
+                    principal_roles: vec![CedarEntityRef::role("VerifiedHuman")],
+                    action: CedarEntityRef::action("rearm_breaker"),
+                    resource: CedarEntityRef::resource("ext-sibling-mirror"),
+                    resource_groups: vec![CedarEntityRef::scope("external")],
+                    context: BTreeMap::from([
+                        ("step_up_fresh".to_owned(), CedarContextValue::Bool(true)),
+                        ("declassified".to_owned(), CedarContextValue::Bool(false)),
+                    ]),
+                };
+                assert_eq!(
+                    gate.evaluate_cedar_request(&req).unwrap(),
+                    CedarEvaluationDecision::Deny {
+                        matching_forbids: vec![
+                            CedarPolicyId::new(
+                                "marlin.ascent.forbid.scope.external-unless-declassified"
+                            )
+                            .unwrap()
+                        ],
+                    }
+                );
+                countermodels_refused += 1;
+                break;
+            }
+            if missing_context_bypassed {
+                // Real Rust compiled Cedar engine MUST fail closed when context keys required by
+                // `when { ... && context.channel_scope != "untrusted" }` are omitted!
+                let req = CedarEvaluationRequest {
+                    principal: CedarEntityRef::actor("ops-alice"),
+                    principal_roles: vec![CedarEntityRef::role("VerifiedHuman")],
+                    action: CedarEntityRef::action("export"),
+                    resource: CedarEntityRef::resource("ext-sibling-mirror"),
+                    resource_groups: vec![CedarEntityRef::scope("external")],
+                    context: BTreeMap::from([(
+                        "step_up_fresh".to_owned(),
+                        CedarContextValue::Bool(true),
+                    )]),
+                };
+                assert_eq!(
+                    gate.evaluate_cedar_request(&req).unwrap(),
+                    CedarEvaluationDecision::ImplicitDeny
+                );
+                countermodels_refused += 1;
+                break;
+            }
 
             // Safe transitions refined 1:1 against Rust durable gate & breaker:
             let prev_corrupt = b(prev, "walCorrupted") || b(prev, "factGraphCorrupted");
@@ -729,7 +795,7 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
     }
 
     assert!(
-        countermodels_refused >= 10,
-        "expected all 10 durable governance countermodels refused, got {countermodels_refused}"
+        countermodels_refused >= 12,
+        "expected all 12 durable governance countermodels refused, got {countermodels_refused}"
     );
 }

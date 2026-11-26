@@ -65,9 +65,9 @@ flowchart TD
 5. **Anti-Restart-Reset & Tamper Fail-Closed Durability (`MGV1` + `MGF1` v2)**:
    - Both gate state (`MGV1`) and the live runtime fact graph (`MGF1` v2: delegations, revocations, 5-scope context flows, declassifications, CaMeL taint graph, and dynamic Bi-Temporal causal derivations) are sealed with trailing 32-byte FIPS 180-4 SHA-256 tags and flushed to Turso SQLite WAL before publishing gRPC snapshots.
    - On OS restart, persisted state always wins over a cold `clean` boot flag; any single-bit corruption in either `MGV1` or `MGF1` auto-trips the breaker fail-closed (`mode=corrupt_fail_closed`).
-6. **Formal Refinement (10 Composed Quint Countermodels)**:
-   - `dev/quint/threat/MarlinBackendDurableGovernanceOverlay.qnt` composes `AgentToolCircuitBreaker` with durable `MGV1`/`MGF1` recovery, Cedar `forbid`-overrides-`permit`, and Bi-Temporal retraction.
-   - `crates/marlin-agent-kernel/tests/durable_governance_mbt.rs` generates live Quint ITF traces and proves all 10 adversarial countermodels are deterministically refused by real Rust code.
+6. **Formal Refinement (12 Composed Quint Countermodels)**:
+   - `dev/quint/threat/MarlinBackendDurableGovernanceOverlay.qnt` composes `AgentToolCircuitBreaker` with durable `MGV1`/`MGF1` recovery, Cedar `forbid`-overrides-`permit`, `Marlin::Scope::"external" unless { context.declassified == true }`, fail-closed missing context keys, and Bi-Temporal retraction.
+   - `crates/marlin-agent-kernel/tests/durable_governance_mbt.rs` generates live Quint ITF traces and proves all 12 adversarial countermodels are deterministically refused by real Rust code.
 
 ---
 
@@ -89,18 +89,33 @@ flowchart TD
 
 ---
 
-## 4. One-Command Build & Verification
+## 4. Rust Bridge SDK & Operator CLI (`marlin-scheme-ctl`)
+
+External Rust operators, automation harnesses, and CI gates can connect directly over HTTP/2 gRPC via `marlin-agent-app-server` (`--features ui-grpc`):
+
+- **Crate-root Bridge SDK** (`crates/marlin-agent-app-server/src/lib.rs`): `MarlinSchemeHostClient` (Bearer metadata marked HTTP/2 `sensitive` to prevent HPACK indexing and `Debug` leakage), `GovernanceFactAction` (typed 11-variant wire projector covering all live governance mutations + Cedar probes), `GovernanceAuthoritySnapshotView` (including CaMeL taint graph & `last_cedar_probe`), `HostStatusSnapshot`, and `FleetAuditCapsuleView`.
+- **Operator CLI** (`marlin-scheme-ctl`): supports `--json` (RFC 8259 JSON + NDJSON streaming for `watch-tabs` and `watch-trajectory`), auth-fail-fast `wait-ready`, unified `status`, `governance`, `gov <eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|register-derivation|check-cedar>`, `estop`, read-only `records` (`SecretVisibility::Denied`), `gates`, `approve`, `reject`, and `dispatch`. Privileged `gov rearm` is rejected client-side and server-side fail-closed.
+
+---
+
+## 5. One-Command Build & Verification
 
 ```bash
-# 1. In marlin-agent-core: build standalone zero-.ss Linked-AOT binary (`target/debug/marlin-scheme-host-aot`)
+# 1. In marlin-agent-core: build & smoke-test standalone zero-.ss Linked-AOT binary (or stage release build)
 just scheme-host-aot-build
+just scheme-host-aot-smoke
+# Release distribution staging (Darwin HFS compression + zero-.ss smoke check):
+# just scheme-host-aot-release && just scheme-host-aot-stage-release dist/
 
-# 2. In marlin-agent-core: run full Scheme + Rust Cedar + 10-countermodel Quint MBT + Live VM + AOT gate
+# 2. In marlin-agent-core: run Bridge SDK/CLI unit suites + 4-layer AOT guards + all 4 zero-.ss Linked-AOT OS-process E2E suites
+just scheme-host-aot-gate
+
+# 3. In marlin-agent-core: run full Scheme + Rust Cedar + 12-countermodel Quint MBT + Live VM + AOT smoke gate
 just governance-gate
 
-# 3. In .data/marlin-mygo: run all 7 zero-.ss Linked-AOT cross-process E2E suites (incl. GPU UI & restart resilience)
+# 4. In .data/marlin-mygo: run all 7 zero-.ss Linked-AOT cross-process E2E suites (incl. GPU UI & restart resilience)
 just governance-aot-e2e
 
-# 4. Launch desktop Studio with zero-config auto-discovered Linked-AOT Governance Authority
+# 5. Launch desktop Studio with zero-config auto-discovered Linked-AOT Governance Authority
 go run ./cmd/marlin-app
 ```

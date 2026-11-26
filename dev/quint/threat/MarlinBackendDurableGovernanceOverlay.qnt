@@ -8,6 +8,8 @@
 // @countermodel corrupt-fact-graph-fails-closed step=stepCorruptFactGraphFailsOpen max-steps=6 itf="h.corruptFactGraphOpened == true"
 // @countermodel cedar-forbid-overrides-permit step=stepCedarForbidBypassedByPermit max-steps=6 itf="h.cedarForbidBypassed == true"
 // @countermodel retracted-derivation-denied step=stepRetractedDerivationCommits max-steps=6 itf="h.retractedDerivationCommitted == true"
+// @countermodel scope-unless-blocks-sibling-exfil step=stepScopeUnlessBypassSiblingExfil max-steps=6 itf="h.scopeUnlessBypassed == true"
+// @countermodel missing-context-key-fails-closed step=stepMissingContextKeyBypassesCondition max-steps=6 itf="h.missingContextBypassed == true"
 
 // Marlin Durable Governance overlay composing AgentToolCircuitBreaker
 // with Turso WAL / CAS MGV1+MGF1 checkpointing, OS process crash-restart recovery,
@@ -30,7 +32,9 @@ module marlin_backend_durable_governance_overlay {
     corruptWalOpened: bool,
     corruptFactGraphOpened: bool,
     cedarForbidBypassed: bool,
-    retractedDerivationCommitted: bool
+    retractedDerivationCommitted: bool,
+    scopeUnlessBypassed: bool,
+    missingContextBypassed: bool
   }
 
   action init = h' = {
@@ -49,7 +53,9 @@ module marlin_backend_durable_governance_overlay {
     corruptWalOpened: false,
     corruptFactGraphOpened: false,
     cedarForbidBypassed: false,
-    retractedDerivationCommitted: false
+    retractedDerivationCommitted: false,
+    scopeUnlessBypassed: false,
+    missingContextBypassed: false
   }
 
   // Persist current live breaker + Scheme governance state into Turso WAL/CAS.
@@ -138,7 +144,9 @@ module marlin_backend_durable_governance_overlay {
     not(h.corruptWalOpened) and
     not(h.corruptFactGraphOpened) and
     not(h.cedarForbidBypassed) and
-    not(h.retractedDerivationCommitted)
+    not(h.retractedDerivationCommitted) and
+    not(h.scopeUnlessBypassed) and
+    not(h.missingContextBypassed)
 
   // Countermodel 1: Restart-Reset Bypass — daemon reboots and wipes a persisted E-Stop latch.
   action restartClearsEStopUnchecked =
@@ -211,6 +219,25 @@ module marlin_backend_durable_governance_overlay {
 
   action stepRetractedDerivationCommits = any { step, retractedDerivationCommitsUnchecked }
 
+  // Countermodel 7: Scope-Unless Sibling Exfil Bypass — un-declassified external sibling bypasses
+  // `forbid (principal, action, resource in Marlin::Scope::"external") unless { context.declassified == true }`.
+  action scopeUnlessBypassSiblingExfilUnchecked =
+    if (h.liveFenced)
+      h' = h.with("scopeUnlessBypassed", true)
+    else
+      h' = h
+
+  action stepScopeUnlessBypassSiblingExfil = any { step, scopeUnlessBypassSiblingExfilUnchecked }
+
+  // Countermodel 8: Missing Context Key Fail-Open — omitted `context.<k>` satisfies `when`/`!=`/`unless`.
+  action missingContextKeyBypassesConditionUnchecked =
+    if (h.liveFenced)
+      h' = h.with("missingContextBypassed", true)
+    else
+      h' = h
+
+  action stepMissingContextKeyBypassesCondition = any { step, missingContextKeyBypassesConditionUnchecked }
+
   run durableRestartRecoveryTest =
     init
       .then(applyAscentIncidentAndPersist)
@@ -258,4 +285,10 @@ module marlin_backend_durable_governance_overlay {
 
   run retractedDerivationCommitsCountermodelTest =
     init.then(applyAscentIncidentAndPersist).then(retractedDerivationCommitsUnchecked).then(checkUnsafe)
+
+  run scopeUnlessBypassCountermodelTest =
+    init.then(applyAscentIncidentAndPersist).then(scopeUnlessBypassSiblingExfilUnchecked).then(checkUnsafe)
+
+  run missingContextBypassCountermodelTest =
+    init.then(applyAscentIncidentAndPersist).then(missingContextKeyBypassesConditionUnchecked).then(checkUnsafe)
 }
