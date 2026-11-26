@@ -116,12 +116,120 @@ impl FleetAuditCapsuleView {
     }
 }
 
+/// Typed read-only view of a Scheme `GovernanceAuthoritySnapshot` projected over
+/// `ProjectionQueryService::query_project_graph` (`kind == "scheme.governance.authority_snapshot"`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceAuthoritySnapshotView {
+    pub record_id: String,
+    pub summary: String,
+    pub admitted: bool,
+    pub revocation_epoch: u64,
+    pub policy_revision: u64,
+    pub breaker_tripped: bool,
+    pub breaker_trip_epoch: u64,
+    pub breaker_budget_used: u64,
+    pub breaker_budget_limit: u64,
+    pub breaker_active_leases: u64,
+    pub rearm_gate_id: String,
+    pub assessment_digest: String,
+    pub taint_proof_digest: String,
+    pub fixpoint_proof_digest: String,
+    pub temporal_proof_digest: String,
+    pub invalidation_digest: String,
+    pub rejection_reasons_json: String,
+    pub fenced_actors_json: String,
+    pub blocked_tools_json: String,
+    pub retracted_conclusions_json: String,
+    pub cedar_policies_json: String,
+    pub last_event_note: String,
+}
+
+impl GovernanceAuthoritySnapshotView {
+    fn from_record(rec: &GraphRecordView) -> Self {
+        let parse_u64 = |k: &str| -> u64 {
+            rec.facets
+                .get(k)
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(0)
+        };
+        let parse_bool = |k: &str| -> bool {
+            rec.facets
+                .get(k)
+                .map(|v| v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false)
+        };
+        let get_str = |k: &str| -> String { rec.facets.get(k).cloned().unwrap_or_default() };
+        let get_json_array = |k: &str| -> String {
+            rec.facets
+                .get(k)
+                .map(|v| v.trim())
+                .filter(|v| v.starts_with('[') && v.ends_with(']'))
+                .map_or_else(|| "[]".to_owned(), str::to_owned)
+        };
+        Self {
+            record_id: rec.record_id.clone(),
+            summary: rec.summary.clone(),
+            admitted: parse_bool("admitted"),
+            revocation_epoch: parse_u64("revocation_epoch"),
+            policy_revision: parse_u64("policy_revision"),
+            breaker_tripped: parse_bool("breaker_tripped"),
+            breaker_trip_epoch: parse_u64("breaker_trip_epoch"),
+            breaker_budget_used: parse_u64("breaker_budget_used"),
+            breaker_budget_limit: parse_u64("breaker_budget_limit"),
+            breaker_active_leases: parse_u64("breaker_active_leases"),
+            rearm_gate_id: get_str("rearm_gate_id"),
+            assessment_digest: get_str("assessment_digest"),
+            taint_proof_digest: get_str("taint_proof_digest"),
+            fixpoint_proof_digest: get_str("fixpoint_proof_digest"),
+            temporal_proof_digest: get_str("temporal_proof_digest"),
+            invalidation_digest: get_str("invalidation_digest"),
+            rejection_reasons_json: get_json_array("rejection_reasons_json"),
+            fenced_actors_json: get_json_array("fenced_actors_json"),
+            blocked_tools_json: get_json_array("blocked_tools_json"),
+            retracted_conclusions_json: get_json_array("retracted_conclusions_json"),
+            cedar_policies_json: get_json_array("cedar_policies_json"),
+            last_event_note: get_str("last_event_note"),
+        }
+    }
+
+    /// Serializes this governance snapshot as an RFC 8259 JSON object without external serde deps.
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"record_id\":{},\"summary\":{},\"admitted\":{},\"revocation_epoch\":{},\"policy_revision\":{},\"breaker_tripped\":{},\"breaker_trip_epoch\":{},\"breaker_budget_used\":{},\"breaker_budget_limit\":{},\"breaker_active_leases\":{},\"rearm_gate_id\":{},\"assessment_digest\":{},\"taint_proof_digest\":{},\"fixpoint_proof_digest\":{},\"temporal_proof_digest\":{},\"invalidation_digest\":{},\"rejection_reasons\":{},\"fenced_actors\":{},\"blocked_tools\":{},\"retracted_conclusions\":{},\"cedar_policies\":{},\"last_event_note\":{}}}",
+            json_escape(&self.record_id),
+            json_escape(&self.summary),
+            self.admitted,
+            self.revocation_epoch,
+            self.policy_revision,
+            self.breaker_tripped,
+            self.breaker_trip_epoch,
+            self.breaker_budget_used,
+            self.breaker_budget_limit,
+            self.breaker_active_leases,
+            json_escape(&self.rearm_gate_id),
+            json_escape(&self.assessment_digest),
+            json_escape(&self.taint_proof_digest),
+            json_escape(&self.fixpoint_proof_digest),
+            json_escape(&self.temporal_proof_digest),
+            json_escape(&self.invalidation_digest),
+            self.rejection_reasons_json,
+            self.fenced_actors_json,
+            self.blocked_tools_json,
+            self.retracted_conclusions_json,
+            self.cedar_policies_json,
+            json_escape(&self.last_event_note),
+        )
+    }
+}
+
 /// Unified operator snapshot combining live `WorkbenchTabs`, read-only `FleetAuditCapsule`,
-/// and pending one-shot `ApprovalGateService` gates from a single HTTP/2 round-trip batch.
+/// `GovernanceAuthoritySnapshot`, and pending one-shot `ApprovalGateService` gates from a
+/// single HTTP/2 round-trip batch.
 #[derive(Clone, Debug)]
 pub struct HostStatusSnapshot {
     pub tabs: WorkbenchTabsResponse,
     pub audit: Option<FleetAuditCapsuleView>,
+    pub governance: Option<GovernanceAuthoritySnapshotView>,
     pub gates: Vec<PendingGate>,
 }
 
@@ -146,6 +254,10 @@ impl HostStatusSnapshot {
             .audit
             .as_ref()
             .map_or_else(|| "null".to_owned(), FleetAuditCapsuleView::to_json);
+        let gov_json = self.governance.as_ref().map_or_else(
+            || "null".to_owned(),
+            GovernanceAuthoritySnapshotView::to_json,
+        );
         let gates_json: Vec<String> = self
             .gates
             .iter()
@@ -158,9 +270,10 @@ impl HostStatusSnapshot {
             })
             .collect();
         format!(
-            "{{\"tabs\":[{}],\"audit\":{},\"gates\":[{}]}}",
+            "{{\"tabs\":[{}],\"audit\":{},\"governance\":{},\"gates\":[{}]}}",
             tabs_json.join(","),
             audit_json,
+            gov_json,
             gates_json.join(",")
         )
     }
@@ -320,6 +433,18 @@ impl MarlinSchemeHostClient {
         Ok(Some(view))
     }
 
+    /// Queries and parses the live read-only `GovernanceAuthoritySnapshotView`.
+    pub async fn query_governance_authority_snapshot(
+        &self,
+        project_id: impl Into<String>,
+    ) -> Result<Option<GovernanceAuthoritySnapshotView>, Status> {
+        let records = self.query_project_graph_records(project_id).await?;
+        Ok(records
+            .iter()
+            .find(|r| r.kind == "scheme.governance.authority_snapshot")
+            .map(GovernanceAuthoritySnapshotView::from_record))
+    }
+
     /// Opens a live `UiWorkbenchService` session snapshot for the given client target.
     pub async fn open_workbench(
         &self,
@@ -340,18 +465,37 @@ impl MarlinSchemeHostClient {
             .ok_or_else(|| Status::internal("open_workbench response missing workbench snapshot"))
     }
 
-    /// Concurrently fetches `tabs`, `audit`, and `gates` over the shared HTTP/2 channel.
+    /// Concurrently fetches `tabs`, `audit`, `governance`, and `gates` over the shared HTTP/2 channel.
     pub async fn fetch_status_snapshot(
         &self,
         project_id: impl Into<String>,
     ) -> Result<HostStatusSnapshot, Status> {
         let project = project_id.into();
-        let (tabs, audit, gates) = tokio::try_join!(
+        let (tabs, records, gates) = tokio::try_join!(
             self.get_workbench_tabs(),
-            self.query_fleet_audit_capsule(project),
+            self.query_project_graph_records(project),
             self.list_pending_gates(),
         )?;
-        Ok(HostStatusSnapshot { tabs, audit, gates })
+        let audit =
+            match records
+                .iter()
+                .find(|r| r.kind == "scheme.fleet.audit_capsule")
+            {
+                Some(rec) => Some(FleetAuditCapsuleView::from_record(rec).map_err(|err| {
+                    Status::internal(format!("decode fleet audit capsule: {err}"))
+                })?),
+                None => None,
+            };
+        let governance = records
+            .iter()
+            .find(|r| r.kind == "scheme.governance.authority_snapshot")
+            .map(GovernanceAuthoritySnapshotView::from_record);
+        Ok(HostStatusSnapshot {
+            tabs,
+            audit,
+            governance,
+            gates,
+        })
     }
 
     /// Subscribes to live read-only `GraphTrajectoryEvent` updates from `ProjectionQueryService`.
@@ -474,6 +618,35 @@ mod tests {
 
     #[test]
     fn host_status_snapshot_serializes_valid_structure() {
+        let mut gov_facets = HashMap::new();
+        gov_facets.insert("admitted".to_owned(), "false".to_owned());
+        gov_facets.insert("revocation_epoch".to_owned(), "2".to_owned());
+        gov_facets.insert("policy_revision".to_owned(), "3".to_owned());
+        gov_facets.insert("breaker_tripped".to_owned(), "true".to_owned());
+        gov_facets.insert("breaker_trip_epoch".to_owned(), "1".to_owned());
+        gov_facets.insert("breaker_budget_used".to_owned(), "4".to_owned());
+        gov_facets.insert("breaker_budget_limit".to_owned(), "64".to_owned());
+        gov_facets.insert("rearm_gate_id".to_owned(), "gov-rearm-epoch-1".to_owned());
+        gov_facets.insert(
+            "fenced_actors_json".to_owned(),
+            "[\"agent-rogue\"]".to_owned(),
+        );
+        let gov_rec = GraphRecordView {
+            record_id: "scheme:governance:authority-snapshot".to_owned(),
+            surface: 0,
+            kind: "scheme.governance.authority_snapshot".to_owned(),
+            title: "Governance".to_owned(),
+            summary: "admitted=false".to_owned(),
+            source_path: Some("scheme/policy/governance.ss".to_owned()),
+            start_line: None,
+            end_line: None,
+            facets: gov_facets,
+        };
+        let gov = GovernanceAuthoritySnapshotView::from_record(&gov_rec);
+        assert!(!gov.admitted);
+        assert!(gov.breaker_tripped);
+        assert_eq!(gov.rearm_gate_id, "gov-rearm-epoch-1");
+
         let snap = HostStatusSnapshot {
             tabs: WorkbenchTabsResponse {
                 focused_task_id: None,
@@ -493,12 +666,16 @@ mod tests {
                 authenticates_evidence: false,
                 authorizes_effect: false,
             }),
+            governance: Some(gov),
             gates: Vec::new(),
         };
         let raw = snap.to_json();
         assert!(raw.contains("\"tabs\":[]"));
         assert!(raw.contains("\"active_actor_count\":1"));
         assert!(raw.contains("\"authorizes_effect\":false"));
+        assert!(raw.contains("\"breaker_tripped\":true"));
+        assert!(raw.contains("\"fenced_actors\":[\"agent-rogue\"]"));
+        assert!(raw.contains("\"rearm_gate_id\":\"gov-rearm-epoch-1\""));
         assert!(raw.contains("\"gates\":[]"));
     }
 }

@@ -11,7 +11,9 @@
 //! Commands:
 //!   wait-ready [--timeout-ms MS] [--interval-ms MS]
 //!                                                  Poll until host is reachable and authenticated (fails fast on auth denial)
-//!   status                                         Fetch unified live tabs + audit + gates snapshot
+//!   status                                         Fetch unified live tabs + audit + governance + gates snapshot
+//!   governance                                     Show live Scheme Governance Authority snapshot (breaker/ASCENT/Cedar/proofs)
+//!   estop [actor:reason]                           Trigger live operator E-Stop via UiWorkbenchService (`governance-estop`)
 //!   records [--project ID] [--kind PREFIX]         Query read-only ProjectionQueryService records (SecretVisibility::Denied)
 //!   open-workbench [session-id]                    Open live UiWorkbenchService session snapshot
 //!   tabs                                           Show live WorkbenchTabs from AppServer
@@ -119,7 +121,7 @@ async fn run() -> Result<(), String> {
 
     if opts.help {
         println!(
-            "Usage: marlin-scheme-ctl [--json] --endpoint <url> [--token <tok>] <wait-ready|status|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch>"
+            "Usage: marlin-scheme-ctl [--json] --endpoint <url> [--token <tok>] <wait-ready|status|governance|estop|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch>"
         );
         return Ok(());
     }
@@ -129,7 +131,7 @@ async fn run() -> Result<(), String> {
     })?;
     let rest = opts.rest;
     let cmd = rest.first().map(String::as_str).ok_or_else(|| {
-        "missing subcommand (wait-ready|status|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch)"
+        "missing subcommand (wait-ready|status|governance|estop|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch)"
             .to_owned()
     })?;
 
@@ -217,6 +219,64 @@ async fn run() -> Result<(), String> {
                 }
             }
         }
+        "governance" => {
+            let maybe = client
+                .query_governance_authority_snapshot("default")
+                .await
+                .map_err(|s| format!("query_governance_authority_snapshot failed: {s}"))?;
+            if opts.json {
+                println!(
+                    "{}",
+                    maybe
+                        .as_ref()
+                        .map_or_else(|| "null".to_owned(), |g| g.to_json())
+                );
+            } else {
+                match maybe {
+                    Some(gov) => println!(
+                        "GOVERNANCE admitted={} tripped={} trip_epoch={} rev_epoch={} policy_rev={} budget={}/{} rearm_gate={}",
+                        gov.admitted,
+                        gov.breaker_tripped,
+                        gov.breaker_trip_epoch,
+                        gov.revocation_epoch,
+                        gov.policy_revision,
+                        gov.breaker_budget_used,
+                        gov.breaker_budget_limit,
+                        if gov.rearm_gate_id.is_empty() {
+                            "none"
+                        } else {
+                            gov.rearm_gate_id.as_str()
+                        }
+                    ),
+                    None => println!("GOVERNANCE none"),
+                }
+            }
+        }
+        "estop" => {
+            let arg = if rest.len() > 1 {
+                Some(rest[1..].join(" "))
+            } else {
+                Some("operator:manual-estop".to_owned())
+            };
+            let resp = client
+                .dispatch_scheme_command("marlin-scheme-ctl", "governance-estop", arg.as_deref())
+                .await
+                .map_err(|s| format!("dispatch governance-estop failed: {s}"))?;
+            if opts.json {
+                println!(
+                    "{{\"admitted\":{},\"action\":\"governance-estop\",\"arg\":{}}}",
+                    resp.admitted,
+                    arg.as_deref()
+                        .map_or_else(|| "null".to_owned(), json_escape)
+                );
+            } else {
+                println!(
+                    "ESTOP admitted={} arg={}",
+                    resp.admitted,
+                    arg.as_deref().unwrap_or("")
+                );
+            }
+        }
         "status" => {
             let snap = client
                 .fetch_status_snapshot("default")
@@ -253,6 +313,23 @@ async fn run() -> Result<(), String> {
                         cap.authorizes_effect
                     ),
                     None => println!("AUDIT none"),
+                }
+                if let Some(gov) = &snap.governance {
+                    println!(
+                        "GOVERNANCE admitted={} tripped={} trip_epoch={} rev_epoch={} policy_rev={} budget={}/{} rearm_gate={}",
+                        gov.admitted,
+                        gov.breaker_tripped,
+                        gov.breaker_trip_epoch,
+                        gov.revocation_epoch,
+                        gov.policy_revision,
+                        gov.breaker_budget_used,
+                        gov.breaker_budget_limit,
+                        if gov.rearm_gate_id.is_empty() {
+                            "none"
+                        } else {
+                            gov.rearm_gate_id.as_str()
+                        }
+                    );
                 }
                 for g in &snap.gates {
                     println!("GATE id={} tool={}", g.gate_id, g.tool_or_node_name);

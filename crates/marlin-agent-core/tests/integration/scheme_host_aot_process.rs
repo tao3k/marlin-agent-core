@@ -718,3 +718,292 @@ async fn linked_aot_scheme_host_boots_fast_without_scheme_tree_and_survives_os_r
     stop_host(child2).await;
     llm_srv.abort();
 }
+
+async fn run_ctl_json(
+    ctl_bin: &std::path::Path,
+    endpoint: &str,
+    bearer_token: &str,
+    args: &[&str],
+) -> serde_json::Value {
+    let out = Command::new(ctl_bin)
+        .env("MARLIN_BRIDGE_ENDPOINT", endpoint)
+        .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+        .arg("--json")
+        .args(args)
+        .output()
+        .await
+        .unwrap_or_else(|e| panic!("run marlin-scheme-ctl --json {args:?}: {e}"));
+    assert!(
+        out.status.success(),
+        "marlin-scheme-ctl --json {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
+        panic!(
+            "parse marlin-scheme-ctl --json {args:?} stdout `{}`: {e}",
+            String::from_utf8_lossy(&out.stdout)
+        )
+    })
+}
+
+async fn poll_ctl_governance<F>(
+    ctl_bin: &std::path::Path,
+    endpoint: &str,
+    bearer_token: &str,
+    label: &str,
+    predicate: F,
+) -> serde_json::Value
+where
+    F: Fn(&serde_json::Value) -> bool,
+{
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let val = run_ctl_json(ctl_bin, endpoint, bearer_token, &["governance"]).await;
+        if predicate(&val) {
+            return val;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for governance condition `{label}`; last snapshot: {val}"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[tokio::test]
+async fn linked_aot_higher_order_governance_estop_rearm_and_survives_os_restart() {
+    let explicit_ctl = std::env::var_os("MARLIN_SCHEME_CTL_BIN").map(std::path::PathBuf::from);
+    let require_ctl = explicit_ctl.is_some()
+        || std::env::var("CI")
+            .ok()
+            .is_some_and(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes"));
+    let ctl_bin = explicit_ctl
+        .or_else(|| {
+            std::path::Path::new(env!("CARGO_BIN_EXE_marlin-scheme-host-aot"))
+                .parent()
+                .map(|dir| dir.join("marlin-scheme-ctl"))
+        })
+        .filter(|p| p.is_file());
+    let Some(ctl_bin) = ctl_bin else {
+        assert!(
+            !require_ctl,
+            "strict Linked-AOT governance CTL E2E enabled (CI or MARLIN_SCHEME_CTL_BIN set), but marlin-scheme-ctl binary was not found"
+        );
+        return;
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("scheme-host-aot-gov.db");
+    let bearer_token = "marlin-aot-gov-secret";
+
+    let spawn_gov_aot = |gov_mode: &str| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_marlin-scheme-host-aot"));
+        cmd.env("MARLIN_SCHEME_DIR", "/nonexistent-aot-must-not-read")
+            .env("MARLIN_BRIDGE_ADDR", "127.0.0.1:0")
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .env("MARLIN_BRIDGE_TURSO_PATH", &db_path)
+            .env("MARLIN_SCHEME_GOVERNANCE_MODE", gov_mode)
+            .env("MARLIN_SCHEME_BREAKER_BUDGET", "32")
+            .env_remove("MARLIN_SCHEME_FLEET_CHECKPOINT_KEY")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true);
+        cmd
+    };
+
+    // -------------------------------------------------------------------------
+    // Boot #1: Linked-AOT Governance Incident Eval + E-Stop + UI Bypass Denial
+    // -------------------------------------------------------------------------
+    let mut child1 = spawn_gov_aot("incident")
+        .spawn()
+        .expect("spawn aot gov boot1");
+    let mut lines1 = BufReader::new(child1.stdout.take().unwrap()).lines();
+    let mut gov_boot1 = None;
+    let addr1 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), lines1.next_line())
+            .await
+            .expect("linked-aot gov boot1 MUST become READY within 15s")
+            .unwrap()
+            .expect("aot gov boot1 exited early");
+        if line.starts_with("GOVERNANCE_HOST_BOOT ") {
+            gov_boot1 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    let boot1_line = gov_boot1.expect("expected GOVERNANCE_HOST_BOOT line on boot1");
+    assert!(
+        boot1_line.contains("mode=incident") && boot1_line.contains("admitted=false"),
+        "unexpected gov boot1 line: {boot1_line}"
+    );
+    let ep1 = format!("http://{addr1}");
+
+    // 1. Query typed higher-order governance projection via `marlin-scheme-ctl --json governance` and `status`.
+    let gov1 = run_ctl_json(&ctl_bin, &ep1, bearer_token, &["governance"]).await;
+    assert_eq!(gov1["admitted"], false);
+    assert_eq!(gov1["breaker_budget_limit"], 32);
+    assert!(
+        gov1["revocation_epoch"].as_u64().unwrap_or(0) >= 1,
+        "expected revocation_epoch >= 1: {gov1}"
+    );
+    assert!(
+        gov1["fenced_actors"]
+            .as_array()
+            .is_some_and(|arr| !arr.is_empty()),
+        "incident mode must fence compromised actors: {gov1}"
+    );
+    assert!(
+        gov1["retracted_conclusions"]
+            .as_array()
+            .is_some_and(|arr| !arr.is_empty()),
+        "incident mode must retract dependent conclusions: {gov1}"
+    );
+    assert!(
+        gov1["cedar_policies"]
+            .as_array()
+            .is_some_and(|arr| !arr.is_empty()),
+        "incident mode must synthesize Cedar deny policies: {gov1}"
+    );
+    assert!(
+        !gov1["assessment_digest"].as_str().unwrap_or("").is_empty(),
+        "governance snapshot must carry cryptographic assessment_digest: {gov1}"
+    );
+
+    let status1 = run_ctl_json(&ctl_bin, &ep1, bearer_token, &["status"]).await;
+    assert_eq!(status1["governance"]["admitted"], false);
+    assert_eq!(status1["governance"]["breaker_budget_limit"], 32);
+
+    // 2. Trigger live Operator E-Stop via `marlin-scheme-ctl --json estop`.
+    let estop_resp = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &["estop", "ops-alice:aot-drill"],
+    )
+    .await;
+    assert_eq!(estop_resp["admitted"], true);
+    let gov_tripped = poll_ctl_governance(&ctl_bin, &ep1, bearer_token, "estop-tripped", |g| {
+        g["breaker_tripped"] == true && !g["rearm_gate_id"].as_str().unwrap_or("").is_empty()
+    })
+    .await;
+    let rearm_gate_1 = gov_tripped["rearm_gate_id"]
+        .as_str()
+        .expect("rearm_gate_id")
+        .to_owned();
+    assert!(
+        rearm_gate_1.starts_with("gov-rearm-epoch-"),
+        "unexpected rearm gate id: {rearm_gate_1}"
+    );
+
+    // 3. Security negative control: `DispatchUiEvent(scheme:governance-rearm)` MUST NEVER re-arm!
+    let _ = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &["dispatch", "governance-rearm", "ops-alice"],
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    let gov_after_bypass = run_ctl_json(&ctl_bin, &ep1, bearer_token, &["governance"]).await;
+    assert_eq!(
+        gov_after_bypass["breaker_tripped"], true,
+        "UI governance-rearm dispatch must never bypass ApprovalGateService"
+    );
+
+    stop_host(child1).await;
+
+    // -------------------------------------------------------------------------
+    // Boot #2: Warm Linked-AOT restore with `clean` mode MUST keep E-Stop latch!
+    // -------------------------------------------------------------------------
+    let t2 = Instant::now();
+    let mut child2 = spawn_gov_aot("clean").spawn().expect("spawn aot gov boot2");
+    let mut lines2 = BufReader::new(child2.stdout.take().unwrap()).lines();
+    let mut gov_boot2 = None;
+    let addr2 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), lines2.next_line())
+            .await
+            .expect("linked-aot gov boot2 MUST become READY within 15s")
+            .unwrap()
+            .expect("aot gov boot2 exited early");
+        if line.starts_with("GOVERNANCE_HOST_BOOT ") {
+            gov_boot2 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    let gov_boot2_ms = t2.elapsed().as_millis();
+    let boot2_budget_ms: u128 = std::env::var("MARLIN_AOT_BOOT2_BUDGET_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u128>().ok())
+        .filter(|ms| *ms > 0)
+        .unwrap_or(2_500);
+    eprintln!(
+        "LINKED_AOT_GOV_BOOT2_MS={gov_boot2_ms} LINKED_AOT_BOOT2_BUDGET_MS={boot2_budget_ms}"
+    );
+    assert!(
+        gov_boot2_ms <= boot2_budget_ms,
+        "Linked-AOT governance warm restart regressed: {gov_boot2_ms}ms > {boot2_budget_ms}ms"
+    );
+    let boot2_line = gov_boot2.expect("expected GOVERNANCE_HOST_BOOT line on boot2");
+    assert!(
+        boot2_line.contains("mode=restored") && boot2_line.contains("tripped=true"),
+        "clean boot MUST restore tripped durable checkpoint fail-closed: {boot2_line}"
+    );
+    let ep2 = format!("http://{addr2}");
+
+    // 4. Negative RFC 9470 check: approving re-arm gate with unverified note MUST fail closed and rotate gate!
+    let gov_restored = run_ctl_json(&ctl_bin, &ep2, bearer_token, &["governance"]).await;
+    assert_eq!(gov_restored["breaker_tripped"], true);
+    let restored_gate = gov_restored["rearm_gate_id"]
+        .as_str()
+        .expect("restored rearm_gate_id")
+        .to_owned();
+    assert!(!restored_gate.is_empty());
+
+    let unverified_claim = run_ctl_json(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        &["approve", &restored_gate, "unverified-operator-note"],
+    )
+    .await;
+    assert_eq!(unverified_claim["claimed"], true);
+    let gov_rotated = poll_ctl_governance(&ctl_bin, &ep2, bearer_token, "rearm-rotated", |g| {
+        g["breaker_tripped"] == true
+            && g["rearm_gate_id"]
+                .as_str()
+                .is_some_and(|id| !id.is_empty() && id != restored_gate)
+    })
+    .await;
+    let rotated_gate = gov_rotated["rearm_gate_id"]
+        .as_str()
+        .expect("rotated rearm_gate_id")
+        .to_owned();
+
+    // 5. Positive RFC 9470 Step-Up Re-Arm: verified human MFA note re-arms the breaker!
+    let verified_claim = run_ctl_json(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        &[
+            "approve",
+            &rotated_gate,
+            "stepup-verified:actor=alice:acr=urn:ietf:params:oauth:acr:mfa",
+        ],
+    )
+    .await;
+    assert_eq!(verified_claim["claimed"], true);
+    let gov_rearmed = poll_ctl_governance(&ctl_bin, &ep2, bearer_token, "breaker-rearmed", |g| {
+        g["breaker_tripped"] == false
+    })
+    .await;
+    assert_eq!(gov_rearmed["breaker_tripped"], false);
+    assert_eq!(gov_rearmed["rearm_gate_id"], "");
+    eprintln!("LINKED_AOT_GOV_CTL_E2E=VERIFIED");
+
+    stop_host(child2).await;
+}
