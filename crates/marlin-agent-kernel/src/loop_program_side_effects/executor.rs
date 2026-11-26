@@ -10,8 +10,9 @@ use marlin_agent_runtime::{RuntimeContext, observability};
 use tracing::Instrument;
 
 use crate::{
-    ExecutionCircuitBreaker, LoopProgramExecutionReceipt,
-    LoopProgramRuntimeHandoffExecutionReceipt, ToolIfcContext, spawn_loop_program_tool_process,
+    DerivationId, ExecutionCircuitBreaker, GovernedSubjectName, HigherOrderGovernanceAdmissionGate,
+    LoopProgramExecutionReceipt, LoopProgramRuntimeHandoffExecutionReceipt, ToolIfcContext,
+    spawn_loop_program_tool_process,
 };
 
 use super::{
@@ -23,6 +24,13 @@ use super::{
     StaticLoopProgramToolProcessResolver, read_existing_digest, stable_bytes_digest,
 };
 
+#[derive(Clone)]
+struct HigherOrderSideEffectBinding {
+    gate: Arc<HigherOrderGovernanceAdmissionGate>,
+    actor: GovernedSubjectName,
+    derivation_id: Option<DerivationId>,
+}
+
 /// Async side-effect executor for handoff projections that require runtime ownership.
 #[derive(Clone)]
 pub struct LoopProgramRuntimeSideEffectExecutor {
@@ -30,6 +38,7 @@ pub struct LoopProgramRuntimeSideEffectExecutor {
     file_write_resolver: Arc<dyn LoopProgramFileWriteResolver>,
     file_sandbox: LoopProgramFileSandbox,
     execution_breaker: Option<Arc<ExecutionCircuitBreaker>>,
+    higher_order_gate: Option<HigherOrderSideEffectBinding>,
     ifc_context: ToolIfcContext,
     started_at_ms: u64,
     observed_at_ms: u64,
@@ -45,6 +54,7 @@ impl LoopProgramRuntimeSideEffectExecutor {
             file_write_resolver: Arc::new(StaticLoopProgramFileWriteResolver::default()),
             file_sandbox: LoopProgramFileSandbox::deny_all(),
             execution_breaker: None,
+            higher_order_gate: None,
             ifc_context: ToolIfcContext::clean_trusted(),
             started_at_ms: 0,
             observed_at_ms: 0,
@@ -56,6 +66,24 @@ impl LoopProgramRuntimeSideEffectExecutor {
         execution_breaker: Arc<ExecutionCircuitBreaker>,
     ) -> Self {
         self.execution_breaker = Some(execution_breaker);
+        self
+    }
+
+    /// Attaches a live Scheme-synchronized `HigherOrderGovernanceAdmissionGate` so every
+    /// OS process spawn and disk file write enforces ASCENT transitive fencing, Bi-Temporal
+    /// Truth Maintenance causal retraction, synthesized Cedar `forbid` rules, and the
+    /// underlying `ExecutionCircuitBreaker`.
+    pub fn with_higher_order_gate(
+        mut self,
+        gate: Arc<HigherOrderGovernanceAdmissionGate>,
+        actor: GovernedSubjectName,
+        derivation_id: Option<DerivationId>,
+    ) -> Self {
+        self.higher_order_gate = Some(HigherOrderSideEffectBinding {
+            gate,
+            actor,
+            derivation_id,
+        });
         self
     }
 
@@ -104,15 +132,42 @@ impl LoopProgramRuntimeSideEffectExecutor {
             }
 
             if let Some(request) = tool_process_request {
-                if let Some(breaker) = &self.execution_breaker
-                    && let Err(rejection) = breaker.authorize_side_effect(
-                        format!("tool_process:{}", projection.command.command_kind),
-                        &self.ifc_context,
-                    )
-                {
+                let blocked_diag = if let Some(binding) = &self.higher_order_gate {
+                    let tool_name = GovernedSubjectName::new(format!(
+                        "tool_process:{}",
+                        projection.command.command_kind
+                    ))
+                    .unwrap_or_else(|_| GovernedSubjectName::new("tool_process").unwrap());
+                    binding
+                        .gate
+                        .authorize_side_effect(
+                            binding.derivation_id.as_ref(),
+                            &binding.actor,
+                            &tool_name,
+                            &self.ifc_context,
+                        )
+                        .err()
+                        .map(|rejection| {
+                            format!("loop_program.tool_process.higher_order_blocked:{rejection}")
+                        })
+                } else if let Some(breaker) = &self.execution_breaker {
+                    breaker
+                        .authorize_side_effect(
+                            format!("tool_process:{}", projection.command.command_kind),
+                            &self.ifc_context,
+                        )
+                        .err()
+                        .map(|rejection| {
+                            format!("loop_program.tool_process.breaker_blocked:{rejection}")
+                        })
+                } else {
+                    None
+                };
+
+                if let Some(diag) = blocked_diag {
                     tool_processes.push(LoopProgramToolProcessSideEffectReceipt::blocked(
                         projection.clone(),
-                        format!("loop_program.tool_process.breaker_blocked:{rejection}"),
+                        diag,
                     ));
                 } else {
                     let request = request
@@ -137,16 +192,40 @@ impl LoopProgramRuntimeSideEffectExecutor {
             }
 
             if let Some(request) = file_write_request {
-                if let Some(breaker) = &self.execution_breaker
-                    && let Err(rejection) = breaker.authorize_side_effect(
-                        format!("file_write:{}", request.relative_path.display()),
-                        &self.ifc_context,
-                    )
-                {
-                    file_writes.push(LoopProgramFileWriteSideEffectReceipt::denied(
-                        request,
-                        format!("loop_program.file_write.breaker_blocked:{rejection}"),
-                    ));
+                let blocked_diag = if let Some(binding) = &self.higher_order_gate {
+                    let tool_name = GovernedSubjectName::new(format!(
+                        "file_write:{}",
+                        request.relative_path.display()
+                    ))
+                    .unwrap_or_else(|_| GovernedSubjectName::new("file_write").unwrap());
+                    binding
+                        .gate
+                        .authorize_side_effect(
+                            binding.derivation_id.as_ref(),
+                            &binding.actor,
+                            &tool_name,
+                            &self.ifc_context,
+                        )
+                        .err()
+                        .map(|rejection| {
+                            format!("loop_program.file_write.higher_order_blocked:{rejection}")
+                        })
+                } else if let Some(breaker) = &self.execution_breaker {
+                    breaker
+                        .authorize_side_effect(
+                            format!("file_write:{}", request.relative_path.display()),
+                            &self.ifc_context,
+                        )
+                        .err()
+                        .map(|rejection| {
+                            format!("loop_program.file_write.breaker_blocked:{rejection}")
+                        })
+                } else {
+                    None
+                };
+
+                if let Some(diag) = blocked_diag {
+                    file_writes.push(LoopProgramFileWriteSideEffectReceipt::denied(request, diag));
                 } else {
                     file_writes.push(self.execute_file_write(request));
                 }

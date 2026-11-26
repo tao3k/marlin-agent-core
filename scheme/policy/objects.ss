@@ -7,11 +7,15 @@
 (import (only-in :clan/poo/object .o)
         (only-in "./projection/graph/routing.ss" marlin-agent-policy-routing-project-poo-policy)
         (only-in "./projection/graph/topology.ss" marlin-deck-runtime-compile-loop-graph)
-        (only-in "./projection/graph/continuation.ss" marlin-graph-loop-continuation-next-action))
+        (only-in "./projection/graph/continuation.ss" marlin-graph-loop-continuation-next-action)
+        (only-in "./security.ss" SecurityGovernancePolicy)
+        (only-in "./higher-order-governance.ss" HigherOrderGovernancePolicy))
 
 (export PolicyOperations)
 
 (def PolicyOperations
   (.o project-routing: marlin-agent-policy-routing-project-poo-policy
       compile-loop-graph: marlin-deck-runtime-compile-loop-graph
-      next-continuation: marlin-graph-loop-continuation-next-action))
+      next-continuation: marlin-graph-loop-continuation-next-action
+      security-governance: SecurityGovernancePolicy
+      higher-order-governance: HigherOrderGovernancePolicy))

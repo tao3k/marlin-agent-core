@@ -434,6 +434,65 @@ impl HigherOrderGovernanceAdmissionGate {
         Ok(receipt)
     }
 
+    /// Authorizes an atomic side effect directly from `LoopProgramRuntimeSideEffectExecutor`:
+    /// enforces Bi-Temporal Truth Maintenance retraction, ASCENT transitive fencing,
+    /// ASCENT breaker-blocked tools, dynamically synthesized Cedar `forbid` policies,
+    /// and the authoritative `ExecutionCircuitBreaker` + CaMeL IFC context in one call.
+    pub fn authorize_side_effect(
+        &self,
+        derivation_id: Option<&DerivationId>,
+        actor: &GovernedSubjectName,
+        tool: &GovernedSubjectName,
+        ifc: &ToolIfcContext,
+    ) -> Result<ExecutionBreakerCommitReceipt, HigherOrderBridgeError> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+
+        if let Some(did) = derivation_id
+            && guard.retracted_derivations.contains(did)
+        {
+            return Err(HigherOrderBridgeError::DerivationRetractedDenied(
+                did.clone(),
+            ));
+        }
+
+        if guard.fenced_actors.contains(actor) {
+            return Err(HigherOrderBridgeError::AscentFencedActorDenied(
+                actor.clone(),
+            ));
+        }
+
+        if guard.blocked_tools.contains(tool) {
+            return Err(HigherOrderBridgeError::AscentBlockedToolDenied(
+                tool.clone(),
+            ));
+        }
+
+        let actor_pattern = format!("Marlin::Actor::\"{}\"", actor.as_str());
+        let tool_pattern = format!("Marlin::Action::\"{}\"", tool.as_str());
+        for policy in &guard.cedar_policies {
+            if policy.source.trim_start().starts_with("forbid") {
+                if policy.source.contains(&actor_pattern) {
+                    return Err(HigherOrderBridgeError::CedarForbidDenied {
+                        policy_id: policy.policy_id.clone(),
+                        subject: actor.clone(),
+                    });
+                }
+                if policy.source.contains(&tool_pattern) {
+                    return Err(HigherOrderBridgeError::CedarForbidDenied {
+                        policy_id: policy.policy_id.clone(),
+                        subject: tool.clone(),
+                    });
+                }
+            }
+        }
+        drop(guard);
+
+        Ok(self.breaker.authorize_side_effect(tool.as_str(), ifc)?)
+    }
+
     pub fn is_derivation_retracted(&self, derivation_id: &DerivationId) -> bool {
         self.inner
             .lock()

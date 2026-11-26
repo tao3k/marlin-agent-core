@@ -4,16 +4,19 @@
 
 ;;; Contract for the callable policy scope.
 
-(import (only-in :clan/poo/object .cc .o)
+(import (only-in :clan/poo/object .cc .o object?)
         (only-in :clan/poo/type Type.)
         (only-in :clan/poo/types/object-contract ObjectContract.))
 
 (export PolicyScopeContract)
 
 (def PolicyOperation (.cc Type. '.element? procedure?))
+(def PolicyOperationBundle (.cc Type. '.element? object?))
 
 (def PolicyScopeContract
   (.cc ObjectContract.
        responsibilities: (.o project-routing: PolicyOperation
                              compile-loop-graph: PolicyOperation
-                             next-continuation: PolicyOperation)))
+                             next-continuation: PolicyOperation
+                             security-governance: PolicyOperationBundle
+                             higher-order-governance: PolicyOperationBundle)))

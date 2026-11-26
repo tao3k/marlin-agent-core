@@ -297,8 +297,31 @@ async fn live_gerbil_vm_higher_order_governance_drives_rust_breaker_and_blocks_r
         .expect("verified clean actor with sanitized proof and armed breaker commits cleanly");
     assert_eq!(committed.trip_epoch.get(), 2);
 
-    // Physical OS side effect now succeeds cleanly!
-    let ok_receipt = executor.execute(&tokio_rt.context(), &handoff).await;
+    // Physical OS side effect via LoopProgramRuntimeSideEffectExecutor::with_higher_order_gate:
+    // 1. Invoked as ASCENT-fenced `agent-sub` -> physically blocks `/bin/sh` OS spawn!
+    let gate_arc = Arc::new(gate);
+    let fenced_executor = executor.clone().with_higher_order_gate(
+        Arc::clone(&gate_arc),
+        fenced_agent,
+        Some(d_fresh.clone()),
+    );
+    let fenced_os_receipt = fenced_executor.execute(&tokio_rt.context(), &handoff).await;
+    assert_eq!(fenced_os_receipt.status, LoopProgramRuntimeSideEffectStatus::Failed);
+    assert!(
+        fenced_os_receipt.tool_processes[0]
+            .diagnostic
+            .as_deref()
+            .unwrap_or("")
+            .contains("higher_order_blocked")
+    );
+    assert!(
+        !sentinel.exists(),
+        "ASCENT-fenced actor MUST be physically blocked from spawning /bin/sh by side-effect executor"
+    );
+
+    // 2. Invoked as clean `ops-bob` -> physically executes `/bin/sh` cleanly!
+    let clean_executor = executor.with_higher_order_gate(gate_arc, clean_actor, Some(d_fresh));
+    let ok_receipt = clean_executor.execute(&tokio_rt.context(), &handoff).await;
     assert_eq!(ok_receipt.status, LoopProgramRuntimeSideEffectStatus::Completed);
     assert!(sentinel.exists(), "real OS process should succeed after verified recovery");
 }

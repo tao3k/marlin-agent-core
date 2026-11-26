@@ -22,6 +22,7 @@
                  agentic-ai-lab-governance-threat)
         (only-in :tao3k/agentic-ai-lab/modules/governance/policy/strict-mediation
                  agentic-ai-lab-strict-mediation-state)
+        (only-in :marlin-agent-core/policy/config PolicyScope)
         "../policy/higher-order-governance")
 
 (export marlin-higher-order-governance-test)
@@ -346,4 +347,16 @@
         (check (vector-ref out-admitted 1) => #t)
         (check (vector-ref out-admitted 2) => 3)
         (check (and (member "agent-sub" (vector->list (vector-ref out-admitted 10))) #t) => #t)
-        (check (> (vector-length (vector-ref out-admitted 13)) 2) => #t)))))
+        (check (> (vector-length (vector-ref out-admitted 13)) 2) => #t)))
+
+    ;; -----------------------------------------------------------------------
+    ;; 10. Official Yuanxu PolicyScope Publication Check
+    ;; -----------------------------------------------------------------------
+    (test-case "Marlin PolicyScope publishes both security-governance and higher-order-governance bundles"
+      (let* ((ho (.get PolicyScope higher-order-governance))
+             (sec (.get PolicyScope security-governance))
+             (rank-fn (.get sec scope-rank))
+             (proj-fn (.get ho project-vector)))
+        (check (procedure? proj-fn) => #t)
+        (check (rank-fn 'private) => 0)
+        (check (rank-fn 'external) => 4)))))
