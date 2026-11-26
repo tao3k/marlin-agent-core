@@ -17,7 +17,7 @@ pub mod atomic_effect_substrate;
 #[cfg(feature = "grpc")]
 pub use atomic_effect_substrate::{
     AllowlistSandboxRunner, AtomicSandboxRunner, BoundedTokioSandboxRunner,
-    CompositeAtomicEffectExecutor, DenySandboxRunner,
+    CompositeAtomicEffectExecutor, DenySandboxRunner, StorageCasStore,
 };
 #[cfg(feature = "grpc")]
 pub mod task_actors;

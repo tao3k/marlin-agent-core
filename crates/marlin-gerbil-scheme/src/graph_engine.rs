@@ -1342,6 +1342,17 @@ impl GraphEngineOracleServer {
         }
     }
 
+    /// Waits up to `timeout` for the next oracle request and handles it when present.
+    pub fn serve_next_timeout<O: marlin_agent_graph::GraphEngineOracle + ?Sized>(
+        &self,
+        oracle: &O,
+        timeout: std::time::Duration,
+    ) -> Result<(), std::sync::mpsc::RecvTimeoutError> {
+        let cmd = self.rx.recv_timeout(timeout)?;
+        Self::handle_command(oracle, cmd);
+        Ok(())
+    }
+
     /// Serves all incoming oracle requests on the VM-owner thread until all handles are dropped.
     pub fn serve_until_closed<O: marlin_agent_graph::GraphEngineOracle + ?Sized>(
         &self,

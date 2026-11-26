@@ -8,7 +8,8 @@
 ;;; Rust-facing LoopGraph continuation native ABI (`marlin-graph-loop-continuation-next-action`),
 ;;; and Marlin's opt-in `+sqlite-turso` WAL execution boundary.
 
-(import (only-in :clan/poo/object .get .o .ref .slot? object?)
+(import (only-in :clan/poo/object .def .get .o .ref .slot? object?)
+        (only-in :std/list/list any foldl)
         (rename-in (only-in :tao3k/agentic-ai-lab/modules/graph-engine/interface
                             GraphEngine
                             make-capability-envelope
@@ -46,6 +47,21 @@
 (def +marlin-loop-continuation-type-id+ "marlin.agent.gerbil-loop-continuation")
 (def +marlin-loop-continuation-schema-id+ "marlin.agent.gerbil_loop_graph_continuation.v1")
 
+(.def MarlinLoopContinuation.
+  type_id: +marlin-loop-continuation-type-id+
+  schema_id: +marlin-loop-continuation-schema-id+)
+
+(.def MarlinCompiledLoopGraph.
+  type_id: +marlin-compiled-loop-graph-type-id+
+  schema_id: +marlin-compiled-loop-graph-schema-id+
+  object_system: +marlin-projection-object-system+
+  package: +marlin-projection-package+
+  module: ":marlin-agent-core/graph-engine/funcs")
+
+(.def MarlinGovernedContextResult.
+  kind: 'marlin.graph-engine.governed-context.v1
+  runtime-executed?: #f)
+
 (def (opt-ref obj key default)
   (if (and (object? obj) (.slot? obj key))
     (.ref obj key)
@@ -63,12 +79,10 @@
 (def (error-list->reason errors)
   (if (null? errors)
     "marlin-dispatch-rejected"
-    (let loop ((rest (cdr errors))
-               (acc (value->config-string (car errors))))
-      (if (null? rest)
-        acc
-        (loop (cdr rest)
-              (string-append acc "," (value->config-string (car rest))))))))
+    (foldl (lambda (e acc)
+             (string-append acc "," (value->config-string e)))
+           (value->config-string (car errors))
+           (cdr errors))))
 
 ;;; Pure UI projection: turns Session-free `TaskActor.`s + `TaskActorIndex.`
 ;;; into `WorkbenchTabProjection`, optionally projecting through a caller-supplied
@@ -96,10 +110,9 @@
                            projection
                            disclosure-level: disclosure-level
                            nerd-icons?: nerd-icons?))))
-    (.o bind-these: #f
-        session-free?: #t
-        tab-projection: projection
-        ui-package: ui-package)))
+    (.o (session-free? := #t)
+        (tab-projection := projection)
+        (ui-package))))
 
 ;;; Pure Rust-facing native ABI projection: translates a `make-graph-marlin-dispatch`
 ;;; result (admitted `MarlinDispatchEnvelope.` OR fail-closed rejection) into the
@@ -116,11 +129,9 @@
          (errors (opt-ref dispatch-result 'errors '())))
     (if (not admitted?)
       (let ((reason (error-list->reason errors)))
-        (.o bind-these: #f
-            type_id: +marlin-loop-continuation-type-id+
-            schema_id: +marlin-loop-continuation-schema-id+
-            action: (.o bind-these: #f kind: "escalate_to_human" reason: reason)
-            diagnostics: (list (string-append "graph_engine_dispatch=blocked:" reason))))
+        (.o (:: @ MarlinLoopContinuation.)
+            (action := (.o (kind := "escalate_to_human") (reason)))
+            (diagnostics := (list (string-append "graph_engine_dispatch=blocked:" reason)))))
       (let* ((env (.ref dispatch-result 'envelope))
              (op (.ref env 'operation))
              (tid (.ref env 'task-id))
@@ -140,33 +151,24 @@
               (cond
                ((eq? op 'commit-settlement)
                 (if (eq? settlement-outcome 'converged)
-                  (.o kind: "stop_completed")
-                  (.o kind: "stop_failed")))
+                  (.o (kind := "stop_completed"))
+                  (.o (kind := "stop_failed"))))
                (else
                 (let ((compiled
-                       (.o bind-these: #f
-                           type_id: +marlin-compiled-loop-graph-type-id+
-                           schema_id: +marlin-compiled-loop-graph-schema-id+
-                           graph_id: (string-append "graph-engine:" tid)
-                           object_system: +marlin-projection-object-system+
-                           package: +marlin-projection-package+
-                           module: ":marlin-agent-core/graph-engine/funcs"
-                           nodes: (list (.o bind-these: #f
-                                            id: (string-append tid ":" (symbol->string op))
-                                            executor: executor-id
-                                            config: config-rows))
-                           edges: '())))
-                  (.o bind-these: #f
-                      kind: "continue_with_graph"
-                      compiled_graph: compiled)))))
+                       (.o (:: @ MarlinCompiledLoopGraph.)
+                           (graph_id := (string-append "graph-engine:" tid))
+                           (nodes := (list (.o (id := (string-append tid ":" (symbol->string op)))
+                                               (executor := executor-id)
+                                               (config := config-rows))))
+                           (edges := '()))))
+                  (.o (kind := "continue_with_graph")
+                      (compiled_graph := compiled))))))
              (diags (list (string-append "graph_engine_dispatch=" (symbol->string op))
                           (string-append "fencing_epoch=" (number->string (.ref env 'fencing-epoch)))
                           (string-append "abi_fields=" (number->string (length abi-alist))))))
-        (.o bind-these: #f
-            type_id: +marlin-loop-continuation-type-id+
-            schema_id: +marlin-loop-continuation-schema-id+
-            action: action
-            diagnostics: diags)))))
+        (.o (:: @ MarlinLoopContinuation.)
+            (action)
+            (diagnostics := diags))))))
 
 ;;; Explicit `!` Marlin host execution boundary: executes a validated
 ;;; `MarlinDispatchEnvelope.` against Marlin's `LabDurableJournal` (SQLite/Turso
@@ -211,12 +213,11 @@
                      branch-outcomes: branch-outcomes
                      substrate: 'sqlite-turso))
            (reconciled (reconcile-fn actor receipt join-node-id: join-node-id)))
-      (.o bind-these: #f
-          receipt: receipt
-          reconciled: reconciled
-          accepted?: (.ref reconciled 'accepted?)
-          reason: (.ref reconciled 'reason)
-          actor: (.ref reconciled 'actor)))))
+      (.o (receipt)
+          (reconciled)
+          (accepted? := (.ref reconciled 'accepted?))
+          (reason := (.ref reconciled 'reason))
+          (actor := (.ref reconciled 'actor))))))
 
 ;;; Pure rooted-vector C-ABI projection helpers (ZERO text serialization).
 ;;; ABI version 1 flat vector schemas decoded directly by Rust `marlin-gerbil-scheme`.
@@ -443,7 +444,7 @@
          (assembly (marlin-converge-assembly '(env durable ui-workbench context-system)))
          (overlay (marlin-converge-runtime-overlay
                    assembly
-                   (list (cons 'durable (.o bind-these: #f detour-state: detour-mode)))))
+                   (list (cons 'durable (.o (detour-state := detour-mode))))))
          (ctx-resolved (.ref (.ref overlay 'effective-configs) 'context-system))
          (auto-archive? (and (object? ctx-resolved)
                              (.slot? ctx-resolved 'auto-archive)
@@ -455,25 +456,22 @@
                         (cond ((fixnum? q) q)
                               ((list? q) (length q))
                               (else 0))))
-         (has-defeater? (let loop ((obs (.ref obligation-graph 'obligations)))
-                          (and (pair? obs)
-                               (or (pair? (.ref (car obs) 'active-defeaters))
-                                   (loop (cdr obs))))))
+         (has-defeater? (and (any (lambda (ob) (pair? (.ref ob 'active-defeaters)))
+                                  (.ref obligation-graph 'obligations))
+                             #t))
          (sandbox-ok? (or (not sandbox-admission) (.ref sandbox-admission 'admitted?)))
          (cedar-ok? (or (not cedar-handoff) (.ref cedar-handoff 'policy-valid?)))
          (abi-vector (marlin-graph-engine-project-governed-context-vector
                       (vector task-id cut-val kv-dig depth has-defeater?
                               quarantined sandbox-ok? cedar-ok?
                               detour-mode auto-archive?))))
-    (.o bind-these: #f
-        kind: 'marlin.graph-engine.governed-context.v1
-        admitted?: (and (.ref bundle 'admitted?) (vector-ref abi-vector 1))
-        reason: (or (vector-ref abi-vector 12) (.ref bundle 'reason))
-        trunk-bundle: bundle
-        design165-overlay: overlay
-        auto-archive-enabled?: auto-archive?
-        abi-vector: abi-vector
-        runtime-executed?: #f)))
+    (.o (:: @ MarlinGovernedContextResult.)
+        (admitted? := (and (.ref bundle 'admitted?) (vector-ref abi-vector 1)))
+        (reason := (or (vector-ref abi-vector 12) (.ref bundle 'reason)))
+        (trunk-bundle := bundle)
+        (design165-overlay := overlay)
+        (auto-archive-enabled? := auto-archive?)
+        (abi-vector))))
 
 ;;; Project a 10-slot governed-context request vector:
 ;;;   #(task-id context-cut kv-prefix-digest disclosure-depth has-active-defeater?
@@ -619,13 +617,12 @@
                         shared-context-cut: 1
                         kv-prefix-digest: kv-digest))
          (actor (make-actor tid trunk '("scope-main") title: title))
-         (ctx (.o bind-these: #f
-                  context-cut: 1
-                  kv-prefix-digest: kv-digest
-                  disclosure-depth: 'L3
-                  has-active-defeater?: #f
-                  sandbox-admitted?: #t
-                  cedar-handoff-valid?: #t))
+         (ctx (.o (context-cut := 1)
+                  (kv-prefix-digest := kv-digest)
+                  (disclosure-depth := 'L3)
+                  (has-active-defeater? := #f)
+                  (sandbox-admitted? := #t)
+                  (cedar-handoff-valid? := #t)))
          (h1 (make-hyp "H1" "Hypothesis Alpha" contradictions: '("c1") open-questions: '("q1")))
          (h2 (make-hyp "H2" "Hypothesis Beta" contradictions: '() open-questions: '("q2")))
          (b1 (make-br "B1" "Check trace A"))
@@ -668,13 +665,12 @@
          (spawn-sib (.ref lab-exports 'fleet-spawn-sibling-from-detour))
          (apply-ev (.ref lab-exports 'fleet-apply-bitemporal-event))
          (env (make-capability-envelope "vm-fleet" allowed-caps: '(context-read) denied-caps: '(host-egress) egress-allowed?: #f))
-         (ctx (.o bind-these: #f
-                  context-cut: 1
-                  kv-prefix-digest: kv-digest
-                  disclosure-depth: 'L1
-                  has-active-defeater?: #f
-                  sandbox-admitted?: #t
-                  cedar-handoff-valid?: #t))
+         (ctx (.o (context-cut := 1)
+                  (kv-prefix-digest := kv-digest)
+                  (disclosure-depth := 'L1)
+                  (has-active-defeater? := #f)
+                  (sandbox-admitted? := #t)
+                  (cedar-handoff-valid? := #t)))
          (ob-p (make-obligation "ob-p" title: "Parent Gate" required-evidence-ids: '("ev-p")))
          (g-p (make-obligation-graph "g-p" cut: 1 obligations: (list ob-p) evidence: '() det-tasks: '()))
          (tr-p (make-trunk "tr-p" "ob-p" g-p env shared-context-cut: 1 kv-prefix-digest: kv-digest))
@@ -687,10 +683,9 @@
                  effect-class: 'pure-cas read-footprint: '("sib.ss") write-footprint: '()))
          (g-s (make-obligation-graph "g-s" cut: 1 obligations: (list ob-s) evidence: '() det-tasks: (list det-s)))
          (fl1 (spawn-sib fl0 parent-id sib-id "Turso Fleet Sibling" g-s sibling-apex-id: "ob-s"))
-         (def-ev (.o bind-these: #f
-                     event-kind: 'defeater-discovered
-                     obligation-id: "ob-p"
-                     defeater-id: "def-turso-01")))
+         (def-ev (.o (event-kind := 'defeater-discovered)
+                     (obligation-id := "ob-p")
+                     (defeater-id := "def-turso-01"))))
     (apply-ev fl1 parent-id def-ev)))
 
 ;;; Thin C-ABI multi-actor Fleet step:
@@ -743,8 +738,9 @@
          (detours (list->vector (map (lambda (st) (opt-ref (.ref st 'actor) 'detour-mode 'mainline)) active-drivers)))
          (defeaters (list->vector
                      (map (lambda (st)
-                            (let loop ((obs (.ref (.ref st 'obligation-graph) 'obligations)) (acc 0))
-                              (if (null? obs) acc (loop (cdr obs) (+ acc (length (.ref (car obs) 'active-defeaters)))))))
+                            (foldl (lambda (ob acc) (+ acc (length (.ref ob 'active-defeaters))))
+                                   0
+                                   (.ref (.ref st 'obligation-graph) 'obligations)))
                           active-drivers)))
          (inboxes (list->vector (map (lambda (st) (length (opt-ref (.ref st 'obligation-graph) 'human-inbox '())))
                                      active-drivers)))

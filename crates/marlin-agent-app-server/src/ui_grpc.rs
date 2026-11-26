@@ -146,6 +146,15 @@ impl SchemeOverlayProjection {
     }
 }
 
+/// Notification emitted after a one-shot `GraphHumanGate` is durably claimed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaimedGraphHumanDecision {
+    pub gate_id: String,
+    pub decision: i32,
+    pub note: Option<String>,
+    pub receipt_id: String,
+}
+
 /// Shared authoritative state for all 6 MyGo gRPC services
 /// (`marlin.{app,ui,gate,plugin,device,projection}.v1`).
 #[derive(Clone)]
@@ -154,6 +163,7 @@ pub struct MyGoBridgeHost {
     state: Arc<Mutex<BridgeState>>,
     wb_tx: broadcast::Sender<UiWorkbenchSnapshot>,
     gate_tx: broadcast::Sender<PendingGate>,
+    graph_gate_tx: broadcast::Sender<ClaimedGraphHumanDecision>,
     panel_tx: broadcast::Sender<ScopedPanelEvent>,
     device_inv_tx: broadcast::Sender<DeviceInvocationRequest>,
     task_actors: crate::TaskActorControlPlane,
@@ -222,6 +232,7 @@ impl MyGoBridgeHost {
         }
         let (wb_tx, _) = broadcast::channel(64);
         let (gate_tx, _) = broadcast::channel(64);
+        let (graph_gate_tx, _) = broadcast::channel(64);
         let (panel_tx, _) = broadcast::channel(128);
         let (device_inv_tx, _) = broadcast::channel(64);
         let overlay_map: BTreeMap<i32, SchemeOverlayProjection> = overlays
@@ -252,11 +263,19 @@ impl MyGoBridgeHost {
             state: Arc::new(Mutex::new(state)),
             wb_tx,
             gate_tx,
+            graph_gate_tx,
             panel_tx,
             device_inv_tx,
             task_actors: crate::TaskActorControlPlane::new(),
             atomic_executor: None,
         })
+    }
+
+    /// Subscribe to claimed one-shot `GraphHumanGate` decision notifications.
+    pub fn subscribe_claimed_graph_decisions(
+        &self,
+    ) -> broadcast::Receiver<ClaimedGraphHumanDecision> {
+        self.graph_gate_tx.subscribe()
     }
 
     /// Share an authoritative Session-free `TaskActorControlPlane` with `AppServer`.
@@ -979,6 +998,12 @@ impl ApprovalGateService for MyGoBridgeHost {
             }));
         };
         let rref = mint_receipt(&mut st, "graph-gate", req.gate_id.as_bytes());
+        let claimed_event = ClaimedGraphHumanDecision {
+            gate_id: pending.gate_id.clone(),
+            decision: req.decision,
+            note: req.note,
+            receipt_id: rref.receipt_id.clone(),
+        };
         let receipt = GateDecisionReceipt {
             gate_id: pending.gate_id.clone(),
             kind: pending.kind,
@@ -987,6 +1012,8 @@ impl ApprovalGateService for MyGoBridgeHost {
             denial: None,
         };
         st.claimed_gates.insert(pending.gate_id, receipt.clone());
+        drop(st);
+        let _ = self.graph_gate_tx.send(claimed_event);
         Ok(Response::new(SubmitGraphHumanDecisionResponse {
             receipt: Some(receipt),
         }))

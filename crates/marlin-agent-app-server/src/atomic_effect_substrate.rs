@@ -167,6 +167,29 @@ impl AllowlistSandboxRunner {
         }
         Ok(Some(canonical_cwd.to_string_lossy().into_owned()))
     }
+
+    /// Executes one allowlisted, root-confined command without requiring callers
+    /// to import `marlin_agent_runtime` types.
+    pub async fn run_command(
+        &self,
+        program: String,
+        args: Vec<String>,
+        cwd: Option<String>,
+    ) -> Result<(i32, Vec<u8>, Vec<u8>), String> {
+        let receipt = self
+            .run_sandbox(SandboxRunEffectPayload {
+                effect_id: "allowlist-direct".to_owned(),
+                program,
+                args,
+                cwd,
+            })
+            .await;
+        match receipt {
+            AtomicEffectReceipt::SandboxExited(p) => Ok((p.exit_code, p.stdout, p.stderr)),
+            AtomicEffectReceipt::EffectError(p) => Err(p.message),
+            other => Err(format!("unexpected sandbox receipt: {other:?}")),
+        }
+    }
 }
 
 impl AtomicSandboxRunner for AllowlistSandboxRunner {
@@ -203,6 +226,128 @@ impl AtomicSandboxRunner for AllowlistSandboxRunner {
 }
 
 static ATOMIC_EXEC_BOOT_SEQ: AtomicU64 = AtomicU64::new(1);
+
+fn cas_pointer_key_for(key: &str) -> Result<ArtifactPointerKey, String> {
+    let digest = sha256_prefixed_hex(key.as_bytes());
+    let hex = digest.strip_prefix("sha256:").unwrap_or(digest.as_str());
+    ArtifactPointerKey::new(format!("ptr:cas:{hex}")).map_err(|e| format!("{e}"))
+}
+
+fn cas_now_unix_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn cas_new_boot_tag() -> String {
+    let pid = std::process::id();
+    let boot_ns = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let boot_seq = ATOMIC_EXEC_BOOT_SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("{pid:x}-{boot_ns:x}-{boot_seq:x}")
+}
+
+/// Thin runtime-agnostic CAS adapter over `AgentStorage` sharing the exact `ptr:cas:<sha256>`
+/// key scheme with `CompositeAtomicEffectExecutor`.
+///
+/// Allows `marlin-scheme-host` to execute Scheme-emitted `CasGet` / `CasPut` effects directly
+/// against disk `TursoAgentStorage` without importing `marlin-agent-runtime`.
+pub struct StorageCasStore<S> {
+    storage: S,
+    project_id: ProjectId,
+    session_id: SessionId,
+    agent_id: AgentId,
+    boot_tag: String,
+    seq: AtomicU64,
+}
+
+impl<S: AgentStorage + Send + Sync + 'static> StorageCasStore<S> {
+    pub fn new(
+        storage: S,
+        project_id: ProjectId,
+        session_id: SessionId,
+        agent_id: AgentId,
+    ) -> Self {
+        Self {
+            storage,
+            project_id,
+            session_id,
+            agent_id,
+            boot_tag: cas_new_boot_tag(),
+            seq: AtomicU64::new(1),
+        }
+    }
+
+    pub async fn get_blob(&self, key: &str) -> Result<Option<Vec<u8>>, String> {
+        let ptr_key = cas_pointer_key_for(key)?;
+        match self
+            .storage
+            .get_artifact_pointer(&self.project_id, &ptr_key)
+            .await
+            .map_err(|err| format!("cas get_artifact_pointer failed: {err}"))?
+        {
+            Some(pointer) => match self
+                .storage
+                .get_artifact(&self.project_id, &pointer.target_artifact_hash)
+                .await
+                .map_err(|err| format!("cas get_artifact failed: {err}"))?
+            {
+                Some(artifact) => Ok(Some(artifact.body)),
+                None => Ok(None),
+            },
+            None => Ok(None),
+        }
+    }
+
+    pub async fn put_blob(&self, key: &str, bytes: Vec<u8>) -> Result<(), String> {
+        let digest = sha256_prefixed_hex(&bytes);
+        let hash =
+            ArtifactHash::new(digest).map_err(|err| format!("invalid artifact hash: {err}"))?;
+        let ptr_key = cas_pointer_key_for(key)?;
+        let n = self.seq.fetch_add(1, Ordering::Relaxed);
+        let event_id = EventId::new(format!("ev-cas-{}-{n:x}", self.boot_tag))
+            .map_err(|err| format!("invalid event id: {err}"))?;
+        let now_ms = cas_now_unix_ms();
+        self.storage
+            .put_artifact(ArtifactRecord {
+                project_id: self.project_id.clone(),
+                artifact_hash: hash.clone(),
+                artifact_kind: "atomic-effect-cas-blob".to_owned(),
+                producer_session_id: self.session_id.clone(),
+                producer_agent_id: self.agent_id.clone(),
+                producer_event_id: event_id.clone(),
+                media_type: "application/octet-stream".to_owned(),
+                size_bytes: bytes.len() as u64,
+                body: bytes,
+                created_at_unix_ms: now_ms,
+            })
+            .await
+            .map_err(|err| format!("cas put_artifact failed: {err}"))?;
+        let expected = self
+            .storage
+            .get_artifact_pointer(&self.project_id, &ptr_key)
+            .await
+            .map_err(|err| format!("cas pointer lookup failed: {err}"))?
+            .map(|ptr| ptr.target_artifact_hash);
+        self.storage
+            .compare_and_swap_artifact_pointer(ArtifactPointerUpdate {
+                project_id: self.project_id.clone(),
+                pointer_key: ptr_key,
+                expected_artifact_hash: expected,
+                new_artifact_hash: hash,
+                updated_by_session_id: self.session_id.clone(),
+                updated_by_agent_id: self.agent_id.clone(),
+                updated_by_event_id: event_id,
+                updated_at_unix_ms: now_ms,
+            })
+            .await
+            .map_err(|err| format!("cas pointer update failed: {err}"))?;
+        Ok(())
+    }
+}
 
 /// Thin 4-primitive leaf executor composing `AgentStorage` CAS + `ModelGateway` + `AtomicSandboxRunner`.
 pub struct CompositeAtomicEffectExecutor<S, G, R = DenySandboxRunner> {
@@ -750,5 +895,67 @@ mod tests {
             get_rcpts.as_slice(),
             [AtomicEffectReceipt::CasHit(p)] if p.bytes == b"host-wal-bytes"
         ));
+    }
+
+    #[cfg(feature = "turso-host")]
+    #[tokio::test]
+    async fn allowlist_run_command_and_storage_cas_store_round_trip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let runner = AllowlistSandboxRunner::new(Duration::from_secs(5), 1024, ["/bin/echo"])
+            .with_confined_root(dir.path());
+        let (code, stdout, _) = runner
+            .run_command(
+                "/bin/echo".to_owned(),
+                vec!["direct-ok".to_owned()],
+                Some(dir.path().to_string_lossy().into_owned()),
+            )
+            .await
+            .expect("allowlisted direct command must succeed");
+        assert_eq!(code, 0);
+        assert_eq!(String::from_utf8_lossy(&stdout).trim(), "direct-ok");
+        assert!(
+            runner
+                .run_command(
+                    "/bin/sh".to_owned(),
+                    vec!["-c".to_owned(), "true".to_owned()],
+                    None
+                )
+                .await
+                .is_err()
+        );
+        assert!(
+            runner
+                .run_command(
+                    "/bin/echo".to_owned(),
+                    vec!["escape".to_owned()],
+                    Some("/".to_owned())
+                )
+                .await
+                .is_err()
+        );
+
+        let cfg = TursoAgentStorageConfig {
+            path: dir.path().join("cas-store-s27.db"),
+            optimization_profile: TursoOptimizationProfile::AsyncIoOnlyCompatibility,
+            batch_transaction_mode: TursoBatchTransactionMode::Immediate,
+        };
+        let storage = TursoAgentStorage::open_local(cfg)
+            .await
+            .expect("open turso");
+        let store = super::StorageCasStore::new(
+            storage,
+            ProjectId::new("proj-cas-s27").unwrap(),
+            SessionId::new("sess-cas-s27").unwrap(),
+            AgentId::new("agent-cas-s27").unwrap(),
+        );
+        assert_eq!(store.get_blob("k:s27").await.unwrap(), None);
+        store
+            .put_blob("k:s27", b"cas-s27-bytes".to_vec())
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get_blob("k:s27").await.unwrap(),
+            Some(b"cas-s27-bytes".to_vec())
+        );
     }
 }

@@ -36,7 +36,16 @@ use tokio::{
     process::{Child, Command},
 };
 
-async fn spawn_scheme_host(gate_id: &str, turso_path: &Path) -> (Child, String) {
+async fn spawn_scheme_host_with_fleet(
+    gate_id: &str,
+    turso_path: &Path,
+    fleet_checkpoint_key: Option<&str>,
+) -> (
+    Child,
+    String,
+    Option<String>,
+    tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
+) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_marlin-scheme-host"));
     cmd.env("MARLIN_BRIDGE_ADDR", "127.0.0.1:0")
         .env("MARLIN_BRIDGE_TURSO_PATH", turso_path)
@@ -44,20 +53,42 @@ async fn spawn_scheme_host(gate_id: &str, turso_path: &Path) -> (Child, String) 
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .kill_on_drop(true);
+    if let Some(key) = fleet_checkpoint_key {
+        cmd.env("MARLIN_SCHEME_FLEET_CHECKPOINT_KEY", key);
+        cmd.env(
+            "MARLIN_SCHEME_LLM_LOOPBACK_RESPONSE",
+            "deterministic-scheme-host-s26-payload",
+        );
+        cmd.env("MARLIN_SCHEME_SANDBOX_ALLOWLIST", "/bin/echo");
+        if let Some(parent_dir) = turso_path.parent() {
+            cmd.env("MARLIN_SCHEME_SANDBOX_ROOT", parent_dir);
+        }
+    }
     let mut child = cmd.spawn().expect("spawn marlin-scheme-host binary");
     let stdout = child.stdout.take().expect("piped stdout");
     let mut lines = BufReader::new(stdout).lines();
-    let ready_line = tokio::time::timeout(Duration::from_secs(90), lines.next_line())
-        .await
-        .expect("timed out waiting for marlin-scheme-host READY line")
-        .expect("read READY line")
-        .expect("marlin-scheme-host exited before printing READY");
-    let addr = ready_line
-        .strip_prefix("READY ")
-        .unwrap_or_else(|| panic!("unexpected READY line: {ready_line}"))
-        .trim()
-        .to_owned();
-    (child, format!("http://{addr}"))
+    let mut fleet_boot_line = None;
+    let addr = loop {
+        let line = tokio::time::timeout(Duration::from_secs(90), lines.next_line())
+            .await
+            .expect("timed out waiting for marlin-scheme-host READY line")
+            .expect("read stdout line")
+            .expect("marlin-scheme-host exited before printing READY");
+        if line.starts_with("FLEET_BOOT ") {
+            fleet_boot_line = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+        panic!("unexpected stdout line before READY: {line}");
+    };
+    (child, format!("http://{addr}"), fleet_boot_line, lines)
+}
+
+async fn spawn_scheme_host(gate_id: &str, turso_path: &Path) -> (Child, String) {
+    let (child, ep, _boot, _lines) = spawn_scheme_host_with_fleet(gate_id, turso_path, None).await;
+    (child, ep)
 }
 
 async fn stop_scheme_host(mut child: Child) {
@@ -311,6 +342,146 @@ async fn marlin_scheme_host_binary_live_scheme_oracle_and_turso_wal_survive_os_r
         .unwrap()
         .into_inner();
     assert_eq!(tabs2, tabs1);
+
+    drop(v2);
+    stop_scheme_host(child2).await;
+}
+
+#[tokio::test]
+async fn marlin_scheme_host_live_fleet_driver_turso_cas_and_human_gate_survive_os_restart() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("scheme-host-fleet-s26.db");
+    let cp_key = "cas:fleet:scheme-host-s26";
+
+    // -------------------------------------------------------------------------
+    // OS Process Boot #1: Cold Scheme Fleet pump -> Turso CAS checkpoint ->
+    // live HTTP/2 ApprovalGateService Approve -> Scheme task-human-approve
+    // (defeaters: 1 -> 0) -> re-checkpoint to Turso CAS -> SIGTERM
+    // -------------------------------------------------------------------------
+    let (child1, ep1, boot1, mut lines1) =
+        spawn_scheme_host_with_fleet("gate-fleet-s26-1", &db_path, Some(cp_key)).await;
+    let boot1 = boot1.expect("expected FLEET_BOOT line on cold boot");
+    assert!(
+        boot1.contains("mode=cold")
+            && boot1.contains("active=1")
+            && boot1.contains("archived=1")
+            && boot1.contains("defeaters=1"),
+        "unexpected cold FLEET_BOOT line: {boot1}"
+    );
+
+    let mut watch_client = V1AppServerClient::connect(ep1.clone()).await.unwrap();
+    let mut tab_stream = watch_client
+        .watch_workbench_tabs(WatchWorkbenchTabsRequest {})
+        .await
+        .unwrap()
+        .into_inner();
+    let init_tabs = tokio::time::timeout(Duration::from_secs(5), tab_stream.message())
+        .await
+        .expect("initial fleet watch timeout")
+        .unwrap()
+        .expect("initial fleet tabs");
+    assert_eq!(init_tabs.tabs.len(), 3);
+    assert_eq!(
+        init_tabs.tabs[0].kind,
+        WorkbenchTabKindProto::PinnedIndex as i32
+    );
+    assert_eq!(init_tabs.tabs[1].id, "fleet-host-parent");
+    assert_eq!(init_tabs.tabs[1].fencing_epoch, 1);
+    assert_eq!(init_tabs.tabs[2].id, "fleet-host-sib");
+    assert_eq!(
+        init_tabs.tabs[2].kind,
+        WorkbenchTabKindProto::ReadOnlyPeek as i32
+    );
+
+    let mut gate = ApprovalGateServiceClient::connect(ep1).await.unwrap();
+    let receipt = gate
+        .submit_graph_human_decision(SubmitGraphHumanDecisionRequest {
+            turn: None,
+            gate_id: "gate-fleet-s26-1".to_owned(),
+            decision: GraphHumanDecision::Approve as i32,
+            idempotency_key: "idem-fleet-s26-1".to_owned(),
+            note: Some("def-turso-01".to_owned()),
+        })
+        .await
+        .unwrap()
+        .into_inner()
+        .receipt
+        .unwrap();
+    assert!(receipt.claimed);
+
+    // Wait for the live Gambit VM thread to finish dispatching `task-human-approve` and
+    // storing the post-gate Scheme Fleet checkpoint into disk Turso CAS.
+    let applied = tokio::time::timeout(Duration::from_secs(10), lines1.next_line())
+        .await
+        .expect("timed out waiting for FLEET_GATE_APPLIED")
+        .expect("read FLEET_GATE_APPLIED")
+        .expect("stdout closed before FLEET_GATE_APPLIED");
+    assert!(
+        applied.contains("FLEET_GATE_APPLIED")
+            && applied.contains("gate=gate-fleet-s26-1")
+            && applied.contains("active=1")
+            && applied.contains("archived=1")
+            && applied.contains("defeaters=0"),
+        "unexpected FLEET_GATE_APPLIED line: {applied}"
+    );
+
+    // Live HTTP/2 WatchWorkbenchTabs stream must receive the post-gate epoch=2 push
+    // synchronized directly from the Scheme Fleet approval transition!
+    let mut saw_post_gate_epoch2 = false;
+    for _ in 0..5 {
+        if let Some(ev) = tokio::time::timeout(Duration::from_secs(5), tab_stream.message())
+            .await
+            .expect("watch post-gate epoch2 timeout")
+            .unwrap()
+            && ev
+                .tabs
+                .iter()
+                .any(|t| t.id == "fleet-host-parent" && t.fencing_epoch == 2)
+        {
+            saw_post_gate_epoch2 = true;
+            break;
+        }
+    }
+    assert!(
+        saw_post_gate_epoch2,
+        "WatchWorkbenchTabs must stream live fleet-host-parent epoch=2 update after human gate approval"
+    );
+
+    drop(tab_stream);
+    drop(watch_client);
+    drop(gate);
+    stop_scheme_host(child1).await;
+
+    // -------------------------------------------------------------------------
+    // OS Process Boot #2: Brand-new OS Process + Fresh Gambit VM restores the
+    // EXACT post-gate Scheme Fleet (`defeaters=0`) AND TaskActorControlPlane (`epoch=2`)
+    // directly from disk Turso WAL/CAS!
+    // -------------------------------------------------------------------------
+    let (child2, ep2, boot2, _lines2) =
+        spawn_scheme_host_with_fleet("gate-fleet-s26-2", &db_path, Some(cp_key)).await;
+    let boot2 = boot2.expect("expected FLEET_BOOT line on warm reboot");
+    assert!(
+        boot2.contains("mode=restored")
+            && boot2.contains("active=1")
+            && boot2.contains("archived=1")
+            && boot2.contains("defeaters=0"),
+        "restored OS boot must preserve post-gate Scheme Fleet defeaters=0, got: {boot2}"
+    );
+
+    let mut v2 = V1AppServerClient::connect(ep2).await.unwrap();
+    let tabs2 = v2
+        .get_workbench_tabs(GetWorkbenchTabsRequest {})
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(tabs2.tabs.len(), 3);
+    assert_eq!(tabs2.tabs[1].id, "fleet-host-parent");
+    assert_eq!(tabs2.tabs[1].fencing_epoch, 2);
+    assert_eq!(tabs2.tabs[2].id, "fleet-host-sib");
+    assert_eq!(
+        tabs2.tabs[2].kind,
+        WorkbenchTabKindProto::ReadOnlyPeek as i32
+    );
 
     drop(v2);
     stop_scheme_host(child2).await;
