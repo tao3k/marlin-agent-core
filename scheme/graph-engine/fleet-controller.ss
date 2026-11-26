@@ -32,7 +32,8 @@
         marlin-fleet-workbench-controller-project
         marlin-fleet-workbench-controller-audit-capsule
         marlin-fleet-workbench-controller-open-vector
-        marlin-fleet-workbench-controller-dispatch-vector)
+        marlin-fleet-workbench-controller-dispatch-vector
+        marlin-fleet-workbench-controller-audit-capsule-vector)
 
 (.def FleetWorkbenchController.
   kind: 'marlin.graph-engine.fleet-workbench-controller.v1
@@ -246,3 +247,16 @@
                                         0 (.ref (.ref st 'obligation-graph) 'obligations)))
                                drivers))
             (marlin-fleet-workbench-controller-project next-ctrl))))
+
+;;; Input:  `controller`
+;;; Output: `#(active-count archived-count peek-count total-defeaters total-inbox favored-collapsed? authenticates-evidence? authorizes-effect?)`
+(def (marlin-fleet-workbench-controller-audit-capsule-vector controller)
+  (let ((cap (marlin-fleet-workbench-controller-audit-capsule controller)))
+    (vector (.ref cap 'active-actor-count)
+            (.ref cap 'archived-actor-count)
+            (.ref cap 'peek-count)
+            (.ref cap 'total-active-defeaters)
+            (.ref cap 'total-human-inbox-items)
+            (.ref cap 'favored-path-collapsed?)
+            (.ref cap 'authenticates-evidence?)
+            (.ref cap 'authorizes-effect?))))

@@ -256,74 +256,47 @@
 (def (marlin-task-workbench-next-disclosure _current-level target-level)
   (validate TaskDisclosureLevel target-level))
 
-(def (clone-tab-with-detour tab-obj new-detour new-node)
-  (.o bind-these: #f
-      id: (.ref tab-obj 'id)
-      label: (opt-ref tab-obj 'label "")
-      status: (opt-ref tab-obj 'status 'in-progress)
-      mode: (opt-ref tab-obj 'mode 'active)
-      detour-mode: new-detour
-      detour-node-id: new-node
-      worktree: (opt-ref tab-obj 'worktree "main")
-      checklist-done: (opt-ref tab-obj 'checklist-done 0)
-      checklist-total: (opt-ref tab-obj 'checklist-total 0)
-      competing-hypotheses: (opt-ref tab-obj 'competing-hypotheses '())))
+(def (refine-tab-detour tab-obj new-detour new-node)
+  (.o (:: @ tab-obj) (detour-mode := new-detour) (detour-node-id := new-node)))
 
 ;;; Pure Scheme projection transition for Design 165 Scoped Detour 4-Exit actions
-;;; (enter blocker/side-quest, or exit via return-to-origin / absorb-and-continue /
-;;; spawn-sibling-task / abort-detour) with ZERO Rust UI code touched!
+;;; using POO prototype refinement (Style 02) with ZERO Rust UI code touched!
 (def (marlin-task-workbench-apply-detour-action projection task-id action (arg #f))
   (let* ((dynamic (opt-ref projection 'dynamic-tabs '()))
-         (archived (opt-ref projection 'archived-index '()))
          (sibling-id (if (and (string? arg) (> (string-length arg) 0))
                        arg
                        (string-append task-id "-sibling")))
-         (updated-dynamic
-          (let loop ((tabs dynamic) (acc '()) (spawned #f))
-            (if (null? tabs)
-              (let ((base (reverse acc)))
-                (if spawned (append base (list spawned)) base))
-              (let ((t (car tabs)))
-                (if (equal? (.ref t 'id) task-id)
-                  (case action
-                    ((task-detour-blocker)
-                     (loop (cdr tabs)
-                           (cons (clone-tab-with-detour
-                                  t 'blocker-active (or arg (string-append "blk-" task-id)))
-                                 acc)
-                           spawned))
-                    ((task-detour-sidequest)
-                     (loop (cdr tabs)
-                           (cons (clone-tab-with-detour
-                                  t 'side-quest-active (or arg (string-append "sq-" task-id)))
-                                 acc)
-                           spawned))
-                    ((task-detour-exit-return task-detour-exit-absorb task-detour-exit-abort)
-                     (loop (cdr tabs)
-                           (cons (clone-tab-with-detour t 'mainline #f) acc)
-                           spawned))
-                    ((task-detour-exit-sibling)
-                     (let ((sib (.o bind-these: #f
-                                    id: sibling-id
-                                    label: (string-append "Sibling of " (opt-ref t 'label task-id))
-                                    status: 'in-progress
-                                    mode: 'active
-                                    detour-mode: 'mainline
-                                    detour-node-id: #f
-                                    worktree: (opt-ref t 'worktree "main")
-                                    checklist-done: 0
-                                    checklist-total: 1
-                                    competing-hypotheses: (opt-ref t 'competing-hypotheses '()))))
-                       (loop (cdr tabs)
-                             (cons (clone-tab-with-detour t 'mainline #f) acc)
-                             sib)))
-                    (else (error "unknown task-workbench detour action" action)))
-                  (loop (cdr tabs) (cons t acc) spawned)))))))
-    (.o bind-these: #f
-        pinned-tab: (opt-ref projection 'pinned-tab 'index)
-        dynamic-tabs: updated-dynamic
-        archived-index: archived
-        visible-tab-ids: (cons 'index (map (lambda (t) (.ref t 'id)) updated-dynamic)))))
+         (spawned #f)
+         (updated-base
+          (map (lambda (t)
+                 (if (not (equal? (.ref t 'id) task-id))
+                   t
+                   (case action
+                     ((task-detour-blocker)
+                      (refine-tab-detour t 'blocker-active (or arg (string-append "blk-" task-id))))
+                     ((task-detour-sidequest)
+                      (refine-tab-detour t 'side-quest-active (or arg (string-append "sq-" task-id))))
+                     ((task-detour-exit-return task-detour-exit-absorb task-detour-exit-abort)
+                      (refine-tab-detour t 'mainline #f))
+                     ((task-detour-exit-sibling)
+                      (set! spawned
+                        (.o (id := sibling-id)
+                            (label := (string-append "Sibling of " (opt-ref t 'label task-id)))
+                            (status := 'in-progress)
+                            (mode := 'active)
+                            (detour-mode := 'mainline)
+                            (detour-node-id := #f)
+                            (worktree := (opt-ref t 'worktree "main"))
+                            (checklist-done := 0)
+                            (checklist-total := 1)
+                            (competing-hypotheses := (opt-ref t 'competing-hypotheses '()))))
+                      (refine-tab-detour t 'mainline #f))
+                     (else (error "unknown task-workbench detour action" action)))))
+               dynamic))
+         (updated-dynamic (if spawned (append updated-base (list spawned)) updated-base)))
+    (.o (:: @ projection)
+        (dynamic-tabs := updated-dynamic)
+        (visible-tab-ids := (cons 'index (map (lambda (t) (.ref t 'id)) updated-dynamic))))))
 
 ;;; Compose a full checked Marlin `UiScope` bound to a live `WorkbenchTabProjection`.
 (def (make-marlin-task-workbench-package projection

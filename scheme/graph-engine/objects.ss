@@ -26,7 +26,8 @@
                  marlin-fleet-workbench-controller-project
                  marlin-fleet-workbench-controller-audit-capsule
                  marlin-fleet-workbench-controller-open-vector
-                 marlin-fleet-workbench-controller-dispatch-vector))
+                 marlin-fleet-workbench-controller-dispatch-vector
+                 marlin-fleet-workbench-controller-audit-capsule-vector))
 
 (export GraphEngineMarlinOperations
         EnableMarlinGraphEngineSqliteTurso)
@@ -48,7 +49,8 @@
   fleet-workbench-controller-project: marlin-fleet-workbench-controller-project
   fleet-workbench-controller-audit-capsule: marlin-fleet-workbench-controller-audit-capsule
   fleet-workbench-controller-open-vector: marlin-fleet-workbench-controller-open-vector
-  fleet-workbench-controller-dispatch-vector: marlin-fleet-workbench-controller-dispatch-vector)
+  fleet-workbench-controller-dispatch-vector: marlin-fleet-workbench-controller-dispatch-vector
+  fleet-workbench-controller-audit-capsule-vector: marlin-fleet-workbench-controller-audit-capsule-vector)
 
 (def (EnableMarlinGraphEngineSqliteTurso inherited)
   (.o (:: self inherited)

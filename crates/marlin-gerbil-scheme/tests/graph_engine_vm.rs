@@ -1215,4 +1215,155 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
     assert_eq!(read_fx(b3_defeaters.element(0).unwrap()), 0);
     assert_eq!(read_fx(b3_defeaters.element(1).unwrap()), 0);
     assert_eq!(b3_ui.len(), 9);
+
+    // -------------------------------------------------------------------------
+    // Phase 6 (Round S10): Boot #3 Durable Reopen (`SPC o r`) + Bounded Branch
+    // Proposal (`SPC o h b`) + FleetAuditCapsule Vector + Turso WAL Boot #4!
+    // -------------------------------------------------------------------------
+    let scheme_ctrl_audit = resolve_ctrl("marlin-fleet-workbench-controller-audit-capsule-vector");
+    let ctrl_b3_live = b3_out.element(0).unwrap();
+
+    // 1. User triggers `SPC o r` (`task-reopen` "task-turso-sib") -> durably reopens Boot #1's
+    //    archived sibling back into active-drivers (active 2 -> 3, archived 1 -> 0)!
+    let reopen_in = vec_obj(
+        &runtime,
+        &[
+            ctrl_b3_live,
+            sym(&runtime, "task-reopen"),
+            flag(&runtime, false),
+            txt(&runtime, "task-turso-sib"),
+            vec_obj(&runtime, &[]),
+            flag(&runtime, false),
+        ],
+    );
+    let reopen_out = runtime
+        .call_rooted(&scheme_ctrl_dispatch, &reopen_in)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let ctrl_b3_reopened = reopen_out.element(0).unwrap();
+
+    // 2. User triggers `SPC o h b` (`task-propose-branch`) on focused actor!
+    let branch_in = vec_obj(
+        &runtime,
+        &[
+            ctrl_b3_reopened,
+            sym(&runtime, "task-propose-branch"),
+            txt(&runtime, "task-turso-parent"),
+            txt(&runtime, "B-vm:Verify offline WAL signature"),
+            vec_obj(&runtime, &[]),
+            flag(&runtime, false),
+        ],
+    );
+    let branch_out = runtime
+        .call_rooted(&scheme_ctrl_dispatch, &branch_in)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let ctrl_b3_branched = branch_out.element(0).unwrap();
+
+    // 3. Export FleetAuditCapsule vector & verify all non-authorizing security invariants!
+    let audit3 = runtime
+        .call_rooted(&scheme_ctrl_audit, &ctrl_b3_branched)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    assert_eq!(read_fx(audit3.element(0).unwrap()), 3); // 3 active actors (parent + sib2 + reopened sib)
+    assert_eq!(read_fx(audit3.element(1).unwrap()), 0); // 0 archived actors
+    assert_eq!(read_fx(audit3.element(2).unwrap()), 0); // 0 peeks
+    assert_eq!(
+        audit3.element(5).unwrap().as_ref().scalar().unwrap(),
+        SchemeScalar::Boolean(false)
+    ); // favored-path-collapsed?
+    assert_eq!(
+        audit3.element(6).unwrap().as_ref().scalar().unwrap(),
+        SchemeScalar::Boolean(false)
+    ); // authenticates-evidence?
+    assert_eq!(
+        audit3.element(7).unwrap().as_ref().scalar().unwrap(),
+        SchemeScalar::Boolean(false)
+    ); // authorizes-effect?
+
+    // 4. Checkpoint post-reopen Fleet via `SPC o f c` -> REAL disk Turso WAL -> Drop -> Boot #4!
+    let cp3_in = vec_obj(
+        &runtime,
+        &[
+            ctrl_b3_branched,
+            sym(&runtime, "task-fleet-checkpoint"),
+            flag(&runtime, false),
+            txt(&runtime, "fleet:turso:boot3-after-reopen"),
+            vec_obj(&runtime, &[]),
+            flag(&runtime, false),
+        ],
+    );
+    let cp3_out = runtime
+        .call_rooted(&scheme_ctrl_dispatch, &cp3_in)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let cp3_effs = cp3_out
+        .element(2)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    assert_eq!(cp3_effs.len(), 1);
+    let put3_rcpts = rt_tokio.block_on(run_atomic_effect_batch(
+        Arc::clone(&turso_sub3),
+        vec![decode_effect(cp3_effs.element(0).unwrap())],
+    ));
+    assert!(matches!(
+        put3_rcpts.as_slice(),
+        [AtomicEffectReceipt::CasStored(_)]
+    ));
+    drop(turso_sub3);
+
+    // Boot #4: Reopen REAL disk Turso SQLite WAL, restore Fleet, confirm all 3 active actors & invariants!
+    let turso_cfg4 = marlin_agent_storage::TursoAgentStorageConfig {
+        path: tmp_dir.path().join("gerbil-vm-fleet.db"),
+        optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvcc,
+        batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent,
+    };
+    let storage4 = rt_tokio
+        .block_on(marlin_agent_storage::TursoAgentStorage::open_local(
+            turso_cfg4,
+        ))
+        .expect("reopen turso boot #4");
+    let turso_sub4 = Arc::new(TursoLeafSubstrate::new(storage4));
+    let get4_rcpts = rt_tokio.block_on(run_atomic_effect_batch(
+        Arc::clone(&turso_sub4),
+        vec![AtomicEffect::CasGet(CasGetEffectPayload {
+            effect_id: "restore-fleet-boot4".to_owned(),
+            key: "fleet:turso:boot3-after-reopen".to_owned(),
+        })],
+    ));
+    let hit4 = get4_rcpts.into_iter().next().unwrap();
+    assert!(matches!(hit4, AtomicEffectReceipt::CasHit(_)));
+    let restored_fleet4 = runtime
+        .call_rooted(&scheme_fleet_restore, &encode_receipt(&runtime, &hit4))
+        .unwrap();
+    let ctrl_b4 = runtime
+        .call_rooted(
+            &scheme_ctrl_open,
+            &vec_obj(&runtime, &[restored_fleet4, sym(&runtime, "L3")]),
+        )
+        .unwrap();
+    let audit4 = runtime
+        .call_rooted(&scheme_ctrl_audit, &ctrl_b4)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    assert_eq!(read_fx(audit4.element(0).unwrap()), 3);
+    assert_eq!(read_fx(audit4.element(1).unwrap()), 0);
+    assert_eq!(
+        audit4.element(5).unwrap().as_ref().scalar().unwrap(),
+        SchemeScalar::Boolean(false)
+    );
+    assert_eq!(
+        audit4.element(6).unwrap().as_ref().scalar().unwrap(),
+        SchemeScalar::Boolean(false)
+    );
+    assert_eq!(
+        audit4.element(7).unwrap().as_ref().scalar().unwrap(),
+        SchemeScalar::Boolean(false)
+    );
 }
