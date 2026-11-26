@@ -337,6 +337,12 @@ pub enum GovernanceFactAction {
     Retract {
         subject: String,
     },
+    RegisterDerivation {
+        derivation_id: String,
+        policy_id: String,
+        subject_premises: Vec<String>,
+        parent_derivations: Vec<String>,
+    },
     CheckCedar {
         actor: String,
         action: String,
@@ -375,6 +381,23 @@ impl GovernanceFactAction {
             ),
             Self::Declassify { entry } => ("governance-declassify", Some(entry.clone())),
             Self::Retract { subject } => ("governance-retract", Some(subject.clone())),
+            Self::RegisterDerivation {
+                derivation_id,
+                policy_id,
+                subject_premises,
+                parent_derivations,
+            } => {
+                let premises = subject_premises.join(",");
+                let parents = if parent_derivations.is_empty() {
+                    "none".to_owned()
+                } else {
+                    parent_derivations.join(",")
+                };
+                (
+                    "governance-register-derivation",
+                    Some(format!("{derivation_id} {policy_id} {premises} {parents}")),
+                )
+            }
             Self::CheckCedar {
                 actor,
                 action,
@@ -907,6 +930,32 @@ mod tests {
             }
             .to_wire_command(),
             ("governance-retract", Some("claim-1".to_owned()))
+        );
+        assert_eq!(
+            GovernanceFactAction::RegisterDerivation {
+                derivation_id: "D-TOKEN".to_owned(),
+                policy_id: "pol.cert".to_owned(),
+                subject_premises: vec!["token-cert-v1".to_owned()],
+                parent_derivations: Vec::new(),
+            }
+            .to_wire_command(),
+            (
+                "governance-register-derivation",
+                Some("D-TOKEN pol.cert token-cert-v1 none".to_owned())
+            )
+        );
+        assert_eq!(
+            GovernanceFactAction::RegisterDerivation {
+                derivation_id: "D-PLAN".to_owned(),
+                policy_id: "pol.plan".to_owned(),
+                subject_premises: vec!["workspace-ok".to_owned(), "scope-ok".to_owned()],
+                parent_derivations: vec!["D-TOKEN".to_owned()],
+            }
+            .to_wire_command(),
+            (
+                "governance-register-derivation",
+                Some("D-PLAN pol.plan workspace-ok,scope-ok D-TOKEN".to_owned())
+            )
         );
         assert_eq!(
             GovernanceFactAction::CheckCedar {

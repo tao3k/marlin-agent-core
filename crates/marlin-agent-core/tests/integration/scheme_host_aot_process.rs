@@ -1381,3 +1381,272 @@ async fn linked_aot_live_governance_fact_steering_taint_sanitize_and_mgf1_transi
 
     stop_host(child2).await;
 }
+
+/// Real two-binary Linked-AOT OS-process E2E proving Bi-Temporal Truth Maintenance
+/// dynamic derivation DAG persistence across OS restart + Shared-Context declassification:
+/// - Boot #1 (`clean`): register 2-level derivation DAG (`D-TOKEN` -> `D-PLAN`),
+///   inject cross-scope `context-flow` violation (`admitted=false`, breaker latched),
+///   declassify (`rejection_reasons=[]`, breaker latch preserved), MFA step-up re-arm;
+/// - `SIGTERM` clean shutdown;
+/// - Boot #2 (`clean`): restore MGF1 v2 derivation DAG from Turso CAS in `<= 2500ms`,
+///   send ONLY `gov retract token-cert-v1`, and prove transitive Bi-Temporal retraction
+///   invalidates BOTH `D-TOKEN` AND dependent `D-PLAN`.
+#[tokio::test]
+async fn linked_aot_bitemporal_derivation_dag_and_context_declassification_survive_os_restart() {
+    let explicit_ctl = std::env::var_os("MARLIN_SCHEME_CTL_BIN").map(std::path::PathBuf::from);
+    let require_ctl = explicit_ctl.is_some()
+        || std::env::var("CI")
+            .ok()
+            .is_some_and(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes"));
+    let ctl_bin = explicit_ctl
+        .or_else(|| {
+            std::path::Path::new(env!("CARGO_BIN_EXE_marlin-scheme-host-aot"))
+                .parent()
+                .map(|dir| dir.join("marlin-scheme-ctl"))
+        })
+        .filter(|p| p.is_file());
+    let Some(ctl_bin) = ctl_bin else {
+        assert!(
+            !require_ctl,
+            "strict Linked-AOT Bi-Temporal CTL E2E enabled (CI or MARLIN_SCHEME_CTL_BIN set), but marlin-scheme-ctl binary was not found"
+        );
+        return;
+    };
+
+    let tmp_dir = tempfile::tempdir().expect("tempdir for bitemporal dag test");
+    let db_path = tmp_dir.path().join("bitemporal-dag-cas.db");
+    let bearer_token = "linked-aot-bitemporal-token-m20";
+
+    let spawn_clean_aot = || {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_marlin-scheme-host-aot"));
+        cmd.env("MARLIN_SCHEME_DIR", "/nonexistent-aot-must-not-read")
+            .env("MARLIN_BRIDGE_ADDR", "127.0.0.1:0")
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .env("MARLIN_BRIDGE_TURSO_PATH", &db_path)
+            .env("MARLIN_SCHEME_GOVERNANCE_MODE", "clean")
+            .env("MARLIN_SCHEME_BREAKER_BUDGET", "32")
+            .env_remove("MARLIN_SCHEME_FLEET_CHECKPOINT_KEY")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true);
+        cmd
+    };
+
+    // -------------------------------------------------------------------------
+    // Boot #1: Register Bi-Temporal DAG (`D-TOKEN` -> `D-PLAN`) + Context Flow / Declassify
+    // -------------------------------------------------------------------------
+    let mut child1 = spawn_clean_aot().spawn().expect("spawn bitemporal boot1");
+    let mut lines1 = BufReader::new(child1.stdout.take().unwrap()).lines();
+    let mut boot1 = None;
+    let addr1 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), lines1.next_line())
+            .await
+            .expect("linked-aot bitemporal boot1 MUST become READY within 15s")
+            .unwrap()
+            .expect("aot bitemporal boot1 exited early");
+        if line.starts_with("GOVERNANCE_HOST_BOOT ") {
+            boot1 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    let boot1_line = boot1.expect("expected GOVERNANCE_HOST_BOOT on bitemporal boot1");
+    assert!(
+        boot1_line.contains("mode=clean") && boot1_line.contains("admitted=true"),
+        "unexpected bitemporal boot1 line: {boot1_line}"
+    );
+    let ep1 = format!("http://{addr1}");
+
+    // 1. Register 2-level Bi-Temporal derivation DAG: `D-TOKEN` (premise: `token-cert-v1`) -> `D-PLAN`.
+    let reg1 = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &[
+            "gov",
+            "register-derivation",
+            "D-TOKEN",
+            "pol.cert",
+            "token-cert-v1",
+            "none",
+        ],
+    )
+    .await;
+    assert_eq!(reg1["admitted"], true);
+    let reg2 = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &[
+            "gov",
+            "register-derivation",
+            "D-PLAN",
+            "pol.plan",
+            "workspace-ok",
+            "D-TOKEN",
+        ],
+    )
+    .await;
+    assert_eq!(reg2["admitted"], true);
+    let _ = poll_ctl_governance(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        "derivations-registered",
+        |g| {
+            g["admitted"] == true
+                && g["last_event_note"] == "registered bi-temporal derivation D-PLAN (pol.plan)"
+        },
+    )
+    .await;
+
+    // 2. Inject cross-scope shared-context violation (`private` -> `external`):
+    //    Scheme ASCENT MUST reject (`admitted=false`) and trip the execution breaker.
+    let flow = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &[
+            "gov",
+            "context-flow",
+            "payroll-csv",
+            "private",
+            "webhook-out",
+            "external",
+        ],
+    )
+    .await;
+    assert_eq!(flow["admitted"], true);
+    let gov_flow_denied =
+        poll_ctl_governance(&ctl_bin, &ep1, bearer_token, "context-flow-denied", |g| {
+            g["admitted"] == false
+                && g["breaker_tripped"] == true
+                && g["rejection_reasons"]
+                    .as_array()
+                    .is_some_and(|arr| !arr.is_empty())
+                && !g["rearm_gate_id"].as_str().unwrap_or("").is_empty()
+        })
+        .await;
+    assert_eq!(gov_flow_denied["admitted"], false);
+
+    // 3. Declassify `payroll-csv`: clears ASCENT rejection_reasons while preserving the
+    //    fail-closed breaker latch until verified human MFA Step-Up approves the re-arm gate.
+    let decl = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &["gov", "declassify", "payroll-csv"],
+    )
+    .await;
+    assert_eq!(decl["admitted"], true);
+    let gov_declassified =
+        poll_ctl_governance(&ctl_bin, &ep1, bearer_token, "context-declassified", |g| {
+            g["last_event_note"] == "declassified shared context entry payroll-csv"
+                && g["rejection_reasons"].as_array().is_some_and(Vec::is_empty)
+        })
+        .await;
+    assert_eq!(
+        gov_declassified["breaker_tripped"], true,
+        "declassifying an entry must NOT silently bypass a tripped breaker latch"
+    );
+    let rearm_gate = gov_declassified["rearm_gate_id"]
+        .as_str()
+        .expect("rearm_gate_id after declassify")
+        .to_owned();
+    let rearm_resp = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &[
+            "approve",
+            &rearm_gate,
+            "stepup-verified:actor=alice:acr=urn:ietf:params:oauth:acr:mfa",
+        ],
+    )
+    .await;
+    assert_eq!(rearm_resp["claimed"], true);
+    let _ = poll_ctl_governance(&ctl_bin, &ep1, bearer_token, "declassified-rearmed", |g| {
+        g["breaker_tripped"] == false && g["admitted"] == true
+    })
+    .await;
+
+    stop_host(child1).await;
+
+    // -------------------------------------------------------------------------
+    // Boot #2: Fresh OS process restores MGF1 v2 Bi-Temporal DAG from Turso CAS!
+    // Retracting ONLY `token-cert-v1` MUST cascade-retract BOTH `D-TOKEN` AND `D-PLAN`!
+    // -------------------------------------------------------------------------
+    let t2 = Instant::now();
+    let mut child2 = spawn_clean_aot().spawn().expect("spawn bitemporal boot2");
+    let mut lines2 = BufReader::new(child2.stdout.take().unwrap()).lines();
+    let mut boot2 = None;
+    let addr2 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), lines2.next_line())
+            .await
+            .expect("linked-aot bitemporal boot2 MUST become READY within 15s")
+            .unwrap()
+            .expect("aot bitemporal boot2 exited early");
+        if line.starts_with("GOVERNANCE_HOST_BOOT ") {
+            boot2 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    let dag_boot2_ms = t2.elapsed().as_millis();
+    let boot2_budget_ms: u128 = std::env::var("MARLIN_AOT_BOOT2_BUDGET_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u128>().ok())
+        .filter(|ms| *ms > 0)
+        .unwrap_or(2_500);
+    eprintln!(
+        "LINKED_AOT_BITEMPORAL_BOOT2_MS={dag_boot2_ms} LINKED_AOT_BOOT2_BUDGET_MS={boot2_budget_ms}"
+    );
+    assert!(
+        dag_boot2_ms <= boot2_budget_ms,
+        "Linked-AOT Bi-Temporal warm restart regressed: {dag_boot2_ms}ms > {boot2_budget_ms}ms"
+    );
+    let boot2_line = boot2.expect("expected GOVERNANCE_HOST_BOOT on bitemporal boot2");
+    assert!(
+        boot2_line.contains("mode=restored") && boot2_line.contains("admitted=true"),
+        "unexpected bitemporal boot2 line: {boot2_line}"
+    );
+    let ep2 = format!("http://{addr2}");
+
+    // 4. Send ONLY `gov retract token-cert-v1` (ZERO register-derivation sent on Boot #2!).
+    let retract_resp = run_ctl_json(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        &["gov", "retract", "token-cert-v1"],
+    )
+    .await;
+    assert_eq!(retract_resp["admitted"], true);
+
+    let gov_retracted = poll_ctl_governance(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        "bitemporal-cascade-retraction",
+        |g| {
+            g["retracted_conclusions"].as_array().is_some_and(|arr| {
+                arr.iter().any(|v| v == "D-TOKEN") && arr.iter().any(|v| v == "D-PLAN")
+            })
+        },
+    )
+    .await;
+    assert!(
+        gov_retracted["retracted_conclusions"]
+            .as_array()
+            .is_some_and(
+                |arr| arr.iter().any(|v| v == "D-TOKEN") && arr.iter().any(|v| v == "D-PLAN")
+            ),
+        "bi-temporal retraction must cascade across OS restart to D-TOKEN and D-PLAN: {gov_retracted}"
+    );
+    eprintln!("LINKED_AOT_BITEMPORAL_DAG_E2E=VERIFIED");
+
+    stop_host(child2).await;
+}

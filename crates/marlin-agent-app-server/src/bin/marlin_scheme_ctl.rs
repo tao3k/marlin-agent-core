@@ -13,7 +13,7 @@
 //!                                                  Poll until host is reachable and authenticated (fails fast on auth denial)
 //!   status                                         Fetch unified live tabs + audit + governance + gates snapshot
 //!   governance                                     Show live Scheme Governance Authority snapshot (breaker/ASCENT/Cedar/proofs)
-//!   gov <subaction> [args...]                      Apply live incremental governance fact mutation or compiled Cedar probe (eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|check-cedar)
+//!   gov <subaction> [args...]                      Apply live incremental governance fact mutation, Bi-Temporal derivation DAG registration, or compiled Cedar probe (eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|register-derivation|check-cedar)
 //!   estop [actor:reason]                           Trigger live operator E-Stop via UiWorkbenchService (`governance-estop`)
 //!   records [--project ID] [--kind PREFIX]         Query read-only ProjectionQueryService records (SecretVisibility::Denied)
 //!   open-workbench [session-id]                    Open live UiWorkbenchService session snapshot
@@ -740,9 +740,22 @@ fn parse_wait_ready_flags(args: &[String]) -> Result<WaitReadyFlags, String> {
     })
 }
 
+fn parse_csv_arg(raw: &str) -> Vec<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "-" || trimmed.eq_ignore_ascii_case("none") {
+        return Vec::new();
+    }
+    trimmed
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 fn parse_gov_fact_action(args: &[String]) -> Result<GovernanceFactAction, String> {
     let sub = args.first().map(String::as_str).ok_or_else(|| {
-        "usage: gov <eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|check-cedar> [args...]"
+        "usage: gov <eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|register-derivation|check-cedar> [args...]"
             .to_owned()
     })?;
     match sub {
@@ -785,6 +798,25 @@ fn parse_gov_fact_action(args: &[String]) -> Result<GovernanceFactAction, String
         "retract" if args.len() == 2 => Ok(GovernanceFactAction::Retract {
             subject: args[1].clone(),
         }),
+        "register-derivation" if args.len() == 4 || args.len() == 5 => {
+            let subject_premises = parse_csv_arg(&args[3]);
+            if subject_premises.is_empty() {
+                return Err(
+                    "register-derivation requires at least one non-empty subject premise"
+                        .to_owned(),
+                );
+            }
+            let parent_derivations = args
+                .get(4)
+                .map(|raw| parse_csv_arg(raw))
+                .unwrap_or_default();
+            Ok(GovernanceFactAction::RegisterDerivation {
+                derivation_id: args[1].clone(),
+                policy_id: args[2].clone(),
+                subject_premises,
+                parent_derivations,
+            })
+        }
         "check-cedar" if args.len() == 4 || args.len() == 5 => {
             let step_up_fresh = match args.get(4).map(String::as_str) {
                 None | Some("false") => false,
@@ -803,7 +835,7 @@ fn parse_gov_fact_action(args: &[String]) -> Result<GovernanceFactAction, String
             })
         }
         other => Err(format!(
-            "invalid gov subaction `{other}` or wrong arity (expected eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|check-cedar)"
+            "invalid gov subaction `{other}` or wrong arity (expected eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|register-derivation|check-cedar)"
         )),
     }
 }
@@ -1020,6 +1052,38 @@ mod tests {
                 step_up_fresh: true,
             }
         );
+        assert_eq!(
+            parse_gov_fact_action(&s(&[
+                "register-derivation",
+                "D-TOKEN",
+                "pol.cert",
+                "token-cert-v1",
+                "none",
+            ]))
+            .unwrap(),
+            GovernanceFactAction::RegisterDerivation {
+                derivation_id: "D-TOKEN".to_owned(),
+                policy_id: "pol.cert".to_owned(),
+                subject_premises: vec!["token-cert-v1".to_owned()],
+                parent_derivations: Vec::new(),
+            }
+        );
+        assert_eq!(
+            parse_gov_fact_action(&s(&[
+                "register-derivation",
+                "D-PLAN",
+                "pol.plan",
+                "workspace-ok,scope-ok",
+                "D-TOKEN",
+            ]))
+            .unwrap(),
+            GovernanceFactAction::RegisterDerivation {
+                derivation_id: "D-PLAN".to_owned(),
+                policy_id: "pol.plan".to_owned(),
+                subject_premises: vec!["workspace-ok".to_owned(), "scope-ok".to_owned()],
+                parent_derivations: vec!["D-TOKEN".to_owned()],
+            }
+        );
         assert!(parse_gov_fact_action(&s(&["rearm", "alice"])).is_err());
         assert!(parse_gov_fact_action(&s(&["taint-edge", "a", "b", "bogus"])).is_err());
         assert!(parse_gov_fact_action(&s(&["delegate", "only-one"])).is_err());
@@ -1028,5 +1092,9 @@ mod tests {
             parse_gov_fact_action(&s(&["check-cedar", "alice", "run_tool", "ws", "maybe"]))
                 .is_err()
         );
+        assert!(
+            parse_gov_fact_action(&s(&["register-derivation", "D-BAD", "pol.x", "none"])).is_err()
+        );
+        assert!(parse_gov_fact_action(&s(&["register-derivation", "D-BAD", "pol.x"])).is_err());
     }
 }
