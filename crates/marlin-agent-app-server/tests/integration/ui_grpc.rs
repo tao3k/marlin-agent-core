@@ -12,6 +12,12 @@ use std::{
     time::Duration,
 };
 
+#[cfg(feature = "turso-host")]
+use marlin_agent_app_server::v1::{
+    CancelSessionTurnRequest, GetSessionTurnCancellationRequest, GetWorkbenchTabsRequest,
+    RegisterTaskActorRequest as V1RegisterTaskActorRequest, TaskActorScopeModeProto,
+    get_session_turn_cancellation_response::Evidence,
+};
 use marlin_agent_app_server::{
     AppServer, CompositeAtomicEffectExecutor, RegisterTaskActorRequest, TaskActorControlPlane,
     ui_grpc::{MyGoBridgeHost, SchemeOverlayProjection},
@@ -1111,5 +1117,170 @@ async fn marlin_mygo_host_binary_turso_wal_survives_real_os_process_restart() {
     assert_eq!(status.outcome, Some(SessionTurnOutcome::Completed as i32));
 
     drop(v1_client2);
+    stop_mygo_host_process(child2).await;
+}
+
+#[cfg(feature = "turso-host")]
+#[tokio::test]
+async fn marlin_mygo_host_binary_turso_cancellation_and_task_actor_tabs_survive_os_restart() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("mygo-host-s17.db");
+
+    // -------------------------------------------------------------------------
+    // OS Process Boot #1: Register Session-free TaskActor + mid-stream cancel
+    // -------------------------------------------------------------------------
+    let (child1, endpoint1) = spawn_mygo_host_process("gate-bin-s17-1", Some(&db_path)).await;
+    let mut client1 = V1AppServerClient::connect(endpoint1).await.unwrap();
+
+    // 1. Register a Session-free TaskActor over live HTTP/2 gRPC.
+    let reg = client1
+        .register_task_actor(auth_req(V1RegisterTaskActorRequest {
+            task_id: "task-os-s17".to_owned(),
+            title: "OS Restart Actor".to_owned(),
+            scope_mode: TaskActorScopeModeProto::Project as i32,
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .cursor
+        .expect("registered task actor cursor");
+    assert_eq!(reg.task_id, "task-os-s17");
+    assert_eq!(reg.fencing_epoch, 1);
+
+    let tabs1 = client1
+        .get_workbench_tabs(auth_req(GetWorkbenchTabsRequest {}))
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(tabs1.tabs.iter().any(|t| t.id == "index"));
+    assert!(
+        tabs1
+            .tabs
+            .iter()
+            .any(|t| t.id == "task-os-s17" && t.fencing_epoch == 1)
+    );
+
+    // 2. Start a `[hold-after-chunk-1]` streaming turn, wait for chunk 1, then cancel!
+    client1
+        .open_session(auth_req(OpenSessionRequest {
+            session_id: "s17-cancel-sess".to_owned(),
+            mode: SessionOpenMode::Create as i32,
+        }))
+        .await
+        .unwrap();
+    let turn = client1
+        .start_session_turn(auth_req(StartSessionTurnRequest {
+            session_id: "s17-cancel-sess".to_owned(),
+            user_text: "[hold-after-chunk-1] cancel across OS restart".to_owned(),
+            after_turn: 0,
+            submission_id: "sub-s17-cancel-1".to_owned(),
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .turn
+        .expect("started held turn");
+
+    let mut events = client1
+        .watch_session_turn(auth_req(WatchSessionTurnRequest {
+            turn: Some(turn.clone()),
+            after_event_id: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    let mut saw_chunk1 = false;
+    while let Some(ev) = tokio::time::timeout(Duration::from_secs(5), events.message())
+        .await
+        .expect("timed out waiting for chunk 1")
+        .unwrap()
+    {
+        if let Some(session_turn_event::Event::TextCheckpoint(cp)) = ev.event {
+            assert_eq!(cp.text, "[marlin-core] ");
+            saw_chunk1 = true;
+            break;
+        }
+    }
+    assert!(saw_chunk1, "expected durable chunk 1 before cancelling");
+
+    let cancelled = client1
+        .cancel_session_turn(auth_req(CancelSessionTurnRequest {
+            turn: Some(turn.clone()),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(cancelled.turn, Some(turn.clone()));
+    assert_eq!(cancelled.outcome(), SessionTurnOutcome::RemoteUncertain);
+    let receipt = cancelled.runtime.expect("runtime shutdown receipt");
+    assert!(receipt.completed && receipt.cancellation_requested);
+
+    let cancel_check1 = client1
+        .get_session_turn_cancellation(auth_req(GetSessionTurnCancellationRequest {
+            turn: Some(turn.clone()),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(cancel_check1.outcome(), SessionTurnOutcome::RemoteUncertain);
+    assert_eq!(cancel_check1.evidence, Some(Evidence::Recorded(receipt)));
+
+    drop(events);
+    drop(client1);
+    stop_mygo_host_process(child1).await;
+
+    // -------------------------------------------------------------------------
+    // OS Process Boot #2: Fresh binary process on the EXACT SAME Turso WAL path
+    // -------------------------------------------------------------------------
+    let (child2, endpoint2) = spawn_mygo_host_process("gate-bin-s17-2", Some(&db_path)).await;
+    let mut client2 = V1AppServerClient::connect(endpoint2).await.unwrap();
+
+    // 1. Session-free TaskActor tabs survived OS process restart via Turso WAL!
+    let tabs2 = client2
+        .get_workbench_tabs(auth_req(GetWorkbenchTabsRequest {}))
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(tabs2.tabs.iter().any(|t| t.id == "index"));
+    assert!(
+        tabs2
+            .tabs
+            .iter()
+            .any(|t| t.id == "task-os-s17" && t.fencing_epoch == 1)
+    );
+
+    // 2. Authoritative cancellation receipt survived OS process restart & retries idempotently!
+    let cancel_check2 = client2
+        .get_session_turn_cancellation(auth_req(GetSessionTurnCancellationRequest {
+            turn: Some(turn.clone()),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(cancel_check2.outcome(), SessionTurnOutcome::RemoteUncertain);
+    assert_eq!(cancel_check2.evidence, Some(Evidence::Recorded(receipt)));
+
+    let retry_cancel = client2
+        .cancel_session_turn(auth_req(CancelSessionTurnRequest {
+            turn: Some(turn.clone()),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(retry_cancel.outcome(), SessionTurnOutcome::RemoteUncertain);
+    assert_eq!(retry_cancel.runtime, Some(receipt));
+
+    let status2 = client2
+        .get_session_turn_status(auth_req(GetSessionTurnStatusRequest { turn: Some(turn) }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(status2.recovery_state(), SessionRecoveryState::Unresolved);
+    assert_eq!(
+        status2.outcome,
+        Some(SessionTurnOutcome::RemoteUncertain as i32)
+    );
+
+    drop(client2);
     stop_mygo_host_process(child2).await;
 }
