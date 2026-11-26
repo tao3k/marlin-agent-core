@@ -67,9 +67,13 @@
                  relational-admit
                  relational-solve
                  relational-query-name)
+        (only-in :gerbil-ascent/program/session
+                 gerbil-ascent-open-session
+                 gerbil-ascent-session-run
+                 gerbil-ascent-session-replace-source!)
         (only-in :gerbil-ascent/applications/taint-paths
                  gerbil-ascent-taint-path-program)
-        ;; 3. agentic-ai-lab Bi-Temporal Causality + gerbil-ascent temporal lens
+        ;; 3. agentic-ai-lab Bi-Temporal Causality + Truth Maintenance + gerbil-ascent temporal lens
         (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/objects
                  agentic-ai-lab-causal-event
                  agentic-ai-lab-temporal-observation)
@@ -77,7 +81,19 @@
                  agentic-ai-lab-causal-event-graph
                  agentic-ai-lab-causal-cut)
         (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/time/objects
-                 agentic-ai-lab-temporal-instant)
+                 agentic-ai-lab-temporal-instant
+                 agentic-ai-lab-temporal-interval)
+        (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/revisions/objects
+                 agentic-ai-lab-temporal-evidence-revision)
+        (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/revisions/funs
+                 agentic-ai-lab-temporal-evidence-journal
+                 agentic-ai-lab-temporal-evidence-as-of)
+        (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/truth-maintenance/objects
+                 agentic-ai-lab-temporal-derivation)
+        (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/truth-maintenance/funs
+                 agentic-ai-lab-temporal-dependency-index
+                 agentic-ai-lab-temporal-reverse-dependency-plan-from-cuts
+                 agentic-ai-lab-temporal-reverse-dependency-plan-from-projections)
         (only-in :tao3k/agentic-ai-lab/modules/temporal-causality/ascent-exchange
                  agentic-ai-lab-ascent-event-binding
                  agentic-ai-lab-ascent-exchange
@@ -105,14 +121,17 @@
         make-marlin-governance-profile
         compose-governance-profiles
         evaluate-marlin-governance-profile
-        ;; Layer 2: ASCENT Higher-Order Fixpoint & Stratified Taint/Revocation Reasoning
+        ;; Layer 2: ASCENT Higher-Order Fixpoint, Stratified Taint & Incremental Retraction
         solve-higher-order-transitive-closure
         solve-ascent-camel-taint-paths
         solve-ascent-delegation-and-scope-governance
-        ;; Layer 3: Bi-Temporal Causality Governance Cuts & Tamper-Evident Replay
+        run-ascent-incremental-retraction-session
+        ;; Layer 3: Bi-Temporal Causality Cuts & Truth Maintenance Reverse-Dependency Blast Radius
         make-temporal-governance-event
         evaluate-temporal-causal-governance
         verify-temporal-causal-governance
+        make-governance-evidence-revision
+        evaluate-bitemporal-truth-maintenance
         ;; Layer 4: Strict One-Shot AuthorizedEffectToken Mediation
         mint-governed-effect-token
         mediate-governed-effect-token
@@ -120,6 +139,8 @@
         synthesize-cedar-policies-from-ascent
         synthesize-marlin-cedar-authority-snapshot
         make-marlin-cedar-effect-request
+        ;; Layer 6: Zero-JSON Rooted Gambit Heap Vector Projection (Scheme -> Rust C-ABI)
+        marlin-higher-order-governance-project-vector
         ;; Contract-validated POO Higher-Order Governance Bundle
         HigherOrderGovernanceContract
         HigherOrderGovernancePolicy)
@@ -369,6 +390,44 @@
           breaker-blocked-tools: blocked-tools
           proof-digest: digest-val))))
 
+;;; Layer 2B: Live ASCENT Incremental Session Deletion / Premise Withdrawal.
+;;; Opens one stateful ASCENT session over `initial-edges` -> solves cut 1 ->
+;;; incrementally replaces the edge relation with `revised-edges` via
+;;; `gerbil-ascent-session-replace-source!` -> solves cut 2.
+;;; Computes exact `revoked-reach` (pairs valid in cut 1 that lost all grounded
+;;; support in cut 2) and `surviving-reach` (pairs retaining an independent path).
+(def (run-ascent-incremental-retraction-session initial-edges revised-edges)
+  (let ((x (gerbil-ascent-variable 'x))
+        (y (gerbil-ascent-variable 'y))
+        (z (gerbil-ascent-variable 'z)))
+    (def (a name . terms) (gerbil-ascent-atom name terms))
+    (let* ((prog
+            (gerbil-ascent-program
+             (list (gerbil-ascent-relation 'auth_edge 2 initial-edges)
+                   (gerbil-ascent-relation 'auth_reach 2 '()))
+             (list (gerbil-ascent-rule (list (a 'auth_reach x y))
+                                       (list (a 'auth_edge x y)))
+                   (gerbil-ascent-rule (list (a 'auth_reach x z))
+                                       (list (a 'auth_reach x y) (a 'auth_edge y z))))
+             1024 4096 8192))
+           (session (gerbil-ascent-open-session prog))
+           (res1 (gerbil-ascent-session-run session))
+           (before-rows ((.ref res1 'rows-of) 'auth_reach))
+           (_ (gerbil-ascent-session-replace-source! session 'auth_edge revised-edges))
+           (res2 (gerbil-ascent-session-run session))
+           (after-rows ((.ref res2 'rows-of) 'auth_reach))
+           (revoked-rows (filter (lambda (r) (not (member r after-rows))) before-rows))
+           (surviving-rows (filter (lambda (r) (and (member r after-rows) #t)) before-rows))
+           (digest-val (sha256-digest
+                        (list 'marlin.ascent.incremental-retraction.v1
+                              before-rows after-rows revoked-rows))))
+      (.o kind: 'marlin.ascent.incremental-retraction-receipt.v1
+          before-reach: before-rows
+          after-reach: after-rows
+          revoked-reach: revoked-rows
+          surviving-reach: surviving-rows
+          proof-digest: digest-val))))
+
 ;; ===========================================================================
 ;; Layer 3: Bi-Temporal Causality Governance Cuts (valid-time x knowledge-time)
 ;; ===========================================================================
@@ -471,6 +530,94 @@
      candidate-exchange
      (.ref receipt 'root-event-id)
      (.ref receipt 'answer))))
+
+;;; Layer 3B: Bi-Temporal Evidence Journal & Truth Maintenance Reverse-Dependency
+;;; Blast-Radius Invalidation (`agentic-ai-lab/modules/temporal-causality/{revisions,truth-maintenance}`).
+;;;
+;;; Separates admission-time (`as-of`) from validity interval (`valid-start..valid-end`):
+;;;   - `'assert`:  introduces a governed premise valid over `[valid-start, valid-end]`
+;;;   - `'correct`: supersedes a predecessor revision with updated content/interval
+;;;   - `'retract`: withdraws a predecessor revision (valid-interval = #f, content = #f)
+(def (make-governance-evidence-revision rev-id subject-id op-sym pred-id
+                                        admission-pos
+                                        valid-start: (valid-start 0)
+                                        valid-end: (valid-end 100)
+                                        content-id: (content-id #f))
+  (let ((adm-inst (agentic-ai-lab-temporal-instant
+                   (string-append rev-id "-adm") "admission" admission-pos
+                   "marlin-gov-journal" 'observed))
+        (valid-iv
+         (if (eq? op-sym 'retract)
+           #f
+           (agentic-ai-lab-temporal-interval
+            (string-append rev-id "-valid")
+            (agentic-ai-lab-temporal-instant
+             (string-append rev-id "-vs") "valid" valid-start "marlin-gov-journal" 'observed)
+            (agentic-ai-lab-temporal-instant
+             (string-append rev-id "-ve") "valid" valid-end "marlin-gov-journal" 'observed)
+            #t #t))))
+    (agentic-ai-lab-temporal-evidence-revision
+     rev-id subject-id op-sym pred-id adm-inst valid-iv
+     (if (eq? op-sym 'retract) #f (or content-id (string-append "content:" rev-id))))))
+
+;;; Evaluates reverse-dependency invalidation over a bi-temporal evidence journal:
+;;;   - `derivation-specs`: list of `(list deriv-id policy-id subject-premises conclusion-premises)`
+;;;   - Computes `previous` snapshot at `previous-as-of` / `valid-at`
+;;;   - Builds `agentic-ai-lab-temporal-dependency-index` pinned to `previous` cut & projection
+;;;   - Computes `cut-plan` from `previous-as-of` -> `revised-as-of` (exact premise-delta blast radius!)
+;;;   - Optionally computes `reprojection-plan` if `revised-valid-at` is provided (`'valid-time-reprojection`)
+(def (evaluate-bitemporal-truth-maintenance
+      journal-id revisions derivation-specs
+      previous-as-of-pos revised-as-of-pos valid-at-pos
+      revised-valid-at-pos: (revised-valid-at-pos #f))
+  (let* ((journal (agentic-ai-lab-temporal-evidence-journal journal-id "admission" revisions))
+         (prev-as-of (agentic-ai-lab-temporal-instant
+                      "cut-prev" "admission" previous-as-of-pos "marlin-gov" 'observed))
+         (rev-as-of (agentic-ai-lab-temporal-instant
+                     "cut-rev" "admission" revised-as-of-pos "marlin-gov" 'observed))
+         (val-inst (agentic-ai-lab-temporal-instant
+                    "valid-at" "valid" valid-at-pos "marlin-gov" 'observed))
+         (prev-snap (agentic-ai-lab-temporal-evidence-as-of journal prev-as-of val-inst))
+         (rev-snap (agentic-ai-lab-temporal-evidence-as-of journal rev-as-of val-inst))
+         (cut-d (.ref prev-snap 'cut-digest))
+         (proj-d (.ref prev-snap 'projection-digest))
+         (derivations
+          (map (lambda (spec)
+                 (agentic-ai-lab-temporal-derivation
+                  (car spec) cut-d proj-d (cadr spec) (caddr spec) (cadddr spec)))
+               derivation-specs))
+         (dep-index (agentic-ai-lab-temporal-dependency-index
+                     (string-append journal-id "/dep-index")
+                     cut-d proj-d #t derivations))
+         (cut-plan (agentic-ai-lab-temporal-reverse-dependency-plan-from-cuts
+                    dep-index journal prev-as-of rev-as-of val-inst))
+         (reproj-plan
+          (and revised-valid-at-pos
+               (let ((rev-val (agentic-ai-lab-temporal-instant
+                               "valid-at-revised" "valid" revised-valid-at-pos
+                               "marlin-gov" 'observed)))
+                 (agentic-ai-lab-temporal-reverse-dependency-plan-from-projections
+                  dep-index journal prev-as-of val-inst rev-val))))
+         (affected-vals (.ref cut-plan 'affected-conclusion-identities))
+         (retracted-vals (.ref rev-snap 'retracted-subject-identities))
+         (conflicted-vals (.ref rev-snap 'conflicted-subject-identities))
+         (outside-vals (.ref rev-snap 'outside-valid-subject-identities))
+         (digest-val (sha256-digest
+                      (list 'marlin.bitemporal-truth-maintenance.v1
+                            journal-id cut-d (.ref rev-snap 'cut-digest)
+                            affected-vals retracted-vals conflicted-vals outside-vals))))
+    (.o kind: 'marlin.bitemporal-truth-maintenance-receipt.v1
+        previous-snapshot: prev-snap
+        revised-snapshot: rev-snap
+        dependency-index: dep-index
+        invalidation-plan: cut-plan
+        reprojection-plan: reproj-plan
+        affected-conclusions: affected-vals
+        retracted-subjects: retracted-vals
+        conflicted-subjects: conflicted-vals
+        outside-valid-subjects: outside-vals
+        invalidation-digest: digest-val
+        runtime-executed?: #f)))
 
 ;; ===========================================================================
 ;; Layer 4: Strict One-Shot AuthorizedEffectToken Mediation
@@ -681,6 +828,190 @@
           runtime-executed?: #f))))
 
 ;; ===========================================================================
+;; Layer 6: Zero-JSON Rooted Gambit Heap Vector Projection (Scheme -> Rust C-ABI)
+;; ===========================================================================
+
+(def (scalar->sym v)
+  (cond ((symbol? v) v)
+        ((string? v) (string->symbol v))
+        (else (error "expected symbol or string in governance vector" v))))
+
+(def (scalar->str v)
+  (cond ((string? v) v)
+        ((symbol? v) (symbol->string v))
+        (else (error "expected string or symbol in governance vector" v))))
+
+(def (vec->pair-rows v)
+  (map (lambda (pair-vec)
+         (list (scalar->sym (vector-ref pair-vec 0))
+               (scalar->sym (vector-ref pair-vec 1))))
+       (vector->list v)))
+
+(def (vec->singleton-rows v)
+  (map (lambda (item) (list (scalar->sym item)))
+       (vector->list v)))
+
+;;; Evaluates the entire 5-layer Higher-Order Governance Plane from a single
+;;; zero-JSON 15-slot rooted Gambit Scheme input vector and returns a canonical
+;;; 14-slot rooted Scheme output vector consumed directly by Rust `marlin-gerbil-scheme`
+;;; and `marlin-agent-kernel::higher_order_bridge`:
+;;;
+;;; Input vector (15 slots):
+;;;   [0]  delegation_edges      : #(#(parent child) ...)
+;;;   [1]  revoked_actors        : #(actor ...)
+;;;   [2]  taint_edges           : #(#(from to) ...)
+;;;   [3]  taint_sources         : #(node ...)
+;;;   [4]  taint_sinks           : #(node ...)
+;;;   [5]  taint_sanitizers      : #(node ...)
+;;;   [6]  context_entries       : #(#(entry scope) ...)
+;;;   [7]  context_flows         : #(#(from to) ...)
+;;;   [8]  target_scopes         : #(#(node scope) ...)
+;;;   [9]  declassified_entries  : #(entry ...)
+;;;   [10] tripped_breakers      : #(breaker ...)
+;;;   [11] breaker_tools         : #(#(breaker tool) ...)
+;;;   [12] retracted_subjects    : #(subject-str ...)  (triggers Bi-Temporal Truth Maintenance!)
+;;;   [13] revocation_epoch      : fixnum (>= 1)
+;;;   [14] policy_revision       : fixnum (>= 1)
+;;;
+;;; Output vector (14 slots):
+;;;   [0]  schema_version        : 1
+;;;   [1]  admitted?             : bool
+;;;   [2]  revocation_epoch      : fixnum
+;;;   [3]  policy_revision       : fixnum
+;;;   [4]  assessment_digest     : "sha256:..."
+;;;   [5]  taint_proof_digest    : "sha256:..."
+;;;   [6]  fixpoint_proof_digest : "sha256:..."
+;;;   [7]  temporal_proof_digest : "sha256:..."
+;;;   [8]  invalidation_digest   : "sha256:..."
+;;;   [9]  rejection_reasons     : #(reason-str ...)
+;;;   [10] fenced_actors         : #(actor-str ...)
+;;;   [11] blocked_tools         : #(tool-str ...)
+;;;   [12] retracted_conclusions : #(derivation-id-str ...)
+;;;   [13] cedar_policies        : #(#(policy-id-str cedar-source-str) ...)
+(def (marlin-higher-order-governance-project-vector req-vec)
+  (unless (and (vector? req-vec) (= (vector-length req-vec) 15))
+    (error "higher-order governance request must be a 15-slot rooted vector" req-vec))
+  (let* ((del-edges (vec->pair-rows (vector-ref req-vec 0)))
+         (rev-actors (vec->singleton-rows (vector-ref req-vec 1)))
+         (taint-edges (vec->pair-rows (vector-ref req-vec 2)))
+         (taint-sources (vec->singleton-rows (vector-ref req-vec 3)))
+         (taint-sinks (vec->singleton-rows (vector-ref req-vec 4)))
+         (taint-sanitizers (vec->singleton-rows (vector-ref req-vec 5)))
+         (ctx-entries (vec->pair-rows (vector-ref req-vec 6)))
+         (ctx-flows (vec->pair-rows (vector-ref req-vec 7)))
+         (tgt-scopes (vec->pair-rows (vector-ref req-vec 8)))
+         (declass-entries (vec->singleton-rows (vector-ref req-vec 9)))
+         (tripped-brks (vec->singleton-rows (vector-ref req-vec 10)))
+         (brk-tools (vec->pair-rows (vector-ref req-vec 11)))
+         (retracted-subs (map scalar->str (vector->list (vector-ref req-vec 12))))
+         (rev-epoch (vector-ref req-vec 13))
+         (pol-rev (vector-ref req-vec 14))
+         ;; 1. Atomic POO Governance Profile assessment
+         (base-profile
+          (make-marlin-governance-profile
+           "marlin.profile.higher-order-vm" "1.0.0" "tao3k-security"
+           "tm.higher-order-vm"
+           (list (agentic-ai-lab-governance-threat
+                  "marlin.breaker.latch" 'critical 'mitigated
+                  (list (agentic-ai-lab-governance-precondition
+                         "marlin.breaker.latch.pre" #t "verified-by-quint"))
+                  mitigations: '("rust-execution-circuit-breaker")))))
+         (gov-receipt (evaluate-marlin-governance-profile base-profile (.o scene: 'vm-bridge)))
+         ;; 2. ASCENT CaMeL taint-path fixpoint
+         (taint-receipt (solve-ascent-camel-taint-paths
+                         taint-edges taint-sources taint-sinks taint-sanitizers))
+         ;; 3. ASCENT multi-hop delegation / 5-scope / breaker fixpoint
+         (fix-receipt (solve-ascent-delegation-and-scope-governance
+                       delegation-edges: del-edges
+                       revoked-actors: rev-actors
+                       context-entries: ctx-entries
+                       context-flows: ctx-flows
+                       target-scopes: tgt-scopes
+                       declassified-entries: declass-entries
+                       tripped-breakers: tripped-brks
+                       breaker-tools: brk-tools))
+         ;; 4. Bi-Temporal Causality cut
+         (temporal-receipt
+          (evaluate-temporal-causal-governance
+           (list (make-temporal-governance-event "E-AUTH" 'auth 0 '() 0 0)
+                 (make-temporal-governance-event "E-EXEC" 'exec 1 '("E-AUTH") 1 1))
+           "E-AUTH" 1 0 5 4 3
+           forbidden-event-syms: '(revoked)))
+         ;; 5. Bi-Temporal Truth Maintenance reverse-dependency blast radius
+         (base-revs
+          (list (make-governance-evidence-revision
+                 "rev-session-1" "human-session-alice" 'assert #f 1
+                 valid-start: 0 valid-end: 100)
+                (make-governance-evidence-revision
+                 "rev-channel-1" "channel-cleanliness" 'assert #f 1
+                 valid-start: 0 valid-end: 100)
+                (make-governance-evidence-revision
+                 "rev-public-1" "public-workspace-policy" 'assert #f 1
+                 valid-start: 0 valid-end: 100)))
+         (retract-revs
+          (filter-map
+           (lambda (subj)
+             (cond
+              ((equal? subj "human-session-alice")
+               (make-governance-evidence-revision
+                "rev-session-retract" "human-session-alice" 'retract "rev-session-1" 2))
+              ((equal? subj "channel-cleanliness")
+               (make-governance-evidence-revision
+                "rev-channel-retract" "channel-cleanliness" 'retract "rev-channel-1" 2))
+              (else #f)))
+           retracted-subs))
+         (tm-receipt
+          (evaluate-bitemporal-truth-maintenance
+           "marlin-vm-evidence-journal"
+           (append base-revs retract-revs)
+           '(("D-OBO-TICKET" "pol.obo" ("human-session-alice") ())
+             ("D-TOOL-EXEC" "pol.tool" ("channel-cleanliness") ("D-OBO-TICKET"))
+             ("D-PUBLIC-DOC" "pol.public" ("public-workspace-policy") ()))
+           1 2 10))
+         (retracted-conclusions (.ref tm-receipt 'affected-conclusions))
+         ;; 6. Cedar Authority Snapshot synthesis (fail-closed if ANY layer rejects)
+         (cedar-synth (synthesize-marlin-cedar-authority-snapshot
+                       "marlin.higher-order.vm-bridge"
+                       '("marlin.profile.higher-order-vm")
+                       gov-receipt taint-receipt fix-receipt temporal-receipt
+                       revocation-epoch: rev-epoch
+                       policy-revision: pol-rev))
+         (synth-policies (synthesize-cedar-policies-from-ascent fix-receipt))
+         (base-reasons (.ref cedar-synth 'rejection-reasons))
+         (all-reasons
+          (append (map symbol->string base-reasons)
+                  (if (pair? retracted-conclusions)
+                    '("bitemporal-premise-retracted")
+                    '())
+                  (if (pair? (.ref fix-receipt 'breaker-blocked-tools))
+                    '("ascent-breaker-blocked-tool")
+                    '())))
+         (admitted-final (and (.ref cedar-synth 'admitted?)
+                              (null? retracted-conclusions)
+                              (null? (.ref fix-receipt 'breaker-blocked-tools))))
+         (fenced-strs (map (lambda (r) (scalar->str (car r)))
+                           (.ref fix-receipt 'fenced-actors)))
+         (blocked-strs (map (lambda (r) (scalar->str (car r)))
+                            (.ref fix-receipt 'breaker-blocked-tools)))
+         (cedar-pairs (map (lambda (p) (vector (.ref p 'identity) (.ref p 'source)))
+                           synth-policies)))
+    (vector
+     1
+     admitted-final
+     rev-epoch
+     pol-rev
+     (.ref gov-receipt 'assessment-digest)
+     (.ref taint-receipt 'proof-digest)
+     (.ref fix-receipt 'proof-digest)
+     (.ref temporal-receipt 'proof-digest)
+     (.ref tm-receipt 'invalidation-digest)
+     (list->vector all-reasons)
+     (list->vector fenced-strs)
+     (list->vector blocked-strs)
+     (list->vector retracted-conclusions)
+     (list->vector cedar-pairs))))
+
+;; ===========================================================================
 ;; Contract-Validated Higher-Order Governance POO Scope
 ;; ===========================================================================
 
@@ -694,13 +1025,16 @@
                              solve-higher-order-closure: GovernanceProc
                              solve-camel-taint: GovernanceProc
                              solve-delegation-scope-fixpoint: GovernanceProc
+                             run-incremental-retraction: GovernanceProc
                              evaluate-temporal-cut: GovernanceProc
                              verify-temporal-cut: GovernanceProc
+                             evaluate-truth-maintenance: GovernanceProc
                              mint-effect-token: GovernanceProc
                              mediate-effect-token: GovernanceProc
                              synthesize-cedar-policies: GovernanceProc
                              synthesize-cedar-snapshot: GovernanceProc
-                             make-cedar-effect-request: GovernanceProc)))
+                             make-cedar-effect-request: GovernanceProc
+                             project-vector: GovernanceProc)))
 
 (def HigherOrderGovernancePolicy
   (validate HigherOrderGovernanceContract
@@ -710,10 +1044,13 @@
                 solve-higher-order-closure: solve-higher-order-transitive-closure
                 solve-camel-taint: solve-ascent-camel-taint-paths
                 solve-delegation-scope-fixpoint: solve-ascent-delegation-and-scope-governance
+                run-incremental-retraction: run-ascent-incremental-retraction-session
                 evaluate-temporal-cut: evaluate-temporal-causal-governance
                 verify-temporal-cut: verify-temporal-causal-governance
+                evaluate-truth-maintenance: evaluate-bitemporal-truth-maintenance
                 mint-effect-token: mint-governed-effect-token
                 mediate-effect-token: mediate-governed-effect-token
                 synthesize-cedar-policies: synthesize-cedar-policies-from-ascent
                 synthesize-cedar-snapshot: synthesize-marlin-cedar-authority-snapshot
-                make-cedar-effect-request: make-marlin-cedar-effect-request)))
+                make-cedar-effect-request: make-marlin-cedar-effect-request
+                project-vector: marlin-higher-order-governance-project-vector)))

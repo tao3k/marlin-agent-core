@@ -9,6 +9,7 @@ mod controller;
 mod driver;
 pub mod execution_breaker;
 pub mod governance_plane;
+pub mod higher_order_bridge;
 mod loop_machine;
 mod loop_program_controller;
 mod loop_program_execution;
@@ -42,6 +43,12 @@ pub use governance_plane::{
     GovernanceGateId, GovernancePlaneRejection, GovernancePrincipal, GovernanceProposalId,
     GovernanceTenantId, MultiTenantIsolationFence, PrivilegedHumanReceipt, SodProposalRecord,
     TenantExecutionTicket, TenantExecutionTicketId, TenantOutboxEntry, TenantOutboxEntryId,
+};
+pub use higher_order_bridge::{
+    CedarPolicyId, DerivationId, GovernanceProofDigest, GovernedSubjectName,
+    HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION, HigherOrderBridgeError,
+    HigherOrderGovernanceAdmissionGate, HigherOrderGovernanceProofEnvelope,
+    HigherOrderProofEpoch, HigherOrderProofSyncReceipt, SynthesizedCedarPolicy,
 };
 pub use loop_machine::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,

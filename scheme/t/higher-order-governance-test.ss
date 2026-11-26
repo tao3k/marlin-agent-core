@@ -252,4 +252,98 @@
           (check (.ref (.ref replay-med 'receipt) 'accepted?) => #f)
           (check (.ref (.ref replay-med 'receipt) 'code) => 'token-reuse)
           (check (hash-ref (.ref cedar-req 'runtime-projection) "schema_id")
-                 => "agentic-ai-lab.cedar-authorization-request.v1"))))))
+                 => "agentic-ai-lab.cedar-authorization-request.v1"))))
+
+    ;; -----------------------------------------------------------------------
+    ;; 7. Live ASCENT Incremental Session Deletion / Premise Withdrawal
+    ;; -----------------------------------------------------------------------
+    (test-case "gerbil-ascent incremental session retraction revokes unsupported grants while preserving alternate paths"
+      (let* ((initial '((human agent-a)
+                        (agent-a tool-exec)
+                        (human agent-backup)
+                        (agent-backup safe-read)
+                        (agent-a safe-read)))
+             ;; Retract the hop (human -> agent-a):
+             ;;   - (human -> tool-exec) loses its ONLY grounded path -> REVOKED!
+             ;;   - (human -> safe-read) retains alternate path via agent-backup -> SURVIVES!
+             (revised '((agent-a tool-exec)
+                        (human agent-backup)
+                        (agent-backup safe-read)
+                        (agent-a safe-read)))
+             (res (run-ascent-incremental-retraction-session initial revised)))
+        (check (and (member '(human tool-exec) (.ref res 'revoked-reach)) #t) => #t)
+        (check (and (member '(human safe-read) (.ref res 'surviving-reach)) #t) => #t)
+        (check (not (member '(human tool-exec) (.ref res 'after-reach))) => #t)))
+
+    ;; -----------------------------------------------------------------------
+    ;; 8. Bi-Temporal Truth Maintenance Reverse-Dependency Blast-Radius Invalidation
+    ;; -----------------------------------------------------------------------
+    (test-case "bi-temporal truth maintenance computes exact reverse-dependency blast radius on retraction & valid-time shift"
+      (let* ((revs
+              (list
+               (make-governance-evidence-revision
+                "r-sess-1" "human-session-alice" 'assert #f 1 valid-start: 0 valid-end: 50)
+               (make-governance-evidence-revision
+                "r-chan-1" "channel-cleanliness" 'assert #f 1 valid-start: 0 valid-end: 50)
+               (make-governance-evidence-revision
+                "r-pub-1" "public-workspace-policy" 'assert #f 1 valid-start: 0 valid-end: 50)
+               ;; At admission=2, human-session-alice is retracted!
+               (make-governance-evidence-revision
+                "r-sess-retract" "human-session-alice" 'retract "r-sess-1" 2)))
+             (derivs
+              '(("D-OBO-TICKET" "pol.obo" ("human-session-alice") ())
+                ("D-TOOL-EXEC" "pol.tool" ("channel-cleanliness") ("D-OBO-TICKET"))
+                ("D-PUBLIC-DOC" "pol.public" ("public-workspace-policy") ())))
+             (tm (evaluate-bitemporal-truth-maintenance
+                  "tm-gov-journal" revs derivs 1 2 10
+                  revised-valid-at-pos: 60)))
+        ;; Exact blast radius: D-OBO-TICKET & transitive child D-TOOL-EXEC invalidated, D-PUBLIC-DOC spared!
+        (check (.ref tm 'retracted-subjects) => '("human-session-alice"))
+        (check (.ref tm 'affected-conclusions) => '("D-OBO-TICKET" "D-TOOL-EXEC"))
+        ;; Shifting valid-at triggers full valid-time reprojection across all 3 derivations!
+        (check (.ref (.ref tm 'reprojection-plan) 'trigger) => 'valid-time-reprojection)
+        (check (length (.ref (.ref tm 'reprojection-plan) 'affected-conclusion-identities)) => 3)))
+
+    ;; -----------------------------------------------------------------------
+    ;; 9. Zero-JSON 14-Slot Rooted Gambit Vector Projection (Scheme -> Rust C-ABI)
+    ;; -----------------------------------------------------------------------
+    (test-case "zero-JSON 14-slot rooted governance vector projects taint, retraction, and Cedar policies"
+      (let* ((req-blocked
+              (vector
+               #(#(alice agent-sub))                    ;; [0] delegation_edges
+               #(alice)                                 ;; [1] revoked_actors
+               #(#(chat-ext shared-ctx) #(shared-ctx os-shell)) ;; [2] taint_edges
+               #(chat-ext)                              ;; [3] taint_sources
+               #(os-shell)                              ;; [4] taint_sinks
+               #()                                      ;; [5] taint_sanitizers
+               #() #() #() #()                          ;; [6..9] context
+               #() #()                                  ;; [10..11] breakers
+               #("human-session-alice")                 ;; [12] retracted_subjects
+               2                                        ;; [13] revocation_epoch
+               1))                                      ;; [14] policy_revision
+             (out-blocked (marlin-higher-order-governance-project-vector req-blocked))
+             (req-admitted
+              (vector
+               #(#(alice agent-sub))
+               #(alice)
+               #(#(chat-ext human-gate) #(human-gate os-shell))
+               #(chat-ext)
+               #(os-shell)
+               #(human-gate)
+               #() #() #() #()
+               #() #()
+               #()
+               3
+               1))
+             (out-admitted (marlin-higher-order-governance-project-vector req-admitted)))
+        (check (vector-length out-blocked) => 14)
+        (check (vector-ref out-blocked 0) => 1)
+        (check (vector-ref out-blocked 1) => #f)
+        (check (and (member "ascent-camel-taint-alert" (vector->list (vector-ref out-blocked 9))) #t) => #t)
+        (check (and (member "bitemporal-premise-retracted" (vector->list (vector-ref out-blocked 9))) #t) => #t)
+        (check (vector->list (vector-ref out-blocked 12)) => '("D-OBO-TICKET" "D-TOOL-EXEC"))
+        ;; Admitted vector passes while still exporting ASCENT-derived fenced agent-sub & Cedar forbid!
+        (check (vector-ref out-admitted 1) => #t)
+        (check (vector-ref out-admitted 2) => 3)
+        (check (and (member "agent-sub" (vector->list (vector-ref out-admitted 10))) #t) => #t)
+        (check (> (vector-length (vector-ref out-admitted 13)) 2) => #t)))))

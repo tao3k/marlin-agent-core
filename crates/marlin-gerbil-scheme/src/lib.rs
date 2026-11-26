@@ -12,6 +12,7 @@ mod brief_to_draft;
 mod deck_runtime_policy;
 mod graph_engine;
 mod graph_loop_continuation;
+mod higher_order_governance_abi;
 mod loop_case_driver;
 mod policy_pack_projection;
 mod runtime;
@@ -132,6 +133,12 @@ pub use graph_loop_continuation::{
     gerbil_loop_graph_continuation_type_manifest,
     project_gerbil_loop_graph_continuation_abi_action,
     project_gerbil_loop_graph_continuation_action,
+};
+pub use higher_order_governance_abi::{
+    HigherOrderGovernanceAbiError, HigherOrderGovernanceVectorProjection,
+    HigherOrderGovernanceVectorRequest, MARLIN_HIGHER_ORDER_GOVERNANCE_PROJECT_SYMBOL,
+    MARLIN_HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION, decode_higher_order_governance_vector,
+    encode_higher_order_governance_request,
 };
 pub use loop_case_driver::{
     GERBIL_LOOP_CASE_DRIVER_INTENT_CASE_RUNTIME_OWNER,
