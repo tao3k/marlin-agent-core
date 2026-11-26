@@ -3,7 +3,8 @@
 
 ;;; A catalog can be extended through POO composition; the projection shape
 ;;; remains stable for any host that implements the declared capability.
-(import (only-in :clan/poo/object .def .mix .o seal-object!))
+(import (only-in :clan/poo/object .def .get .mix .o seal-object!)
+        (only-in "../search-dsl/objects.ss" WorkspaceSearchToolSpecValue))
 (export ToolingCatalogValue)
 
 (.def ToolDeclaration.
@@ -18,7 +19,7 @@
 (def WorkspaceSearchToolDeclaration
   (seal-object!
     (.mix (.o name: 'workspace_search
-              description: "Search workspace files, symbols (@sym:), and import/call graph (@graph:) via resident index."
+              description: (.get WorkspaceSearchToolSpecValue summary)
               capability: 'search
               governance: 'ask
               argument: 'query

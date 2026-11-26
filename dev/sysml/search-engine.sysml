@@ -16,7 +16,7 @@ package MarlinSearchEngine {
         enum tantivy;
         enum topology;
         enum graph;
-        enum treeSitter;
+        enum openEdb;
     }
 
     enum def SearchStorageBackendKind {
@@ -67,6 +67,17 @@ package MarlinSearchEngine {
     }
 
     part <'MAR-SRCH-A01'> actual {
+        part schemeSearchDsl {
+            doc /* `scheme/search-dsl/{types,grammar,syntax,objects,repair,funcs,config,interface}.ss`
+                   and `scheme/c-abi/search-dsl.ss`: unified pure S-expression
+                   search DSL powered by `:gerbil-ascent` (zero-eval closed-source
+                   Datalog + Dusa POPL 2025 finite-choice), `:gerbil-parser`
+                   (`deflanguage` typed structured sub-syntax parsing), zero-regex
+                   POO `SearchLanguageRegistry.` fragments over ASP's universal
+                   `semantic-open-edb.v1` `(lang, kind, language_kind)` protocol,
+                   the Safe Pre-Tool-Call Model AST Repair Hook (`repair.ss`),
+                   live LLM Tool Schema generation, and Helm TAB completions. */
+        }
         part schemeSearchEngine {
             doc /* `scheme/search-engine/{types,objects,funcs,config,interface}.ss`
                    and `scheme/c-abi/search-engine.ss`. Composes multi-axis
@@ -76,14 +87,18 @@ package MarlinSearchEngine {
         part marlinSearchBridge {
             doc /* `crates/marlin-agent-search-engine`: decodes
                    `RootedSchemeObject` plans into ASP `SearchPlaybookPlanInput`,
-                   implements `OrgDocumentProjectionPort` over
-                   `marlin-context-org-model`, and implements
+                   projects `WorkspaceEdbPrefilter` and `WorkspaceEdbSnapshot`
+                   across the native ABI, implements `OrgDocumentProjectionPort`
+                   over `marlin-context-org-model`, and implements
                    `SearchEngineStoragePort` over `marlin-agent-storage`. */
         }
         part aspNativeEngine {
             doc /* `agent-semantic-search`, `agent-semantic-search-playbook`,
                    and `agent-semantic-topology` linked directly as Rust crates
-                   from a zero-submodule ASP Git revision. */
+                   from a zero-submodule ASP Git revision (zero pseudo-Tree-sitter
+                   `.scm`, zero Rust `ascent`, zero `agent-semantic-mrr`, and
+                   zero-regex protocol-native Open EDB ingestion/projection
+                   conforming to `semantic-open-edb.v1.schema.json`). */
         }
         part marlinUnifiedStorage {
             doc /* `marlin-agent-storage`: owns `InMemoryAgentStorage` and
@@ -112,10 +127,15 @@ package MarlinSearchEngine {
                    and enforces generation-bound execution. */
         }
         part aspSearchKernel {
-            doc /* Pure-Rust multi-language search kernel owning lexical/source
-                   index ranking, graph-owner ranking, tree-sitter query
-                   planning, and topology inference. External non-Rust language
-                   providers remain isolated across process/gRPC boundaries. */
+            doc /* Minimal, zero-regex pure-Rust runtime search engine
+                   interface owning trigram/lexical pre-filtering, mmap
+                   snapshots, BLAKE3 generation tracking, incremental delta sync,
+                   and generation-scoped Open EDB ingestion/projection
+                   (`ingest_open_edb_facts` / `project_prefiltered_edb` under
+                   `semantic-open-edb.v1`). Lightweight query and sub-syntax
+                   parsing lives in Scheme (`:gerbil-parser`); heavy
+                   compilation-unit language providers emit native AST facts
+                   across HTTP/gRPC boundaries. */
         }
         part unifiedStoragePort {
             doc /* Single-owner Marlin storage backend providing atomic CAS

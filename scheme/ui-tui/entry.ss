@@ -9,6 +9,7 @@
         (for-template :marlin-agent-core/ui-meow/interface)
         :marlin-agent-core/c-abi/ui
         :marlin-agent-core/c-abi/ui-helm
+        :marlin-agent-core/c-abi/search-dsl
         :marlin-agent-core/c-abi/tooling
         :marlin-agent-core/c-abi/envrc
         :marlin-agent-core/c-abi/artifacts

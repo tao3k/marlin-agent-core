@@ -59,10 +59,21 @@ package MarlinUiHelm {
                    generation provenance. */
         }
         part agentSearchTool {
-            doc /* `scheme/tooling/objects.ss` (`workspace_search`) +
+            doc /* `scheme/tooling/objects.ss` (`workspace_search`, pure S-exp
+                   description projected from `scheme/search-dsl`) +
+                   `scheme/search-dsl/repair.ss` (safe pre-tool-call Model AST
+                   repair hook with audit receipt) +
                    `marlin-agent-tooling::ResidentSearchToolHandler`:
-                   exposes the exact same resident `SharedSearchIndexSlot` to
-                   LLM Agent tool invocations with BLAKE3 generation evidence. */
+                   executes pure `:gerbil-ascent` S-expression queries over the
+                   shared resident `SharedSearchIndexSlot` + zero-regex
+                   `semantic-open-edb.v1` Open EDB with BLAKE3 generation
+                   evidence and zero legacy `@sym:` shim. */
+        }
+        part searchDslCompletionTable {
+            doc /* `scheme/search-dsl/funcs.ss` (`search-dsl-completions`):
+                   POO `SearchLanguageRegistry.`-driven context-aware TAB
+                   completion table (`Form | Kind | Signature | Lang | Doc`)
+                   rendered inside Helm for S-expression queries. */
         }
 
         dependency uiToAbi from helmSchemeUi to helmCAbiBridge;

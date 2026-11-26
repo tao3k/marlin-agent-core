@@ -492,3 +492,85 @@ fn helm_symbol_and_graph_axes_locate_definitions_callers_and_action_transformer_
         sym_overlay.search_candidates
     );
 }
+
+#[test]
+fn helm_tab_completion_table_completes_native_ascent_and_poo_relations() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("workspace root")
+        .to_path_buf();
+    let catalog = vec![
+        marlin_agent_search_engine::SearchDslCompletionEntry {
+            form: "(ascent-fragment ...)".into(),
+            kind: marlin_agent_search_engine::SearchDslCompletionKind::Ascent,
+            signature: "(ascent-fragment (relation answer ((path string?))) ...)".into(),
+            language: "ascent".into(),
+            doc: "Real :gerbil-ascent composable fragment".into(),
+            insert_text: "(ascent-fragment (relation answer ((path string?))) ((answer path) <-- (file f \"rust\" path)))".into(),
+        },
+        marlin_agent_search_engine::SearchDslCompletionEntry {
+            form: "rust_fn".into(),
+            kind: marlin_agent_search_engine::SearchDslCompletionKind::Relation,
+            signature: "(rust_fn c0 c1 c2 c3)".into(),
+            language: "rust".into(),
+            doc: "Rust function declaration".into(),
+            insert_text: "(rust_fn c0 c1 c2 c3)".into(),
+        },
+    ];
+
+    let mut overlay = HelmOverlay::open(
+        Some("("),
+        workspace_root,
+        &[],
+        scheme_like_config(),
+        None,
+        rt.handle(),
+    )
+    .with_completion_catalog(catalog);
+
+    // Pressing TAB on `(` opens the structured TAB completion table instead of Action Transformer.
+    overlay.toggle_tab_mode();
+    assert!(overlay.completion_mode);
+    assert!(!overlay.action_mode);
+    assert_eq!(overlay.completion_entries.len(), 1);
+    assert_eq!(overlay.completion_entries[0].form, "(ascent-fragment ...)");
+
+    // Rendering displays the HELM-TAB badge and completion columns cleanly.
+    let area = helm_window_area(ratatui::layout::Rect::new(0, 0, 120, 28)).expect("area");
+    let element = project_helm_ui_element(&overlay, area);
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 28)).expect("terminal");
+    terminal
+        .draw(|frame| {
+            render_overlay_element(frame, area, &element, &sample_theme());
+        })
+        .expect("draw");
+    let screen: String = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect();
+    assert!(screen.contains("HELM-TAB"), "{screen}");
+    assert!(screen.contains("ascent-fragment"), "{screen}");
+
+    // Accepting inserts the selected template and stays inside Helm.
+    let (should_close, action) = overlay.accept(false);
+    assert!(!should_close);
+    assert!(action.is_none());
+    assert!(!overlay.completion_mode);
+    assert!(overlay.input.starts_with("(ascent-fragment "));
+
+    // Live token filtering matches POO-derived `rust_fn` relation.
+    overlay.insert_text(" rust_");
+    overlay.toggle_tab_mode();
+    assert!(overlay.completion_mode);
+    assert_eq!(overlay.completion_entries.len(), 1);
+    assert_eq!(overlay.completion_entries[0].form, "rust_fn");
+}

@@ -1,0 +1,37 @@
+#+TITLE: Marlin Unified Search DSL (=scheme/search-dsl=)
+#+AUTHOR: tao3k team and Contributors
+
+* Ownership Boundary
+
+=scheme/search-dsl= exposes Marlin's unified, zero-regex, zero-=eval=, AOT-safe
+Search DSL built directly on upstream Gerbil libraries — zero invented pseudo
+S-expressions and zero regex extractors in Rust or Scheme:
+
+1. *=:gerbil-ascent=* (=:gerbil-ascent/program/syntax=,
+   =:gerbil-ascent/rules/closed-source=, =:gerbil-ascent/program/api=):
+   - Real upstream =(ascent ...)= / =(ascent-fragment ...)= closed lowering
+     (=ascent-closed-dsl-parts=, zero =eval-syntax=, 100% AOT =linked-ui= safe),
+     composed directly with the REAL compiled =ascent-fragment= objects owned by
+     POO language prototypes (=rust_fn=, =rust_impl=, =rust_macro=,
+     =scheme_poo_def=, =sysml_requirement=, …) over ASP's universal
+     =semantic-open-edb.v1= =(lang, kind, language_kind)= protocol.
+   - Real upstream Lean-verified *Dusa POPL 2025 finite-choice*
+     =(relational-choice-program ...)= + =relational-choice-solve= with
+     derivation provenance (=provenance?: #t=).
+2. *=:gerbil-parser=* (=grammar.ss=):
+   - Typed structured syntax engine (=deflanguage= / =deflanguage-parser-loader=)
+     owning lightweight selector/sub-syntax parsing directly in Scheme.
+3. *Safe Pre-Tool-Call Model AST Repair Hook (=repair.ss=)*:
+   - Deterministically heals common LLM S-expression slips (markdown fences,
+     bounded missing/extra trailing parens, =<-=/=:-= arrows, omitted column
+     predicates, missing head =(relation ...)= declarations inferred from POO
+     signatures, missing =(limits ...)= in choice programs) while emitting an
+     auditable =repairs:= receipt and failing closed on legacy =@sym:=,
+     =#.(...)=, and arbitrary Scheme callbacks.
+4. *=:clan/poo/object= + =defsyntax= / =defrules= (=syntax.ss=, =objects.ss=)*:
+   - =defsearch-language= compiles one declarative language specification into a
+     POO prototype carrying its real =ascent-fragment= object over universal
+     =(lang, kind, language_kind)= facts (zero regexes).
+   - Helm's interactive *TAB completion table* and =workspace_search='s Tool
+     Schema (=defsearch-tool-spec=) are *live-introspected* directly from the
+     composed =:gerbil-ascent= relation objects.

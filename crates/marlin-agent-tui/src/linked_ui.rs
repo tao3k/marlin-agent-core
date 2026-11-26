@@ -25,6 +25,9 @@ unsafe extern "C" {
     fn marlin_ui_review_menu(root: i64) -> i64;
     fn marlin_ui_refresh_labels(root: i64) -> i64;
     fn marlin_ui_helm_index_config(root: i64) -> i64;
+    fn marlin_search_dsl_compile_prefilter(root: i64) -> i64;
+    fn marlin_search_dsl_eval_edb(root: i64) -> i64;
+    fn marlin_search_dsl_completions(root: i64) -> i64;
     fn marlin_tooling_project(root: i64) -> i64;
     fn marlin_envrc_plan(root: i64) -> i64;
     fn marlin_worktree_context_prepare(root: i64) -> i64;
@@ -147,6 +150,104 @@ pub(crate) fn helm_index_config(
             marlin_ui_helm_index_config,
         )
     }
+}
+
+pub(crate) fn search_dsl_completions(
+    runtime: &GerbilRuntime,
+    prefix: &str,
+) -> Result<
+    Vec<marlin_agent_search_engine::SearchDslCompletionEntry>,
+    marlin_agent_search_engine::SearchPlanProjectionError,
+> {
+    // SAFETY: `marlin_search_dsl_completions` belongs to the linked Marlin TUI programme.
+    unsafe {
+        marlin_agent_search_engine::project_linked_search_dsl_completions(
+            runtime,
+            marlin_search_dsl_completions,
+            prefix,
+        )
+    }
+}
+
+pub(crate) fn execute_search_dsl(
+    runtime: &GerbilRuntime,
+    index: &marlin_agent_search_engine::WorkspaceSearchIndex,
+    query: &str,
+    output_limit: usize,
+) -> Result<String, marlin_agent_search_engine::SearchPlanProjectionError> {
+    let exports = marlin_agent_search_engine::SearchDslLinkedExports {
+        compile_prefilter: marlin_search_dsl_compile_prefilter,
+        eval_edb: marlin_search_dsl_eval_edb,
+        completions: marlin_search_dsl_completions,
+    };
+    let request = marlin_agent_search_engine::SearchDslExecutionRequest {
+        index,
+        query,
+        output_limit,
+    };
+    // SAFETY: `exports` belong to the linked Marlin TUI programme initialized in `runtime`.
+    unsafe { marlin_agent_search_engine::execute_linked_search_dsl(runtime, exports, &request) }
+}
+
+struct LinkedSearchDslJob {
+    index: std::sync::Arc<std::sync::RwLock<marlin_agent_search_engine::WorkspaceSearchIndex>>,
+    query: String,
+    output_limit: usize,
+    reply: std::sync::mpsc::Sender<
+        Result<String, marlin_agent_search_engine::SearchPlanProjectionError>,
+    >,
+}
+
+/// Thread-affine mailbox delivering `workspace_search` tool calls onto the TUI's
+/// linked Gerbil Scheme VM thread.
+pub(crate) struct LinkedSearchDslMailbox {
+    rx: std::sync::mpsc::Receiver<LinkedSearchDslJob>,
+}
+
+impl LinkedSearchDslMailbox {
+    /// Drain any pending `workspace_search` requests on the owning Gerbil VM thread.
+    pub(crate) fn drain(&self, runtime: &gerbil_scheme::GerbilRuntime) {
+        while let Ok(job) = self.rx.try_recv() {
+            let outcome = match job.index.read() {
+                Ok(index) => execute_search_dsl(runtime, &index, &job.query, job.output_limit),
+                Err(_) => Err(
+                    marlin_agent_search_engine::SearchPlanProjectionError::Invalid(
+                        "resident search index lock poisoned",
+                    ),
+                ),
+            };
+            let _ = job.reply.send(outcome);
+        }
+    }
+}
+
+/// Create a linked `SearchDslRunner` handle paired with its VM-thread mailbox.
+pub(crate) fn search_dsl_channel() -> (
+    marlin_agent_search_engine::SearchDslRunner,
+    LinkedSearchDslMailbox,
+) {
+    let (tx, rx) = std::sync::mpsc::channel::<LinkedSearchDslJob>();
+    let runner: marlin_agent_search_engine::SearchDslRunner =
+        std::sync::Arc::new(move |index, query, output_limit| {
+            let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+            tx.send(LinkedSearchDslJob {
+                index,
+                query: query.to_owned(),
+                output_limit,
+                reply: reply_tx,
+            })
+            .map_err(|_| {
+                marlin_agent_search_engine::SearchPlanProjectionError::Invalid(
+                    "TUI Scheme VM loop closed",
+                )
+            })?;
+            reply_rx.recv().map_err(|_| {
+                marlin_agent_search_engine::SearchPlanProjectionError::Invalid(
+                    "TUI Scheme VM response channel closed",
+                )
+            })?
+        });
+    (runner, LinkedSearchDslMailbox { rx })
 }
 
 #[cfg(test)]

@@ -24,6 +24,7 @@
   (ui-themes)
   (ui-layout)
   (search-engine)
+  (search-dsl)
   (ui-helm)
   (ui)
   (ui-tui)

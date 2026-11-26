@@ -33,7 +33,9 @@ pub(crate) fn helm_window_area(area: Rect) -> Option<Rect> {
 /// Projects the live `HelmOverlay` state into a declarative `UiElement` tree.
 pub(crate) fn project_helm_ui_element(helm: &HelmOverlay, window_area: Rect) -> UiElement {
     let body_height = window_area.height.saturating_sub(3).max(1);
-    let body = if helm.action_mode {
+    let body = if helm.completion_mode {
+        project_completion_table(helm, window_area.width, body_height)
+    } else if helm.action_mode {
         project_action_transformer(helm, window_area.width, body_height)
     } else {
         project_candidate_workspace(helm, window_area.width, body_height)
@@ -75,7 +77,9 @@ fn line_row(background: UiBackground, spans: Vec<UiTemplateSpan>) -> UiElement {
 
 fn project_top_divider(helm: &HelmOverlay, width: u16) -> UiElement {
     let width = usize::from(width);
-    let label = if helm.action_mode {
+    let label = if helm.completion_mode {
+        " Helm TAB Completion (:gerbil-ascent / POO) "
+    } else if helm.action_mode {
         " Helm Actions "
     } else {
         " Helm "
@@ -344,6 +348,75 @@ fn project_follow_preview(helm: &HelmOverlay, width: u16, height: u16) -> UiElem
     UiElement::Rows(rows)
 }
 
+fn project_completion_table(helm: &HelmOverlay, width: u16, height: u16) -> UiElement {
+    let width = usize::from(width);
+    let max_rows = usize::from(height).saturating_sub(2).max(1);
+    let entries = &helm.completion_entries;
+    let mut rows = Vec::with_capacity(max_rows + 2);
+    rows.push(project_source_header(
+        "Scheme :gerbil-ascent / POO Completions",
+        entries.len(),
+        "Form │ Kind │ Lang │ Signature · Doc",
+        width,
+    ));
+
+    if entries.is_empty() {
+        rows.push(line_row(
+            UiBackground::Canvas,
+            vec![span(
+                clip_width("  No matching :gerbil-ascent forms or POO relations", width),
+                UiTone::Muted,
+                false,
+            )],
+        ));
+        return UiElement::Rows(rows);
+    }
+
+    let offset = if helm.completion_selected >= max_rows {
+        helm.completion_selected + 1 - max_rows
+    } else {
+        0
+    };
+    for (idx, entry) in entries.iter().enumerate().skip(offset).take(max_rows) {
+        let is_selected = idx == helm.completion_selected;
+        let bg = if is_selected {
+            UiBackground::Bar
+        } else {
+            UiBackground::Canvas
+        };
+        let gutter = if is_selected { "▸ " } else { "  " };
+        let form_col = format!("{:<26} ", clip_width(&entry.form, 26));
+        let kind_col = format!("{:<9} ", clip_width(entry.kind.as_str(), 9));
+        let lang_col = format!("{:<10} ", clip_width(&entry.language, 10));
+        let fixed_w = 2 + 27 + 10 + 11;
+        let desc_budget = width.saturating_sub(fixed_w);
+        let desc_raw = format!("{} · {}", entry.signature, entry.doc);
+        let desc_col = clip_width(&desc_raw, desc_budget);
+        let used = fixed_w + UnicodeWidthStr::width(desc_col.as_str());
+        let pad = " ".repeat(width.saturating_sub(used));
+        rows.push(line_row(
+            bg,
+            vec![
+                span(gutter, UiTone::Accent, true),
+                span(
+                    form_col,
+                    if is_selected {
+                        UiTone::Info
+                    } else {
+                        UiTone::Normal
+                    },
+                    is_selected,
+                ),
+                span(kind_col, UiTone::Warning, false),
+                span(lang_col, UiTone::Success, false),
+                span(desc_col, UiTone::Muted, false),
+                span(pad, UiTone::Normal, false),
+            ],
+        ));
+    }
+    UiElement::Rows(rows)
+}
+
 fn project_action_transformer(helm: &HelmOverlay, width: u16, height: u16) -> UiElement {
     let width = usize::from(width);
     let actions = helm.available_actions();
@@ -401,7 +474,9 @@ fn project_action_transformer(helm: &HelmOverlay, width: u16, height: u16) -> Ui
 
 fn project_helm_modeline(helm: &HelmOverlay, width: u16) -> UiElement {
     let width = usize::from(width);
-    let badge = if helm.action_mode {
+    let badge = if helm.completion_mode {
+        " HELM-TAB "
+    } else if helm.action_mode {
         " HELM-ACT "
     } else {
         " HELM "
@@ -436,8 +511,12 @@ fn project_helm_modeline(helm: &HelmOverlay, width: u16) -> UiElement {
         follow_part,
         gen_part
     );
-    let hints = if helm.action_mode {
+    let hints = if helm.completion_mode {
+        "RET:Insert  C-p/C-n:Select  TAB/ESC:Close  C-g:Quit "
+    } else if helm.action_mode {
         "RET:Run  TAB/ESC:Candidates  C-g:Quit "
+    } else if helm.is_sexp_prompt() {
+        "TAB:Complete  RET:Open  C-l:Refresh  C-g:Quit "
     } else {
         "RET:Open  TAB:Actions  C-SPC:Mark  C-o:Source  C-z:Follow  C-l:Refresh  C-g:Quit "
     };

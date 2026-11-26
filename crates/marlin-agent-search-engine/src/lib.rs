@@ -16,6 +16,7 @@
 //! 3. **Marlin unified storage** (`marlin-agent-storage::AgentStorage`)
 //!    wired via [`MarlinAgentStorageSearchPort`] implementing [`SearchEngineStoragePort`].
 
+mod edb_bridge;
 mod engine;
 mod org_port;
 mod projection;
@@ -24,14 +25,17 @@ mod storage_port;
 pub use agent_semantic_search::{
     ConvergedLineMatch, ConvergedSearchExecutionError, ConvergedSearchExecutionReport,
     ConvergedSearchHit, DEFAULT_SEARCH_GENERATION_POINTER_KEY, MarlinConvergedSearchEngine,
-    SearchArtifactBlob, SearchArtifactHash, SearchEngineStoragePort, SearchGenerationDigest,
+    SEMANTIC_OPEN_EDB_SCHEMA_ID, SEMANTIC_OPEN_EDB_SCHEMA_VERSION, SearchArtifactBlob,
+    SearchArtifactHash, SearchEngineStoragePort, SearchGenerationDigest,
     SearchGenerationPointerRecord, SearchGenerationPointerSwapRequest, SearchPointerKey,
     SearchProjectId, SearchStoragePortError, SearchTopologyEdgeId, SearchTopologyEdgeRecord,
     SearchWorkspaceId, TrigramQuery, TrigramSnapshotError, WorkspaceContextLine,
-    WorkspaceDeltaReceipt, WorkspaceFileDelta, WorkspaceIndexConfig, WorkspaceSearchHit,
-    WorkspaceSearchIndex, WorkspaceSearchQuery, WorkspaceSearchReport, WorkspaceSymbolKind,
-    WorkspaceSymbolMatch, compile_regex_trigram_query, execute_admitted_playbook,
-    execute_admitted_playbook_with_index,
+    WorkspaceDeltaReceipt, WorkspaceEdbAttr, WorkspaceEdbEdgeFact, WorkspaceEdbEntityFact,
+    WorkspaceEdbFileFact, WorkspaceEdbPrefilter, WorkspaceEdbSnapshot, WorkspaceFileDelta,
+    WorkspaceIndexConfig, WorkspaceOpenEdbIngestBatch, WorkspaceOpenEdbIngestReceipt,
+    WorkspaceSearchHit, WorkspaceSearchIndex, WorkspaceSearchQuery, WorkspaceSearchReport,
+    WorkspaceSymbolKind, WorkspaceSymbolMatch, compile_regex_trigram_query,
+    execute_admitted_playbook, execute_admitted_playbook_with_index,
 };
 pub use agent_semantic_search_playbook::{
     GraphNativeBlock, ProducerNativeBlock, ProgressiveSearchPlaybookError,
@@ -41,6 +45,18 @@ pub use agent_semantic_search_playbook::{
 pub use agent_semantic_topology::{
     AgentTopologyRelationship, OrgDocumentProjection, OrgDocumentProjectionPort,
     OrgOverlayDocumentProjection, OrgProjectionPortError, OrgPropertyEntry, OrgSectionProjection,
+};
+pub use edb_bridge::{
+    OwnedWorkspaceEdbPrefilter, SearchDslCompletionEntry, SearchDslCompletionKind,
+    SearchDslExecutionRequest, SearchDslLinkedExports, SearchDslRunner, decode_edb_prefilter,
+    decode_search_dsl_completions, default_marlin_scheme_dir, default_search_dsl_runner,
+    encode_edb_snapshot, execute_linked_search_dsl, format_rooted_search_dsl_result,
+    project_linked_search_dsl_completions,
+};
+#[cfg(not(feature = "linked-ui"))]
+pub use edb_bridge::{
+    default_package_search_dsl_runner, execute_package_search_dsl,
+    project_package_search_dsl_completions,
 };
 pub use engine::{default_workspace_snapshot_path, marlin_search_engine};
 pub use org_port::{

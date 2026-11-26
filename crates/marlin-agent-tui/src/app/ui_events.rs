@@ -289,7 +289,9 @@ pub(super) fn handle_helm_input(
             app.disarm_exit();
         }
         Ok(Ok(TerminalInput::Key(Key::Esc))) => {
-            if helm.action_mode {
+            if helm.completion_mode {
+                helm.close_completion_mode();
+            } else if helm.action_mode {
                 helm.toggle_action_mode();
             } else {
                 close_helm = true;
@@ -314,7 +316,7 @@ pub(super) fn handle_helm_input(
             helm.toggle_mark_and_advance();
         }
         Ok(Ok(TerminalInput::Key(Key::Alt('a')))) => helm.toggle_mark_all(),
-        Ok(Ok(TerminalInput::Key(Key::Char('\t')))) => helm.toggle_action_mode(),
+        Ok(Ok(TerminalInput::Key(Key::Char('\t')))) => helm.toggle_tab_mode(),
         Ok(Ok(TerminalInput::Key(Key::Ctrl('z')))) => helm.toggle_follow_preview(),
         Ok(Ok(TerminalInput::Key(Key::Ctrl('o')))) => helm.jump_next_source(),
         Ok(Ok(TerminalInput::Key(Key::Ctrl('s')))) => helm.cycle_source_filter(),

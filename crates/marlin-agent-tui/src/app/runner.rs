@@ -130,7 +130,11 @@ pub(super) fn run(
     trace_startup("Tokio runtime");
     let directory = env::current_dir()?;
     #[cfg(feature = "linked-ui")]
+    let (search_dsl_runner, search_dsl_mailbox) = super::super::linked_ui::search_dsl_channel();
+    #[cfg(feature = "linked-ui")]
     let search_tool_slot = marlin_agent_tooling::SharedSearchIndexSlot::empty();
+    #[cfg(feature = "linked-ui")]
+    search_tool_slot.attach_dsl_runner(search_dsl_runner);
     #[cfg(feature = "linked-ui")]
     let tool_catalog = if config.session.is_some() {
         let declarations = super::super::linked_ui::tooling_declarations(&scheme_runtime)?;
@@ -589,6 +593,9 @@ pub(super) fn run(
                     {
                         let helm_cfg = super::super::linked_ui::helm_index_config(&scheme_runtime)
                             .unwrap_or_default();
+                        app.search_dsl_catalog =
+                            super::super::linked_ui::search_dsl_completions(&scheme_runtime, "")
+                                .unwrap_or_default();
                         app.warm_search_index(helm_cfg, runtime.handle());
                         if let Some(approved) = git_context_approval.as_ref() {
                             git_context = Some(super::git_context::GitContext::new(
@@ -628,6 +635,8 @@ pub(super) fn run(
                 schedule.wait_duration(Instant::now())
             };
             let received = keys_rx.recv_timeout(wait);
+            #[cfg(feature = "linked-ui")]
+            search_dsl_mailbox.drain(&scheme_runtime);
             if let Some((up, pulses, column, row)) = wheel_steps.take_steps() {
                 apply_wheel_scroll(&mut app, &ui, &painted_regions, up, pulses, column, row);
                 schedule.mark_dirty();

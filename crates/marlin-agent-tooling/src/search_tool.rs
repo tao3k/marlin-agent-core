@@ -2,11 +2,14 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Reusable resident workspace-search tool capability backed by ASP's
-//! sub-millisecond `WorkspaceSearchIndex` (`open_or_build_cached`, `@sym:`, `@graph:`).
+//! Reusable resident workspace-search tool capability executing pure Gerbil Scheme
+//! `:gerbil-ascent` + `:gerbil-parser` + POO S-expression queries over ASP's
+//! zero-regex protocol-native Open EDB (`WorkspaceSearchIndex::project_prefiltered_edb`).
+//!
+//! All query parsing, safe pre-tool-call AST repair (`scheme/search-dsl/repair.ss`),
+//! and fail-closed rejection of retired `@lang:` / `@sym:` syntax live in Scheme;
+//! Rust remains a thin preset mapping and index-custody framework.
 
-use std::collections::HashSet;
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -15,12 +18,8 @@ use marlin_agent_runtime::{
     ModelToolDeclaration, ModelToolOutcome, RuntimeContext, RuntimeFuture, ToolRuntime,
 };
 use marlin_agent_search_engine::{
-    WorkspaceIndexConfig, WorkspaceSearchHit, WorkspaceSearchIndex, WorkspaceSearchQuery,
-    WorkspaceSearchReport, default_workspace_snapshot_path,
+    SearchDslRunner, WorkspaceIndexConfig, WorkspaceSearchIndex, default_workspace_snapshot_path,
 };
-
-const MAX_AGENT_SEARCH_HITS: usize = 32;
-const AGENT_PREVIEW_CONTEXT_RADIUS: usize = 2;
 
 /// Shared resident index handle reused across TUI Helm and Agent tool calls.
 pub type SharedWorkspaceSearchIndex = Arc<RwLock<WorkspaceSearchIndex>>;
@@ -30,6 +29,7 @@ pub type SharedWorkspaceSearchIndex = Arc<RwLock<WorkspaceSearchIndex>>;
 #[derive(Clone, Default)]
 pub struct SharedSearchIndexSlot {
     inner: Arc<RwLock<Option<SharedWorkspaceSearchIndex>>>,
+    dsl_runner: Arc<RwLock<Option<SearchDslRunner>>>,
 }
 
 impl SharedSearchIndexSlot {
@@ -45,6 +45,7 @@ impl SharedSearchIndexSlot {
     pub fn from_index(index: SharedWorkspaceSearchIndex) -> Self {
         Self {
             inner: Arc::new(RwLock::new(Some(index))),
+            dsl_runner: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -53,6 +54,25 @@ impl SharedSearchIndexSlot {
         if let Ok(mut guard) = self.inner.write() {
             *guard = Some(index);
         }
+    }
+
+    /// Attach an AOT-linked or custom Scheme Search DSL runner.
+    pub fn attach_dsl_runner(&self, runner: SearchDslRunner) {
+        if let Ok(mut guard) = self.dsl_runner.write() {
+            *guard = Some(runner);
+        }
+    }
+
+    /// Resolve the active [`SearchDslRunner`], falling back to the compiled package
+    /// runner when `linked-ui` is not active.
+    #[must_use]
+    pub fn dsl_runner(&self) -> Option<SearchDslRunner> {
+        if let Ok(guard) = self.dsl_runner.read()
+            && let Some(existing) = guard.as_ref()
+        {
+            return Some(existing.clone());
+        }
+        marlin_agent_search_engine::default_search_dsl_runner()
     }
 
     /// Return the attached resident index or lazily open/build a cached `mmap` index
@@ -92,7 +112,8 @@ impl SharedSearchIndexSlot {
     }
 }
 
-/// Reusable pure-Rust resident workspace search capability for Agent tool calls.
+/// Reusable resident workspace search capability for Agent tool calls.
+/// Accepts exclusively canonical Scheme S-expression search DSL forms.
 pub struct ResidentSearchToolHandler {
     workspace: PathBuf,
     declaration: ModelToolDeclaration,
@@ -138,84 +159,16 @@ impl ToolRuntime for ResidentSearchToolHandler {
             let active_root = context
                 .active_working_copy()
                 .map_or(workspace, |binding| binding.working_copy.path.clone());
-            let rendered = execute_resident_search_tool(
+            match execute_resident_search_tool(
                 &active_root,
                 &slot,
                 &raw_query,
                 declaration.output_limit(),
-            );
-            ModelToolOutcome::Completed(rendered)
-        })
-    }
-}
-
-struct ParsedAgentSearchQuery {
-    pattern: String,
-    local_tokens: Vec<String>,
-    languages: Vec<String>,
-    documents: Vec<String>,
-    path_prefix: Option<String>,
-    extension: Option<String>,
-    symbol: Option<String>,
-    graph_target: Option<String>,
-}
-
-impl ParsedAgentSearchQuery {
-    fn parse(raw: &str) -> Self {
-        let (async_raw, local_raw) = match raw.find('#') {
-            Some(idx) => (raw[..idx].trim(), raw[idx + 1..].trim()),
-            None => (raw.trim(), ""),
-        };
-        let mut pattern_parts = Vec::new();
-        let mut languages = Vec::new();
-        let mut seen_languages = HashSet::new();
-        let mut documents = Vec::new();
-        let mut seen_documents = HashSet::new();
-        let mut path_prefix = None;
-        let mut extension = None;
-        let mut symbol = None;
-        let mut graph_target = None;
-
-        for token in async_raw.split_whitespace() {
-            if let Some(val) = token.strip_prefix("@lang:") {
-                if !val.is_empty() && seen_languages.insert(val) {
-                    languages.push(val.to_owned());
-                }
-            } else if let Some(val) = token.strip_prefix("@doc:") {
-                if !val.is_empty() && seen_documents.insert(val) {
-                    documents.push(val.to_owned());
-                }
-            } else if let Some(val) = token.strip_prefix("@prefix:") {
-                if !val.is_empty() {
-                    path_prefix = Some(val.to_owned());
-                }
-            } else if let Some(val) = token.strip_prefix("@ext:") {
-                if !val.is_empty() {
-                    extension = Some(val.to_owned());
-                }
-            } else if let Some(val) = token.strip_prefix("@sym:") {
-                if !val.is_empty() {
-                    symbol = Some(val.to_owned());
-                }
-            } else if let Some(val) = token.strip_prefix("@graph:") {
-                if !val.is_empty() {
-                    graph_target = Some(val.to_owned());
-                }
-            } else {
-                pattern_parts.push(token);
+            ) {
+                Ok(rendered) => ModelToolOutcome::Completed(rendered),
+                Err(message) => ModelToolOutcome::Failed(message),
             }
-        }
-
-        Self {
-            pattern: pattern_parts.join(" "),
-            local_tokens: local_raw.split_whitespace().map(str::to_owned).collect(),
-            languages,
-            documents,
-            path_prefix,
-            extension,
-            symbol,
-            graph_target,
-        }
+        })
     }
 }
 
@@ -224,102 +177,20 @@ fn execute_resident_search_tool(
     slot: &SharedSearchIndexSlot,
     raw_query: &str,
     output_limit: usize,
-) -> String {
-    let parsed = ParsedAgentSearchQuery::parse(raw_query);
+) -> Result<String, String> {
+    let trimmed = raw_query.trim();
+    if trimmed.is_empty() {
+        return Err(
+            "workspace_search requires a non-empty native :gerbil-ascent S-expression query"
+                .to_owned(),
+        );
+    }
+    let Some(runner) = slot.dsl_runner() else {
+        return Err(
+            "search DSL Scheme runtime is not attached to SharedSearchIndexSlot".to_owned(),
+        );
+    };
     let _ = slot.sync_from_disk_and_persist(workspace);
     let shared = slot.get_or_open(workspace);
-    let report = match shared.read() {
-        Ok(index) => index.query(&WorkspaceSearchQuery {
-            pattern: &parsed.pattern,
-            languages: &parsed.languages,
-            documents: &parsed.documents,
-            path_prefix: parsed.path_prefix.as_deref(),
-            extension: parsed.extension.as_deref(),
-            symbol: parsed.symbol.as_deref(),
-            graph_target: parsed.graph_target.as_deref(),
-            max_hits: MAX_AGENT_SEARCH_HITS,
-            context_radius: AGENT_PREVIEW_CONTEXT_RADIUS,
-        }),
-        Err(_) => return "error: resident search index lock poisoned".to_owned(),
-    };
-    format_search_evidence(&report, &parsed.local_tokens, output_limit)
-}
-
-fn hit_matches_local_tokens(hit: &WorkspaceSearchHit, local_tokens: &[String]) -> bool {
-    if local_tokens.is_empty() {
-        return true;
-    }
-    let sym_names: String = hit
-        .symbols
-        .iter()
-        .map(|s| s.name.as_str())
-        .collect::<Vec<_>>()
-        .join(" ");
-    let haystack = format!(
-        "{} {} {} {} {}",
-        hit.path.to_ascii_lowercase(),
-        hit.first_line_text.to_ascii_lowercase(),
-        hit.matched_axes.join(" ").to_ascii_lowercase(),
-        sym_names.to_ascii_lowercase(),
-        hit.graph_relations.join(" ").to_ascii_lowercase(),
-    );
-    local_tokens.iter().all(|tok| {
-        if let Some(neg) = tok.strip_prefix('!') {
-            neg.is_empty() || !haystack.contains(&neg.to_ascii_lowercase())
-        } else {
-            haystack.contains(&tok.to_ascii_lowercase())
-        }
-    })
-}
-
-fn format_search_evidence(
-    report: &WorkspaceSearchReport,
-    local_tokens: &[String],
-    output_limit: usize,
-) -> String {
-    let filtered: Vec<&WorkspaceSearchHit> = report
-        .hits
-        .iter()
-        .filter(|hit| hit_matches_local_tokens(hit, local_tokens))
-        .collect();
-    let mut out = String::new();
-    let _ = writeln!(
-        out,
-        "generation: {}\nelapsed_us: {}\nindexed_files: {}\nmatched_files: {}",
-        report.generation_digest.as_str(),
-        report.elapsed_micros,
-        report.indexed_files,
-        filtered.len()
-    );
-    for hit in filtered {
-        let loc = match hit.first_line {
-            Some(line) => format!("{}:{line}", hit.path),
-            None => hit.path.clone(),
-        };
-        let axes = hit.matched_axes.join("+");
-        let syms = hit
-            .symbols
-            .iter()
-            .take(2)
-            .map(|s| format!("{}:{}", s.kind.as_str(), s.name))
-            .collect::<Vec<_>>()
-            .join(",");
-        let rels = hit.graph_relations.join(",");
-        let mut line = format!("- {loc} [{axes}]");
-        if !syms.is_empty() {
-            let _ = write!(line, " sym=({syms})");
-        }
-        if !rels.is_empty() {
-            let _ = write!(line, " graph=({rels})");
-        }
-        if !hit.first_line_text.is_empty() {
-            let _ = write!(line, " | {}", hit.first_line_text.trim());
-        }
-        line.push('\n');
-        if out.len() + line.len() > output_limit {
-            break;
-        }
-        out.push_str(&line);
-    }
-    out
+    runner(shared, trimmed, output_limit).map_err(|err| err.to_string())
 }

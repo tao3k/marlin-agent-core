@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use marlin_agent_search_engine::{
-    WorkspaceIndexConfig, WorkspaceSearchIndex, WorkspaceSearchQuery,
+    SearchDslCompletionEntry, WorkspaceIndexConfig, WorkspaceSearchIndex, WorkspaceSearchQuery,
     default_workspace_snapshot_path,
 };
 use marlin_agent_ui::UiCommand;
@@ -48,6 +48,10 @@ pub(crate) struct HelmOverlay {
     pub(crate) follow_preview: bool,
     pub(crate) action_mode: bool,
     pub(crate) action_selected: usize,
+    pub(crate) completion_mode: bool,
+    pub(crate) completion_selected: usize,
+    pub(crate) completion_catalog: Vec<SearchDslCompletionEntry>,
+    pub(crate) completion_entries: Vec<SearchDslCompletionEntry>,
     pub(crate) generation_digest: Option<String>,
     pub(crate) last_query_micros: Option<u64>,
     pub(crate) indexed_files: usize,
@@ -97,6 +101,10 @@ impl HelmOverlay {
             follow_preview: true,
             action_mode: false,
             action_selected: 0,
+            completion_mode: false,
+            completion_selected: 0,
+            completion_catalog: Vec::new(),
+            completion_entries: Vec::new(),
             generation_digest,
             last_query_micros: None,
             indexed_files,
@@ -188,6 +196,74 @@ impl HelmOverlay {
         }
     }
 
+    /// Attach the Scheme-introspected `:gerbil-ascent` / POO TAB completion
+    /// catalog populated from `scheme/search-dsl` (`SearchLanguageRegistry.`).
+    pub(crate) fn with_completion_catalog(
+        mut self,
+        catalog: Vec<SearchDslCompletionEntry>,
+    ) -> Self {
+        self.completion_catalog = catalog;
+        if self.is_sexp_prompt() {
+            self.refresh_completions();
+        }
+        self
+    }
+
+    pub(crate) fn is_sexp_prompt(&self) -> bool {
+        self.input.trim_start().starts_with('(')
+    }
+
+    pub(crate) fn refresh_completions(&mut self) {
+        let trimmed = self.input.trim();
+        let root_only = trimmed.is_empty() || trimmed == "(";
+        let needle = last_sexp_token(trimmed).to_ascii_lowercase();
+        self.completion_entries = self
+            .completion_catalog
+            .iter()
+            .filter(|entry| {
+                if root_only {
+                    matches!(entry.kind.as_str(), "ascent" | "dusa" | "parser" | "edb")
+                } else if needle.is_empty() {
+                    true
+                } else {
+                    entry.form.to_ascii_lowercase().contains(&needle)
+                        || entry.language.to_ascii_lowercase().contains(&needle)
+                        || entry.doc.to_ascii_lowercase().contains(&needle)
+                }
+            })
+            .cloned()
+            .collect();
+        if self.completion_entries.is_empty() {
+            self.completion_selected = 0;
+        } else if self.completion_selected >= self.completion_entries.len() {
+            self.completion_selected = self.completion_entries.len() - 1;
+        }
+    }
+
+    /// Context-aware `TAB`: opens/toggles the Scheme `:gerbil-ascent` / POO
+    /// completion table when editing an S-expression prompt (starting with `(`),
+    /// or falls back to the Emacs Helm Action Transformer menu otherwise.
+    pub(crate) fn toggle_tab_mode(&mut self) {
+        if self.completion_mode {
+            self.completion_mode = false;
+            return;
+        }
+        if self.is_sexp_prompt() && !self.completion_catalog.is_empty() {
+            self.action_mode = false;
+            self.refresh_completions();
+            if !self.completion_entries.is_empty() {
+                self.completion_mode = true;
+                self.completion_selected = 0;
+                return;
+            }
+        }
+        self.toggle_action_mode();
+    }
+
+    pub(crate) fn close_completion_mode(&mut self) {
+        self.completion_mode = false;
+    }
+
     pub(crate) fn insert_text(&mut self, text: &str) {
         if self.action_mode {
             return;
@@ -216,6 +292,13 @@ impl HelmOverlay {
         self.parsed = next_parsed;
         self.action_mode = false;
         self.action_selected = 0;
+        if self.completion_mode {
+            if self.is_sexp_prompt() {
+                self.refresh_completions();
+            } else {
+                self.completion_mode = false;
+            }
+        }
         if async_changed {
             self.epoch = self.epoch.saturating_add(1);
             if self.index.is_some() {
@@ -294,6 +377,18 @@ impl HelmOverlay {
     }
 
     pub(crate) fn move_selection(&mut self, delta: isize) {
+        if self.completion_mode {
+            let total = self.completion_entries.len();
+            if total == 0 {
+                self.completion_selected = 0;
+            } else {
+                self.completion_selected = self
+                    .completion_selected
+                    .saturating_add_signed(delta)
+                    .min(total - 1);
+            }
+            return;
+        }
         if self.action_mode {
             let total = self.available_actions().len();
             if total == 0 {
@@ -474,6 +569,30 @@ impl HelmOverlay {
     /// and hand off to the TUI host, or `(false, None)` when an in-Helm transformer
     /// action (like scoping `@prefix:`, `@lang:`, `@sym:`, or `@graph:`) updated Helm live.
     pub(crate) fn accept(&mut self, export_citations_only: bool) -> (bool, Option<HelmAction>) {
+        if self.completion_mode {
+            if let Some(entry) = self
+                .completion_entries
+                .get(self.completion_selected)
+                .cloned()
+            {
+                let trimmed = self.input.trim();
+                if trimmed == "(" || trimmed.is_empty() {
+                    self.input = entry.insert_text;
+                } else {
+                    let token = last_sexp_token(trimmed);
+                    if !token.is_empty() && self.input.ends_with(token) {
+                        let keep = self.input.len().saturating_sub(token.len());
+                        self.input.truncate(keep);
+                    }
+                    self.input.push_str(&entry.insert_text);
+                }
+                self.completion_mode = false;
+                self.on_input_changed();
+            } else {
+                self.completion_mode = false;
+            }
+            return (false, None);
+        }
         if self.action_mode {
             let actions = self.available_actions();
             let chosen = actions
@@ -694,6 +813,19 @@ impl HelmOverlay {
         self.marked_ids
             .retain(|mid| valid_ids.iter().any(|valid| valid == mid));
     }
+}
+
+fn last_sexp_token(text: &str) -> &str {
+    let bytes = text.as_bytes();
+    let mut idx = bytes.len();
+    while idx > 0 {
+        let ch = bytes[idx - 1];
+        if ch.is_ascii_whitespace() || ch == b'(' || ch == b')' || ch == b'"' {
+            break;
+        }
+        idx -= 1;
+    }
+    &text[idx..]
 }
 
 fn file_stem_for_graph(path: &str) -> Option<String> {

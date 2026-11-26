@@ -77,6 +77,7 @@ pub(crate) struct App {
     pub(crate) helm: Option<super::HelmOverlay>,
     pub(crate) search_index: Option<crate::helm::SharedSearchIndex>,
     pub(crate) search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig,
+    pub(crate) search_dsl_catalog: Vec<marlin_agent_search_engine::SearchDslCompletionEntry>,
     pub(super) search_index_warming:
         Option<tokio::sync::oneshot::Receiver<crate::helm::SharedSearchIndex>>,
     pub(super) search_index_syncing: Option<tokio::sync::oneshot::Receiver<bool>>,
@@ -188,6 +189,7 @@ impl App {
             helm: None,
             search_index: None,
             search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig::default(),
+            search_dsl_catalog: Vec::new(),
             search_index_warming: None,
             search_index_syncing: None,
             #[cfg(feature = "linked-ui")]
@@ -539,14 +541,17 @@ impl App {
             .clone()
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| std::path::PathBuf::from("."));
-        self.helm = Some(super::HelmOverlay::open(
-            initial_query,
-            workspace_root,
-            &self.command_catalog,
-            self.search_index_config.clone(),
-            self.search_index.clone(),
-            runtime,
-        ));
+        self.helm = Some(
+            super::HelmOverlay::open(
+                initial_query,
+                workspace_root,
+                &self.command_catalog,
+                self.search_index_config.clone(),
+                self.search_index.clone(),
+                runtime,
+            )
+            .with_completion_catalog(self.search_dsl_catalog.clone()),
+        );
         self.sync_search_index_background(runtime);
     }
 
