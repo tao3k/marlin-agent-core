@@ -9,7 +9,10 @@
 //!   marlin-scheme-ctl [--json] --endpoint http://127.0.0.1:PORT [--token TOKEN] <command>
 //!
 //! Commands:
+//!   wait-ready [--timeout-ms MS] [--interval-ms MS]
+//!                                                  Poll until host is reachable and authenticated (fails fast on auth denial)
 //!   status                                         Fetch unified live tabs + audit + gates snapshot
+//!   records [--project ID] [--kind PREFIX]         Query read-only ProjectionQueryService records (SecretVisibility::Denied)
 //!   open-workbench [session-id]                    Open live UiWorkbenchService session snapshot
 //!   tabs                                           Show live WorkbenchTabs from AppServer
 //!   watch-tabs [--count N] [--timeout-ms MS]       Stream live WatchWorkbenchTabs updates
@@ -24,12 +27,14 @@
 use std::{
     env,
     io::{self, Write},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use marlin_agent_app_server::{
-    MarlinSchemeHostClient,
-    scheme_host_client::{format_facets_sorted, json_escape, workbench_tab_kind_label},
+    GrpcCode, MarlinSchemeHostClient,
+    scheme_host_client::{
+        format_facets_sorted, graph_record_to_json, json_escape, workbench_tab_kind_label,
+    },
     wire::marlin::{common::v1::TargetKind, gate::v1::GraphHumanDecision},
 };
 
@@ -114,7 +119,7 @@ async fn run() -> Result<(), String> {
 
     if opts.help {
         println!(
-            "Usage: marlin-scheme-ctl [--json] --endpoint <url> [--token <tok>] <status|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch>"
+            "Usage: marlin-scheme-ctl [--json] --endpoint <url> [--token <tok>] <wait-ready|status|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch>"
         );
         return Ok(());
     }
@@ -124,13 +129,94 @@ async fn run() -> Result<(), String> {
     })?;
     let rest = opts.rest;
     let cmd = rest.first().map(String::as_str).ok_or_else(|| {
-        "missing subcommand (status|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch)"
+        "missing subcommand (wait-ready|status|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch)"
             .to_owned()
     })?;
+
+    if cmd == "wait-ready" {
+        let flags = parse_wait_ready_flags(&rest[1..])?;
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(flags.timeout_ms);
+        let interval = Duration::from_millis(flags.interval_ms);
+        loop {
+            match MarlinSchemeHostClient::connect(endpoint.clone(), opts.token.as_deref()).await {
+                Ok(client) => match client.get_workbench_tabs().await {
+                    Ok(resp) => {
+                        let elapsed_ms = started.elapsed().as_millis();
+                        if opts.json {
+                            println!(
+                                "{{\"ready\":true,\"tab_count\":{},\"elapsed_ms\":{elapsed_ms}}}",
+                                resp.tabs.len()
+                            );
+                        } else {
+                            println!("READY tabs={} elapsed_ms={elapsed_ms}", resp.tabs.len());
+                        }
+                        return Ok(());
+                    }
+                    Err(status)
+                        if matches!(
+                            status.code(),
+                            GrpcCode::Unauthenticated | GrpcCode::PermissionDenied
+                        ) =>
+                    {
+                        return Err(format!("wait-ready auth denied: {status}"));
+                    }
+                    Err(status) => {
+                        if Instant::now() >= deadline {
+                            return Err(format!(
+                                "wait-ready timed out after {}ms (last status: {status})",
+                                flags.timeout_ms
+                            ));
+                        }
+                    }
+                },
+                Err(err) => {
+                    if Instant::now() >= deadline {
+                        return Err(format!(
+                            "wait-ready timed out after {}ms (last connect error: {err})",
+                            flags.timeout_ms
+                        ));
+                    }
+                }
+            }
+            tokio::time::sleep(interval).await;
+        }
+    }
 
     let client = MarlinSchemeHostClient::connect(endpoint, opts.token.as_deref()).await?;
 
     match cmd {
+        "records" => {
+            let flags = parse_records_flags(&rest[1..])?;
+            let project_id = flags.project.unwrap_or_else(|| "default".to_owned());
+            let mut records = client
+                .query_project_graph_records(project_id)
+                .await
+                .map_err(|s| format!("query_project_graph_records failed: {s}"))?;
+            if let Some(prefix) = flags.kind_prefix.as_deref() {
+                records.retain(|r| r.kind.starts_with(prefix));
+            }
+            if opts.json {
+                let items: Vec<String> = records.iter().map(graph_record_to_json).collect();
+                println!("{{\"records\":[{}]}}", items.join(","));
+            } else {
+                println!("RECORDS count={}", records.len());
+                for rec in records {
+                    let facets = format_facets_sorted(&rec.facets);
+                    if facets.is_empty() {
+                        println!(
+                            "RECORD id={} kind={} title={}",
+                            rec.record_id, rec.kind, rec.title
+                        );
+                    } else {
+                        println!(
+                            "RECORD id={} kind={} title={} {facets}",
+                            rec.record_id, rec.kind, rec.title
+                        );
+                    }
+                }
+            }
+        }
         "status" => {
             let snap = client
                 .fetch_status_snapshot("default")
@@ -463,6 +549,92 @@ struct WatchFlags {
     session: Option<String>,
 }
 
+struct WaitReadyFlags {
+    timeout_ms: u64,
+    interval_ms: u64,
+}
+
+struct RecordsFlags {
+    project: Option<String>,
+    kind_prefix: Option<String>,
+}
+
+fn parse_wait_ready_flags(args: &[String]) -> Result<WaitReadyFlags, String> {
+    let mut timeout_ms = 5_000u64;
+    let mut interval_ms = 100u64;
+    let mut idx = 0;
+    while idx < args.len() {
+        match args[idx].as_str() {
+            "--timeout-ms" => {
+                idx += 1;
+                let raw = args
+                    .get(idx)
+                    .ok_or_else(|| "missing value for --timeout-ms".to_owned())?;
+                let parsed = raw
+                    .parse::<u64>()
+                    .map_err(|e| format!("invalid --timeout-ms `{raw}`: {e}"))?;
+                if parsed == 0 {
+                    return Err("--timeout-ms must be >= 1".to_owned());
+                }
+                timeout_ms = parsed;
+            }
+            "--interval-ms" => {
+                idx += 1;
+                let raw = args
+                    .get(idx)
+                    .ok_or_else(|| "missing value for --interval-ms".to_owned())?;
+                let parsed = raw
+                    .parse::<u64>()
+                    .map_err(|e| format!("invalid --interval-ms `{raw}`: {e}"))?;
+                if parsed == 0 {
+                    return Err("--interval-ms must be >= 1".to_owned());
+                }
+                interval_ms = parsed;
+            }
+            other => {
+                return Err(format!("unknown wait-ready option `{other}`"));
+            }
+        }
+        idx += 1;
+    }
+    Ok(WaitReadyFlags {
+        timeout_ms,
+        interval_ms,
+    })
+}
+
+fn parse_records_flags(args: &[String]) -> Result<RecordsFlags, String> {
+    let mut project = None;
+    let mut kind_prefix = None;
+    let mut idx = 0;
+    while idx < args.len() {
+        match args[idx].as_str() {
+            "--project" => {
+                idx += 1;
+                let raw = args
+                    .get(idx)
+                    .ok_or_else(|| "missing value for --project".to_owned())?;
+                project = Some(raw.clone());
+            }
+            "--kind" => {
+                idx += 1;
+                let raw = args
+                    .get(idx)
+                    .ok_or_else(|| "missing value for --kind".to_owned())?;
+                kind_prefix = Some(raw.clone());
+            }
+            other => {
+                return Err(format!("unknown records option `{other}`"));
+            }
+        }
+        idx += 1;
+    }
+    Ok(RecordsFlags {
+        project,
+        kind_prefix,
+    })
+}
+
 fn parse_watch_flags(args: &[String]) -> Result<WatchFlags, String> {
     let mut count = None;
     let mut timeout_ms = None;
@@ -560,5 +732,33 @@ mod tests {
 
         assert!(parse_watch_flags(&["--count".to_owned(), "0".to_owned()]).is_err());
         assert!(parse_watch_flags(&["--bogus".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn parse_wait_ready_and_records_flags_validate_inputs() {
+        let wr = parse_wait_ready_flags(&[
+            "--timeout-ms".to_owned(),
+            "2500".to_owned(),
+            "--interval-ms".to_owned(),
+            "50".to_owned(),
+        ])
+        .expect("valid wait-ready flags");
+        assert_eq!(wr.timeout_ms, 2500);
+        assert_eq!(wr.interval_ms, 50);
+        assert!(parse_wait_ready_flags(&["--timeout-ms".to_owned(), "0".to_owned()]).is_err());
+        assert!(parse_wait_ready_flags(&["--interval-ms".to_owned(), "0".to_owned()]).is_err());
+        assert!(parse_wait_ready_flags(&["--nope".to_owned()]).is_err());
+
+        let rec = parse_records_flags(&[
+            "--project".to_owned(),
+            "alpha".to_owned(),
+            "--kind".to_owned(),
+            "scheme.fleet.".to_owned(),
+        ])
+        .expect("valid records flags");
+        assert_eq!(rec.project.as_deref(), Some("alpha"));
+        assert_eq!(rec.kind_prefix.as_deref(), Some("scheme.fleet."));
+        assert!(parse_records_flags(&["--kind".to_owned()]).is_err());
+        assert!(parse_records_flags(&["--bad".to_owned()]).is_err());
     }
 }

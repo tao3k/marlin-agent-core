@@ -436,6 +436,71 @@ async fn linked_aot_scheme_host_boots_fast_without_scheme_tree_and_survives_os_r
             "unauth marlin-scheme-ctl must be rejected by aot host"
         );
 
+        // `wait-ready` MUST fail fast on Unauthenticated (never sleep for the full 10s timeout).
+        let unauth_wait_start = Instant::now();
+        let unauth_wait = Command::new(&ctl_bin)
+            .env_remove("MARLIN_BRIDGE_ENDPOINT")
+            .env_remove("MARLIN_BRIDGE_TOKEN")
+            .args(["--endpoint", &ep2, "wait-ready", "--timeout-ms", "10000"])
+            .output()
+            .await
+            .expect("run unauth marlin-scheme-ctl wait-ready against aot host");
+        assert!(
+            !unauth_wait.status.success(),
+            "unauth wait-ready must fail closed"
+        );
+        assert!(
+            unauth_wait_start.elapsed() < Duration::from_secs(3),
+            "unauth wait-ready must fail fast on Unauthenticated instead of polling for 10s, took {:?}",
+            unauth_wait_start.elapsed()
+        );
+
+        let ready_ctl = Command::new(&ctl_bin)
+            .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .args(["--json", "wait-ready", "--timeout-ms", "5000"])
+            .output()
+            .await
+            .expect("run marlin-scheme-ctl --json wait-ready against aot host");
+        assert!(
+            ready_ctl.status.success(),
+            "ctl wait-ready failed: {}",
+            String::from_utf8_lossy(&ready_ctl.stderr)
+        );
+        let ready_json: serde_json::Value = serde_json::from_slice(&ready_ctl.stdout)
+            .expect("parse marlin-scheme-ctl --json wait-ready output");
+        assert_eq!(ready_json["ready"], true);
+        assert!(
+            ready_json["tab_count"].as_u64().unwrap_or(0) >= 3,
+            "expected >=3 tabs in wait-ready json: {ready_json}"
+        );
+
+        let records_ctl = Command::new(&ctl_bin)
+            .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .args(["--json", "records", "--kind", "scheme.fleet."])
+            .output()
+            .await
+            .expect("run marlin-scheme-ctl --json records against aot host");
+        assert!(
+            records_ctl.status.success(),
+            "ctl --json records failed: {}",
+            String::from_utf8_lossy(&records_ctl.stderr)
+        );
+        let records_json: serde_json::Value = serde_json::from_slice(&records_ctl.stdout)
+            .expect("parse marlin-scheme-ctl --json records output");
+        assert!(
+            records_json["records"].as_array().is_some_and(|recs| {
+                recs.iter().any(|r| {
+                    r["kind"] == "scheme.fleet.audit_capsule"
+                        && r["facets"]["active_actor_count"] == "2"
+                        && r["facets"]["total_active_defeaters"] == "0"
+                        && r["facets"]["authorizes_effect"] == "false"
+                })
+            }),
+            "records json missing expected scheme.fleet.audit_capsule: {records_json}"
+        );
+
         let audit_ctl = Command::new(&ctl_bin)
             .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
             .env("MARLIN_BRIDGE_TOKEN", bearer_token)

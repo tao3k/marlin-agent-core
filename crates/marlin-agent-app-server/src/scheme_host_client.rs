@@ -405,6 +405,28 @@ pub fn json_escape(raw: &str) -> String {
     out
 }
 
+/// Formats a `GraphRecordView` as a deterministic RFC 8259 JSON object.
+pub fn graph_record_to_json(rec: &GraphRecordView) -> String {
+    let mut pairs: Vec<(&String, &String)> = rec.facets.iter().collect();
+    pairs.sort_by(|a, b| a.0.cmp(b.0));
+    let facets_json: Vec<String> = pairs
+        .into_iter()
+        .map(|(k, v)| format!("{}:{}", json_escape(k), json_escape(v)))
+        .collect();
+    let source_path = rec
+        .source_path
+        .as_deref()
+        .map_or_else(|| "null".to_owned(), json_escape);
+    format!(
+        "{{\"record_id\":{},\"kind\":{},\"title\":{},\"summary\":{},\"source_path\":{source_path},\"facets\":{{{}}}}}",
+        json_escape(&rec.record_id),
+        json_escape(&rec.kind),
+        json_escape(&rec.title),
+        json_escape(&rec.summary),
+        facets_json.join(",")
+    )
+}
+
 /// Formats a `GraphRecordView` facets map deterministically for CLI output.
 pub fn format_facets_sorted(facets: &HashMap<String, String>) -> String {
     let mut pairs: Vec<(&String, &String)> = facets.iter().collect();
@@ -427,6 +449,27 @@ mod tests {
             json_escape("a\"b\\c\nd\te\x01"),
             "\"a\\\"b\\\\c\\nd\\te\\u0001\""
         );
+    }
+
+    #[test]
+    fn graph_record_to_json_orders_facets_deterministically() {
+        let mut facets = HashMap::new();
+        facets.insert("z_key".to_owned(), "2".to_owned());
+        facets.insert("a_key".to_owned(), "1".to_owned());
+        let rec = GraphRecordView {
+            record_id: "scheme:fleet:audit-capsule".to_owned(),
+            surface: 0,
+            kind: "scheme.fleet.audit_capsule".to_owned(),
+            title: "Audit".to_owned(),
+            summary: "ok".to_owned(),
+            source_path: Some("scheme/graph-engine/fleet-controller.ss".to_owned()),
+            start_line: None,
+            end_line: None,
+            facets,
+        };
+        let raw = graph_record_to_json(&rec);
+        assert!(raw.contains("\"facets\":{\"a_key\":\"1\",\"z_key\":\"2\"}"));
+        assert!(raw.contains("\"source_path\":\"scheme/graph-engine/fleet-controller.ss\""));
     }
 
     #[test]
