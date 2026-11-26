@@ -60,9 +60,7 @@ pub(super) fn http_loopback_request(
         .next()
         .and_then(|line| line.split_whitespace().nth(1))
         .and_then(|code| code.parse::<u16>().ok())
-        .ok_or_else(|| {
-            SearchPlanProjectionError::Native("missing HTTP status code".to_owned())
-        })?;
+        .ok_or_else(|| SearchPlanProjectionError::Native("missing HTTP status code".to_owned()))?;
     let resp_body = decode_http_body(head, &raw[split + 4..])?;
     Ok((status, resp_body))
 }
@@ -116,9 +114,8 @@ pub fn fetch_asp_provider_catalog(
             String::from_utf8_lossy(&body)
         )));
     }
-    serde_json::from_slice(&body).map_err(|e| {
-        SearchPlanProjectionError::Native(format!("decode ASP provider catalog: {e}"))
-    })
+    serde_json::from_slice(&body)
+        .map_err(|e| SearchPlanProjectionError::Native(format!("decode ASP provider catalog: {e}")))
 }
 
 /// Dynamically register a new or updated language provider on ASP `POST /v1/providers/register`.

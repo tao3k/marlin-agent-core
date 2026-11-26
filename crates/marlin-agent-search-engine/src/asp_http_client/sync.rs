@@ -9,23 +9,21 @@ use std::path::Path;
 use std::time::Instant;
 
 use agent_semantic_search::{WorkspaceOpenEdbIngestBatch, WorkspaceSearchIndex};
-use gerbil_scheme::{CollectionKind, GerbilRuntime, RootedSchemeObject, SchemeScalar};
 #[cfg(not(feature = "linked-ui"))]
 use gerbil_scheme::IdentifierKind;
+use gerbil_scheme::{CollectionKind, GerbilRuntime, RootedSchemeObject, SchemeScalar};
 use serde::{Deserialize, Serialize};
 
 use crate::SearchPlanProjectionError;
 use crate::edb_bridge::{decode_string, decode_usize, make_string, make_vector, native};
 
-use super::domain_types::{
-    AspForwardingEndpoint, GeneralOntologyKindName, NativeAstKindName,
-};
+use super::domain_types::{AspForwardingEndpoint, GeneralOntologyKindName, NativeAstKindName};
+#[cfg(not(feature = "linked-ui"))]
+use super::protocol_types::AspHttpHydrationRequest;
 use super::protocol_types::{
     AspHttpHydrationReceipt, DynamicLanguageDescriptorRequest, DynamicSpecialRelationSpec,
     ForwardedDslPack, ForwardedKindMapping, ForwardedProviderCatalog,
 };
-#[cfg(not(feature = "linked-ui"))]
-use super::protocol_types::AspHttpHydrationRequest;
 use super::transport::{fetch_asp_provider_catalog, http_loopback_request};
 
 const MAX_INSPECT_BATCH_FILES: usize = 512;
@@ -94,7 +92,9 @@ fn encode_dynamic_descriptor<'a>(
                     make_string(runtime, &spec.relation_name)?,
                     encode_optional_str(
                         runtime,
-                        spec.kind_pattern.as_ref().map(GeneralOntologyKindName::as_str),
+                        spec.kind_pattern
+                            .as_ref()
+                            .map(GeneralOntologyKindName::as_str),
                     )?,
                     encode_optional_str(
                         runtime,
@@ -120,7 +120,9 @@ fn encode_dynamic_descriptor<'a>(
     )
 }
 
-fn decode_register_receipt(receipt: RootedSchemeObject<'_>) -> Result<usize, SearchPlanProjectionError> {
+fn decode_register_receipt(
+    receipt: RootedSchemeObject<'_>,
+) -> Result<usize, SearchPlanProjectionError> {
     let tuple = native(receipt.into_collection(CollectionKind::Vector))?;
     if tuple.len() != 3 {
         return Err(SearchPlanProjectionError::Invalid(

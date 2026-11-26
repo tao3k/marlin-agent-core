@@ -3116,6 +3116,7 @@ dependencies = [
  "criterion",
  "futures-executor",
  "gerbil-scheme",
+ "marlin-agent-runtime",
  "marlin-agent-storage",
  "marlin-context-org-model",
  "proptest",
