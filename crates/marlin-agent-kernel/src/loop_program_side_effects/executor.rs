@@ -10,8 +10,8 @@ use marlin_agent_runtime::{RuntimeContext, observability};
 use tracing::Instrument;
 
 use crate::{
-    LoopProgramExecutionReceipt, LoopProgramRuntimeHandoffExecutionReceipt,
-    spawn_loop_program_tool_process,
+    ExecutionCircuitBreaker, LoopProgramExecutionReceipt,
+    LoopProgramRuntimeHandoffExecutionReceipt, ToolIfcContext, spawn_loop_program_tool_process,
 };
 
 use super::{
@@ -29,6 +29,8 @@ pub struct LoopProgramRuntimeSideEffectExecutor {
     tool_process_resolver: Arc<dyn LoopProgramToolProcessResolver>,
     file_write_resolver: Arc<dyn LoopProgramFileWriteResolver>,
     file_sandbox: LoopProgramFileSandbox,
+    execution_breaker: Option<Arc<ExecutionCircuitBreaker>>,
+    ifc_context: ToolIfcContext,
     started_at_ms: u64,
     observed_at_ms: u64,
 }
@@ -42,9 +44,24 @@ impl LoopProgramRuntimeSideEffectExecutor {
             tool_process_resolver: Arc::new(tool_process_resolver),
             file_write_resolver: Arc::new(StaticLoopProgramFileWriteResolver::default()),
             file_sandbox: LoopProgramFileSandbox::deny_all(),
+            execution_breaker: None,
+            ifc_context: ToolIfcContext::clean_trusted(),
             started_at_ms: 0,
             observed_at_ms: 0,
         }
+    }
+
+    pub fn with_execution_breaker(
+        mut self,
+        execution_breaker: Arc<ExecutionCircuitBreaker>,
+    ) -> Self {
+        self.execution_breaker = Some(execution_breaker);
+        self
+    }
+
+    pub fn with_ifc_context(mut self, ifc_context: ToolIfcContext) -> Self {
+        self.ifc_context = ifc_context;
+        self
     }
 
     pub fn with_file_write_resolver<R>(mut self, file_write_resolver: R) -> Self
@@ -87,28 +104,52 @@ impl LoopProgramRuntimeSideEffectExecutor {
             }
 
             if let Some(request) = tool_process_request {
-                let request = request
-                    .with_started_at_ms(self.started_at_ms)
-                    .with_observed_at_ms(self.observed_at_ms);
-                match spawn_loop_program_tool_process(context, request)
-                    .instrument(observability::runtime_tool_span())
-                    .await
+                if let Some(breaker) = &self.execution_breaker
+                    && let Err(rejection) = breaker.authorize_side_effect(
+                        format!("tool_process:{}", projection.command.command_kind),
+                        &self.ifc_context,
+                    )
                 {
-                    Ok(receipt) => {
-                        tool_processes
-                            .push(LoopProgramToolProcessSideEffectReceipt::completed(receipt));
-                    }
-                    Err(error) => {
-                        tool_processes.push(LoopProgramToolProcessSideEffectReceipt::failed(
-                            projection.clone(),
-                            error,
-                        ));
+                    tool_processes.push(LoopProgramToolProcessSideEffectReceipt::blocked(
+                        projection.clone(),
+                        format!("loop_program.tool_process.breaker_blocked:{rejection}"),
+                    ));
+                } else {
+                    let request = request
+                        .with_started_at_ms(self.started_at_ms)
+                        .with_observed_at_ms(self.observed_at_ms);
+                    match spawn_loop_program_tool_process(context, request)
+                        .instrument(observability::runtime_tool_span())
+                        .await
+                    {
+                        Ok(receipt) => {
+                            tool_processes
+                                .push(LoopProgramToolProcessSideEffectReceipt::completed(receipt));
+                        }
+                        Err(error) => {
+                            tool_processes.push(LoopProgramToolProcessSideEffectReceipt::failed(
+                                projection.clone(),
+                                error,
+                            ));
+                        }
                     }
                 }
             }
 
             if let Some(request) = file_write_request {
-                file_writes.push(self.execute_file_write(request));
+                if let Some(breaker) = &self.execution_breaker
+                    && let Err(rejection) = breaker.authorize_side_effect(
+                        format!("file_write:{}", request.relative_path.display()),
+                        &self.ifc_context,
+                    )
+                {
+                    file_writes.push(LoopProgramFileWriteSideEffectReceipt::denied(
+                        request,
+                        format!("loop_program.file_write.breaker_blocked:{rejection}"),
+                    ));
+                } else {
+                    file_writes.push(self.execute_file_write(request));
+                }
             }
         }
 

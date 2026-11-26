@@ -7,6 +7,7 @@
 mod adapters;
 mod controller;
 mod driver;
+pub mod execution_breaker;
 mod loop_machine;
 mod loop_program_controller;
 mod loop_program_execution;
@@ -25,6 +26,12 @@ pub use controller::{
 pub use driver::{
     GraphLoopKernel, GraphNodeExecutor, GraphPolicyProposalCompilation, TokioGraphLoopKernel,
     compile_graph_policy_proposal_with_c_abi_readiness, compile_static_graph_policy_proposal,
+};
+pub use execution_breaker::{
+    BreakerActor, BreakerActorId, BreakerRejectionReason, BreakerTripEpoch, BreakerTripReason,
+    ExecutionBreakerCommitReceipt, ExecutionBreakerRearmReceipt, ExecutionBreakerSnapshot,
+    ExecutionBreakerTripReceipt, ExecutionCircuitBreaker, ToolBudgetUnits, ToolExecutionLease,
+    ToolExecutionLeaseId, ToolIfcContext,
 };
 pub use loop_machine::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,
