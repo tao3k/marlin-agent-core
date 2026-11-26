@@ -387,3 +387,25 @@ scheme-host-aot-gate: scheme-build
   cargo test --locked -p marlin-gerbil-scheme --features app-server-host --lib scheme_host_runtime::tests
   cargo build --locked -p marlin-agent-app-server --features ui-grpc --bin marlin-scheme-ctl
   GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" MARLIN_SCHEME_CTL_BIN="$PWD/target/debug/marlin-scheme-ctl" cargo test --locked -p marlin-agent-core --features linked-scheme-host --test scheme_host_aot_process -- --test-threads=1 --nocapture
+
+# Build the standalone zero-`.ss` Linked-AOT Scheme Governance Authority daemon (`target/debug/marlin-scheme-host-aot`).
+scheme-host-aot-build: scheme-build
+  GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" cargo build -p marlin-agent-core --features linked-scheme-host --bin marlin-scheme-host-aot
+
+# Build the release standalone zero-`.ss` Linked-AOT Scheme Governance Authority daemon (`target/release/marlin-scheme-host-aot`).
+scheme-host-aot-release: scheme-build
+  GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" cargo build --release -p marlin-agent-core --features linked-scheme-host --bin marlin-scheme-host-aot
+
+# Full Scheme POO x ASCENT x Bi-Temporal TM x Cedar x 10-countermodel Quint MBT x Linked-AOT governance gate.
+governance-gate: scheme-build
+  just scheme-test t/governance-policy-test.ss
+  just scheme-test t/graph-engine-c-abi-test.ss
+  cargo test -p marlin-agent-kernel --lib governance_cedar
+  cargo test -p marlin-agent-kernel --lib governance_admission
+  cargo test -p marlin-agent-kernel --test governance_admission_mbt
+  cargo test -p marlin-agent-kernel --test durable_governance_mbt
+  cargo test -p marlin-agent-kernel --test unit_test loop_program_side_effects
+  cargo test -p marlin-gerbil-aot-link
+  cargo test -p marlin-gerbil-scheme --features app-server-host --lib governance_host
+  cargo test -p marlin-gerbil-scheme --test governance_policy_vm
+  GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" cargo build -p marlin-agent-core --features linked-scheme-host --bin marlin-scheme-host-aot
