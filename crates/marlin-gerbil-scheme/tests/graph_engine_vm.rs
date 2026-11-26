@@ -24,7 +24,7 @@ use marlin_agent_app_server::{
         DispatchTaskActorRequest, ExecutionReceiptStatusProto, GetWorkbenchTabsRequest,
         GraphDispatchOperationProto, GraphSubstrateTargetProto, ReconcileTaskReceiptRequest,
         RegisterTaskActorRequest as V1RegisterTaskActorRequest, TaskActorScopeModeProto,
-        TaskActorStatusProto, WorkbenchTabKindProto,
+        TaskActorStatusProto, WatchWorkbenchTabsRequest, WorkbenchTabKindProto,
         app_server_client::AppServerClient as V1AppServerClient,
     },
     wire::marlin::{
@@ -56,13 +56,13 @@ use marlin_agent_runtime::{
 use marlin_gerbil_scheme::{
     GraphEngineDispatchProjection, GraphEngineGovernedContextProjection,
     GraphEngineProjectionError, GraphEngineRootedOracle, GraphEngineWorkbenchTaskRow,
-    SchemeAtomicEffect, SchemeAtomicReceipt, decode_fleet_audit_capsule_vector,
-    decode_graph_engine_dispatch_vector, decode_graph_engine_governed_context_vector,
-    decode_graph_engine_reconcile_vector, decode_graph_engine_workbench_tabs_vector,
-    decode_scheme_atomic_effect_vector, encode_graph_engine_dispatch_request,
-    encode_graph_engine_governed_context_request, encode_graph_engine_reconcile_request,
-    encode_graph_engine_workbench_tabs_request, encode_scheme_atomic_receipt_vector,
-    gerbil_package_root, graph_engine_oracle_channel,
+    SchemeAtomicEffect, SchemeAtomicReceipt, SchemeFleetSessionDriver,
+    decode_fleet_audit_capsule_vector, decode_graph_engine_dispatch_vector,
+    decode_graph_engine_governed_context_vector, decode_graph_engine_reconcile_vector,
+    decode_graph_engine_workbench_tabs_vector, decode_scheme_atomic_effect_vector,
+    encode_graph_engine_dispatch_request, encode_graph_engine_governed_context_request,
+    encode_graph_engine_reconcile_request, encode_graph_engine_workbench_tabs_request,
+    encode_scheme_atomic_receipt_vector, gerbil_package_root, graph_engine_oracle_channel,
 };
 
 fn vec_obj<'vm>(
@@ -1497,16 +1497,23 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
     let restored_fleet5 = runtime
         .call_rooted(&scheme_fleet_restore, &encode_receipt(&runtime, &hit5))
         .unwrap();
-    let ctrl_b5 = runtime
-        .call_rooted(
-            &scheme_ctrl_open,
-            &vec_obj(&runtime, &[restored_fleet5, sym(&runtime, "L3")]),
-        )
-        .unwrap();
-    let audit5 = decode_fleet_audit_capsule_vector(
-        runtime.call_rooted(&scheme_ctrl_audit, &ctrl_b5).unwrap(),
+    // Drive Boot #5 via the production thin `SchemeFleetSessionDriver` handle!
+    let mut driver5 = SchemeFleetSessionDriver::open(
+        &runtime,
+        &scheme_ctrl_open,
+        scheme_ctrl_dispatch,
+        scheme_ctrl_audit,
+        restored_fleet5,
+        "L3",
     )
-    .expect("decode audit5");
+    .expect("open SchemeFleetSessionDriver on Boot #5");
+    let step5 = driver5
+        .dispatch("task-drill-l3", None, None, &[], false)
+        .expect("dispatch L3 via SchemeFleetSessionDriver");
+    assert_eq!(step5.disclosure_level, "L3");
+    assert_eq!(step5.visible_tab_ids.len(), 4);
+    assert_eq!(step5.ui_element_count, 9);
+    let audit5 = driver5.audit_capsule().expect("decode audit5 via driver");
     assert_eq!(audit5.active_actor_count, 3);
     assert_eq!(audit5.archived_actor_count, 0);
     assert_eq!(audit5.peek_count, 0);
@@ -1754,9 +1761,26 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
             });
             let ep1 = format!("http://{addr1}");
 
-            // Drive ALL 5 real HTTP/2 TaskActor RPCs + co-hosted UI/Gate services against the
-            // LIVE embedded Gerbil Scheme VM Oracle on the main thread!
+            // Drive ALL 5 real HTTP/2 TaskActor RPCs + live WatchWorkbenchTabs stream + co-hosted
+            // UI/Gate services against the LIVE embedded Gerbil Scheme VM Oracle on the main thread!
             let mut v1_client1 = V1AppServerClient::connect(ep1.clone()).await.unwrap();
+            let mut watch_client1 = V1AppServerClient::connect(ep1.clone()).await.unwrap();
+            let mut tab_stream = watch_client1
+                .watch_workbench_tabs(WatchWorkbenchTabsRequest {})
+                .await
+                .unwrap()
+                .into_inner();
+            let initial_watch = tokio::time::timeout(Duration::from_secs(5), tab_stream.message())
+                .await
+                .expect("watch initial timeout")
+                .unwrap()
+                .expect("watch initial tabs");
+            assert_eq!(initial_watch.tabs.len(), 1);
+            assert_eq!(
+                initial_watch.tabs[0].kind,
+                WorkbenchTabKindProto::PinnedIndex as i32
+            );
+
             let reg = v1_client1
                 .register_task_actor(V1RegisterTaskActorRequest {
                     task_id: tid.as_str().to_owned(),
@@ -1770,6 +1794,16 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
                 .unwrap();
             assert_eq!(reg.task_id, "task-s19-mt");
             assert_eq!(reg.fencing_epoch, 1);
+
+            let after_reg_watch =
+                tokio::time::timeout(Duration::from_secs(5), tab_stream.message())
+                    .await
+                    .expect("watch after register timeout")
+                    .unwrap()
+                    .expect("watch after register tabs");
+            assert_eq!(after_reg_watch.tabs.len(), 2);
+            assert_eq!(after_reg_watch.tabs[1].id, "task-s19-mt");
+            assert_eq!(after_reg_watch.tabs[1].fencing_epoch, 1);
 
             // Real HTTP/2 DispatchTaskActor: valid ApplySteering admitted by live Scheme VM!
             let disp_ok = v1_client1
@@ -1820,6 +1854,26 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
                 rec.next_status,
                 TaskActorStatusProto::WaitingSteering as i32
             );
+
+            // Live HTTP/2 WatchWorkbenchTabs stream receives the epoch 1 -> 2 mutation!
+            let mut saw_epoch2 = false;
+            for _ in 0..4 {
+                if let Some(update) =
+                    tokio::time::timeout(Duration::from_secs(5), tab_stream.message())
+                        .await
+                        .expect("watch update timeout")
+                        .unwrap()
+                    && update
+                        .tabs
+                        .iter()
+                        .any(|t| t.id == "task-s19-mt" && t.fencing_epoch == 2)
+                {
+                    saw_epoch2 = true;
+                    break;
+                }
+            }
+            assert!(saw_epoch2, "WatchWorkbenchTabs must stream epoch 2 update");
+            drop(tab_stream);
 
             // Real HTTP/2 BindGovernedContext: valid L3 Blocker admitted; auto_archive=true rejected!
             let ctx_ok = v1_client1

@@ -65,8 +65,8 @@ pub use atomic_effect_abi::{
     MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_DISPATCH_SYMBOL,
     MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_OPEN_SYMBOL, MARLIN_GRAPH_ENGINE_STEP_DRIVER_SYMBOL,
     MARLIN_GRAPH_ENGINE_STEP_FLEET_SYMBOL, SchemeAtomicEffect, SchemeAtomicReceipt,
-    decode_fleet_audit_capsule_vector, decode_scheme_atomic_effect_vector,
-    encode_scheme_atomic_receipt_vector,
+    SchemeFleetDispatchStep, SchemeFleetSessionDriver, decode_fleet_audit_capsule_vector,
+    decode_scheme_atomic_effect_vector, encode_scheme_atomic_receipt_vector,
 };
 pub use brief_to_draft::{
     BriefNode, BriefProposal, BriefSettings, BriefSettingsDenial, BriefTemplate,

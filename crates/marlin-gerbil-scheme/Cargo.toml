@@ -15,8 +15,10 @@ publish = false
 
 [features]
 external-program = ["gerbil-scheme/external-program"]
+app-server-host = ["dep:marlin-agent-app-server"]
 
 [dependencies]
+marlin-agent-app-server = { workspace = true, features = ["turso-host"], optional = true }
 marlin-agent-harness-types.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-graph.workspace = true
@@ -30,7 +32,6 @@ gerbil-scheme.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 futures-executor.workspace = true
-marlin-agent-app-server = { workspace = true, features = ["turso-host"] }
 marlin-agent-kernel.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-agent-storage = { workspace = true, features = ["turso"] }
@@ -40,3 +41,8 @@ static_assertions.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 toml.workspace = true
+
+[[test]]
+name = "graph_engine_vm"
+path = "tests/graph_engine_vm.rs"
+required-features = ["app-server-host"]

@@ -394,3 +394,222 @@ pub fn decode_fleet_audit_capsule_vector(
         authorizes_effect: read_bool(v.element(7).unwrap())?,
     })
 }
+
+/// Decoded step output from one `FleetWorkbenchController.` dispatch call.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SchemeFleetDispatchStep {
+    pub disclosure_level: String,
+    pub effects: Vec<SchemeAtomicEffect>,
+    pub visible_tab_ids: Vec<String>,
+    pub detour_modes: Vec<String>,
+    pub active_defeater_counts: Vec<usize>,
+    pub ui_element_count: usize,
+}
+
+enum FleetControllerRoot<'vm> {
+    Initial(RootedSchemeObject<'vm>),
+    Dispatched(gerbil_scheme::RootedSchemeCollection<'vm>),
+}
+
+/// Thin, zero-orchestration Rust handle over a live Scheme `FleetWorkbenchController.`
+/// rooted in an embedded `GerbilRuntime`.
+///
+/// Marshals actions, 4-primitive atomic effects/receipts, and non-authorizing audit
+/// capsules across the rooted Gambit C-ABI without re-implementing any Scheme semantics.
+pub struct SchemeFleetSessionDriver<'vm> {
+    runtime: &'vm GerbilRuntime,
+    dispatch_proc: RootedSchemeObject<'vm>,
+    audit_proc: RootedSchemeObject<'vm>,
+    state: FleetControllerRoot<'vm>,
+}
+
+impl<'vm> SchemeFleetSessionDriver<'vm> {
+    /// Opens a live `FleetWorkbenchController.` over `fleet` at `disclosure_level` (e.g. `"L1"`/`"L3"`).
+    pub fn open(
+        runtime: &'vm GerbilRuntime,
+        open_proc: &RootedSchemeObject<'vm>,
+        dispatch_proc: RootedSchemeObject<'vm>,
+        audit_proc: RootedSchemeObject<'vm>,
+        fleet: RootedSchemeObject<'vm>,
+        disclosure_level: &str,
+    ) -> Result<Self, AtomicEffectAbiError> {
+        let open_in = vec_obj(runtime, &[fleet, sym(runtime, disclosure_level)?])?;
+        let controller = runtime
+            .call_rooted(open_proc, &open_in)
+            .map_err(|e| AtomicEffectAbiError(format!("open fleet controller: {e}")))?;
+        Ok(Self {
+            runtime,
+            dispatch_proc,
+            audit_proc,
+            state: FleetControllerRoot::Initial(controller),
+        })
+    }
+
+    fn with_controller<T>(
+        &self,
+        f: impl FnOnce(&RootedSchemeObject<'_>) -> Result<T, AtomicEffectAbiError>,
+    ) -> Result<T, AtomicEffectAbiError> {
+        match &self.state {
+            FleetControllerRoot::Initial(ctrl) => f(ctrl),
+            FleetControllerRoot::Dispatched(out) => {
+                let ctrl = out
+                    .element(0)
+                    .map_err(|e| AtomicEffectAbiError(format!("output[0] controller: {e}")))?;
+                f(&ctrl)
+            }
+        }
+    }
+
+    /// Dispatches one declarative TUI `scheme-action` symbol onto the live Scheme controller
+    /// and updates the rooted controller handle in place.
+    pub fn dispatch(
+        &mut self,
+        action_sym: &str,
+        task_id: Option<&str>,
+        arg: Option<&str>,
+        receipts: &[SchemeAtomicReceipt],
+        auto_archive: bool,
+    ) -> Result<SchemeFleetDispatchStep, AtomicEffectAbiError> {
+        let rt = self.runtime;
+        let task_obj = match task_id {
+            Some(t) => txt(rt, t)?,
+            None => rt
+                .scalar_object(SchemeScalar::Boolean(false))
+                .map_err(|e| AtomicEffectAbiError(format!("alloc false: {e}")))?,
+        };
+        let arg_obj = match arg {
+            Some(a) => txt(rt, a)?,
+            None => rt
+                .scalar_object(SchemeScalar::Boolean(false))
+                .map_err(|e| AtomicEffectAbiError(format!("alloc false: {e}")))?,
+        };
+        let mut rcpt_objs = Vec::with_capacity(receipts.len());
+        for rcpt in receipts {
+            rcpt_objs.push(encode_scheme_atomic_receipt_vector(rt, rcpt)?);
+        }
+        let rcpts_vec = vec_obj(rt, &rcpt_objs)?;
+        let auto_obj = rt
+            .scalar_object(SchemeScalar::Boolean(auto_archive))
+            .map_err(|e| AtomicEffectAbiError(format!("alloc bool: {e}")))?;
+
+        let action_obj = sym(rt, action_sym)?;
+        let dispatch_in = self.with_controller(|ctrl| {
+            rt.collection_from_objects(
+                CollectionKind::Vector,
+                &[
+                    ctrl,
+                    &action_obj,
+                    &task_obj,
+                    &arg_obj,
+                    &rcpts_vec,
+                    &auto_obj,
+                ],
+            )
+            .map(|c| c.into_object())
+            .map_err(|e| AtomicEffectAbiError(format!("construct dispatch vector: {e}")))
+        })?;
+        let out = rt
+            .call_rooted(&self.dispatch_proc, &dispatch_in)
+            .map_err(|e| AtomicEffectAbiError(format!("dispatch `{action_sym}`: {e}")))?
+            .into_collection(CollectionKind::Vector)
+            .map_err(|e| AtomicEffectAbiError(format!("dispatch output vector: {e}")))?;
+        if out.len() != 7 {
+            return Err(AtomicEffectAbiError(format!(
+                "expected 7-slot controller dispatch output, got {}",
+                out.len()
+            )));
+        }
+
+        let step = {
+            let disclosure_level = read_sym(
+                out.element(1)
+                    .map_err(|e| AtomicEffectAbiError(format!("output[1] disclosure: {e}")))?,
+            )?;
+
+            let effs_vec = out
+                .element(2)
+                .map_err(|e| AtomicEffectAbiError(format!("output[2] effects: {e}")))?
+                .into_collection(CollectionKind::Vector)
+                .map_err(|e| AtomicEffectAbiError(format!("effects vector: {e}")))?;
+            let mut effects = Vec::with_capacity(effs_vec.len());
+            for i in 0..effs_vec.len() {
+                effects.push(decode_scheme_atomic_effect_vector(
+                    effs_vec
+                        .element(i)
+                        .map_err(|e| AtomicEffectAbiError(format!("effect[{i}]: {e}")))?,
+                )?);
+            }
+
+            let vis_vec = out
+                .element(3)
+                .map_err(|e| AtomicEffectAbiError(format!("output[3] visible tabs: {e}")))?
+                .into_collection(CollectionKind::Vector)
+                .map_err(|e| AtomicEffectAbiError(format!("visible tabs vector: {e}")))?;
+            let mut visible_tab_ids = Vec::with_capacity(vis_vec.len());
+            for i in 0..vis_vec.len() {
+                visible_tab_ids.push(read_str(
+                    vis_vec
+                        .element(i)
+                        .map_err(|e| AtomicEffectAbiError(format!("visible_tab[{i}]: {e}")))?,
+                )?);
+            }
+
+            let detours_vec = out
+                .element(4)
+                .map_err(|e| AtomicEffectAbiError(format!("output[4] detours: {e}")))?
+                .into_collection(CollectionKind::Vector)
+                .map_err(|e| AtomicEffectAbiError(format!("detours vector: {e}")))?;
+            let mut detour_modes = Vec::with_capacity(detours_vec.len());
+            for i in 0..detours_vec.len() {
+                detour_modes.push(read_sym(
+                    detours_vec
+                        .element(i)
+                        .map_err(|e| AtomicEffectAbiError(format!("detour[{i}]: {e}")))?,
+                )?);
+            }
+
+            let defs_vec = out
+                .element(5)
+                .map_err(|e| AtomicEffectAbiError(format!("output[5] defeaters: {e}")))?
+                .into_collection(CollectionKind::Vector)
+                .map_err(|e| AtomicEffectAbiError(format!("defeaters vector: {e}")))?;
+            let mut active_defeater_counts = Vec::with_capacity(defs_vec.len());
+            for i in 0..defs_vec.len() {
+                active_defeater_counts.push(read_nonneg_usize(
+                    defs_vec
+                        .element(i)
+                        .map_err(|e| AtomicEffectAbiError(format!("defeater[{i}]: {e}")))?,
+                )?);
+            }
+
+            let ui_element_count = out
+                .element(6)
+                .map_err(|e| AtomicEffectAbiError(format!("output[6] ui elements: {e}")))?
+                .into_collection(CollectionKind::Vector)
+                .map_err(|e| AtomicEffectAbiError(format!("ui elements vector: {e}")))?
+                .len();
+
+            SchemeFleetDispatchStep {
+                disclosure_level,
+                effects,
+                visible_tab_ids,
+                detour_modes,
+                active_defeater_counts,
+                ui_element_count,
+            }
+        };
+
+        self.state = FleetControllerRoot::Dispatched(out);
+        Ok(step)
+    }
+
+    /// Projects the current non-authorizing `FleetAuditCapsuleProjection` from Scheme.
+    pub fn audit_capsule(&self) -> Result<FleetAuditCapsuleProjection, AtomicEffectAbiError> {
+        let out = self.with_controller(|ctrl| {
+            self.runtime
+                .call_rooted(&self.audit_proc, ctrl)
+                .map_err(|e| AtomicEffectAbiError(format!("audit capsule: {e}")))
+        })?;
+        decode_fleet_audit_capsule_vector(out)
+    }
+}
