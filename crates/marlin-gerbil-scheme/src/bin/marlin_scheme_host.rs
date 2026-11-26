@@ -42,15 +42,17 @@ use marlin_agent_graph::{
     GovernedContextCapsule, GraphDispatchOperation, GraphSubstrateTarget, KvPrefixDigest,
     MarlinDispatchEnvelope, MarlinExecutionReceipt, TaskActorId, TaskActorScopeMode,
 };
+use marlin_agent_protocol::{ModelGatewayMessageRole, ModelGatewayRequest};
 use marlin_agent_storage::{
     AgentId, ArtifactPointerKey, ProjectId, SessionId, TursoAgentStorage, TursoAgentStorageConfig,
     TursoBatchTransactionMode, TursoOptimizationProfile,
 };
 use marlin_gerbil_scheme::{
     AtomicEffectAbiError, FleetAuditCapsuleProjection, GraphEngineRootedOracle, SchemeAtomicEffect,
-    SchemeAtomicReceipt, SchemeFleetSessionDriver, encode_scheme_atomic_receipt_vector,
-    gerbil_package_root, graph_engine_oracle_channel,
+    SchemeAtomicReceipt, SchemeFleetDispatchStep, SchemeFleetSessionDriver,
+    encode_scheme_atomic_receipt_vector, gerbil_package_root, graph_engine_oracle_channel,
 };
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[cfg(unix)]
 struct ShutdownWatcher {
@@ -104,6 +106,13 @@ enum FleetVmCommand {
         gate_id: String,
         note: Option<String>,
         reply: mpsc::SyncSender<Result<FleetAuditCapsuleProjection, String>>,
+    },
+    UiAction {
+        action_sym: String,
+        arg: Option<String>,
+        reply: mpsc::SyncSender<
+            Result<(SchemeFleetDispatchStep, FleetAuditCapsuleProjection), String>,
+        >,
     },
 }
 
@@ -258,9 +267,271 @@ fn bootstrap_scheme_fleet<'vm>(
     }
 }
 
+const MAX_HTTP_LLM_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+
+/// Thin, zero-orchestration HTTP/1.1 client for OpenAI-compatible `/v1/chat/completions`
+/// endpoints configured via `MARLIN_SCHEME_LLM_BASE_URL`.
+#[derive(Clone, Debug)]
+struct HttpOpenAiLlmClient {
+    host_port: String,
+    host_header: String,
+    request_path: String,
+    model_override: Option<String>,
+    api_key: Option<String>,
+    timeout: Duration,
+}
+
+impl HttpOpenAiLlmClient {
+    fn from_env() -> Result<Option<Self>, String> {
+        let Ok(raw_url) = env::var("MARLIN_SCHEME_LLM_BASE_URL") else {
+            return Ok(None);
+        };
+        let trimmed = raw_url.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        let rest = trimmed.strip_prefix("http://").ok_or_else(|| {
+            format!("MARLIN_SCHEME_LLM_BASE_URL must use http:// scheme, got {trimmed}")
+        })?;
+        let (authority, base_path) = match rest.find('/') {
+            Some(idx) => (&rest[..idx], &rest[idx..]),
+            None => (rest, ""),
+        };
+        if authority.is_empty() {
+            return Err("MARLIN_SCHEME_LLM_BASE_URL missing host authority".to_owned());
+        }
+        let host_port = if authority.contains(':') {
+            authority.to_owned()
+        } else {
+            format!("{authority}:80")
+        };
+        let clean_base = base_path.trim_end_matches('/');
+        let request_path = if clean_base.ends_with("/chat/completions") {
+            clean_base.to_owned()
+        } else if clean_base.ends_with("/v1") {
+            format!("{clean_base}/chat/completions")
+        } else if clean_base.is_empty() {
+            "/v1/chat/completions".to_owned()
+        } else {
+            format!("{clean_base}/v1/chat/completions")
+        };
+        let model_override = env::var("MARLIN_SCHEME_LLM_MODEL")
+            .ok()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty());
+        let api_key = env::var("MARLIN_SCHEME_LLM_API_KEY")
+            .ok()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty());
+        let timeout_ms = env::var("MARLIN_SCHEME_LLM_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .filter(|ms| *ms > 0)
+            .unwrap_or(15_000);
+        Ok(Some(Self {
+            host_port,
+            host_header: authority.to_owned(),
+            request_path,
+            model_override,
+            api_key,
+            timeout: Duration::from_millis(timeout_ms),
+        }))
+    }
+
+    async fn complete(&self, request: &ModelGatewayRequest) -> Result<String, String> {
+        let model = self
+            .model_override
+            .as_deref()
+            .unwrap_or_else(|| request.endpoint().model.as_str());
+        let messages: Vec<serde_json::Value> = request
+            .messages()
+            .iter()
+            .map(|msg| {
+                let role = match msg.role {
+                    ModelGatewayMessageRole::System => "system",
+                    ModelGatewayMessageRole::Developer => "developer",
+                    ModelGatewayMessageRole::User => "user",
+                    ModelGatewayMessageRole::Assistant => "assistant",
+                    ModelGatewayMessageRole::Tool => "tool",
+                };
+                serde_json::json!({
+                    "role": role,
+                    "content": msg.content,
+                })
+            })
+            .collect();
+        let body = serde_json::to_vec(&serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "stream": false,
+        }))
+        .map_err(|err| format!("serialize openai chat completion request: {err}"))?;
+
+        let mut req_buf = format!(
+            "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
+            self.request_path,
+            self.host_header,
+            body.len()
+        );
+        if let Some(key) = &self.api_key {
+            req_buf.push_str(&format!("Authorization: Bearer {key}\r\n"));
+        }
+        req_buf.push_str("\r\n");
+
+        let fut = async {
+            let mut stream = tokio::net::TcpStream::connect(&self.host_port)
+                .await
+                .map_err(|err| format!("connect llm endpoint {}: {err}", self.host_port))?;
+            stream
+                .write_all(req_buf.as_bytes())
+                .await
+                .map_err(|err| format!("write llm http headers: {err}"))?;
+            stream
+                .write_all(&body)
+                .await
+                .map_err(|err| format!("write llm http body: {err}"))?;
+            stream
+                .flush()
+                .await
+                .map_err(|err| format!("flush llm http request: {err}"))?;
+
+            let mut raw = Vec::new();
+            let mut limited = stream.take((MAX_HTTP_LLM_RESPONSE_BYTES + 1) as u64);
+            limited
+                .read_to_end(&mut raw)
+                .await
+                .map_err(|err| format!("read llm http response: {err}"))?;
+            if raw.len() > MAX_HTTP_LLM_RESPONSE_BYTES {
+                return Err("llm http response exceeded 4 MiB safety limit".to_owned());
+            }
+            parse_openai_http_response(&raw)
+        };
+        tokio::time::timeout(self.timeout, fut).await.map_err(|_| {
+            format!(
+                "llm http request timed out after {}ms",
+                self.timeout.as_millis()
+            )
+        })?
+    }
+}
+
+fn decode_chunked_body(raw: &[u8]) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    let mut pos = 0usize;
+    while pos < raw.len() {
+        let Some(rel_crlf) = raw[pos..].windows(2).position(|w| w == b"\r\n") else {
+            return Err("malformed chunked http response: missing size CRLF".to_owned());
+        };
+        let size_line = std::str::from_utf8(&raw[pos..pos + rel_crlf])
+            .map_err(|_| "invalid utf-8 chunk size".to_owned())?;
+        let hex = size_line.split(';').next().unwrap_or("").trim();
+        let size =
+            usize::from_str_radix(hex, 16).map_err(|_| format!("invalid chunk size hex: {hex}"))?;
+        pos += rel_crlf + 2;
+        if size == 0 {
+            break;
+        }
+        if pos + size + 2 > raw.len() {
+            return Err("truncated chunked http response body".to_owned());
+        }
+        out.extend_from_slice(&raw[pos..pos + size]);
+        pos += size + 2;
+    }
+    Ok(out)
+}
+
+fn parse_openai_http_response(raw: &[u8]) -> Result<String, String> {
+    let Some(header_end) = raw.windows(4).position(|w| w == b"\r\n\r\n") else {
+        return Err("malformed http response: missing header separator".to_owned());
+    };
+    let header_str = std::str::from_utf8(&raw[..header_end])
+        .map_err(|_| "non-utf8 http response headers".to_owned())?;
+    let mut lines = header_str.lines();
+    let status_line = lines
+        .next()
+        .ok_or_else(|| "empty http response status line".to_owned())?;
+    let status_code = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse::<u16>().ok())
+        .ok_or_else(|| format!("invalid http status line: {status_line}"))?;
+    let is_chunked = lines.any(|line| {
+        let lower = line.to_ascii_lowercase();
+        lower.starts_with("transfer-encoding:") && lower.contains("chunked")
+    });
+    let raw_body = &raw[header_end + 4..];
+    let body_bytes = if is_chunked {
+        decode_chunked_body(raw_body)?
+    } else {
+        raw_body.to_vec()
+    };
+    if !(200..300).contains(&status_code) {
+        let preview = String::from_utf8_lossy(&body_bytes);
+        return Err(format!("llm http status {status_code}: {preview}"));
+    }
+    let json: serde_json::Value = serde_json::from_slice(&body_bytes)
+        .map_err(|err| format!("parse llm json response: {err}"))?;
+    json.get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c0| c0.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+        .ok_or_else(|| "llm json response missing choices[0].message.content".to_owned())
+}
+
+/// Strictly allowlists declarative UI commands that may be routed to Scheme
+/// `FleetWorkbenchController.` via `DispatchUiEvent(RecordCommand)`.
+///
+/// Security invariant: `task-human-approve` is deliberately EXCLUDED so human approval
+/// can NEVER bypass the one-shot `ApprovalGateService::submit_graph_human_decision` gate.
+fn parse_scheme_ui_command(raw: &str) -> Option<(&'static str, Option<String>)> {
+    let body = raw.trim().strip_prefix("scheme:")?.trim();
+    let (action_raw, arg) = match body.split_once(char::is_whitespace) {
+        Some((head, tail)) => {
+            let trimmed_arg = tail.trim();
+            let opt_arg = if trimmed_arg.is_empty() {
+                None
+            } else {
+                Some(trimmed_arg.to_owned())
+            };
+            (head, opt_arg)
+        }
+        None => (body, None),
+    };
+    let action = match action_raw {
+        "task-drill-l0" => "task-drill-l0",
+        "task-drill-l1" => "task-drill-l1",
+        "task-drill-l2" => "task-drill-l2",
+        "task-drill-l3" => "task-drill-l3",
+        "task-propose-branch" => "task-propose-branch",
+        "task-detour-blocker" => "task-detour-blocker",
+        "task-detour-sidequest" => "task-detour-sidequest",
+        "task-detour-exit-return" => "task-detour-exit-return",
+        "task-detour-exit-absorb" => "task-detour-exit-absorb",
+        "task-detour-exit-abort" => "task-detour-exit-abort",
+        "task-detour-exit-sibling" => "task-detour-exit-sibling",
+        "task-peek" => "task-peek",
+        "task-reopen" => "task-reopen",
+        "task-fleet-step" => "task-fleet-step",
+        _ => return None,
+    };
+    Some((action, arg))
+}
+
+fn parse_disclosure_depth(raw: &str) -> DisclosureDepth {
+    match raw {
+        "L0" => DisclosureDepth::L0,
+        "L1" => DisclosureDepth::L1,
+        "L2" => DisclosureDepth::L2,
+        _ => DisclosureDepth::L3,
+    }
+}
+
 async fn run_one_atomic_effect(
     cas: Option<Arc<StorageCasStore<TursoAgentStorage>>>,
     sandbox: Option<Arc<AllowlistSandboxRunner>>,
+    http_llm: Option<Arc<HttpOpenAiLlmClient>>,
     loopback_llm_response: Option<Arc<str>>,
     effect: SchemeAtomicEffect,
 ) -> SchemeAtomicReceipt {
@@ -314,16 +585,24 @@ async fn run_one_atomic_effect(
                 message: "sandbox runner denied: no authorized sandbox policy mounted".to_owned(),
             },
         },
-        SchemeAtomicEffect::LlmComplete { effect_id, .. } => match loopback_llm_response {
-            Some(content) => SchemeAtomicReceipt::LlmCompleted {
-                effect_id,
-                content: content.as_ref().to_owned(),
-            },
-            None => SchemeAtomicReceipt::EffectError {
-                effect_id,
-                message: "llm gateway not configured on marlin-scheme-host".to_owned(),
-            },
-        },
+        SchemeAtomicEffect::LlmComplete { effect_id, request } => {
+            if let Some(client) = http_llm {
+                match client.complete(&request).await {
+                    Ok(content) => SchemeAtomicReceipt::LlmCompleted { effect_id, content },
+                    Err(message) => SchemeAtomicReceipt::EffectError { effect_id, message },
+                }
+            } else if let Some(content) = loopback_llm_response {
+                SchemeAtomicReceipt::LlmCompleted {
+                    effect_id,
+                    content: content.as_ref().to_owned(),
+                }
+            } else {
+                SchemeAtomicReceipt::EffectError {
+                    effect_id,
+                    message: "llm gateway not configured on marlin-scheme-host".to_owned(),
+                }
+            }
+        }
     }
 }
 
@@ -361,8 +640,8 @@ fn sync_boot_fleet_to_control_plane(
     let parent_id = TaskActorId::new("fleet-host-parent").map_err(|e| format!("{e}"))?;
     let sib_id = TaskActorId::new("fleet-host-sib").map_err(|e| format!("{e}"))?;
     let kv_digest = KvPrefixDigest::new("sha256:scheme-host-kv").map_err(|e| format!("{e}"))?;
-    let already_present = task_actors.snapshot().actors.contains_key(&parent_id);
-    if !already_present {
+    let snap = task_actors.snapshot();
+    if !snap.actors.contains_key(&parent_id) {
         task_actors
             .register_actor(RegisterTaskActorRequest {
                 task_id: parent_id.clone(),
@@ -371,7 +650,20 @@ fn sync_boot_fleet_to_control_plane(
             })
             .map_err(|e| format!("register fleet parent actor: {e}"))?;
     }
-    let _ = task_actors.open_read_only_peek(sib_id);
+    if capsule.active_actor_count >= 2 {
+        if !snap.actors.contains_key(&sib_id) {
+            task_actors
+                .register_actor(RegisterTaskActorRequest {
+                    task_id: sib_id.clone(),
+                    title: "Turso Fleet Sibling".to_owned(),
+                    scope_mode: TaskActorScopeMode::Project,
+                })
+                .map_err(|e| format!("register reopened fleet sibling actor: {e}"))?;
+        }
+        let _ = task_actors.close_read_only_peek(&sib_id);
+    } else {
+        let _ = task_actors.open_read_only_peek(sib_id);
+    }
     let has_defeater = capsule.total_active_defeaters > 0;
     task_actors
         .bind_governed_context(GovernedContextCapsule {
@@ -391,6 +683,58 @@ fn sync_boot_fleet_to_control_plane(
             auto_archive_enabled: !has_defeater,
         })
         .map_err(|e| format!("bind fleet governed context: {e}"))?;
+    Ok(())
+}
+
+fn sync_ui_action_fleet_to_control_plane(
+    task_actors: &TaskActorControlPlane,
+    action_sym: &str,
+    arg: Option<&str>,
+    step: &SchemeFleetDispatchStep,
+    capsule: &FleetAuditCapsuleProjection,
+) -> Result<(), String> {
+    if action_sym == "task-reopen" {
+        let sib_raw = arg.unwrap_or("fleet-host-sib");
+        let sib_id = TaskActorId::new(sib_raw).map_err(|e| format!("{e}"))?;
+        let snap = task_actors.snapshot();
+        if !snap.actors.contains_key(&sib_id) {
+            task_actors
+                .register_actor(RegisterTaskActorRequest {
+                    task_id: sib_id.clone(),
+                    title: "Turso Fleet Sibling".to_owned(),
+                    scope_mode: TaskActorScopeMode::Project,
+                })
+                .map_err(|e| format!("register reopened actor {sib_raw}: {e}"))?;
+        }
+        let _ = task_actors.close_read_only_peek(&sib_id);
+    }
+    let parent_id = TaskActorId::new("fleet-host-parent").map_err(|e| format!("{e}"))?;
+    let kv_digest = KvPrefixDigest::new("sha256:scheme-host-kv").map_err(|e| format!("{e}"))?;
+    let has_defeater = capsule.total_active_defeaters > 0;
+    let requested_depth = parse_disclosure_depth(&step.disclosure_level);
+    let effective_depth = if has_defeater {
+        DisclosureDepth::L3
+    } else {
+        requested_depth
+    };
+    task_actors
+        .bind_governed_context(GovernedContextCapsule {
+            task_id: parent_id,
+            context_cut: 1,
+            kv_prefix_digest: kv_digest,
+            disclosure_depth: effective_depth,
+            has_active_defeater: has_defeater,
+            quarantined_memory_count: 0,
+            sandbox_admitted: true,
+            cedar_handoff_valid: true,
+            detour_mode: if has_defeater {
+                DetourMode::BlockerActive
+            } else {
+                DetourMode::Mainline
+            },
+            auto_archive_enabled: !has_defeater,
+        })
+        .map_err(|e| format!("rebind ui action governed context: {e}"))?;
     Ok(())
 }
 
@@ -478,6 +822,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty())
         .map(Arc::from);
+    let http_llm_client = HttpOpenAiLlmClient::from_env()?.map(Arc::new);
     let sandbox_runner = parse_sandbox_runner_from_env();
     let scheme_dir = env::var("MARLIN_SCHEME_DIR")
         .ok()
@@ -593,9 +938,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 TaskActorControlPlane::new().with_oracle(oracle_arc)
             };
 
-            // Spawn thin Tokio atomic-effect worker serving CasGet/CasPut/SandboxRun for the Gambit VM thread.
+            // Spawn thin Tokio atomic-effect worker serving CasGet/CasPut/SandboxRun/LlmComplete for the Gambit VM thread.
             let cas_for_worker = cas_store.clone();
             let sandbox_for_worker = sandbox_runner.clone();
+            let http_llm_for_worker = http_llm_client.clone();
             let llm_for_worker = loopback_llm_response.clone();
             let effect_worker = tokio::spawn(async move {
                 while let Some(batch) = effect_rx.recv().await {
@@ -603,9 +949,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for eff in batch.effects {
                         let cas = cas_for_worker.clone();
                         let sbx = sandbox_for_worker.clone();
+                        let http_llm = http_llm_for_worker.clone();
                         let llm = llm_for_worker.clone();
                         handles.push(tokio::spawn(async move {
-                            run_one_atomic_effect(cas, sbx, llm, eff).await
+                            run_one_atomic_effect(cas, sbx, http_llm, llm, eff).await
                         }));
                     }
                     let mut receipts = Vec::with_capacity(handles.len());
@@ -703,6 +1050,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 None
             };
 
+            let ui_cmd_watcher = if fleet_checkpoint_key_srv.is_some() {
+                let mut ui_cmd_rx = host.subscribe_dispatched_ui_commands();
+                let fleet_tx_ui = fleet_tx.clone();
+                let actors_for_ui = task_actors.clone();
+                Some(tokio::spawn(async move {
+                    while let Ok(ev) = ui_cmd_rx.recv().await {
+                        if let Some((action_sym, arg)) = parse_scheme_ui_command(&ev.command) {
+                            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+                            let arg_clone = arg.clone();
+                            if fleet_tx_ui
+                                .send(FleetVmCommand::UiAction {
+                                    action_sym: action_sym.to_owned(),
+                                    arg,
+                                    reply: reply_tx,
+                                })
+                                .is_ok()
+                                && let Ok(Ok(Ok((step, capsule)))) =
+                                    tokio::task::spawn_blocking(move || reply_rx.recv()).await
+                            {
+                                let _ = sync_ui_action_fleet_to_control_plane(
+                                    &actors_for_ui,
+                                    action_sym,
+                                    arg_clone.as_deref(),
+                                    &step,
+                                    &capsule,
+                                );
+                            }
+                        }
+                    }
+                }))
+            } else {
+                None
+            };
+
             let app = AppServer::control_plane_only(move |meta| {
                 MyGoBridgeHost::check_bearer_header(meta, app_auth.as_deref())
             })
@@ -751,6 +1132,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             if let Some(watcher) = gate_watcher {
+                let _ = tokio::time::timeout(Duration::from_secs(2), watcher).await;
+            }
+            if let Some(watcher) = ui_cmd_watcher {
                 let _ = tokio::time::timeout(Duration::from_secs(2), watcher).await;
             }
             drop(fleet_tx);
@@ -841,6 +1225,62 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             })()
                         }
                         _ => Err("fleet driver not initialized for human gate".to_owned()),
+                    };
+                    let _ = reply.send(outcome);
+                }
+                FleetVmCommand::UiAction {
+                    action_sym,
+                    arg,
+                    reply,
+                } => {
+                    let outcome = match (
+                        active_fleet_driver.as_mut(),
+                        active_checkpoint_key.as_deref(),
+                    ) {
+                        (Some(driver), Some(cp_key)) => (|| -> Result<(SchemeFleetDispatchStep, FleetAuditCapsuleProjection), String> {
+                            let mut step = driver
+                                .dispatch(&action_sym, None, arg.as_deref(), &[], true)
+                                .map_err(|err| format!("dispatch ui action `{action_sym}`: {err}"))?;
+                            if !step.effects.is_empty() {
+                                let initial_rcpts =
+                                    execute_effects_on_tokio(&effect_tx, step.effects)
+                                        .map_err(|err| format!("execute ui action effects: {err}"))?;
+                                let summary = driver
+                                    .pump_until_quiescent(&initial_rcpts, true, 8, |effs| {
+                                        execute_effects_on_tokio(&effect_tx, effs)
+                                    })
+                                    .map_err(|err| format!("pump ui action to quiescence: {err}"))?;
+                                step = summary.final_step;
+                            }
+                            let cp_eff = driver
+                                .checkpoint(cp_key)
+                                .map_err(|err| format!("plan post-ui-action checkpoint: {err}"))?;
+                            let stored = execute_effects_on_tokio(&effect_tx, vec![cp_eff])
+                                .map_err(|err| format!("store post-ui-action checkpoint: {err}"))?;
+                            match stored.into_iter().next() {
+                                Some(SchemeAtomicReceipt::CasStored(_)) => {}
+                                other => {
+                                    return Err(format!(
+                                        "post-ui-action checkpoint store failed: {other:?}"
+                                    ));
+                                }
+                            }
+                            let capsule = driver
+                                .audit_capsule()
+                                .map_err(|err| format!("audit post-ui-action fleet: {err}"))?;
+                            assert_non_authorizing_capsule(&capsule)?;
+                            println!(
+                                "FLEET_UI_ACTION action={action_sym} disclosure={} active={} archived={} defeaters={} inbox={}",
+                                step.disclosure_level,
+                                capsule.active_actor_count,
+                                capsule.archived_actor_count,
+                                capsule.total_active_defeaters,
+                                capsule.total_human_inbox_items
+                            );
+                            let _ = io::stdout().flush();
+                            Ok((step, capsule))
+                        })(),
+                        _ => Err("fleet driver not initialized for ui action".to_owned()),
                     };
                     let _ = reply.send(outcome);
                 }

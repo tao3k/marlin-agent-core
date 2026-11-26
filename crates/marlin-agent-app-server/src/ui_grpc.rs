@@ -155,6 +155,15 @@ pub struct ClaimedGraphHumanDecision {
     pub receipt_id: String,
 }
 
+/// Notification emitted when a UI client dispatches a declarative command via
+/// `DispatchUiEventRequest::RecordCommand`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DispatchedUiCommand {
+    pub session_id: String,
+    pub command: String,
+    pub generation: u64,
+}
+
 /// Shared authoritative state for all 6 MyGo gRPC services
 /// (`marlin.{app,ui,gate,plugin,device,projection}.v1`).
 #[derive(Clone)]
@@ -164,6 +173,7 @@ pub struct MyGoBridgeHost {
     wb_tx: broadcast::Sender<UiWorkbenchSnapshot>,
     gate_tx: broadcast::Sender<PendingGate>,
     graph_gate_tx: broadcast::Sender<ClaimedGraphHumanDecision>,
+    ui_cmd_tx: broadcast::Sender<DispatchedUiCommand>,
     panel_tx: broadcast::Sender<ScopedPanelEvent>,
     device_inv_tx: broadcast::Sender<DeviceInvocationRequest>,
     task_actors: crate::TaskActorControlPlane,
@@ -233,6 +243,7 @@ impl MyGoBridgeHost {
         let (wb_tx, _) = broadcast::channel(64);
         let (gate_tx, _) = broadcast::channel(64);
         let (graph_gate_tx, _) = broadcast::channel(64);
+        let (ui_cmd_tx, _) = broadcast::channel(64);
         let (panel_tx, _) = broadcast::channel(128);
         let (device_inv_tx, _) = broadcast::channel(64);
         let overlay_map: BTreeMap<i32, SchemeOverlayProjection> = overlays
@@ -264,6 +275,7 @@ impl MyGoBridgeHost {
             wb_tx,
             gate_tx,
             graph_gate_tx,
+            ui_cmd_tx,
             panel_tx,
             device_inv_tx,
             task_actors: crate::TaskActorControlPlane::new(),
@@ -276,6 +288,11 @@ impl MyGoBridgeHost {
         &self,
     ) -> broadcast::Receiver<ClaimedGraphHumanDecision> {
         self.graph_gate_tx.subscribe()
+    }
+
+    /// Subscribe to declarative UI commands dispatched via `DispatchUiEvent(RecordCommand)`.
+    pub fn subscribe_dispatched_ui_commands(&self) -> broadcast::Receiver<DispatchedUiCommand> {
+        self.ui_cmd_tx.subscribe()
     }
 
     /// Share an authoritative Session-free `TaskActorControlPlane` with `AppServer`.
@@ -794,6 +811,7 @@ impl UiWorkbenchService for MyGoBridgeHost {
             }));
         }
 
+        let mut dispatched_cmd = None;
         let intent = match req.event {
             Some(dispatch_ui_event_request::Event::SelectProfile(prof)) => {
                 st.profile_name = prof;
@@ -815,12 +833,27 @@ impl UiWorkbenchService for MyGoBridgeHost {
                     intent: Some(ui_intent::Intent::SelectBufferId(buf)),
                 })
             }
+            Some(dispatch_ui_event_request::Event::RecordCommand(cmd)) => {
+                st.generation += 1;
+                dispatched_cmd = Some(DispatchedUiCommand {
+                    session_id: req.session_id,
+                    command: cmd,
+                    generation: st.generation,
+                });
+                Some(UiIntent {
+                    intent: Some(ui_intent::Intent::SubmitDraft(UiEmptyMarker {})),
+                })
+            }
             _ => Some(UiIntent {
                 intent: Some(ui_intent::Intent::SubmitDraft(UiEmptyMarker {})),
             }),
         };
         let next = build_snapshot(&st);
+        drop(st);
         let _ = self.wb_tx.send(next.clone());
+        if let Some(cmd_ev) = dispatched_cmd {
+            let _ = self.ui_cmd_tx.send(cmd_ev);
+        }
         Ok(Response::new(DispatchUiEventResponse {
             admitted: true,
             intent,
