@@ -390,7 +390,8 @@
              (out-clean (marlin-governance-project-vector req-clean)))
         (check (vector-ref out-retracted 1) => #f)
         (check (vector->list (vector-ref out-retracted 12))
-               => '("D-TOKEN" "D-PLAN" "D-DEPLOY"))
+               => '("D-DEPLOY" "D-PLAN" "D-TOKEN"))
+        (check (member "D-AUDIT" (vector->list (vector-ref out-retracted 12))) => #f)
         (check (vector-ref out-clean 1) => #t)
         (check (vector->list (vector-ref out-clean 12)) => '())))
 

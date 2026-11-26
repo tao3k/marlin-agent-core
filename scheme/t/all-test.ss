@@ -29,6 +29,7 @@
         "graph-engine-test"
         "graph-engine-c-abi-test"
         "graph-engine-governed-context-test"
+        "governance-policy-test"
         "agent-policy-routing-abi-projection-test")
 
 (export yuanxu-design165-integration-test
@@ -43,4 +44,5 @@
         git-worktree-context-test
         marlin-graph-engine-test
         marlin-graph-engine-c-abi-test
-        marlin-graph-engine-governed-context-test)
+        marlin-graph-engine-governed-context-test
+        marlin-governance-policy-test)

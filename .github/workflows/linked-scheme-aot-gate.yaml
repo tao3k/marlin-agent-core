@@ -195,6 +195,17 @@ jobs:
             cargo test --locked -p marlin-agent-core --features linked-scheme-host \
               --test scheme_host_aot_process -- --test-threads=1 --nocapture
 
+      - name: Verify Governance Authority Plane (Kernel Cedar/MGV1/MGF1 + Live Gambit VM + Linked-AOT)
+        if: ${{ !cancelled() && steps.compiler.outcome == 'success' }}
+        shell: bash
+        run: |
+          cargo test --locked -p marlin-agent-kernel --lib governance_cedar
+          cargo test --locked -p marlin-agent-kernel --lib governance_admission
+          cargo test --locked -p marlin-agent-kernel --test unit_test loop_program_side_effects
+          cargo test --locked -p marlin-gerbil-scheme --features app-server-host --lib governance_host
+          cargo test --locked -p marlin-gerbil-scheme --test governance_policy_vm
+          cargo build --locked -p marlin-agent-core --features linked-scheme-host --bin marlin-scheme-host-aot
+
       - name: Compile linked selector benchmarks
         if: ${{ !cancelled() && steps.linked-tests.outcome == 'success' }}
         id: benchmark-build
