@@ -16,9 +16,17 @@ use gerbil_scheme::{
     PackageResolutionProgress, RootedSchemeObject, SchemeScalar,
 };
 use marlin_agent_app_server::{
-    BoundedTokioSandboxRunner, CompositeAtomicEffectExecutor, RegisterTaskActorRequest,
+    AppServer, BoundedTokioSandboxRunner, CompositeAtomicEffectExecutor, RegisterTaskActorRequest,
     TaskActorControlPlane,
     ui_grpc::MyGoBridgeHost,
+    v1::{
+        BindGovernedContextRequest, DetourModeProto, DisclosureDepthProto,
+        DispatchTaskActorRequest, ExecutionReceiptStatusProto, GetWorkbenchTabsRequest,
+        GraphDispatchOperationProto, GraphSubstrateTargetProto, ReconcileTaskReceiptRequest,
+        RegisterTaskActorRequest as V1RegisterTaskActorRequest, TaskActorScopeModeProto,
+        TaskActorStatusProto, WorkbenchTabKindProto,
+        app_server_client::AppServerClient as V1AppServerClient,
+    },
     wire::marlin::{
         common::v1::{DenialCode, TargetKind},
         gate::v1::{
@@ -1724,115 +1732,220 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
                 |_meta| Ok(()),
             )
             .with_task_actors(plane1.clone());
+            host1.enqueue_pending_gate(PendingGate {
+                gate_id: "gate-s21-live".to_owned(),
+                kind: GateKind::GraphHumanGate as i32,
+                turn: None,
+                call_id: None,
+                tool_or_node_name: tid.as_str().to_owned(),
+                prompt: "Approve S21 live HTTP/2 Scheme Oracle steering?".to_owned(),
+                details_heading: "S21 Live Scheme Oracle Gate".to_owned(),
+                choices: Vec::new(),
+                card: None,
+                created_at_unix_ms: 21,
+                expires_at_unix_ms: None,
+            });
+            let app1 =
+                AppServer::control_plane_only(|_meta| Ok(())).with_task_actors(plane1.clone());
+            let listener1 = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr1 = listener1.local_addr().unwrap();
+            let srv1 = tokio::spawn(async move {
+                let _ = app1.serve_with_ui_on(host1, listener1).await;
+            });
+            let ep1 = format!("http://{addr1}");
 
-            host1
-                .task_actors()
-                .register_actor(RegisterTaskActorRequest {
-                    task_id: tid.clone(),
-                    title: "S19 Multi-Thread Oracle Actor".to_owned(),
-                    scope_mode: TaskActorScopeMode::Project,
+            // Drive ALL 5 real HTTP/2 TaskActor RPCs + co-hosted UI/Gate services against the
+            // LIVE embedded Gerbil Scheme VM Oracle on the main thread!
+            let mut v1_client1 = V1AppServerClient::connect(ep1.clone()).await.unwrap();
+            let reg = v1_client1
+                .register_task_actor(V1RegisterTaskActorRequest {
+                    task_id: tid.as_str().to_owned(),
+                    title: "S21 Live HTTP/2 Scheme Oracle Actor".to_owned(),
+                    scope_mode: TaskActorScopeModeProto::Project as i32,
                 })
-                .expect("register s19 actor");
+                .await
+                .unwrap()
+                .into_inner()
+                .cursor
+                .unwrap();
+            assert_eq!(reg.task_id, "task-s19-mt");
+            assert_eq!(reg.fencing_epoch, 1);
 
-            // Cross-thread Scheme Oracle admits valid ApplySteering & rejects steering without join.
-            host1
-                .task_actors()
-                .admit_dispatch(MarlinDispatchEnvelope {
-                    request_id: DispatchRequestId::new("req-s19-ok").unwrap(),
-                    task_id: tid.clone(),
-                    operation: GraphDispatchOperation::ApplySteering,
-                    fencing_epoch: FencingEpoch::new(1).unwrap(),
-                    scope_mode: TaskActorScopeMode::Project,
-                    join_node_id: Some(GraphConvergenceNodeId::new("join-s19").unwrap()),
-                    substrate_target: GraphSubstrateTarget::SqliteTurso,
+            // Real HTTP/2 DispatchTaskActor: valid ApplySteering admitted by live Scheme VM!
+            let disp_ok = v1_client1
+                .dispatch_task_actor(DispatchTaskActorRequest {
+                    request_id: "req-s21-ok".to_owned(),
+                    task_id: tid.as_str().to_owned(),
+                    operation: GraphDispatchOperationProto::ApplySteering as i32,
+                    fencing_epoch: 1,
+                    scope_mode: TaskActorScopeModeProto::Project as i32,
+                    join_node_id: Some("join-s21".to_owned()),
+                    substrate_target: GraphSubstrateTargetProto::SqliteTurso as i32,
                 })
-                .expect("mt Scheme oracle admits valid steering");
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(disp_ok.request_id, "req-s21-ok");
+            assert_eq!(disp_ok.fencing_epoch, 1);
 
-            assert!(matches!(
-                host1.task_actors().admit_dispatch(MarlinDispatchEnvelope {
-                    request_id: DispatchRequestId::new("req-s19-bad").unwrap(),
-                    task_id: tid.clone(),
-                    operation: GraphDispatchOperation::ApplySteering,
-                    fencing_epoch: FencingEpoch::new(1).unwrap(),
-                    scope_mode: TaskActorScopeMode::Project,
+            // Real HTTP/2 DispatchTaskActor: missing join_node_id rejected fail-closed by Scheme!
+            let disp_err = v1_client1
+                .dispatch_task_actor(DispatchTaskActorRequest {
+                    request_id: "req-s21-bad".to_owned(),
+                    task_id: tid.as_str().to_owned(),
+                    operation: GraphDispatchOperationProto::ApplySteering as i32,
+                    fencing_epoch: 1,
+                    scope_mode: TaskActorScopeModeProto::Project as i32,
                     join_node_id: None,
-                    substrate_target: GraphSubstrateTarget::SqliteTurso,
-                }),
-                Err(
-                    marlin_agent_runtime::TaskActorRuntimeError::DispatchRejected(
-                        GraphDispatchRejection::SteeringRequiresJoinNode
-                    )
-                )
-            ));
-
-            // Cross-thread Scheme Oracle reconciles receipt (epoch 1 -> 2, WaitingSteering).
-            let decision = host1
-                .task_actors()
-                .reconcile_receipt(&MarlinExecutionReceipt {
-                    request_id: DispatchRequestId::new("req-s19-ok").unwrap(),
-                    task_id: tid.clone(),
-                    fencing_epoch: FencingEpoch::new(1).unwrap(),
-                    status: ExecutionReceiptStatus::Ok,
+                    substrate_target: GraphSubstrateTargetProto::SqliteTurso as i32,
                 })
-                .expect("mt Scheme oracle reconciles receipt");
-            assert!(decision.accepted);
-            assert_eq!(decision.next_epoch, FencingEpoch::new(2).unwrap());
-            assert_eq!(decision.next_status, TaskActorStatus::WaitingSteering);
+                .await
+                .unwrap_err();
+            assert!(disp_err.message().contains("join"));
 
-            // Cross-thread Scheme Oracle gates governed context & Workbench tabs.
-            let ctx = GovernedContextCapsule {
-                task_id: tid.clone(),
-                context_cut: 4,
-                kv_prefix_digest: KvPrefixDigest::new("sha256:s19-mt-kv").unwrap(),
-                disclosure_depth: DisclosureDepth::L3,
-                has_active_defeater: true,
-                quarantined_memory_count: 1,
-                sandbox_admitted: true,
-                cedar_handoff_valid: true,
-                detour_mode: DetourMode::BlockerActive,
-                auto_archive_enabled: false,
-            };
-            host1
-                .task_actors()
-                .bind_governed_context(ctx.clone())
-                .expect("mt Scheme oracle admits L3 blocker context");
-            let mut bad_ctx = ctx;
-            bad_ctx.auto_archive_enabled = true;
-            assert!(matches!(
-                host1.task_actors().bind_governed_context(bad_ctx),
-                Err(
-                    marlin_agent_runtime::TaskActorRuntimeError::GovernedContextRejected(
-                        GovernedContextRejection::BlockerDetourMustDisableAutoArchive
-                    )
-                )
-            ));
+            // Real HTTP/2 ReconcileTaskReceipt: live Scheme VM bumps epoch 1 -> 2, WaitingSteering!
+            let rec = v1_client1
+                .reconcile_task_receipt(ReconcileTaskReceiptRequest {
+                    request_id: "req-s21-ok".to_owned(),
+                    task_id: tid.as_str().to_owned(),
+                    fencing_epoch: 1,
+                    status: ExecutionReceiptStatusProto::Ok as i32,
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert!(rec.accepted);
+            assert_eq!(rec.next_epoch, 2);
+            assert_eq!(
+                rec.next_status,
+                TaskActorStatusProto::WaitingSteering as i32
+            );
 
-            let tabs1 = host1
-                .task_actors()
-                .project_workbench_tabs()
-                .expect("mt Scheme oracle projects tabs");
+            // Real HTTP/2 BindGovernedContext: valid L3 Blocker admitted; auto_archive=true rejected!
+            let ctx_ok = v1_client1
+                .bind_governed_context(BindGovernedContextRequest {
+                    task_id: tid.as_str().to_owned(),
+                    context_cut: 4,
+                    kv_prefix_digest: "sha256:s21-live-http2-kv".to_owned(),
+                    disclosure_depth: DisclosureDepthProto::L3 as i32,
+                    has_active_defeater: true,
+                    quarantined_memory_count: 1,
+                    sandbox_admitted: true,
+                    cedar_handoff_valid: true,
+                    detour_mode: DetourModeProto::BlockerActive as i32,
+                    auto_archive_enabled: false,
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(ctx_ok.context_cut, 4);
+            assert!(!ctx_ok.auto_archive_enabled);
+
+            assert!(
+                v1_client1
+                    .bind_governed_context(BindGovernedContextRequest {
+                        task_id: tid.as_str().to_owned(),
+                        context_cut: 4,
+                        kv_prefix_digest: "sha256:s21-live-http2-kv".to_owned(),
+                        disclosure_depth: DisclosureDepthProto::L3 as i32,
+                        has_active_defeater: true,
+                        quarantined_memory_count: 1,
+                        sandbox_admitted: true,
+                        cedar_handoff_valid: true,
+                        detour_mode: DetourModeProto::BlockerActive as i32,
+                        auto_archive_enabled: true,
+                    })
+                    .await
+                    .is_err()
+            );
+
+            // Real HTTP/2 GetWorkbenchTabs: live Scheme VM cross-checks tabs fail-closed!
+            let tabs1 = v1_client1
+                .get_workbench_tabs(GetWorkbenchTabsRequest {})
+                .await
+                .unwrap()
+                .into_inner();
             assert_eq!(tabs1.tabs.len(), 2);
-            assert_eq!(tabs1.tabs[0].kind, WorkbenchTabKind::PinnedIndex);
+            assert_eq!(
+                tabs1.tabs[0].kind,
+                WorkbenchTabKindProto::PinnedIndex as i32
+            );
             assert_eq!(tabs1.tabs[1].id, "task-s19-mt");
             assert_eq!(tabs1.tabs[1].fencing_epoch, 2);
+            assert_eq!(tabs1.tabs[1].status_label, "WaitingSteering");
 
-            persist1.flush_and_stop().await.expect("flush s19 boot #1");
-            drop(host1);
+            // Co-hosted UiWorkbenchService + one-shot ApprovalGateService on the EXACT SAME port!
+            let mut ui_client1 = UiWorkbenchServiceClient::connect(ep1.clone())
+                .await
+                .unwrap();
+            let wb1 = ui_client1
+                .open_workbench(OpenWorkbenchRequest {
+                    session_id: "s21-cohost".to_owned(),
+                    client_target_kind: TargetKind::DesktopMacos as i32,
+                    preferred_profile: None,
+                })
+                .await
+                .unwrap()
+                .into_inner()
+                .workbench
+                .unwrap();
+            assert!(wb1.slots.iter().any(|s| {
+                s.slot_id == "approval.gate"
+                    && s.fallback_renderer == "host.gate"
+                    && !s.allow_untrusted_plugin
+            }));
+            let mut gate_client1 = ApprovalGateServiceClient::connect(ep1).await.unwrap();
+            let gate_claim = gate_client1
+                .submit_graph_human_decision(SubmitGraphHumanDecisionRequest {
+                    turn: None,
+                    gate_id: "gate-s21-live".to_owned(),
+                    decision: GraphHumanDecision::Approve as i32,
+                    idempotency_key: "idem-s21-1".to_owned(),
+                    note: None,
+                })
+                .await
+                .unwrap()
+                .into_inner()
+                .receipt
+                .unwrap();
+            assert!(gate_claim.claimed);
+
+            persist1.flush_and_stop().await.expect("flush s21 boot #1");
+            srv1.abort();
+            let _ = srv1.await;
             drop(plane1);
             drop(storage1);
 
-            // Boot #7 Cold Restart on separate OS thread -> rehydrate -> re-verify via live Scheme Oracle!
+            // Boot #7 Cold Restart -> fresh live HTTP/2 AppServer with live Scheme Oracle -> GetWorkbenchTabs!
             let storage2 = marlin_agent_storage::TursoAgentStorage::open_local(cfg)
                 .await
-                .expect("open s19 turso #2");
+                .expect("open s21 turso #2");
             let plane2 = TaskActorControlPlane::rehydrate_or_new(&storage2, &proj, &ptr)
                 .await
-                .expect("rehydrate s19 boot #2")
+                .expect("rehydrate s21 boot #2")
                 .with_oracle(oracle_arc);
-            let tabs2 = plane2
-                .project_workbench_tabs()
-                .expect("boot #7 mt Scheme oracle cross-check");
+            let host2 = MyGoBridgeHost::new(
+                marlin_agent_runtime::plugin::ReleaseTrust::new(BTreeMap::new()),
+                |_meta| Ok(()),
+            )
+            .with_task_actors(plane2.clone());
+            let app2 = AppServer::control_plane_only(|_meta| Ok(())).with_task_actors(plane2);
+            let listener2 = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr2 = listener2.local_addr().unwrap();
+            let srv2 = tokio::spawn(async move {
+                let _ = app2.serve_with_ui_on(host2, listener2).await;
+            });
+            let mut v1_client2 = V1AppServerClient::connect(format!("http://{addr2}"))
+                .await
+                .unwrap();
+            let tabs2 = v1_client2
+                .get_workbench_tabs(GetWorkbenchTabsRequest {})
+                .await
+                .unwrap()
+                .into_inner();
             assert_eq!(tabs2, tabs1);
+            srv2.abort();
+            let _ = srv2.await;
         });
     });
 

@@ -14,17 +14,19 @@ use std::{
 
 #[cfg(feature = "turso-host")]
 use marlin_agent_app_server::v1::{
-    CancelSessionTurnRequest, GetSessionTurnCancellationRequest, GetWorkbenchTabsRequest,
-    RegisterTaskActorRequest as V1RegisterTaskActorRequest, TaskActorScopeModeProto,
+    CancelSessionTurnRequest, GetSessionTurnCancellationRequest,
     get_session_turn_cancellation_response::Evidence,
 };
 use marlin_agent_app_server::{
     AppServer, CompositeAtomicEffectExecutor, RegisterTaskActorRequest, TaskActorControlPlane,
     ui_grpc::{MyGoBridgeHost, SchemeOverlayProjection},
     v1::{
-        ConversationMessage, GetSessionSummaryRequest, GetSessionTurnStatusRequest, MessageRole,
-        OpenSessionRequest, SessionOpenMode, SessionRecoveryState, SessionTurnOutcome,
-        StartSessionTurnRequest, StreamTurnRequest, WatchSessionTurnRequest,
+        ConversationMessage, DispatchTaskActorRequest, GetSessionSummaryRequest,
+        GetSessionTurnStatusRequest, GetWorkbenchTabsRequest, GraphDispatchOperationProto,
+        GraphSubstrateTargetProto, MessageRole, OpenSessionRequest,
+        RegisterTaskActorRequest as V1RegisterTaskActorRequest, SessionOpenMode,
+        SessionRecoveryState, SessionTurnOutcome, StartSessionTurnRequest, StreamTurnRequest,
+        TaskActorScopeModeProto, WatchSessionTurnRequest, WatchWorkbenchTabsRequest,
         app_server_client::AppServerClient as V1AppServerClient, session_turn_event, turn_event,
     },
     wire::marlin::{
@@ -1014,6 +1016,118 @@ async fn marlin_mygo_host_binary_in_memory_real_session_serves_grpc_and_one_shot
     assert_eq!(replay.denial.unwrap().code, DenialCode::StaleOrdinal as i32);
 
     stop_mygo_host_process(child).await;
+}
+
+#[tokio::test]
+async fn app_server_grpc_fails_closed_when_mounted_oracle_diverges_on_tabs_or_dispatch() {
+    struct RejectingOracle;
+
+    impl marlin_agent_runtime::GraphEngineOracle for RejectingOracle {
+        fn project_dispatch(
+            &self,
+            _envelope: &marlin_agent_runtime::MarlinDispatchEnvelope,
+        ) -> Result<
+            Result<
+                marlin_agent_runtime::AdmittedMarlinDispatch,
+                marlin_agent_runtime::GraphDispatchRejection,
+            >,
+            String,
+        > {
+            Err("scheme oracle refused dispatch".to_owned())
+        }
+
+        fn reconcile_receipt(
+            &self,
+            _cursor: &marlin_agent_runtime::TaskActorCursor,
+            _receipt: &marlin_agent_runtime::MarlinExecutionReceipt,
+        ) -> Result<marlin_agent_runtime::ReceiptReconciliationDecision, String> {
+            Err("scheme oracle refused receipt".to_owned())
+        }
+
+        fn project_workbench_tabs(
+            &self,
+            _focused_task_id: Option<&TaskActorId>,
+            _active_tasks: &[marlin_agent_runtime::WorkbenchActiveTaskInput],
+            _peek_task_ids: &[TaskActorId],
+        ) -> Result<marlin_agent_runtime::WorkbenchTabProjection, String> {
+            Err("scheme oracle refused workbench tabs".to_owned())
+        }
+
+        fn project_governed_context(
+            &self,
+            _capsule: &marlin_agent_runtime::GovernedContextCapsule,
+        ) -> Result<
+            Result<
+                marlin_agent_runtime::AdmittedGovernedContext,
+                marlin_agent_runtime::GovernedContextRejection,
+            >,
+            String,
+        > {
+            Err("scheme oracle refused governed context".to_owned())
+        }
+    }
+
+    let plane = TaskActorControlPlane::new().with_oracle(Arc::new(RejectingOracle));
+    let bridge = MyGoBridgeHost::new(ReleaseTrust::new(BTreeMap::new()), |meta| {
+        match meta.get("authorization") {
+            Some(v) if v == "Bearer test-token" => Ok(()),
+            _ => Err(Status::unauthenticated("missing bearer token")),
+        }
+    })
+    .with_task_actors(plane.clone());
+    let app = AppServer::control_plane_only(|meta| match meta.get("authorization") {
+        Some(v) if v == "Bearer test-token" => Ok(()),
+        _ => Err(Status::unauthenticated("missing bearer token")),
+    })
+    .with_task_actors(plane);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let _ = app.serve_with_ui_on(bridge, listener).await;
+    });
+    let endpoint = format!("http://{addr}");
+
+    let mut client = V1AppServerClient::connect(endpoint).await.unwrap();
+    client
+        .register_task_actor(auth_req(V1RegisterTaskActorRequest {
+            task_id: "task-oracle-deny".to_owned(),
+            title: "Oracle Denied Actor".to_owned(),
+            scope_mode: TaskActorScopeModeProto::Project as i32,
+        }))
+        .await
+        .unwrap();
+
+    let dispatch_err = client
+        .dispatch_task_actor(auth_req(DispatchTaskActorRequest {
+            request_id: "req-deny-1".to_owned(),
+            task_id: "task-oracle-deny".to_owned(),
+            operation: GraphDispatchOperationProto::ExecuteFrontier as i32,
+            fencing_epoch: 1,
+            scope_mode: TaskActorScopeModeProto::Project as i32,
+            join_node_id: None,
+            substrate_target: GraphSubstrateTargetProto::PureMemory as i32,
+        }))
+        .await
+        .unwrap_err();
+    assert_eq!(dispatch_err.code(), Code::Internal);
+    assert!(dispatch_err.message().contains("scheme oracle refused"));
+
+    let tabs_err = client
+        .get_workbench_tabs(auth_req(GetWorkbenchTabsRequest {}))
+        .await
+        .unwrap_err();
+    assert_eq!(tabs_err.code(), Code::Internal);
+    assert!(tabs_err.message().contains("scheme oracle refused"));
+
+    let watch_err = client
+        .watch_workbench_tabs(auth_req(WatchWorkbenchTabsRequest {}))
+        .await
+        .unwrap_err();
+    assert_eq!(watch_err.code(), Code::Internal);
+    assert!(watch_err.message().contains("scheme oracle refused"));
+
+    server.abort();
 }
 
 #[cfg(feature = "turso-host")]

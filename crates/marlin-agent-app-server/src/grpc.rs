@@ -58,6 +58,23 @@ pub struct AppServer<S = marlin_agent_storage::InMemoryAgentStorage> {
     task_actors: crate::TaskActorControlPlane,
 }
 
+struct ControlPlaneOnlyGateway;
+
+impl ModelStreamingGateway for ControlPlaneOnlyGateway {
+    fn stream(
+        &self,
+        _request: marlin_agent_protocol::ModelGatewayRequest,
+    ) -> marlin_agent_protocol::ModelGatewayFuture<
+        marlin_agent_protocol::ModelGatewayResult<ModelGatewayEventStream>,
+    > {
+        Box::pin(async move {
+            Err(ModelGatewayError::RequestNotDispatched(
+                "model streaming gateway not configured on control-plane-only AppServer".to_owned(),
+            ))
+        })
+    }
+}
+
 impl AppServer {
     /// Construct a service for one configured model route. The authorization
     /// callback must grant access to that route before any RPC reaches it.
@@ -77,6 +94,20 @@ impl AppServer {
             session_lookup: None,
             task_actors: crate::TaskActorControlPlane::new(),
         })
+    }
+
+    /// Construct a Session-free control-plane `AppServer` (e.g. for TaskActor /
+    /// GraphEngine oracle + MyGo UI hosting) whose model streaming RPCs fail closed
+    /// without dispatching to any LLM provider.
+    pub fn control_plane_only(
+        authorize: impl Fn(&MetadataMap) -> Result<(), Status> + Send + Sync + 'static,
+    ) -> Self {
+        Self::new(
+            ModelEndpoint::new("marlin", "control-plane-only"),
+            Arc::new(ControlPlaneOnlyGateway),
+            authorize,
+        )
+        .expect("control-plane-only endpoint satisfies contract")
     }
 
     /// Attach a host-owned Session and its Runtime to the external service.
@@ -158,6 +189,24 @@ impl<S: marlin_agent_storage::SessionEventStore + Clone + 'static> AppServer<S> 
     ) -> tonic::transport::server::Router {
         let base = builder.add_service(self.into_service());
         bridge.attach_ui_services(base)
+    }
+
+    /// Serve this co-hosted `AppServer` plus `MyGoBridgeHost`'s 5 orthogonal UI/Gate/Plugin/
+    /// Device/Projection services on an already-bound `tokio::net::TcpListener`.
+    #[cfg(feature = "ui-grpc")]
+    pub async fn serve_with_ui_on(
+        self,
+        bridge: crate::ui_grpc::MyGoBridgeHost,
+        listener: tokio::net::TcpListener,
+    ) -> Result<(), tonic::transport::Error> {
+        let incoming = async_stream::stream! {
+            loop {
+                yield listener.accept().await.map(|(stream, _)| stream);
+            }
+        };
+        self.into_ui_router(bridge)
+            .serve_with_incoming(incoming)
+            .await
     }
 
     async fn resolve_session(
@@ -595,7 +644,12 @@ impl<S: marlin_agent_storage::SessionEventStore + Clone + 'static> app_server_se
                 Status::resource_exhausted("App Server has reached its active watch limit")
             })?;
         let mut rx = self.task_actors.subscribe_workbench_tabs();
-        let initial = workbench_tabs_to_proto(&rx.borrow_and_update());
+        let initial_tabs = self
+            .task_actors
+            .project_workbench_tabs()
+            .map_err(task_actor_error_status)?;
+        let _ = rx.borrow_and_update();
+        let initial = workbench_tabs_to_proto(&initial_tabs);
         let stream = async_stream::try_stream! {
             let _permit = permit;
             yield initial;
