@@ -93,8 +93,8 @@ flowchart TD
 
 External Rust operators, automation harnesses, and CI gates can connect directly over HTTP/2 gRPC via `marlin-agent-app-server` (`--features ui-grpc`):
 
-- **Crate-root Bridge SDK** (`crates/marlin-agent-app-server/src/lib.rs`): `MarlinSchemeHostClient` (Bearer metadata marked HTTP/2 `sensitive` to prevent HPACK indexing and `Debug` leakage), `GovernanceFactAction` (typed 11-variant wire projector covering all live governance mutations + Cedar probes), `GovernanceAuthoritySnapshotView` (including CaMeL taint graph & `last_cedar_probe`), `HostStatusSnapshot`, and `FleetAuditCapsuleView`.
-- **Operator CLI** (`marlin-scheme-ctl`): supports `--json` (RFC 8259 JSON + NDJSON streaming for `watch-tabs` and `watch-trajectory`), auth-fail-fast `wait-ready`, unified `status`, `governance`, `gov <eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|register-derivation|check-cedar>`, `estop`, read-only `records` (`SecretVisibility::Denied`), `gates`, `approve`, `reject`, and `dispatch`. Privileged `gov rearm` is rejected client-side and server-side fail-closed.
+- **Crate-root Bridge SDK** (`crates/marlin-agent-app-server/src/lib.rs`): `MarlinSchemeHostClient` (Bearer metadata marked HTTP/2 `sensitive` to prevent HPACK indexing and `Debug` leakage), `GovernanceFactAction` (typed 11-variant wire projector covering all live governance mutations + Cedar probes), `FleetTaskAction` (typed 15-command projector covering L0–L3 progressive disclosure, hypothesis branch proposals, Blocker/SideQuest detours & 4 exit dispositions, Peek/Reopen, FleetStep, and SandboxVerify), `GovernanceAuthoritySnapshotView` (including CaMeL taint graph & `last_cedar_probe`), `HostStatusSnapshot`, and `FleetAuditCapsuleView`.
+- **Operator CLI** (`marlin-scheme-ctl`): supports `--json` (RFC 8259 JSON + NDJSON streaming for `watch-tabs` and `watch-trajectory`), auth-fail-fast `wait-ready`, unified `status`, `governance`, `gov <eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|register-derivation|check-cedar>`, `task <drill|propose-branch|detour-blocker|detour-sidequest|detour-exit|peek|reopen|fleet-step|sandbox-verify>`, `estop`, read-only `records` (`SecretVisibility::Denied`), `gates`, `approve`, `reject`, and `dispatch`. Privileged `gov rearm` and `task human-approve`/`task governance-rearm` are rejected client-side and server-side fail-closed.
 
 ---
 
@@ -107,7 +107,9 @@ just scheme-host-aot-smoke
 # Release distribution staging (Darwin HFS compression + zero-.ss smoke check):
 # just scheme-host-aot-release && just scheme-host-aot-stage-release dist/
 
-# 2. In marlin-agent-core: run Bridge SDK/CLI unit suites + 4-layer AOT guards + all 4 zero-.ss Linked-AOT OS-process E2E suites
+# 2. In marlin-agent-core: run 12 Bridge SDK/CLI unit tests + 4-layer AOT guards + all 5 zero-.ss Linked-AOT OS-process E2E suites
+#    (incl. RFC 9470 E-Stop/re-arm, CaMeL taint + MGF1 transitive revocation, Bi-Temporal DAG cascade + Cedar external-scope unless,
+#     typed fleet task steering, and on-disk Turso CAS MGF1 single-bit tamper fail-closed recovery)
 just scheme-host-aot-gate
 
 # 3. In marlin-agent-core: run full Scheme + Rust Cedar + 12-countermodel Quint MBT + Live VM + AOT smoke gate

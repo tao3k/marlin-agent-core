@@ -1750,3 +1750,270 @@ async fn linked_aot_bitemporal_derivation_dag_and_context_declassification_survi
 
     stop_host(child2).await;
 }
+
+/// Real zero-`.ss` Linked-AOT OS-process adversarial tamper E2E proving end-to-end
+/// cryptographic integrity of on-disk Turso CAS `MGF1` checkpoints:
+/// - Boot #1 (`clean`): persist valid `MGV1` + `MGF1` v2 checkpoints to Turso SQLite WAL;
+/// - `SIGTERM` clean shutdown;
+/// - Adversarial storage attack: flip 1 bit inside the `MGF1` binary payload AND recompute
+///   the outer Turso CAS `artifact_hash` + `artifact_pointers` so storage-layer hashing passes;
+/// - Boot #2 (`clean`): `marlin-scheme-host-aot` MUST detect the 1-bit `MGF1` SHA-256 forgery,
+///   refuse `clean`, emit `mode=corrupt_fail_closed tripped=true`, reject `dispatch governance-rearm`,
+///   reject unverified `approve` (rotating the one-shot gate), and recover ONLY on verified human
+///   RFC 9470 MFA Step-Up.
+#[tokio::test]
+async fn linked_aot_tampered_turso_mgf1_checkpoint_fails_closed_and_requires_mfa_rearm() {
+    let explicit_ctl = std::env::var_os("MARLIN_SCHEME_CTL_BIN").map(std::path::PathBuf::from);
+    let require_ctl = explicit_ctl.is_some()
+        || std::env::var("CI")
+            .ok()
+            .is_some_and(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes"));
+    let ctl_bin = explicit_ctl
+        .or_else(|| {
+            std::path::Path::new(env!("CARGO_BIN_EXE_marlin-scheme-host-aot"))
+                .parent()
+                .map(|dir| dir.join("marlin-scheme-ctl"))
+        })
+        .filter(|p| p.is_file());
+    let Some(ctl_bin) = ctl_bin else {
+        assert!(
+            !require_ctl,
+            "strict Linked-AOT tamper CTL E2E enabled (CI or MARLIN_SCHEME_CTL_BIN set), but marlin-scheme-ctl binary was not found"
+        );
+        return;
+    };
+
+    let tmp_dir = tempfile::tempdir().expect("tempdir for mgf1 tamper test");
+    let db_path = tmp_dir.path().join("tamper-mgf1-cas.db");
+    let bearer_token = "linked-aot-tamper-token-m23";
+
+    let spawn_clean_aot = || {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_marlin-scheme-host-aot"));
+        cmd.env("MARLIN_SCHEME_DIR", "/nonexistent-aot-must-not-read")
+            .env("MARLIN_BRIDGE_ADDR", "127.0.0.1:0")
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .env("MARLIN_BRIDGE_TURSO_PATH", &db_path)
+            .env("MARLIN_SCHEME_GOVERNANCE_MODE", "clean")
+            .env("MARLIN_SCHEME_BREAKER_BUDGET", "32")
+            .env_remove("MARLIN_SCHEME_FLEET_CHECKPOINT_KEY")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true);
+        cmd
+    };
+
+    // -------------------------------------------------------------------------
+    // Boot #1: Clean baseline + persist live MGF1 v2 checkpoint to Turso CAS
+    // -------------------------------------------------------------------------
+    let mut child1 = spawn_clean_aot().spawn().expect("spawn tamper boot1");
+    let mut lines1 = BufReader::new(child1.stdout.take().unwrap()).lines();
+    let mut boot1 = None;
+    let addr1 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), lines1.next_line())
+            .await
+            .expect("linked-aot tamper boot1 MUST become READY within 15s")
+            .unwrap()
+            .expect("aot tamper boot1 exited early");
+        if line.starts_with("GOVERNANCE_HOST_BOOT ") {
+            boot1 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    let boot1_line = boot1.expect("expected GOVERNANCE_HOST_BOOT on tamper boot1");
+    assert!(
+        boot1_line.contains("mode=clean") && boot1_line.contains("admitted=true"),
+        "unexpected tamper boot1 line: {boot1_line}"
+    );
+    let ep1 = format!("http://{addr1}");
+
+    let del = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &["gov", "delegate", "ops-root", "agent-worker"],
+    )
+    .await;
+    assert_eq!(del["admitted"], true);
+    let _ = poll_ctl_governance(&ctl_bin, &ep1, bearer_token, "tamper-seed-persisted", |g| {
+        g["admitted"] == true && g["policy_revision"].as_u64().unwrap_or(0) >= 2
+    })
+    .await;
+
+    stop_host(child1).await;
+
+    // -------------------------------------------------------------------------
+    // Adversarial On-Disk Storage Attack:
+    // Flip 1 bit inside the sealed `MGF1` payload AND re-hash the outer Turso
+    // CAS `artifact_hash` + `artifact_pointers` so Turso's storage layer passes.
+    // -------------------------------------------------------------------------
+    let py_tamper = r#"
+import hashlib, sqlite3, sys
+db = sys.argv[1]
+conn = sqlite3.connect(db)
+cur = conn.cursor()
+rows = cur.execute(
+    """
+    SELECT p.project_id, p.pointer_key, a.artifact_hash, a.artifact_kind,
+           a.producer_session_id, a.producer_agent_id, a.producer_event_id,
+           a.media_type, a.body, a.created_at_unix_ms
+    FROM artifact_pointers p
+    JOIN artifacts a
+      ON a.project_id = p.project_id AND a.artifact_hash = p.target_artifact_hash
+    WHERE substr(a.body, 1, 4) = CAST('MGF1' AS BLOB)
+    """
+).fetchall()
+assert len(rows) == 1, f"expected exactly 1 MGF1 checkpoint blob, got {len(rows)}"
+(proj, ptr, old_hash, kind, sess, agent, ev, media, body, ts) = rows[0]
+tampered = bytearray(body)
+assert len(tampered) > 12, f"unexpected short MGF1 blob: {len(tampered)}"
+tampered[8] ^= 0x01
+new_bytes = bytes(tampered)
+new_hash = "sha256:" + hashlib.sha256(new_bytes).hexdigest()
+cur.execute(
+    """
+    INSERT INTO artifacts (
+        project_id, artifact_hash, artifact_kind, producer_session_id,
+        producer_agent_id, producer_event_id, media_type, size_bytes, body, created_at_unix_ms
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+    (proj, new_hash, kind, sess, agent, ev, media, len(new_bytes), sqlite3.Binary(new_bytes), ts),
+)
+cur.execute(
+    "UPDATE artifact_pointers SET target_artifact_hash = ? WHERE project_id = ? AND pointer_key = ?",
+    (new_hash, proj, ptr),
+)
+conn.commit()
+conn.close()
+print("TAMPERED_MGF1_OK", old_hash, "->", new_hash)
+"#;
+    let tamper_out = Command::new("python3")
+        .arg("-c")
+        .arg(py_tamper)
+        .arg(&db_path)
+        .output()
+        .await
+        .expect("run python3 sqlite3 MGF1 tamper script");
+    assert!(
+        tamper_out.status.success(),
+        "MGF1 tamper helper failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&tamper_out.stdout),
+        String::from_utf8_lossy(&tamper_out.stderr),
+    );
+
+    // -------------------------------------------------------------------------
+    // Boot #2 (`clean`): MUST refuse clean boot and auto-trip fail-closed!
+    // -------------------------------------------------------------------------
+    let t2 = Instant::now();
+    let mut child2 = spawn_clean_aot().spawn().expect("spawn tamper boot2");
+    let mut lines2 = BufReader::new(child2.stdout.take().unwrap()).lines();
+    let mut boot2 = None;
+    let addr2 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), lines2.next_line())
+            .await
+            .expect("linked-aot tamper boot2 MUST become READY within 15s")
+            .unwrap()
+            .expect("aot tamper boot2 exited early");
+        if line.starts_with("GOVERNANCE_HOST_BOOT ") {
+            boot2 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    let tamper_boot2_ms = t2.elapsed().as_millis();
+    let boot2_budget_ms: u128 = std::env::var("MARLIN_AOT_BOOT2_BUDGET_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u128>().ok())
+        .filter(|ms| *ms > 0)
+        .unwrap_or(2_500);
+    eprintln!(
+        "LINKED_AOT_TAMPER_BOOT2_MS={tamper_boot2_ms} LINKED_AOT_BOOT2_BUDGET_MS={boot2_budget_ms}"
+    );
+    assert!(
+        tamper_boot2_ms <= boot2_budget_ms,
+        "Linked-AOT tamper fail-closed boot regressed: {tamper_boot2_ms}ms > {boot2_budget_ms}ms"
+    );
+    let boot2_line = boot2.expect("expected GOVERNANCE_HOST_BOOT on tamper boot2");
+    assert!(
+        boot2_line.contains("mode=corrupt_fail_closed")
+            && boot2_line.contains("admitted=false")
+            && boot2_line.contains("tripped=true"),
+        "tampered MGF1 checkpoint MUST fail closed on boot2 (got: {boot2_line})"
+    );
+    let ep2 = format!("http://{addr2}");
+
+    let gov_corrupt = run_ctl_json(&ctl_bin, &ep2, bearer_token, &["governance"]).await;
+    assert_eq!(gov_corrupt["admitted"], false);
+    assert_eq!(gov_corrupt["breaker_tripped"], true);
+    let gate1 = gov_corrupt["rearm_gate_id"]
+        .as_str()
+        .expect("rearm_gate_id on corrupt_fail_closed")
+        .to_owned();
+    assert!(!gate1.is_empty());
+
+    // UI bypass attempt (`dispatch governance-rearm`) MUST NEVER bypass `ApprovalGateService`.
+    let _ = run_ctl_json(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        &["dispatch", "governance-rearm", "attacker"],
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    let gov_after_bypass = run_ctl_json(&ctl_bin, &ep2, bearer_token, &["governance"]).await;
+    assert_eq!(
+        gov_after_bypass["breaker_tripped"], true,
+        "UI governance-rearm dispatch must never clear a tamper fail-closed breaker"
+    );
+    assert_eq!(gov_after_bypass["admitted"], false);
+
+    // Unverified approval consumes the one-shot gate (`claimed=true`), is rejected by
+    // RFC 9470 verification, keeps `breaker_tripped=true`, and rotates to a fresh gate.
+    let unverified = run_ctl_json(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        &["approve", &gate1, "agent:auto-rearm"],
+    )
+    .await;
+    assert_eq!(unverified["claimed"], true);
+    let gov_rotated =
+        poll_ctl_governance(&ctl_bin, &ep2, bearer_token, "tamper-gate-rotated", |g| {
+            g["breaker_tripped"] == true
+                && g["rearm_gate_id"]
+                    .as_str()
+                    .is_some_and(|id| !id.is_empty() && id != gate1)
+        })
+        .await;
+    let gate2 = gov_rotated["rearm_gate_id"]
+        .as_str()
+        .expect("rotated rearm_gate_id")
+        .to_owned();
+
+    // Verified human RFC 9470 MFA Step-Up cleanly recovers the tampered breaker.
+    let mfa_ok = run_ctl_json(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        &[
+            "approve",
+            &gate2,
+            "stepup-verified:actor=alice:acr=urn:ietf:params:oauth:acr:mfa",
+        ],
+    )
+    .await;
+    assert_eq!(mfa_ok["claimed"], true);
+    let gov_recovered =
+        poll_ctl_governance(&ctl_bin, &ep2, bearer_token, "tamper-mfa-recovered", |g| {
+            g["breaker_tripped"] == false && g["admitted"] == true
+        })
+        .await;
+    assert_eq!(gov_recovered["admitted"], true);
+    eprintln!("LINKED_AOT_TAMPER_FAIL_CLOSED_E2E=VERIFIED");
+
+    stop_host(child2).await;
+}
