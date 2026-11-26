@@ -141,6 +141,11 @@ pub struct GovernanceAuthoritySnapshotView {
     pub blocked_tools_json: String,
     pub retracted_conclusions_json: String,
     pub cedar_policies_json: String,
+    pub fact_taint_edges_json: String,
+    pub fact_taint_sources_json: String,
+    pub fact_taint_sinks_json: String,
+    pub fact_taint_sanitizers_json: String,
+    pub last_cedar_probe_json: Option<String>,
     pub last_event_note: String,
 }
 
@@ -166,6 +171,13 @@ impl GovernanceAuthoritySnapshotView {
                 .filter(|v| v.starts_with('[') && v.ends_with(']'))
                 .map_or_else(|| "[]".to_owned(), str::to_owned)
         };
+        let get_json_object = |k: &str| -> Option<String> {
+            rec.facets
+                .get(k)
+                .map(|v| v.trim())
+                .filter(|v| v.starts_with('{') && v.ends_with('}'))
+                .map(str::to_owned)
+        };
         Self {
             record_id: rec.record_id.clone(),
             summary: rec.summary.clone(),
@@ -188,14 +200,20 @@ impl GovernanceAuthoritySnapshotView {
             blocked_tools_json: get_json_array("blocked_tools_json"),
             retracted_conclusions_json: get_json_array("retracted_conclusions_json"),
             cedar_policies_json: get_json_array("cedar_policies_json"),
+            fact_taint_edges_json: get_json_array("fact_taint_edges_json"),
+            fact_taint_sources_json: get_json_array("fact_taint_sources_json"),
+            fact_taint_sinks_json: get_json_array("fact_taint_sinks_json"),
+            fact_taint_sanitizers_json: get_json_array("fact_taint_sanitizers_json"),
+            last_cedar_probe_json: get_json_object("last_cedar_probe_json"),
             last_event_note: get_str("last_event_note"),
         }
     }
 
     /// Serializes this governance snapshot as an RFC 8259 JSON object without external serde deps.
     pub fn to_json(&self) -> String {
+        let probe_json = self.last_cedar_probe_json.as_deref().unwrap_or("null");
         format!(
-            "{{\"record_id\":{},\"summary\":{},\"admitted\":{},\"revocation_epoch\":{},\"policy_revision\":{},\"breaker_tripped\":{},\"breaker_trip_epoch\":{},\"breaker_budget_used\":{},\"breaker_budget_limit\":{},\"breaker_active_leases\":{},\"rearm_gate_id\":{},\"assessment_digest\":{},\"taint_proof_digest\":{},\"fixpoint_proof_digest\":{},\"temporal_proof_digest\":{},\"invalidation_digest\":{},\"rejection_reasons\":{},\"fenced_actors\":{},\"blocked_tools\":{},\"retracted_conclusions\":{},\"cedar_policies\":{},\"last_event_note\":{}}}",
+            "{{\"record_id\":{},\"summary\":{},\"admitted\":{},\"revocation_epoch\":{},\"policy_revision\":{},\"breaker_tripped\":{},\"breaker_trip_epoch\":{},\"breaker_budget_used\":{},\"breaker_budget_limit\":{},\"breaker_active_leases\":{},\"rearm_gate_id\":{},\"assessment_digest\":{},\"taint_proof_digest\":{},\"fixpoint_proof_digest\":{},\"temporal_proof_digest\":{},\"invalidation_digest\":{},\"rejection_reasons\":{},\"fenced_actors\":{},\"blocked_tools\":{},\"retracted_conclusions\":{},\"cedar_policies\":{},\"fact_taint_edges\":{},\"fact_taint_sources\":{},\"fact_taint_sinks\":{},\"fact_taint_sanitizers\":{},\"last_cedar_probe\":{probe_json},\"last_event_note\":{}}}",
             json_escape(&self.record_id),
             json_escape(&self.summary),
             self.admitted,
@@ -217,6 +235,10 @@ impl GovernanceAuthoritySnapshotView {
             self.blocked_tools_json,
             self.retracted_conclusions_json,
             self.cedar_policies_json,
+            self.fact_taint_edges_json,
+            self.fact_taint_sources_json,
+            self.fact_taint_sinks_json,
+            self.fact_taint_sanitizers_json,
             json_escape(&self.last_event_note),
         )
     }
@@ -315,6 +337,12 @@ pub enum GovernanceFactAction {
     Retract {
         subject: String,
     },
+    CheckCedar {
+        actor: String,
+        action: String,
+        resource: String,
+        step_up_fresh: bool,
+    },
 }
 
 impl GovernanceFactAction {
@@ -347,6 +375,15 @@ impl GovernanceFactAction {
             ),
             Self::Declassify { entry } => ("governance-declassify", Some(entry.clone())),
             Self::Retract { subject } => ("governance-retract", Some(subject.clone())),
+            Self::CheckCedar {
+                actor,
+                action,
+                resource,
+                step_up_fresh,
+            } => (
+                "governance-check-cedar",
+                Some(format!("{actor} {action} {resource} {step_up_fresh}")),
+            ),
         }
     }
 }
@@ -714,6 +751,20 @@ mod tests {
             "fenced_actors_json".to_owned(),
             "[\"agent-rogue\"]".to_owned(),
         );
+        gov_facets.insert(
+            "fact_taint_edges_json".to_owned(),
+            "[{\"src\":\"in\",\"dst\":\"pipe\"}]".to_owned(),
+        );
+        gov_facets.insert("fact_taint_sources_json".to_owned(), "[\"in\"]".to_owned());
+        gov_facets.insert("fact_taint_sinks_json".to_owned(), "[\"sink\"]".to_owned());
+        gov_facets.insert(
+            "fact_taint_sanitizers_json".to_owned(),
+            "[\"pipe\"]".to_owned(),
+        );
+        gov_facets.insert(
+            "last_cedar_probe_json".to_owned(),
+            "{\"seq\":1,\"actor\":\"agent-rogue\",\"action\":\"run_tool\",\"resource\":\"workspace\",\"step_up_fresh\":false,\"decision\":\"deny\",\"matched_policy_ids\":[\"marlin.ascent.forbid.fenced.agent-rogue\"]}".to_owned(),
+        );
         let gov_rec = GraphRecordView {
             record_id: "scheme:governance:authority-snapshot".to_owned(),
             surface: 0,
@@ -729,6 +780,9 @@ mod tests {
         assert!(!gov.admitted);
         assert!(gov.breaker_tripped);
         assert_eq!(gov.rearm_gate_id, "gov-rearm-epoch-1");
+        assert_eq!(gov.fact_taint_sources_json, "[\"in\"]");
+        assert_eq!(gov.fact_taint_sanitizers_json, "[\"pipe\"]");
+        assert!(gov.last_cedar_probe_json.is_some());
 
         let snap = HostStatusSnapshot {
             tabs: WorkbenchTabsResponse {
@@ -758,6 +812,11 @@ mod tests {
         assert!(raw.contains("\"authorizes_effect\":false"));
         assert!(raw.contains("\"breaker_tripped\":true"));
         assert!(raw.contains("\"fenced_actors\":[\"agent-rogue\"]"));
+        assert!(raw.contains("\"fact_taint_edges\":[{\"src\":\"in\",\"dst\":\"pipe\"}]"));
+        assert!(raw.contains("\"fact_taint_sources\":[\"in\"]"));
+        assert!(raw.contains("\"fact_taint_sinks\":[\"sink\"]"));
+        assert!(raw.contains("\"fact_taint_sanitizers\":[\"pipe\"]"));
+        assert!(raw.contains("\"last_cedar_probe\":{\"seq\":1,\"actor\":\"agent-rogue\""));
         assert!(raw.contains("\"rearm_gate_id\":\"gov-rearm-epoch-1\""));
         assert!(raw.contains("\"gates\":[]"));
     }
@@ -841,6 +900,32 @@ mod tests {
             }
             .to_wire_command(),
             ("governance-retract", Some("claim-1".to_owned()))
+        );
+        assert_eq!(
+            GovernanceFactAction::CheckCedar {
+                actor: "scheme-sandbox-worker".to_owned(),
+                action: "run_tool".to_owned(),
+                resource: "workspace".to_owned(),
+                step_up_fresh: false,
+            }
+            .to_wire_command(),
+            (
+                "governance-check-cedar",
+                Some("scheme-sandbox-worker run_tool workspace false".to_owned())
+            )
+        );
+        assert_eq!(
+            GovernanceFactAction::CheckCedar {
+                actor: "alice".to_owned(),
+                action: "rearm_breaker".to_owned(),
+                resource: "workspace".to_owned(),
+                step_up_fresh: true,
+            }
+            .to_wire_command(),
+            (
+                "governance-check-cedar",
+                Some("alice rearm_breaker workspace true".to_owned())
+            )
         );
     }
 }

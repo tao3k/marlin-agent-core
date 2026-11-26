@@ -13,7 +13,7 @@
 //!                                                  Poll until host is reachable and authenticated (fails fast on auth denial)
 //!   status                                         Fetch unified live tabs + audit + governance + gates snapshot
 //!   governance                                     Show live Scheme Governance Authority snapshot (breaker/ASCENT/Cedar/proofs)
-//!   gov <subaction> [args...]                      Apply live incremental governance fact mutation (eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract)
+//!   gov <subaction> [args...]                      Apply live incremental governance fact mutation or compiled Cedar probe (eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|check-cedar)
 //!   estop [actor:reason]                           Trigger live operator E-Stop via UiWorkbenchService (`governance-estop`)
 //!   records [--project ID] [--kind PREFIX]         Query read-only ProjectionQueryService records (SecretVisibility::Denied)
 //!   open-workbench [session-id]                    Open live UiWorkbenchService session snapshot
@@ -460,12 +460,29 @@ async fn run() -> Result<(), String> {
                     break;
                 };
                 seen += 1;
-                let ids: Vec<&str> = resp.tabs.iter().map(|t| t.id.as_str()).collect();
-                println!(
-                    "WATCH_TABS seq={seen} count={} ids={}",
-                    resp.tabs.len(),
-                    ids.join(",")
-                );
+                if opts.json {
+                    let tabs_json: Vec<String> = resp
+                        .tabs
+                        .iter()
+                        .map(|t| {
+                            format!(
+                                "{{\"kind\":{},\"id\":{},\"fencing_epoch\":{},\"status_label\":{}}}",
+                                json_escape(workbench_tab_kind_label(t.kind)),
+                                json_escape(&t.id),
+                                t.fencing_epoch,
+                                json_escape(&t.status_label)
+                            )
+                        })
+                        .collect();
+                    println!("{{\"seq\":{seen},\"tabs\":[{}]}}", tabs_json.join(","));
+                } else {
+                    let ids: Vec<&str> = resp.tabs.iter().map(|t| t.id.as_str()).collect();
+                    println!(
+                        "WATCH_TABS seq={seen} count={} ids={}",
+                        resp.tabs.len(),
+                        ids.join(",")
+                    );
+                }
                 let _ = io::stdout().flush();
                 if flags.count.is_some_and(|limit| seen >= limit) {
                     break;
@@ -495,17 +512,34 @@ async fn run() -> Result<(), String> {
                 };
                 if let Some(ev) = resp.event {
                     seen += 1;
-                    let meta = format_facets_sorted(&ev.metadata);
-                    if meta.is_empty() {
+                    if opts.json {
+                        let mut pairs: Vec<(&String, &String)> = ev.metadata.iter().collect();
+                        pairs.sort_by(|a, b| a.0.cmp(b.0));
+                        let meta_json: Vec<String> = pairs
+                            .into_iter()
+                            .map(|(k, v)| format!("{}:{}", json_escape(k), json_escape(v)))
+                            .collect();
                         println!(
-                            "TRAJECTORY seq={seen} id={} node={} kind={} status={}",
-                            ev.event_id, ev.node_id, ev.node_kind, ev.status
+                            "{{\"seq\":{seen},\"event_id\":{},\"node_id\":{},\"node_kind\":{},\"status\":{},\"metadata\":{{{}}}}}",
+                            json_escape(&ev.event_id),
+                            json_escape(&ev.node_id),
+                            json_escape(&ev.node_kind),
+                            json_escape(&ev.status),
+                            meta_json.join(",")
                         );
                     } else {
-                        println!(
-                            "TRAJECTORY seq={seen} id={} node={} kind={} status={} {meta}",
-                            ev.event_id, ev.node_id, ev.node_kind, ev.status
-                        );
+                        let meta = format_facets_sorted(&ev.metadata);
+                        if meta.is_empty() {
+                            println!(
+                                "TRAJECTORY seq={seen} id={} node={} kind={} status={}",
+                                ev.event_id, ev.node_id, ev.node_kind, ev.status
+                            );
+                        } else {
+                            println!(
+                                "TRAJECTORY seq={seen} id={} node={} kind={} status={} {meta}",
+                                ev.event_id, ev.node_id, ev.node_kind, ev.status
+                            );
+                        }
                     }
                     let _ = io::stdout().flush();
                     if flags.count.is_some_and(|limit| seen >= limit) {
@@ -708,7 +742,7 @@ fn parse_wait_ready_flags(args: &[String]) -> Result<WaitReadyFlags, String> {
 
 fn parse_gov_fact_action(args: &[String]) -> Result<GovernanceFactAction, String> {
     let sub = args.first().map(String::as_str).ok_or_else(|| {
-        "usage: gov <eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract> [args...]"
+        "usage: gov <eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|check-cedar> [args...]"
             .to_owned()
     })?;
     match sub {
@@ -751,8 +785,25 @@ fn parse_gov_fact_action(args: &[String]) -> Result<GovernanceFactAction, String
         "retract" if args.len() == 2 => Ok(GovernanceFactAction::Retract {
             subject: args[1].clone(),
         }),
+        "check-cedar" if args.len() == 4 || args.len() == 5 => {
+            let step_up_fresh = match args.get(4).map(String::as_str) {
+                None | Some("false") => false,
+                Some("true") => true,
+                Some(other) => {
+                    return Err(format!(
+                        "invalid check-cedar step_up_fresh `{other}` (expected true|false)"
+                    ));
+                }
+            };
+            Ok(GovernanceFactAction::CheckCedar {
+                actor: args[1].clone(),
+                action: args[2].clone(),
+                resource: args[3].clone(),
+                step_up_fresh,
+            })
+        }
         other => Err(format!(
-            "invalid gov subaction `{other}` or wrong arity (expected eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract)"
+            "invalid gov subaction `{other}` or wrong arity (expected eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|check-cedar)"
         )),
     }
 }
@@ -944,8 +995,38 @@ mod tests {
                 node: "pipe".to_owned(),
             }
         );
+        assert_eq!(
+            parse_gov_fact_action(&s(&["check-cedar", "worker", "run_tool", "workspace"])).unwrap(),
+            GovernanceFactAction::CheckCedar {
+                actor: "worker".to_owned(),
+                action: "run_tool".to_owned(),
+                resource: "workspace".to_owned(),
+                step_up_fresh: false,
+            }
+        );
+        assert_eq!(
+            parse_gov_fact_action(&s(&[
+                "check-cedar",
+                "alice",
+                "rearm_breaker",
+                "workspace",
+                "true",
+            ]))
+            .unwrap(),
+            GovernanceFactAction::CheckCedar {
+                actor: "alice".to_owned(),
+                action: "rearm_breaker".to_owned(),
+                resource: "workspace".to_owned(),
+                step_up_fresh: true,
+            }
+        );
         assert!(parse_gov_fact_action(&s(&["rearm", "alice"])).is_err());
         assert!(parse_gov_fact_action(&s(&["taint-edge", "a", "b", "bogus"])).is_err());
         assert!(parse_gov_fact_action(&s(&["delegate", "only-one"])).is_err());
+        assert!(parse_gov_fact_action(&s(&["check-cedar", "alice", "run_tool"])).is_err());
+        assert!(
+            parse_gov_fact_action(&s(&["check-cedar", "alice", "run_tool", "ws", "maybe"]))
+                .is_err()
+        );
     }
 }

@@ -37,6 +37,9 @@ pub mod wire;
 #[cfg(feature = "ui-grpc")]
 pub mod scheme_host_client;
 #[cfg(feature = "ui-grpc")]
-pub use scheme_host_client::{FleetAuditCapsuleView, GrpcCode, GrpcStatus, MarlinSchemeHostClient};
+pub use scheme_host_client::{
+    FleetAuditCapsuleView, GovernanceAuthoritySnapshotView, GovernanceFactAction, GrpcCode,
+    GrpcStatus, HostStatusSnapshot, MarlinSchemeHostClient,
+};
 #[cfg(feature = "ui-grpc")]
 pub mod ui_grpc;

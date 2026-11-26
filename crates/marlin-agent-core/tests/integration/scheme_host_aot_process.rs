@@ -1154,6 +1154,38 @@ async fn linked_aot_live_governance_fact_steering_taint_sanitize_and_mgf1_transi
         gov_sanitized["breaker_tripped"], true,
         "sanitizing a taint node must NOT silently bypass a tripped breaker latch"
     );
+    // Live CaMeL taint graph facets (sources / sinks / sanitizers / edges) MUST be projected
+    // through `GovernanceAuthoritySnapshotView` over the gRPC Bridge SDK.
+    assert!(
+        gov_sanitized["fact_taint_sources"]
+            .as_array()
+            .is_some_and(|arr| arr.iter().any(|v| v == "untrusted-in")),
+        "expected untrusted-in in fact_taint_sources: {gov_sanitized}"
+    );
+    assert!(
+        gov_sanitized["fact_taint_sinks"]
+            .as_array()
+            .is_some_and(|arr| arr.iter().any(|v| v == "exec-sink")),
+        "expected exec-sink in fact_taint_sinks: {gov_sanitized}"
+    );
+    assert!(
+        gov_sanitized["fact_taint_sanitizers"]
+            .as_array()
+            .is_some_and(|arr| arr.iter().any(|v| v == "raw-pipe")),
+        "expected raw-pipe in fact_taint_sanitizers: {gov_sanitized}"
+    );
+    assert!(
+        gov_sanitized["fact_taint_edges"]
+            .as_array()
+            .is_some_and(|arr| {
+                arr.iter()
+                    .any(|e| e["src"] == "untrusted-in" && e["dst"] == "raw-pipe")
+                    && arr
+                        .iter()
+                        .any(|e| e["src"] == "raw-pipe" && e["dst"] == "exec-sink")
+            }),
+        "expected both CaMeL taint edges in fact_taint_edges: {gov_sanitized}"
+    );
     let rearm_gate = gov_sanitized["rearm_gate_id"]
         .as_str()
         .expect("rearm_gate_id after sanitize")
@@ -1250,6 +1282,100 @@ async fn linked_aot_live_governance_fact_steering_taint_sanitize_and_mgf1_transi
                     .any(|p| p["policy_id"] == "marlin.ascent.forbid.fenced.scheme-sandbox-worker")
         }),
         "transitive revocation must synthesize exact Cedar forbid policies for all 3 fenced actors: {gov_revoked}"
+    );
+
+    // 5. Live compiled-Cedar probe (DENY): fenced transitive delegate `scheme-sandbox-worker`
+    //    MUST be actively rejected by its synthesized `marlin.ascent.forbid.fenced.*` Cedar policy.
+    let probe_deny_cmd = run_ctl_json(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        &[
+            "gov",
+            "check-cedar",
+            "scheme-sandbox-worker",
+            "run_tool",
+            "workspace",
+            "false",
+        ],
+    )
+    .await;
+    assert_eq!(probe_deny_cmd["admitted"], true);
+    let gov_probe_deny = poll_ctl_governance(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        "cedar-probe-deny-fenced",
+        |g| {
+            g["last_cedar_probe"]["actor"] == "scheme-sandbox-worker"
+                && g["last_cedar_probe"]["decision"] == "deny"
+        },
+    )
+    .await;
+    assert!(
+        gov_probe_deny["last_cedar_probe"]["matched_policy_ids"]
+            .as_array()
+            .is_some_and(|arr| {
+                arr.iter()
+                    .any(|id| id == "marlin.ascent.forbid.fenced.scheme-sandbox-worker")
+            }),
+        "compiled-Cedar deny probe must cite synthesized forbid policy: {gov_probe_deny}"
+    );
+
+    // 6. Live compiled-Cedar probe (ALLOW): verified human `alice` with fresh MFA step-up
+    //    MUST be allowed on `rearm_breaker` via `marlin.permit.verified-human-governance`.
+    let probe_allow_cmd = run_ctl_json(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        &[
+            "gov",
+            "check-cedar",
+            "alice",
+            "rearm_breaker",
+            "workspace",
+            "true",
+        ],
+    )
+    .await;
+    assert_eq!(probe_allow_cmd["admitted"], true);
+    let gov_probe_allow = poll_ctl_governance(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        "cedar-probe-allow-human",
+        |g| {
+            g["last_cedar_probe"]["actor"] == "alice"
+                && g["last_cedar_probe"]["decision"] == "allow"
+        },
+    )
+    .await;
+    assert!(
+        gov_probe_allow["last_cedar_probe"]["matched_policy_ids"]
+            .as_array()
+            .is_some_and(|arr| {
+                arr.iter()
+                    .any(|id| id == "marlin.permit.verified-human-governance")
+            }),
+        "compiled-Cedar allow probe must cite verified-human governance policy: {gov_probe_allow}"
+    );
+
+    // 7. NDJSON streaming (`--json watch-trajectory --count 1`): verify machine-readable frame.
+    let ndjson_traj = run_ctl_json(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        &["watch-trajectory", "--count", "1", "--timeout-ms", "5000"],
+    )
+    .await;
+    assert_eq!(ndjson_traj["seq"], 1);
+    assert!(
+        !ndjson_traj["event_id"].as_str().unwrap_or("").is_empty(),
+        "expected non-empty event_id in NDJSON trajectory frame: {ndjson_traj}"
+    );
+    assert!(
+        !ndjson_traj["node_id"].as_str().unwrap_or("").is_empty(),
+        "expected non-empty node_id in NDJSON trajectory frame: {ndjson_traj}"
     );
     eprintln!("LINKED_AOT_MGF1_STEERING_E2E=VERIFIED");
 
