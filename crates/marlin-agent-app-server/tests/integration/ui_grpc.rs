@@ -6,15 +6,20 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
+    path::Path,
+    process::Stdio,
     sync::Arc,
+    time::Duration,
 };
 
 use marlin_agent_app_server::{
     AppServer, CompositeAtomicEffectExecutor, RegisterTaskActorRequest, TaskActorControlPlane,
     ui_grpc::{MyGoBridgeHost, SchemeOverlayProjection},
     v1::{
-        ConversationMessage, MessageRole, StreamTurnRequest,
-        app_server_client::AppServerClient as V1AppServerClient, turn_event,
+        ConversationMessage, GetSessionSummaryRequest, GetSessionTurnStatusRequest, MessageRole,
+        OpenSessionRequest, SessionOpenMode, SessionRecoveryState, SessionTurnOutcome,
+        StartSessionTurnRequest, StreamTurnRequest, WatchSessionTurnRequest,
+        app_server_client::AppServerClient as V1AppServerClient, session_turn_event, turn_event,
     },
     wire::marlin::{
         app::v1::{GetCapabilitiesRequest, app_server_client::AppServerClient},
@@ -63,7 +68,11 @@ use marlin_agent_storage::{
 use marlin_agent_stream::{
     ModelGatewayEventStream, ModelStreamChunk, ModelStreamEvent, ModelStreamingGateway,
 };
-use tokio::net::TcpListener;
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    net::TcpListener,
+    process::{Child, Command},
+};
 use tokio_stream::{StreamExt, wrappers::TcpListenerStream};
 use tonic::{Code, Request, Status, transport::Server};
 
@@ -801,4 +810,306 @@ async fn mygo_bridge_cohosted_grpc_graph_human_gate_and_turso_atomic_pump_surviv
         [AtomicEffectReceipt::CasHit(p)]
             if p.effect_id == "e-s14-get" && p.bytes == checkpoint_bytes
     ));
+}
+
+async fn spawn_mygo_host_process(gate_id: &str, turso_path: Option<&Path>) -> (Child, String) {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_marlin-mygo-host"));
+    cmd.env("MARLIN_BRIDGE_ADDR", "127.0.0.1:0")
+        .env("MARLIN_BRIDGE_TOKEN", "test-token")
+        .env("MARLIN_BRIDGE_REAL_SESSION", "1")
+        .env("MARLIN_BRIDGE_CHUNK_DELAY_MS", "1")
+        .env("MARLIN_BRIDGE_GATE_ID", gate_id)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true);
+    if let Some(path) = turso_path {
+        cmd.env("MARLIN_BRIDGE_TURSO_PATH", path);
+    } else {
+        cmd.env_remove("MARLIN_BRIDGE_TURSO_PATH");
+    }
+    let mut child = cmd.spawn().expect("spawn marlin-mygo-host binary");
+    let stdout = child.stdout.take().expect("piped stdout");
+    let mut lines = BufReader::new(stdout).lines();
+    let ready_line = tokio::time::timeout(Duration::from_secs(10), lines.next_line())
+        .await
+        .expect("timed out waiting for marlin-mygo-host READY line")
+        .expect("read READY line")
+        .expect("marlin-mygo-host exited before printing READY");
+    let addr = ready_line
+        .strip_prefix("READY ")
+        .unwrap_or_else(|| panic!("unexpected READY line: {ready_line}"))
+        .trim()
+        .to_owned();
+    (child, format!("http://{addr}"))
+}
+
+async fn stop_mygo_host_process(mut child: Child) {
+    #[cfg(unix)]
+    {
+        if let Some(pid) = child.id() {
+            let status = std::process::Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .status()
+                .expect("send SIGTERM to marlin-mygo-host");
+            assert!(status.success(), "kill -TERM failed");
+        }
+        let exit = tokio::time::timeout(Duration::from_secs(10), child.wait())
+            .await
+            .expect("timed out waiting for graceful marlin-mygo-host exit")
+            .expect("wait on marlin-mygo-host");
+        assert!(
+            exit.success(),
+            "marlin-mygo-host should exit cleanly on SIGTERM, got {exit}"
+        );
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
+}
+
+async fn run_and_watch_session_turn(
+    client: &mut V1AppServerClient<tonic::transport::Channel>,
+    session_id: &str,
+    user_text: &str,
+    submission_id: &str,
+) -> (marlin_agent_app_server::v1::SessionTurnRef, String) {
+    let turn = client
+        .start_session_turn(auth_req(StartSessionTurnRequest {
+            session_id: session_id.to_owned(),
+            user_text: user_text.to_owned(),
+            after_turn: 0,
+            submission_id: submission_id.to_owned(),
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .turn
+        .expect("started turn ref");
+
+    let mut events = client
+        .watch_session_turn(auth_req(WatchSessionTurnRequest {
+            turn: Some(turn.clone()),
+            after_event_id: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    let mut collected_text = String::new();
+    let mut completed = false;
+    while let Some(ev) = events.message().await.unwrap() {
+        match ev.event {
+            Some(session_turn_event::Event::TextCheckpoint(cp)) => {
+                collected_text.push_str(&cp.text);
+            }
+            Some(session_turn_event::Event::Outcome(code)) => {
+                assert_eq!(code, SessionTurnOutcome::Completed as i32);
+                completed = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(completed, "expected Completed terminal outcome");
+    (turn, collected_text)
+}
+
+#[tokio::test]
+async fn marlin_mygo_host_binary_in_memory_real_session_serves_grpc_and_one_shot_gate() {
+    let (child, endpoint) = spawn_mygo_host_process("gate-bin-mem-1", None).await;
+
+    let mut ui_client = UiWorkbenchServiceClient::connect(endpoint.clone())
+        .await
+        .unwrap();
+    let wb = ui_client
+        .open_workbench(auth_req(OpenWorkbenchRequest {
+            session_id: "s16-mem-ui".to_owned(),
+            client_target_kind: TargetKind::DesktopMacos as i32,
+            preferred_profile: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .workbench
+        .unwrap();
+    assert!(wb.slots.iter().any(|s| {
+        s.slot_id == "approval.gate"
+            && s.fallback_renderer == "host.gate"
+            && !s.allow_untrusted_plugin
+    }));
+
+    let mut v1_client = V1AppServerClient::connect(endpoint.clone()).await.unwrap();
+    let opened = v1_client
+        .open_session(auth_req(OpenSessionRequest {
+            session_id: "s16-mem-sess".to_owned(),
+            mode: SessionOpenMode::Create as i32,
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(opened.session_id, "s16-mem-sess");
+
+    let (turn, reply) =
+        run_and_watch_session_turn(&mut v1_client, "s16-mem-sess", "ping-s16-mem", "sub-mem-1")
+            .await;
+    assert_eq!(
+        reply,
+        "[marlin-core] processed \"ping-s16-mem\" via durable ConversationJournal."
+    );
+    let summary = v1_client
+        .get_session_summary(auth_req(GetSessionSummaryRequest {
+            session_id: "s16-mem-sess".to_owned(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(summary.recovery_state(), SessionRecoveryState::Finished);
+    assert_eq!(summary.latest_turn, Some(turn.clone()));
+    let status = v1_client
+        .get_session_turn_status(auth_req(GetSessionTurnStatusRequest { turn: Some(turn) }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(status.outcome, Some(SessionTurnOutcome::Completed as i32));
+
+    let mut gate_client = ApprovalGateServiceClient::connect(endpoint).await.unwrap();
+    let first = gate_client
+        .submit_tool_review_decision(auth_req(SubmitToolReviewDecisionRequest {
+            turn: None,
+            gate_id: "gate-bin-mem-1".to_owned(),
+            call_id: "call-e2e-1".to_owned(),
+            decision: ToolReviewDecision::ApproveOnce as i32,
+            idempotency_key: "idem-bin-mem-1".to_owned(),
+            rationale: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .receipt
+        .unwrap();
+    assert!(first.claimed);
+    let replay = gate_client
+        .submit_tool_review_decision(auth_req(SubmitToolReviewDecisionRequest {
+            turn: None,
+            gate_id: "gate-bin-mem-1".to_owned(),
+            call_id: "call-e2e-1".to_owned(),
+            decision: ToolReviewDecision::ApproveOnce as i32,
+            idempotency_key: "idem-bin-mem-2".to_owned(),
+            rationale: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .receipt
+        .unwrap();
+    assert!(!replay.claimed);
+    assert_eq!(replay.denial.unwrap().code, DenialCode::StaleOrdinal as i32);
+
+    stop_mygo_host_process(child).await;
+}
+
+#[cfg(feature = "turso-host")]
+#[tokio::test]
+async fn marlin_mygo_host_binary_turso_wal_survives_real_os_process_restart() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("mygo-host-s16.db");
+
+    // -------------------------------------------------------------------------
+    // OS Process Boot #1: Create durable session + stream turn + claim one-shot gate
+    // -------------------------------------------------------------------------
+    let (child1, endpoint1) = spawn_mygo_host_process("gate-bin-turso-1", Some(&db_path)).await;
+    let mut v1_client1 = V1AppServerClient::connect(endpoint1.clone()).await.unwrap();
+    let opened1 = v1_client1
+        .open_session(auth_req(OpenSessionRequest {
+            session_id: "s16-proc-durable".to_owned(),
+            mode: SessionOpenMode::Create as i32,
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(opened1.session_id, "s16-proc-durable");
+
+    let (turn1, reply1) = run_and_watch_session_turn(
+        &mut v1_client1,
+        "s16-proc-durable",
+        "hello-os-restart",
+        "sub-proc-1",
+    )
+    .await;
+    assert_eq!(
+        reply1,
+        "[marlin-core] processed \"hello-os-restart\" via durable ConversationJournal."
+    );
+
+    let mut gate_client1 = ApprovalGateServiceClient::connect(endpoint1).await.unwrap();
+    let claim1 = gate_client1
+        .submit_tool_review_decision(auth_req(SubmitToolReviewDecisionRequest {
+            turn: None,
+            gate_id: "gate-bin-turso-1".to_owned(),
+            call_id: "call-e2e-1".to_owned(),
+            decision: ToolReviewDecision::ApproveOnce as i32,
+            idempotency_key: "idem-bin-turso-1".to_owned(),
+            rationale: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .receipt
+        .unwrap();
+    assert!(claim1.claimed);
+
+    // Graceful SIGTERM -> triggers persistence_handle.flush_and_stop() and clean exit 0.
+    drop(v1_client1);
+    drop(gate_client1);
+    stop_mygo_host_process(child1).await;
+
+    // -------------------------------------------------------------------------
+    // OS Process Boot #2: Fresh binary process on the EXACT SAME Turso WAL path
+    // -------------------------------------------------------------------------
+    let (child2, endpoint2) = spawn_mygo_host_process("gate-bin-turso-2", Some(&db_path)).await;
+    let mut v1_client2 = V1AppServerClient::connect(endpoint2).await.unwrap();
+
+    // Duplicate Create must fail with AlreadyExists because admission survived restart.
+    let dup_create_err = v1_client2
+        .open_session(auth_req(OpenSessionRequest {
+            session_id: "s16-proc-durable".to_owned(),
+            mode: SessionOpenMode::Create as i32,
+        }))
+        .await
+        .unwrap_err();
+    assert_eq!(dup_create_err.code(), Code::AlreadyExists);
+
+    // Existing mode rehydrates cleanly from Turso WAL across OS processes.
+    let reopened = v1_client2
+        .open_session(auth_req(OpenSessionRequest {
+            session_id: "s16-proc-durable".to_owned(),
+            mode: SessionOpenMode::Existing as i32,
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(reopened.session_id, "s16-proc-durable");
+
+    let summary = v1_client2
+        .get_session_summary(auth_req(GetSessionSummaryRequest {
+            session_id: "s16-proc-durable".to_owned(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(summary.recovery_state(), SessionRecoveryState::Finished);
+    assert_eq!(summary.latest_turn, Some(turn1.clone()));
+
+    let status = v1_client2
+        .get_session_turn_status(auth_req(GetSessionTurnStatusRequest { turn: Some(turn1) }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(status.recovery_state(), SessionRecoveryState::Finished);
+    assert_eq!(status.outcome, Some(SessionTurnOutcome::Completed as i32));
+
+    drop(v1_client2);
+    stop_mygo_host_process(child2).await;
 }

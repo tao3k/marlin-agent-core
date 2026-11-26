@@ -24,6 +24,8 @@ use marlin_agent_runtime::{
 };
 use tokio::sync::watch;
 
+static PERSIST_LOOP_BOOT_SEQ: AtomicU64 = AtomicU64::new(1);
+
 /// Registration request for a Session-free `TaskActor` on the App Server control plane.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RegisterTaskActorRequest {
@@ -383,6 +385,12 @@ impl TaskActorControlPlane {
         let mut tabs_rx = plane.subscribe_workbench_tabs();
         let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
         let seq = AtomicU64::new(1);
+        let pid = std::process::id();
+        let boot_ns = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let boot_seq = PERSIST_LOOP_BOOT_SEQ.fetch_add(1, Ordering::Relaxed);
 
         let task = tokio::spawn(async move {
             let persist = |seq_num: u64| {
@@ -393,7 +401,7 @@ impl TaskActorControlPlane {
                 let agent_id = &agent_id;
                 async move {
                     let event_id = marlin_agent_storage::EventId::new(format!(
-                        "ev-task-actor-checkpoint-{seq_num}"
+                        "ev-cp-{pid:x}-{boot_ns:x}-{boot_seq:x}-{seq_num:x}"
                     ))
                     .map_err(|err| {
                         TaskActorRuntimeError::PersistenceError {

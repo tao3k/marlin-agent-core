@@ -111,6 +111,8 @@ impl AtomicSandboxRunner for BoundedTokioSandboxRunner {
     }
 }
 
+static ATOMIC_EXEC_BOOT_SEQ: AtomicU64 = AtomicU64::new(1);
+
 /// Thin 4-primitive leaf executor composing `AgentStorage` CAS + `ModelGateway` + `AtomicSandboxRunner`.
 pub struct CompositeAtomicEffectExecutor<S, G, R = DenySandboxRunner> {
     storage: S,
@@ -119,6 +121,7 @@ pub struct CompositeAtomicEffectExecutor<S, G, R = DenySandboxRunner> {
     project_id: ProjectId,
     session_id: SessionId,
     agent_id: AgentId,
+    boot_tag: String,
     seq: AtomicU64,
 }
 
@@ -131,6 +134,12 @@ impl<S, G> CompositeAtomicEffectExecutor<S, G, DenySandboxRunner> {
         session_id: SessionId,
         agent_id: AgentId,
     ) -> Self {
+        let pid = std::process::id();
+        let boot_ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let boot_seq = ATOMIC_EXEC_BOOT_SEQ.fetch_add(1, Ordering::Relaxed);
         Self {
             storage,
             gateway,
@@ -138,6 +147,7 @@ impl<S, G> CompositeAtomicEffectExecutor<S, G, DenySandboxRunner> {
             project_id,
             session_id,
             agent_id,
+            boot_tag: format!("{pid:x}-{boot_ns:x}-{boot_seq:x}"),
             seq: AtomicU64::new(1),
         }
     }
@@ -153,6 +163,7 @@ impl<S, G, R> CompositeAtomicEffectExecutor<S, G, R> {
             project_id: self.project_id,
             session_id: self.session_id,
             agent_id: self.agent_id,
+            boot_tag: self.boot_tag,
             seq: self.seq,
         }
     }
@@ -246,7 +257,7 @@ where
                         }
                     };
                     let n = self.seq.fetch_add(1, Ordering::Relaxed);
-                    let event_id = match EventId::new(format!("ev-atomic-cas-{n}")) {
+                    let event_id = match EventId::new(format!("ev-cas-{}-{n:x}", self.boot_tag)) {
                         Ok(id) => id,
                         Err(err) => {
                             return AtomicEffectReceipt::EffectError(EffectErrorReceiptPayload {
@@ -473,7 +484,7 @@ mod tests {
                 cwd: None,
             }),
         ];
-        let rcpts2 = run_atomic_effect_batch(exec2, batch2).await;
+        let rcpts2 = run_atomic_effect_batch(Arc::clone(&exec2), batch2).await;
         assert!(matches!(
             rcpts2[0],
             AtomicEffectReceipt::CasHit(ref p)
@@ -486,6 +497,20 @@ mod tests {
                     && p.exit_code == 0
                     && String::from_utf8_lossy(&p.stdout).trim() == "hello-atomic-sandbox"
         ));
+
+        // Boot #2 CasPut on the exact same key must NOT collide on Turso visibility_receipts!
+        let put2 = run_atomic_effect_batch(
+            exec2,
+            vec![AtomicEffect::CasPut(CasPutEffectPayload {
+                effect_id: "e-put-boot2".to_owned(),
+                key: "k:s11:wire".to_owned(),
+                bytes: b"(fleet-wire-v1 (round . 16))".to_vec(),
+            })],
+        )
+        .await;
+        assert!(
+            matches!(put2.as_slice(), [AtomicEffectReceipt::CasStored(id)] if id == "e-put-boot2")
+        );
     }
 
     #[cfg(feature = "ui-grpc")]
