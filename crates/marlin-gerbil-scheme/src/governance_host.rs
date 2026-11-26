@@ -6,8 +6,8 @@
 //!
 //! Bridges the live embedded Gambit/Gerbil Scheme VM (`:marlin-agent-core/policy/governance`)
 //! through zero-JSON 14-slot rooted vectors into `marlin_agent_kernel::GovernanceAdmissionGate`
-//! + `ExecutionCircuitBreaker`, enforces side-effect gating on `SchemeAtomicEffect::SandboxRun`,
-//! publishes authoritative snapshots over `ProjectionQueryService` (`QueryProjectGraph` +
+//! and `ExecutionCircuitBreaker`, enforces side-effect gating on `SchemeAtomicEffect::SandboxRun`,
+//! publishes authoritative snapshots over `ProjectionQueryService` (`QueryProjectGraph` and
 //! `WatchGraphTrajectory`), and enforces one-shot RFC 9470 human Step-Up Re-Arm strictly through
 //! `ApprovalGateService` (never forgeable via `DispatchUiEvent`).
 
@@ -764,6 +764,24 @@ impl GovernanceHostController {
     pub fn seed_fact_store(&self, req: &GovernancePolicyVectorRequest) {
         let mut meta = self.meta.lock().expect("host governance meta poisoned");
         meta.facts.reset_from_request(req);
+        drop(meta);
+        self.sync_gate_resource_scopes();
+    }
+
+    fn sync_gate_resource_scopes(&self) {
+        let scopes = {
+            let meta = self.meta.lock().expect("host governance meta poisoned");
+            meta.facts
+                .target_scopes
+                .iter()
+                .filter_map(|(target, scope)| {
+                    GovernedSubjectName::new(target.clone())
+                        .ok()
+                        .map(|name| (name, scope.clone()))
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
+        let _ = self.gate.replace_resource_scopes(scopes);
     }
 
     /// Applies one dynamic runtime governance mutation to the live fact store and returns
@@ -1083,8 +1101,12 @@ impl GovernanceHostController {
                 {
                     match GovernanceFactStore::from_canonical_bytes(&fact_bytes) {
                         Ok(restored_facts) => {
-                            let mut meta = self.meta.lock().expect("host governance meta poisoned");
-                            meta.facts = restored_facts;
+                            {
+                                let mut meta =
+                                    self.meta.lock().expect("host governance meta poisoned");
+                                meta.facts = restored_facts;
+                            }
+                            self.sync_gate_resource_scopes();
                         }
                         Err(detail) => {
                             let tripped_snap = self
@@ -1158,6 +1180,7 @@ impl GovernanceHostController {
             .gate
             .synchronize_proof_envelope(&envelope)
             .map_err(|e| format!("synchronize scheme proof envelope: {e}"))?;
+        self.sync_gate_resource_scopes();
         if let (Some(store), Some(key)) = (cas, checkpoint_key) {
             self.persist_to_cas(store, key).await?;
         }
@@ -1295,6 +1318,7 @@ impl GovernanceHostController {
             .gate
             .synchronize_proof_envelope(&envelope)
             .map_err(|e| format!("synchronize scheme proof envelope: {e}"))?;
+        self.sync_gate_resource_scopes();
         let snap = self
             .gate
             .snapshot()

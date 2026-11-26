@@ -788,7 +788,7 @@ mod tests {
                 }
                 2 => {
                     let idx = (next_u64() as usize) % (mutated.len() + 1);
-                    mutated.insert(idx, b"\"\\{}[]()=!;:\0\n"[((next_u64() as usize) % 14)]);
+                    mutated.insert(idx, b"\"\\{}[]()=!;:\0\n"[(next_u64() as usize) % 14]);
                 }
                 3 => {
                     mutated.extend_from_slice(b" unless { context.x == ");
@@ -809,7 +809,7 @@ mod tests {
         }
 
         // 2. 512 randomized Cedar policy-set evaluations verifying strict forbid-overrides-permit!
-        let compiled_pool = vec![
+        let compiled_pool = [
             mk_policy("p.permit.human", seeds[1]),
             mk_policy("p.forbid.agent", seeds[0]),
             mk_policy("p.forbid.ext", seeds[2]),

@@ -139,7 +139,7 @@ enum FleetVmCommand {
         >,
     },
     EvaluateGovernance {
-        req: GovernancePolicyVectorRequest,
+        req: Box<GovernancePolicyVectorRequest>,
         reply: mpsc::SyncSender<Result<GovernancePolicyVectorProjection, String>>,
     },
 }
@@ -1307,7 +1307,10 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                     governance_host.seed_fact_store(&req);
                     let (gov_tx, gov_rx) = mpsc::sync_channel(1);
                     fleet_tx
-                        .send(FleetVmCommand::EvaluateGovernance { req, reply: gov_tx })
+                        .send(FleetVmCommand::EvaluateGovernance {
+                            req: Box::new(req),
+                            reply: gov_tx,
+                        })
                         .map_err(|_| {
                             "send governance boot eval to gambit vm thread".to_owned()
                         })?;
@@ -1503,7 +1506,7 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                                         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
                                         if fleet_tx_ui
                                             .send(FleetVmCommand::EvaluateGovernance {
-                                                req,
+                                                req: Box::new(req),
                                                 reply: reply_tx,
                                             })
                                             .is_ok()

@@ -270,6 +270,7 @@ struct GateInner {
     blocked_tools: BTreeSet<GovernedSubjectName>,
     cedar_policies: Vec<SynthesizedCedarPolicy>,
     compiled_cedar_policies: Vec<CompiledCedarPolicy>,
+    resource_scopes: BTreeMap<GovernedSubjectName, String>,
 }
 
 /// Authoritative Rust admission gate synchronizing Scheme Governance Authority
@@ -301,8 +302,41 @@ impl GovernanceAdmissionGate {
                 blocked_tools: BTreeSet::new(),
                 cedar_policies: Vec::new(),
                 compiled_cedar_policies: Vec::new(),
+                resource_scopes: BTreeMap::new(),
             })),
         }
+    }
+
+    /// Registers one resource's 5-scope classification (e.g. `"external"`, `"private"`)
+    /// so `authorize_side_effect_on_resource` automatically attaches `Marlin::Scope::"<scope>"`
+    /// during compiled Cedar evaluation.
+    pub fn set_resource_scope(
+        &self,
+        resource: GovernedSubjectName,
+        scope: impl Into<String>,
+    ) -> Result<(), GovernanceAdmissionError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
+        let scope_str = scope.into();
+        if !scope_str.trim().is_empty() {
+            guard.resource_scopes.insert(resource, scope_str);
+        }
+        Ok(())
+    }
+
+    /// Atomically replaces the gate's live resource-to-scope map (e.g. synced from `MGF1` v2).
+    pub fn replace_resource_scopes(
+        &self,
+        scopes: BTreeMap<GovernedSubjectName, String>,
+    ) -> Result<(), GovernanceAdmissionError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
+        guard.resource_scopes = scopes;
+        Ok(())
     }
 
     pub fn execution_breaker(&self) -> Arc<ExecutionCircuitBreaker> {
@@ -662,13 +696,16 @@ impl GovernanceAdmissionGate {
             ));
         }
 
-        let cedar_req = CedarEvaluationRequest::for_side_effect(
+        let mut cedar_req = CedarEvaluationRequest::for_side_effect(
             actor,
             tool,
             resource,
             ifc.tool_controlled_by_tainted_data,
             ifc.declassification_approved,
         );
+        if let Some(scope) = guard.resource_scopes.get(resource) {
+            cedar_req = cedar_req.with_resource_scope(scope.clone());
+        }
         if let CedarEvaluationDecision::Deny { matching_forbids } =
             evaluate_compiled_cedar_policies(&guard.compiled_cedar_policies, &cedar_req)
         {
@@ -1569,5 +1606,85 @@ mod durable_checkpoint_tests {
             Err(GovernanceAdmissionError::CorruptDurableCheckpoint(_))
         ));
         assert!(fresh_g.snapshot().unwrap().breaker.tripped);
+    }
+
+    #[test]
+    fn gate_enforces_scope_unless_cedar_policy_on_registered_resource_scopes() {
+        let breaker = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(8)));
+        let gate = GovernanceAdmissionGate::new(Arc::clone(&breaker));
+        let digest = |ch: char| {
+            GovernanceProofDigest::new(format!(
+                "sha256:{}",
+                std::iter::repeat_n(ch, 64).collect::<String>()
+            ))
+            .unwrap()
+        };
+        let env = GovernanceProofEnvelope {
+            schema_version: GOVERNANCE_ADMISSION_SCHEMA_VERSION,
+            admitted: true,
+            revocation_epoch: GovernanceProofEpoch::new(2).unwrap(),
+            policy_revision: 1,
+            assessment_digest: digest('a'),
+            taint_proof_digest: digest('b'),
+            fixpoint_proof_digest: digest('c'),
+            temporal_proof_digest: digest('d'),
+            invalidation_digest: digest('e'),
+            rejection_reasons: Vec::new(),
+            fenced_actors: Vec::new(),
+            blocked_tools: Vec::new(),
+            retracted_conclusions: Vec::new(),
+            cedar_policies: vec![SynthesizedCedarPolicy {
+                policy_id: CedarPolicyId::new(
+                    "marlin.ascent.forbid.scope.external-unless-declassified",
+                )
+                .unwrap(),
+                source: "forbid (principal, action, resource in Marlin::Scope::\"external\") unless { context.declassified == true };".to_owned(),
+            }],
+        };
+        gate.synchronize_proof_envelope(&env).unwrap();
+
+        let ext_sibling = GovernedSubjectName::new("ext-partner-mirror.txt").unwrap();
+        let workspace_doc = GovernedSubjectName::new("safe-report.md").unwrap();
+        gate.set_resource_scope(ext_sibling.clone(), "external")
+            .unwrap();
+        gate.set_resource_scope(workspace_doc.clone(), "workspace")
+            .unwrap();
+
+        let human = GovernedSubjectName::new("ops-alice").unwrap();
+        let tool = GovernedSubjectName::new("file-write").unwrap();
+
+        // 1. Un-declassified write to external-scope sibling is DENIED by scope-level `unless` forbid!
+        let err = gate
+            .authorize_side_effect_on_resource(
+                None,
+                &human,
+                &tool,
+                &ext_sibling,
+                &ToolIfcContext::clean_trusted(),
+            )
+            .expect_err("external-scope sibling must be denied without declassification");
+        assert!(matches!(
+            err,
+            GovernanceAdmissionError::CedarForbidDenied { ref policy_id, .. }
+                if policy_id.as_str() == "marlin.ascent.forbid.scope.external-unless-declassified"
+        ));
+
+        // 2. Workspace-scope resource succeeds cleanly.
+        gate.authorize_side_effect_on_resource(
+            None,
+            &human,
+            &tool,
+            &workspace_doc,
+            &ToolIfcContext::clean_trusted(),
+        )
+        .expect("workspace resource must pass");
+
+        // 3. Declassification-approved context satisfies `unless { context.declassified == true }` -> admitted!
+        let declass_ifc = ToolIfcContext {
+            declassification_approved: true,
+            ..ToolIfcContext::clean_trusted()
+        };
+        gate.authorize_side_effect_on_resource(None, &human, &tool, &ext_sibling, &declass_ifc)
+            .expect("explicitly declassified write should satisfy unless clause");
     }
 }

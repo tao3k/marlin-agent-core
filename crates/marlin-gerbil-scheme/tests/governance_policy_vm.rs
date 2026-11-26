@@ -410,8 +410,17 @@ async fn live_gerbil_vm_governance_policy_drives_rust_breaker_and_blocks_real_os
     breaker.rearm(&human).unwrap();
     assert!(!breaker.snapshot().unwrap().tripped);
 
-    let sandbox = LoopProgramFileSandbox::new(temp_dir.path())
-        .with_allowed_relative_paths(["ext-webhook.txt", "safe-report.md"]);
+    let sandbox = LoopProgramFileSandbox::new(temp_dir.path()).with_allowed_relative_paths([
+        "ext-webhook.txt",
+        "ext-partner-mirror.txt",
+        "safe-report.md",
+    ]);
+    gate_arc
+        .set_resource_scope(
+            GovernedSubjectName::new("ext-partner-mirror.txt").unwrap(),
+            "external",
+        )
+        .unwrap();
 
     let make_write_executor = |target_file: &str, body: &[u8]| {
         let empty_proc_resolver = StaticLoopProgramToolProcessResolver::default();
@@ -450,6 +459,29 @@ async fn live_gerbil_vm_governance_policy_drives_rust_breaker_and_blocks_real_os
     assert!(
         !temp_dir.path().join("ext-webhook.txt").exists(),
         "Cedar-forbidden resource MUST NOT be written to disk"
+    );
+
+    // (a2) Unrelated sibling `ext-partner-mirror.txt` in `Marlin::Scope::"external"` is ALSO
+    //      physically blocked before touching disk by the Gambit VM-synthesized scope `unless` forbid!
+    let denied_sibling = make_write_executor("ext-partner-mirror.txt", b"sibling-leak")
+        .execute(&tokio_rt.context(), &handoff)
+        .await;
+    assert_eq!(
+        denied_sibling.file_writes[0].status,
+        LoopProgramFileWriteSideEffectStatus::Denied
+    );
+    assert!(
+        denied_sibling.file_writes[0]
+            .diagnostic
+            .as_deref()
+            .unwrap_or("")
+            .contains("marlin.ascent.forbid.scope.external-unless-declassified"),
+        "expected compiled scope-unless Cedar forbid diagnostic, got {:?}",
+        denied_sibling.file_writes[0].diagnostic
+    );
+    assert!(
+        !temp_dir.path().join("ext-partner-mirror.txt").exists(),
+        "External-scope sibling MUST NOT be written to disk while exfil scope guard is active"
     );
 
     // (b) Writing unrelated `safe-report.md` succeeds cleanly!
