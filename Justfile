@@ -385,6 +385,8 @@ scheme-host-aot-gate: scheme-build
   cargo test --locked -p marlin-gerbil-aot-link
   PROTOC=/nonexistent cargo test --locked -p marlin-gerbil-scheme --test unit_test dependency_boundary::
   cargo test --locked -p marlin-gerbil-scheme --features app-server-host --lib scheme_host_runtime::tests
+  cargo test --locked -p marlin-agent-app-server --features ui-grpc --lib scheme_host_client::tests
+  cargo test --locked -p marlin-agent-app-server --features ui-grpc --bin marlin-scheme-ctl
   cargo build --locked -p marlin-agent-app-server --features ui-grpc --bin marlin-scheme-ctl
   GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" MARLIN_SCHEME_CTL_BIN="$PWD/target/debug/marlin-scheme-ctl" cargo test --locked -p marlin-agent-core --features linked-scheme-host --test scheme_host_aot_process -- --test-threads=1 --nocapture
 

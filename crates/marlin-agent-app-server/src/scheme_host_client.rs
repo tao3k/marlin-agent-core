@@ -388,6 +388,21 @@ impl GovernanceFactAction {
     }
 }
 
+fn parse_bearer_header(
+    bearer_token: Option<&str>,
+) -> Result<Option<MetadataValue<tonic::metadata::Ascii>>, String> {
+    match bearer_token.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(tok) => {
+            let mut val = MetadataValue::try_from(format!("Bearer {tok}"))
+                .map_err(|err| format!("invalid bearer token metadata: {err}"))?;
+            // Prevent HTTP/2 HPACK dynamic-table indexing and Debug plaintext leakage.
+            val.set_sensitive(true);
+            Ok(Some(val))
+        }
+        None => Ok(None),
+    }
+}
+
 /// Thin Bearer-authenticated HTTP/2 client for a live `marlin-scheme-host` daemon.
 #[derive(Clone, Debug)]
 pub struct MarlinSchemeHostClient {
@@ -403,15 +418,7 @@ impl MarlinSchemeHostClient {
         bearer_token: Option<&str>,
     ) -> Result<Self, String> {
         let ep_str = endpoint.into();
-        let bearer_header = match bearer_token.map(str::trim).filter(|t| !t.is_empty()) {
-            Some(tok) => {
-                let raw = format!("Bearer {tok}");
-                let val = MetadataValue::try_from(raw)
-                    .map_err(|err| format!("invalid bearer token metadata: {err}"))?;
-                Some(val)
-            }
-            None => None,
-        };
+        let bearer_header = parse_bearer_header(bearer_token)?;
         let channel = Endpoint::from_shared(ep_str.clone())
             .map_err(|err| format!("invalid endpoint {ep_str}: {err}"))?
             .connect()
@@ -927,5 +934,20 @@ mod tests {
                 Some("alice rearm_breaker workspace true".to_owned())
             )
         );
+    }
+
+    #[test]
+    fn parse_bearer_header_marks_authorization_sensitive_and_redacts_debug() {
+        let header = parse_bearer_header(Some("  top-secret-token-xyz  "))
+            .expect("valid bearer")
+            .expect("some header");
+        assert!(header.is_sensitive());
+        let dbg = format!("{header:?}");
+        assert!(
+            !dbg.contains("top-secret-token-xyz"),
+            "sensitive bearer metadata must never leak plaintext in Debug output: {dbg}"
+        );
+        assert!(parse_bearer_header(Some("   ")).unwrap().is_none());
+        assert!(parse_bearer_header(None).unwrap().is_none());
     }
 }
