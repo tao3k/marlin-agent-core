@@ -442,11 +442,17 @@ impl App {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.search_index_warming = Some(rx);
         runtime.spawn_blocking(move || {
+            if tx.is_closed() {
+                return;
+            }
             let mut idx = marlin_agent_search_engine::WorkspaceSearchIndex::open_or_build_cached(
                 &workspace_root,
                 &snapshot_path,
                 config,
             );
+            if tx.is_closed() {
+                return;
+            }
             let _ = marlin_agent_search_engine::hydrate_workspace_open_edb_org_and_cache(
                 &mut idx,
                 &edb_cache_path,

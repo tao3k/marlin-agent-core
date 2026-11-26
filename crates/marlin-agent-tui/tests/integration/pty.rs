@@ -952,6 +952,9 @@ fn release_linked_ui_first_frame_without_a_gerbil_package_tree() {
     terminal.assert_restored();
 }
 
+#[path = "pty/lifecycle.rs"]
+mod lifecycle;
+
 #[path = "pty/startup_acceptance.rs"]
 mod startup_acceptance;
 

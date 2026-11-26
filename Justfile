@@ -60,7 +60,7 @@ property-model-gate: app-server-model-gate gitops-context-model-gate search-engi
   quint run dev/quint/process-quota.qnt --main=processQuota --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1
   @output=$(quint run dev/quint/process-quota.qnt --main=processQuota --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in process quota negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
 
-# MAR-UI-R10/R11/R25. Layout and echo share the same TUI property entry.
+# MAR-UI-R10/R11/R25/R26. Layout, echo, and TUI lifecycle share the same gate.
 tui-model-gate:
   quint typecheck dev/quint/tui-minibuffer.qnt
   quint test dev/quint/tui-minibuffer.qnt --main=tuiMinibuffer --max-samples=100
@@ -68,6 +68,10 @@ tui-model-gate:
   quint test dev/quint/tui-minibuffer.qnt --main=minibufferEcho --max-samples=100
   quint run dev/quint/tui-minibuffer.qnt --main=minibufferEcho --seed=42 --max-samples=1000 --max-steps=30 --invariant=safe --verbosity=1
   @output=$(quint run dev/quint/tui-minibuffer.qnt --main=minibufferEcho --step=badStep --seed=42 --max-samples=100 --max-steps=4 --invariant=safe --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in echo timing negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+  quint typecheck dev/quint/tui-lifecycle.qnt
+  quint test dev/quint/tui-lifecycle.qnt --main=tuiLifecycle --max-samples=100
+  quint run dev/quint/tui-lifecycle.qnt --main=tuiLifecycle --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  @for control in pollutedGerbilPathMutation eintrBreaksStdinMutation silentEofExitMutation strandedTerminalMutation unboundedShutdownHangMutation spontaneousExitMutation; do result=0; output=$(quint run dev/quint/tui-lifecycle.qnt --main=tuiLifecycle --step="$control" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
 
 # Run only inside a disposable, root-owned delegated Linux systemd scope.
 strict-linux-os-qualification:

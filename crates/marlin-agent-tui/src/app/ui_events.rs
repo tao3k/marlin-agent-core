@@ -5,14 +5,109 @@
 
 use super::publish_error;
 use super::{
-    App, Key, MessageEvent, MessageSeverity, MessageSource, TerminalInput, UiBrowseDirection,
-    UiEvent, UiHost, UiKeyAction,
+    App, Arc, AtomicU64, INPUT_QUEUE_ITEMS, InputDecoder, Key, MessageEvent, MessageSeverity,
+    MessageSource, Ordering, RetryInterruptedRead, TerminalInput, UiBrowseDirection, UiEvent,
+    UiHost, UiKeyAction, WheelAccumulator, io, mpsc, thread,
 };
 use crate::ui_elements::{HitRegion, hit_test_command};
 use crate::{command::Command, config};
 use marlin_agent_ui::{
     UiCommandArguments, UiCommandCapability, UiKeyMode, UiPackageCommandSource, UiPackageEvent,
 };
+use termion::input::TermReadEventsAndRaw;
+
+pub(super) fn unexpected_stdin_eof() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::UnexpectedEof,
+        "terminal input closed unexpectedly (stdin EOF)",
+    )
+}
+
+pub(super) fn exit_reason_for_input_error(error: &io::Error) -> &'static str {
+    if error.kind() == io::ErrorKind::UnexpectedEof {
+        "stdin-eof"
+    } else {
+        "input-error"
+    }
+}
+
+pub(super) fn handle_history_search_input(
+    app: &mut App,
+    received: Result<io::Result<TerminalInput>, mpsc::RecvTimeoutError>,
+) -> io::Result<bool> {
+    let Some(search) = app.history_search.as_mut() else {
+        return Ok(false);
+    };
+    match received {
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => return Ok(true),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('c' | 'g') | Key::Esc))) => {
+            app.history_search = None;
+            app.disarm_exit();
+        }
+        Ok(Ok(TerminalInput::Key(Key::Char('\n')))) => app.accept_history_search(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('r')))) => search.previous(&app.history),
+        Ok(Ok(TerminalInput::Key(Key::Backspace))) => search.backspace(&app.history),
+        Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() => {
+            search.insert(&c.to_string(), &app.history)
+        }
+        Ok(Ok(TerminalInput::Paste(text))) => search.insert(&text, &app.history),
+        Ok(Err(err)) => return Err(err),
+        Err(mpsc::RecvTimeoutError::Disconnected) => return Err(unexpected_stdin_eof()),
+        _ => {}
+    }
+    Ok(false)
+}
+
+pub(super) fn spawn_stdin_reader(
+    mouse_position: Arc<AtomicU64>,
+    wheel_steps: Arc<WheelAccumulator>,
+) -> mpsc::Receiver<io::Result<TerminalInput>> {
+    let (keys_tx, keys_rx) = mpsc::sync_channel(INPUT_QUEUE_ITEMS);
+    thread::spawn(move || {
+        let mut decoder = InputDecoder::default();
+        for event in RetryInterruptedRead(io::stdin()).events_and_raw() {
+            match event {
+                Ok((event, raw)) => {
+                    if let Some(input) = decoder.accept(event, &raw) {
+                        match input {
+                            TerminalInput::MouseMove(x, y) => {
+                                mouse_position
+                                    .store((u64::from(y) << 16) | u64::from(x), Ordering::Relaxed);
+                            }
+                            TerminalInput::MouseWheel { up, column, row } => {
+                                mouse_position.store(
+                                    (u64::from(row) << 16) | u64::from(column),
+                                    Ordering::Relaxed,
+                                );
+                                if wheel_steps.push(up, column, row) {
+                                    let _ = keys_tx.try_send(Ok(TerminalInput::WheelWake));
+                                }
+                            }
+                            TerminalInput::MouseClick(x, y) => {
+                                mouse_position
+                                    .store((u64::from(y) << 16) | u64::from(x), Ordering::Relaxed);
+                                if keys_tx.send(Ok(TerminalInput::MouseClick(x, y))).is_err() {
+                                    break;
+                                }
+                            }
+                            input => {
+                                if keys_tx.send(Ok(input)).is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => {
+                    let _ = keys_tx.send(Err(error));
+                    break;
+                }
+            }
+        }
+    });
+    keys_rx
+}
 
 pub(super) fn command_menu_active(app: &App, ui: &UiHost<'_>) -> bool {
     app.command_draft.is_some()
@@ -270,7 +365,8 @@ fn apply_package_event(app: &mut App, ui: &mut UiHost<'_>, event: UiPackageEvent
 }
 
 /// Handle one terminal input event while the interactive Helm overlay is open.
-/// Returns `Ok(true)` if the main event loop should exit (`Ctrl-q` or channel closed).
+/// Returns `Ok(true)` if the user explicitly requested exit (`Ctrl-q`), or
+/// `Err(UnexpectedEof)` when the terminal input stream disconnects.
 pub(super) fn handle_helm_input(
     app: &mut App,
     ui: &mut UiHost<'_>,
@@ -327,7 +423,7 @@ pub(super) fn handle_helm_input(
         }
         Ok(Ok(TerminalInput::Paste(text))) => helm.insert_text(&text),
         Ok(Err(err)) => return Err(err),
-        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Ok(true),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Err(unexpected_stdin_eof()),
         _ => {}
     }
     if close_helm {

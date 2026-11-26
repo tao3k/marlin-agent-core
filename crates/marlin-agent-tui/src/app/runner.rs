@@ -5,15 +5,15 @@
 //! Terminal event loop and process entry.
 
 use super::{
-    AgentId, App, Arc, AtomicU64, FrameSchedule, HistorySearch, INPUT_QUEUE_ITEMS, InputDecoder,
-    Instant, JournalGateway, Key, MessageEvent, MessageSeverity, MessageSource, Ordering,
-    ProjectId, REPLY_BATCH_LIMIT, REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS, RUNTIME_EVENT_BATCH_LIMIT,
-    RuntimeEdgePolicy, RuntimeStreamGateway, ScrollAnchor, SessionBrowser, SessionId,
-    SharedGateway, SignalMonitor, TerminalInput, TerminalOwner, TranscriptViewportCache,
-    TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode,
-    TursoOptimizationProfile, UiBrowseDirection, UiHost, UiKeyAction, UiOpenFacts,
-    WheelAccumulator, config, draw_with_snapshot, frame_snapshot, io, load_session,
-    mouse_over_minibuffer, mpsc, publish_error, reply_channel, thread,
+    AgentId, App, Arc, AtomicU64, FrameSchedule, HistorySearch, Instant, JournalGateway, Key,
+    MessageEvent, MessageSeverity, MessageSource, Ordering, ProjectId, REPLY_BATCH_LIMIT,
+    REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS, RUNTIME_EVENT_BATCH_LIMIT, RuntimeEdgePolicy,
+    RuntimeStreamGateway, ScrollAnchor, SessionBrowser, SessionId, SharedGateway, SignalMonitor,
+    TerminalInput, TerminalOwner, TranscriptViewportCache, TursoAgentStorage,
+    TursoAgentStorageConfig, TursoBatchTransactionMode, TursoOptimizationProfile,
+    UiBrowseDirection, UiHost, UiKeyAction, UiOpenFacts, WheelAccumulator, config,
+    draw_with_snapshot, frame_snapshot, io, load_session, mouse_over_minibuffer, mpsc,
+    publish_error, reply_channel,
 };
 use marlin_agent_ui::{UiEditorAction, UiPackageCommandSource};
 use std::{
@@ -26,10 +26,10 @@ use super::runtime_probe::RuntimeProbe;
 use super::tool_review::{open_tool_review, poll_tool_review, submit_tool_review};
 use super::ui_events::{
     activate_deferred_command, apply_editor_mode, apply_ui_request, apply_wheel_scroll,
-    browse_menu, command_menu_active, handle_helm_input, release_interrupted_key_sequence,
-    route_frame_click, route_terminal_key, stage_ui_package,
+    browse_menu, command_menu_active, exit_reason_for_input_error, handle_helm_input,
+    handle_history_search_input, release_interrupted_key_sequence, route_frame_click,
+    route_terminal_key, spawn_stdin_reader, stage_ui_package, unexpected_stdin_eof,
 };
-use termion::input::TermReadEventsAndRaw;
 
 pub(super) fn run(
     path: PathBuf,
@@ -262,53 +262,9 @@ pub(super) fn run(
     let signals = SignalMonitor::new(&runtime, &app.runtime_owner)?;
     trace_startup("session and signals");
     let mut terminal = TerminalOwner::open()?;
-    let (keys_tx, keys_rx) = mpsc::sync_channel(INPUT_QUEUE_ITEMS);
     let mouse_position = Arc::new(AtomicU64::new(0));
-    let input_mouse_position = Arc::clone(&mouse_position);
     let wheel_steps = Arc::new(WheelAccumulator::default());
-    let input_wheel_steps = Arc::clone(&wheel_steps);
-    thread::spawn(move || {
-        let mut decoder = InputDecoder::default();
-        for event in io::stdin().events_and_raw() {
-            match event {
-                Ok((event, raw)) => {
-                    if let Some(input) = decoder.accept(event, &raw) {
-                        match input {
-                            TerminalInput::MouseMove(x, y) => {
-                                input_mouse_position
-                                    .store((u64::from(y) << 16) | u64::from(x), Ordering::Relaxed);
-                            }
-                            TerminalInput::MouseWheel { up, column, row } => {
-                                input_mouse_position.store(
-                                    (u64::from(row) << 16) | u64::from(column),
-                                    Ordering::Relaxed,
-                                );
-                                if input_wheel_steps.push(up, column, row) {
-                                    let _ = keys_tx.try_send(Ok(TerminalInput::WheelWake));
-                                }
-                            }
-                            TerminalInput::MouseClick(x, y) => {
-                                input_mouse_position
-                                    .store((u64::from(y) << 16) | u64::from(x), Ordering::Relaxed);
-                                if keys_tx.send(Ok(TerminalInput::MouseClick(x, y))).is_err() {
-                                    break;
-                                }
-                            }
-                            input => {
-                                if keys_tx.send(Ok(input)).is_err() {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(error) => {
-                    let _ = keys_tx.send(Err(error));
-                    break;
-                }
-            }
-        }
-    });
+    let keys_rx = spawn_stdin_reader(Arc::clone(&mouse_position), Arc::clone(&wheel_steps));
     let (reply_tx, mut reply_rx) = reply_channel(REPLY_QUEUE_ITEMS, REPLY_QUEUE_BYTES);
     let mut schedule = FrameSchedule::new();
     let mut viewport_cache = TranscriptViewportCache::default();
@@ -319,6 +275,7 @@ pub(super) fn run(
     let mut first_frame_elapsed = None;
     let mut failed_ui_labels: Option<(String, String)> = None;
     let mut signal_exit = None;
+    let mut exit_reason = "unknown";
     #[cfg(feature = "linked-ui")]
     let mut git_context: Option<super::git_context::GitContext<'_>> = None;
     let result = (|| -> io::Result<()> {
@@ -414,6 +371,7 @@ pub(super) fn run(
             }
             signal_exit = signals.observed_exit_code();
             if signal_exit.is_some() {
+                exit_reason = "signal";
                 break;
             }
             let processed = app.process_replies(&mut reply_rx, REPLY_BATCH_LIMIT);
@@ -648,6 +606,7 @@ pub(super) fn run(
             }
             signal_exit = signals.observed_exit_code();
             if signal_exit.is_some() {
+                exit_reason = "signal";
                 break;
             }
             #[cfg(unix)]
@@ -698,30 +657,30 @@ pub(super) fn run(
                 continue;
             }
             if app.helm.is_some() {
-                if handle_helm_input(&mut app, &mut ui, runtime.handle(), received)? {
-                    break;
+                match handle_helm_input(&mut app, &mut ui, runtime.handle(), received) {
+                    Ok(true) => {
+                        exit_reason = "ctrl-q";
+                        break;
+                    }
+                    Ok(false) => continue,
+                    Err(error) => {
+                        exit_reason = exit_reason_for_input_error(&error);
+                        return Err(error);
+                    }
                 }
-                continue;
             }
-            if let Some(search) = app.history_search.as_mut() {
-                match received {
-                    Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => break,
-                    Ok(Ok(TerminalInput::Key(Key::Ctrl('c') | Key::Esc))) => {
-                        app.history_search = None;
-                        app.disarm_exit();
+            if app.history_search.is_some() {
+                match handle_history_search_input(&mut app, received) {
+                    Ok(true) => {
+                        exit_reason = "ctrl-q";
+                        break;
                     }
-                    Ok(Ok(TerminalInput::Key(Key::Char('\n')))) => app.accept_history_search(),
-                    Ok(Ok(TerminalInput::Key(Key::Ctrl('r')))) => search.previous(&app.history),
-                    Ok(Ok(TerminalInput::Key(Key::Backspace))) => search.backspace(&app.history),
-                    Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() => {
-                        search.insert(&c.to_string(), &app.history)
+                    Ok(false) => continue,
+                    Err(error) => {
+                        exit_reason = exit_reason_for_input_error(&error);
+                        return Err(error);
                     }
-                    Ok(Ok(TerminalInput::Paste(text))) => search.insert(&text, &app.history),
-                    Ok(Err(e)) => return Err(e),
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                    _ => {}
                 }
-                continue;
             }
             if let Ok(Ok(TerminalInput::Key(key))) = &received {
                 if let Some(prompt) = app.tool_review_prompt.as_mut() {
@@ -738,7 +697,10 @@ pub(super) fn run(
                             prompt.scroll = prompt.scroll.saturating_add(size.1.saturating_sub(4))
                         }
                         Key::Char('\n') => submit_tool_review(&mut app, &runtime),
-                        Key::Ctrl('q') => break,
+                        Key::Ctrl('q') => {
+                            exit_reason = "ctrl-q";
+                            break;
+                        }
                         _ => {}
                     }
                     continue;
@@ -880,8 +842,14 @@ pub(super) fn run(
             }
             let accepts_text = ui.accepts_text(app.command_draft.is_some());
             match received {
-                Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => break,
-                Ok(Ok(TerminalInput::Key(Key::Ctrl('c')))) if app.interrupt() => break,
+                Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => {
+                    exit_reason = "ctrl-q";
+                    break;
+                }
+                Ok(Ok(TerminalInput::Key(Key::Ctrl('c')))) if app.interrupt() => {
+                    exit_reason = "ctrl-c";
+                    break;
+                }
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('c')))) => {}
                 Ok(Ok(TerminalInput::Key(Key::Esc))) => app.cancel(),
                 Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() && accepts_text => {
@@ -921,8 +889,14 @@ pub(super) fn run(
                     summary: "Paste rejected",
                     detail: "Invalid UTF-8 or larger than 1 MiB.",
                 }),
-                Ok(Err(e)) => return Err(e),
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Ok(Err(e)) => {
+                    exit_reason = "input-error";
+                    return Err(e);
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    exit_reason = "stdin-eof";
+                    return Err(unexpected_stdin_eof());
+                }
                 _ => {}
             }
             if let Some(command) = app.envrc_command.take() {
@@ -933,7 +907,12 @@ pub(super) fn run(
         }
         Ok(())
     })();
-    trace_startup("event loop exit");
+    if env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some() {
+        eprintln!(
+            "marlin-tui startup event loop exit ({exit_reason}, signal={signal_exit:?}): {:?}",
+            startup.elapsed()
+        );
+    }
     #[cfg(feature = "linked-ui")]
     drop(git_context);
     let terminal_result = terminal.suspend();
@@ -960,7 +939,7 @@ pub(super) fn run(
     drop(gateway);
     drop(base_gateway);
     trace_startup("gateway dropped");
-    drop(runtime);
+    runtime.shutdown_timeout(std::time::Duration::from_millis(250));
     trace_startup("Tokio runtime dropped");
     drop(ui);
     trace_startup("UI session dropped");

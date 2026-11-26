@@ -6,5 +6,11 @@
 mod decoder;
 mod wheel;
 
-pub(crate) use decoder::{BracketedPaste, InputDecoder, MouseMotion, TerminalInput};
+pub(crate) use decoder::{
+    BracketedPaste, InputDecoder, MouseMotion, RetryInterruptedRead, TerminalInput,
+};
 pub(crate) use wheel::WheelAccumulator;
+
+#[cfg(test)]
+#[path = "../../tests/unit/input_retry.rs"]
+mod tests;
