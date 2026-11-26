@@ -6,10 +6,13 @@
 ;;; into rooted `search-engine` Playbook vectors for Rust ASP execution.
 (import (only-in :marlin-agent-core/c-abi/roots marlin-rooted-call)
         (only-in :clan/poo/object .get)
-        (only-in :marlin-agent-core/ui-helm/config UiHelmScope))
+        (only-in :marlin-agent-core/ui-helm/config UiHelmScope)
+        (only-in :marlin-agent-core/ui/helm-workbench
+                 make-marlin-helm-workbench-package))
 (export marlin-ui-helm-compile-plan
         marlin-ui-helm-index-config
-        marlin-ui-helm-window-policy)
+        marlin-ui-helm-window-policy
+        make-marlin-helm-workbench-package)
 
 (def (marlin-ui-helm-compile-plan input)
   (let ((prompt (if (string? input) input "@lang:rust marlin_search_engine")))

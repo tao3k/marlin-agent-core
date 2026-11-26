@@ -82,6 +82,20 @@ jobs:
           fi
           clang --version
 
+      - name: Ensure Protobuf compiler is available
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          if ! command -v protoc >/dev/null; then
+            if [[ "$RUNNER_OS" == macOS ]]; then
+              brew install protobuf
+            else
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends protobuf-compiler
+            fi
+          fi
+          protoc --version
+
       - name: Install Worktrunk for the worktree acceptance
         if: (runner.os == 'Linux' && runner.arch == 'X64') || (runner.os == 'macOS' && runner.arch == 'ARM64')
         id: worktrunk
