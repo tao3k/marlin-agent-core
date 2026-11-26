@@ -25,6 +25,7 @@
   (ui-layout)
   (search-engine)
   (search-dsl)
+  (ast-style)
   (ui-helm)
   (ui)
   (ui-tui)
