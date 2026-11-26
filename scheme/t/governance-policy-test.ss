@@ -141,7 +141,17 @@
         (check (.ref res-leak 'clean?) => #f)
         ;; Once explicitly declassified and breaker armed, exfiltration alert clears cleanly!
         (check (.ref res-declassified 'scope-exfiltration-alerts) => '())
-        (check (.ref res-declassified 'clean?) => #t)))
+        (check (.ref res-declassified 'clean?) => #t)
+        ;; Synthesized Cedar policies materialize resource-scoped forbid for exfiltration
+        ;; and remove it once the context entry is explicitly declassified!
+        (let ((leak-policy-ids
+               (map (lambda (p) (.ref p 'identity))
+                    (synthesize-cedar-policies-from-ascent res-leak)))
+              (clean-policy-ids
+               (map (lambda (p) (.ref p 'identity))
+                    (synthesize-cedar-policies-from-ascent res-declassified))))
+          (check (and (member "marlin.ascent.forbid.exfil.secret-note.channel-prompt" leak-policy-ids) #t) => #t)
+          (check (and (member "marlin.ascent.forbid.exfil.secret-note.channel-prompt" clean-policy-ids) #t) => #f))))
 
     ;; -----------------------------------------------------------------------
     ;; 5. Bi-Temporal Causality (`valid-time` x `knowledge-time`) & Tamper Detection

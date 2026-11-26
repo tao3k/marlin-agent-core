@@ -670,6 +670,7 @@
 (def (synthesize-cedar-policies-from-ascent ascent-fixpoint-receipt)
   (let* ((fenced-rows (.ref ascent-fixpoint-receipt 'fenced-actors))
          (blocked-tool-rows (.ref ascent-fixpoint-receipt 'breaker-blocked-tools))
+         (exfil-rows (.ref ascent-fixpoint-receipt 'scope-exfiltration-alerts))
          (baseline-policies
           (list
            (agentic-ai-lab-cedar-policy
@@ -718,8 +719,22 @@
                     (string-append
                      "forbid (principal, action == Marlin::Action::\"" tool-str
                      "\", resource);"))))
-               blocked-tool-rows)))
-    (append baseline-policies ascent-fenced-policies ascent-tool-policies)))
+               blocked-tool-rows))
+         (ascent-exfil-policies
+          (map (lambda (row)
+                 (let ((entry-str (if (symbol? (car row))
+                                    (symbol->string (car row))
+                                    (car row)))
+                       (target-str (if (symbol? (cadr row))
+                                     (symbol->string (cadr row))
+                                     (cadr row))))
+                   (agentic-ai-lab-cedar-policy
+                    (string-append "marlin.ascent.forbid.exfil." entry-str "." target-str)
+                    (string-append
+                     "forbid (principal, action, resource == Marlin::Resource::\"" target-str
+                     "\");"))))
+               exfil-rows)))
+    (append baseline-policies ascent-fenced-policies ascent-tool-policies ascent-exfil-policies)))
 
 ;;; Fail-closed higher-order synthesis gate: constructs a proof-bound
 ;;; `CedarAuthoritySnapshot` + its runtime boundary hash projection ONLY IF:

@@ -10,6 +10,7 @@ mod driver;
 pub mod execution_breaker;
 pub mod governance_plane;
 pub mod governance_admission;
+pub mod governance_cedar;
 mod loop_machine;
 mod loop_program_controller;
 mod loop_program_execution;
@@ -50,6 +51,12 @@ pub use governance_admission::{
     GovernanceAdmissionError, GovernanceDurableCheckpoint, GovernanceGateSnapshot,
     GovernanceAdmissionGate, GovernanceProofEnvelope,
     GovernanceProofEpoch, GovernanceProofSyncReceipt, SynthesizedCedarPolicy,
+    governance_sha256_bytes,
+};
+pub use governance_cedar::{
+    CedarContextValue, CedarEffect, CedarEntityRef, CedarEvaluationDecision,
+    CedarEvaluationRequest, CedarScopeMatcher, CedarWhenCondition, CompiledCedarPolicy,
+    compile_cedar_policy, evaluate_compiled_cedar_policies, infer_actor_roles,
 };
 pub use loop_machine::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,

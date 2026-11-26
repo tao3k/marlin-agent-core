@@ -31,7 +31,7 @@ use marlin_agent_kernel::{
     BreakerActor, BreakerActorId, CedarPolicyId, DerivationId, ExecutionCircuitBreaker,
     GovernanceProofDigest, GovernedSubjectName, GovernanceAdmissionError, GovernanceGateSnapshot,
     GovernanceAdmissionGate, GovernanceProofEnvelope, GovernanceProofEpoch,
-    SynthesizedCedarPolicy, ToolBudgetUnits, ToolIfcContext,
+    SynthesizedCedarPolicy, ToolBudgetUnits, ToolIfcContext, governance_sha256_bytes,
 };
 use marlin_agent_storage::AgentStorage;
 
@@ -43,6 +43,13 @@ pub const GOVERNANCE_AUTHORITY_RUN_ID: &str = "scheme-governance-authority";
 pub const GOVERNANCE_AUTHORITY_NODE_KIND: &str = "scheme_governance_authority";
 pub const GOVERNANCE_REARM_GATE_PREFIX: &str = "gov-rearm-epoch-";
 pub const DEFAULT_GOVERNANCE_CHECKPOINT_KEY: &str = "checkpoint:governance-authority:v1";
+pub const GOVERNANCE_FACT_STORE_MAGIC: &[u8; 4] = b"MGF1";
+pub const GOVERNANCE_FACT_STORE_VERSION: u32 = 1;
+
+/// Companion Turso CAS key storing the tamper-evident `MGF1` runtime fact-graph checkpoint.
+pub fn fact_store_checkpoint_key(checkpoint_key: &str) -> String {
+    format!("{checkpoint_key}:facts")
+}
 
 static GOVERNANCE_TRAJECTORY_SEQ: AtomicU64 = AtomicU64::new(1);
 
@@ -174,7 +181,7 @@ pub fn parse_governance_ui_command(raw: &str) -> Option<GovernanceUiCommand> {
 
 /// Live mutable runtime security fact graph driving real-time Linked-AOT/VM Scheme
 /// `POO × ASCENT × Bi-Temporal TM × Cedar` incremental re-evaluation.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GovernanceFactStore {
     pub delegation_edges: BTreeSet<(String, String)>,
     pub revoked_actors: BTreeSet<String>,
@@ -238,6 +245,187 @@ impl GovernanceFactStore {
             revocation_epoch,
             policy_revision,
         }
+    }
+
+    /// Serializes the full deterministic runtime fact graph into canonical `MGF1` binary bytes
+    /// sealed with a trailing 32-byte FIPS 180-4 SHA-256 integrity digest.
+    pub fn to_canonical_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(512);
+        buf.extend_from_slice(GOVERNANCE_FACT_STORE_MAGIC);
+        put_u32(&mut buf, GOVERNANCE_FACT_STORE_VERSION);
+        put_pair_set(&mut buf, &self.delegation_edges);
+        put_str_set(&mut buf, &self.revoked_actors);
+        put_pair_set(&mut buf, &self.taint_edges);
+        put_str_set(&mut buf, &self.taint_sources);
+        put_str_set(&mut buf, &self.taint_sinks);
+        put_str_set(&mut buf, &self.taint_sanitizers);
+        put_str_map(&mut buf, &self.context_entries);
+        put_pair_set(&mut buf, &self.context_flows);
+        put_str_map(&mut buf, &self.target_scopes);
+        put_str_set(&mut buf, &self.declassified_entries);
+        put_str_set(&mut buf, &self.tripped_breakers);
+        put_pair_set(&mut buf, &self.breaker_tools);
+        put_str_set(&mut buf, &self.retracted_subjects);
+        let mac = governance_sha256_bytes(&buf);
+        buf.extend_from_slice(&mac);
+        buf
+    }
+
+    /// Validates magic `MGF1`, schema version, exact SHA-256 digest, bounds, and exact EOF.
+    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < 4 + 4 + 32 {
+            return Err("fact-graph checkpoint truncated below minimum size".to_owned());
+        }
+        let (body, tag) = bytes.split_at(bytes.len() - 32);
+        let expected = governance_sha256_bytes(body);
+        if tag != expected {
+            return Err("fact-graph SHA-256 integrity verification mismatch".to_owned());
+        }
+        let mut cur = FactCursor::new(body);
+        let magic = cur.read_exact(4)?;
+        if magic != GOVERNANCE_FACT_STORE_MAGIC {
+            return Err("invalid fact-graph checkpoint magic header".to_owned());
+        }
+        let version = cur.read_u32()?;
+        if version != GOVERNANCE_FACT_STORE_VERSION {
+            return Err(format!("unsupported fact-graph checkpoint version {version}"));
+        }
+        let store = Self {
+            delegation_edges: cur.read_pair_set(4096)?,
+            revoked_actors: cur.read_str_set(4096)?,
+            taint_edges: cur.read_pair_set(4096)?,
+            taint_sources: cur.read_str_set(4096)?,
+            taint_sinks: cur.read_str_set(4096)?,
+            taint_sanitizers: cur.read_str_set(4096)?,
+            context_entries: cur.read_str_map(4096)?,
+            context_flows: cur.read_pair_set(4096)?,
+            target_scopes: cur.read_str_map(4096)?,
+            declassified_entries: cur.read_str_set(4096)?,
+            tripped_breakers: cur.read_str_set(1024)?,
+            breaker_tools: cur.read_pair_set(4096)?,
+            retracted_subjects: cur.read_str_set(4096)?,
+        };
+        if !cur.is_eof() {
+            return Err("unexpected trailing bytes in fact-graph checkpoint".to_owned());
+        }
+        Ok(store)
+    }
+}
+
+fn put_u32(buf: &mut Vec<u8>, v: u32) {
+    buf.extend_from_slice(&v.to_be_bytes());
+}
+
+fn put_str(buf: &mut Vec<u8>, s: &str) {
+    let bytes = s.as_bytes();
+    put_u32(buf, bytes.len() as u32);
+    buf.extend_from_slice(bytes);
+}
+
+fn put_str_set(buf: &mut Vec<u8>, set: &BTreeSet<String>) {
+    put_u32(buf, set.len() as u32);
+    for item in set {
+        put_str(buf, item);
+    }
+}
+
+fn put_pair_set(buf: &mut Vec<u8>, set: &BTreeSet<(String, String)>) {
+    put_u32(buf, set.len() as u32);
+    for (a, b) in set {
+        put_str(buf, a);
+        put_str(buf, b);
+    }
+}
+
+fn put_str_map(buf: &mut Vec<u8>, map: &BTreeMap<String, String>) {
+    put_u32(buf, map.len() as u32);
+    for (k, v) in map {
+        put_str(buf, k);
+        put_str(buf, v);
+    }
+}
+
+struct FactCursor<'a> {
+    data: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> FactCursor<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data, pos: 0 }
+    }
+
+    fn is_eof(&self) -> bool {
+        self.pos == self.data.len()
+    }
+
+    fn read_exact(&mut self, n: usize) -> Result<&'a [u8], String> {
+        let end = self
+            .pos
+            .checked_add(n)
+            .ok_or_else(|| "integer overflow in fact-graph cursor".to_owned())?;
+        if end > self.data.len() {
+            return Err("unexpected EOF in fact-graph checkpoint".to_owned());
+        }
+        let slice = &self.data[self.pos..end];
+        self.pos = end;
+        Ok(slice)
+    }
+
+    fn read_u32(&mut self) -> Result<u32, String> {
+        let b = self.read_exact(4)?;
+        Ok(u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+    }
+
+    fn read_str(&mut self) -> Result<String, String> {
+        let len = self.read_u32()? as usize;
+        if len > 65_536 {
+            return Err(format!("excessive fact-graph string length {len}"));
+        }
+        let bytes = self.read_exact(len)?;
+        std::str::from_utf8(bytes)
+            .map(str::to_owned)
+            .map_err(|e| format!("invalid utf8 in fact-graph checkpoint: {e}"))
+    }
+
+    fn read_str_set(&mut self, max_items: usize) -> Result<BTreeSet<String>, String> {
+        let count = self.read_u32()? as usize;
+        if count > max_items {
+            return Err(format!("excessive fact-graph set count {count} > {max_items}"));
+        }
+        let mut out = BTreeSet::new();
+        for _ in 0..count {
+            out.insert(self.read_str()?);
+        }
+        Ok(out)
+    }
+
+    fn read_pair_set(&mut self, max_items: usize) -> Result<BTreeSet<(String, String)>, String> {
+        let count = self.read_u32()? as usize;
+        if count > max_items {
+            return Err(format!("excessive fact-graph pair count {count} > {max_items}"));
+        }
+        let mut out = BTreeSet::new();
+        for _ in 0..count {
+            let a = self.read_str()?;
+            let b = self.read_str()?;
+            out.insert((a, b));
+        }
+        Ok(out)
+    }
+
+    fn read_str_map(&mut self, max_items: usize) -> Result<BTreeMap<String, String>, String> {
+        let count = self.read_u32()? as usize;
+        if count > max_items {
+            return Err(format!("excessive fact-graph map count {count} > {max_items}"));
+        }
+        let mut out = BTreeMap::new();
+        for _ in 0..count {
+            let k = self.read_str()?;
+            let v = self.read_str()?;
+            out.insert(k, v);
+        }
+        Ok(out)
     }
 }
 
@@ -575,28 +763,38 @@ impl GovernanceHostController {
             .map_err(|e| format!("governance denied sandbox execution: {e}"))
     }
 
-    /// Persists the current tamper-evident `MGV1` governance checkpoint bytes to Turso CAS.
+    /// Persists BOTH the tamper-evident `MGV1` governance gate checkpoint AND the companion
+    /// `MGF1` runtime fact-graph checkpoint to Turso CAS so incremental post-restart mutations
+    /// retain full delegation, context-flow, taint, and retraction history.
     pub async fn persist_to_cas<S: AgentStorage + Clone + 'static>(
         &self,
         cas: &StorageCasStore<S>,
         checkpoint_key: &str,
     ) -> Result<(), String> {
-        let bytes = self
+        let gate_bytes = self
             .gate
             .export_durable_checkpoint_bytes()
             .map_err(|e| format!("export durable governance checkpoint: {e}"))?;
-        cas.put_blob(checkpoint_key, bytes)
+        let fact_bytes = {
+            let meta = self.meta.lock().expect("host governance meta poisoned");
+            meta.facts.to_canonical_bytes()
+        };
+        cas.put_blob(&fact_store_checkpoint_key(checkpoint_key), fact_bytes)
+            .await
+            .map_err(|e| format!("persist durable governance fact graph to CAS: {e}"))?;
+        cas.put_blob(checkpoint_key, gate_bytes)
             .await
             .map_err(|e| format!("persist durable governance checkpoint to CAS: {e}"))
     }
 
-    /// Restores a tamper-evident `MGV1` governance checkpoint from Turso CAS on daemon boot.
+    /// Restores tamper-evident `MGV1` gate state and companion `MGF1` fact-graph state from
+    /// Turso CAS on daemon boot.
     ///
     /// Returns:
     /// - `Ok(None)` when no prior checkpoint exists in CAS (cold boot).
-    /// - `Ok(Some((snap, "restored")))` when a valid persisted checkpoint was restored.
-    /// - `Ok(Some((snap, "corrupt_fail_closed")))` when persisted bytes failed SHA-256 or
-    ///   schema integrity checks and the host automatically failed closed (`tripped = true`).
+    /// - `Ok(Some((snap, "restored")))` when valid persisted checkpoints were restored.
+    /// - `Ok(Some((snap, "corrupt_fail_closed")))` when either `MGV1` or `MGF1` failed SHA-256
+    ///   or schema integrity checks and the host automatically failed closed (`tripped = true`).
     pub async fn restore_from_cas<S: AgentStorage + Clone + 'static>(
         &self,
         host: &MyGoBridgeHost,
@@ -613,6 +811,39 @@ impl GovernanceHostController {
 
         match self.gate.restore_durable_checkpoint_bytes(&bytes) {
             Ok(snap) => {
+                let fact_key = fact_store_checkpoint_key(checkpoint_key);
+                if let Some(fact_bytes) = cas
+                    .get_blob(&fact_key)
+                    .await
+                    .map_err(|e| format!("read durable governance fact graph from CAS: {e}"))?
+                {
+                    match GovernanceFactStore::from_canonical_bytes(&fact_bytes) {
+                        Ok(restored_facts) => {
+                            let mut meta = self.meta.lock().expect("host governance meta poisoned");
+                            meta.facts = restored_facts;
+                        }
+                        Err(detail) => {
+                            let tripped_snap = self
+                                .gate
+                                .trip_corrupt_durable_state(&format!("fact-graph:{detail}"))
+                                .map_err(|e| format!("trip corrupt fact-graph fail-closed: {e}"))?;
+                            let note = format!(
+                                "corrupt durable governance fact-graph checkpoint (fail-closed): {detail}"
+                            );
+                            self.ensure_rearm_gate_enqueued(
+                                host,
+                                tripped_snap.breaker.trip_epoch.get(),
+                                &note,
+                            );
+                            let published = self.publish_snapshot(
+                                host,
+                                "governance_boot_corrupt_fail_closed",
+                                &note,
+                            )?;
+                            return Ok(Some((published, "corrupt_fail_closed")));
+                        }
+                    }
+                }
                 {
                     let mut meta = self.meta.lock().expect("host governance meta poisoned");
                     meta.policy_revision_seq = meta.policy_revision_seq.max(snap.policy_revision);
@@ -963,18 +1194,21 @@ impl GovernanceHostController {
             .gate
             .snapshot()
             .map_err(|e| format!("snapshot governance gate: {e}"))?;
-        let rearm_gate_id = {
+        let (rearm_gate_id, facts_snapshot) = {
             let mut meta = self.meta.lock().expect("host governance meta poisoned");
             meta.last_event_note = note.to_owned();
-            meta.active_rearm_gate_id.clone().unwrap_or_default()
+            (
+                meta.active_rearm_gate_id.clone().unwrap_or_default(),
+                meta.facts.clone(),
+            )
         };
 
-        let facets = encode_snapshot_facets(&snap, &rearm_gate_id, note);
+        let facets = encode_snapshot_facets(&snap, &facts_snapshot, &rearm_gate_id, note);
         let record = GraphRecordView {
             record_id: GOVERNANCE_AUTHORITY_RECORD_ID.to_owned(),
             surface: GraphVisibleSurface::Evidence as i32,
             kind: GOVERNANCE_AUTHORITY_RECORD_KIND.to_owned(),
-            title: "Scheme Governance Authority Authority Snapshot".to_owned(),
+            title: "Scheme Governance Authority Snapshot".to_owned(),
             summary: format!(
                 "admitted={} breaker_tripped={} trip_epoch={} rev_epoch={} fenced={} retracted={} cedar={}",
                 snap.admitted,
@@ -1012,6 +1246,7 @@ impl GovernanceHostController {
 
 fn encode_snapshot_facets(
     snap: &GovernanceGateSnapshot,
+    facts: &GovernanceFactStore,
     rearm_gate_id: &str,
     note: &str,
 ) -> HashMap<String, String> {
@@ -1019,6 +1254,18 @@ fn encode_snapshot_facets(
     struct CedarWireEntry<'a> {
         policy_id: &'a str,
         source: &'a str,
+    }
+    #[derive(serde::Serialize)]
+    struct DelegationWireEntry<'a> {
+        parent: &'a str,
+        child: &'a str,
+    }
+    #[derive(serde::Serialize)]
+    struct ContextFlowWireEntry<'a> {
+        entry: &'a str,
+        src_scope: &'a str,
+        target: &'a str,
+        dst_scope: &'a str,
     }
 
     let fenced: Vec<&str> = snap
@@ -1043,6 +1290,43 @@ fn encode_snapshot_facets(
             policy_id: p.policy_id.as_str(),
             source: p.source.as_str(),
         })
+        .collect();
+    let fact_delegations: Vec<DelegationWireEntry<'_>> = facts
+        .delegation_edges
+        .iter()
+        .map(|(parent, child)| DelegationWireEntry {
+            parent: parent.as_str(),
+            child: child.as_str(),
+        })
+        .collect();
+    let fact_revoked: Vec<&str> = facts.revoked_actors.iter().map(String::as_str).collect();
+    let fact_flows: Vec<ContextFlowWireEntry<'_>> = facts
+        .context_flows
+        .iter()
+        .map(|(entry, target)| ContextFlowWireEntry {
+            entry: entry.as_str(),
+            src_scope: facts
+                .context_entries
+                .get(entry)
+                .map(String::as_str)
+                .unwrap_or(""),
+            target: target.as_str(),
+            dst_scope: facts
+                .target_scopes
+                .get(target)
+                .map(String::as_str)
+                .unwrap_or(""),
+        })
+        .collect();
+    let fact_declassified: Vec<&str> = facts
+        .declassified_entries
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let fact_retracted: Vec<&str> = facts
+        .retracted_subjects
+        .iter()
+        .map(String::as_str)
         .collect();
 
     let mut facets = HashMap::new();
@@ -1130,6 +1414,26 @@ fn encode_snapshot_facets(
     facets.insert(
         "cedar_policies_json".to_owned(),
         serde_json::to_string(&cedar).unwrap_or_else(|_| "[]".to_owned()),
+    );
+    facets.insert(
+        "fact_delegations_json".to_owned(),
+        serde_json::to_string(&fact_delegations).unwrap_or_else(|_| "[]".to_owned()),
+    );
+    facets.insert(
+        "fact_revoked_actors_json".to_owned(),
+        serde_json::to_string(&fact_revoked).unwrap_or_else(|_| "[]".to_owned()),
+    );
+    facets.insert(
+        "fact_context_flows_json".to_owned(),
+        serde_json::to_string(&fact_flows).unwrap_or_else(|_| "[]".to_owned()),
+    );
+    facets.insert(
+        "fact_declassified_entries_json".to_owned(),
+        serde_json::to_string(&fact_declassified).unwrap_or_else(|_| "[]".to_owned()),
+    );
+    facets.insert(
+        "fact_retracted_subjects_json".to_owned(),
+        serde_json::to_string(&fact_retracted).unwrap_or_else(|_| "[]".to_owned()),
     );
     facets.insert("last_event_note".to_owned(), note.to_owned());
     facets
@@ -1352,5 +1656,80 @@ mod tests {
             ctrl3.authorize_sandbox_effect("ops-bob", "/bin/echo").is_err(),
             "corrupted durable checkpoint MUST physically block sandbox execution"
         );
+    }
+
+    #[tokio::test]
+    async fn host_controller_persists_fact_graph_mgf1_and_fails_closed_on_tampered_facts() {
+        use marlin_agent_storage::{AgentId, InMemoryAgentStorage, ProjectId, SessionId};
+
+        let storage = InMemoryAgentStorage::default();
+        let cas = StorageCasStore::new(
+            storage,
+            ProjectId::new("default").unwrap(),
+            SessionId::new("sess-mgf1-test").unwrap(),
+            AgentId::new("agent-mgf1-test").unwrap(),
+        );
+        let key = "checkpoint:governance-mgf1-test:v1";
+
+        let ctrl1 = GovernanceHostController::new(8, Arc::new(SharedProjectionRecords::new()));
+        ctrl1.seed_fact_store(&default_clean_governance_request(1, 1));
+        ctrl1
+            .mutate_facts_and_build_request(&GovernanceUiCommand::DelegateActor {
+                parent: "ops-root".to_owned(),
+                child: "agent-lead".to_owned(),
+            })
+            .unwrap();
+        ctrl1
+            .mutate_facts_and_build_request(&GovernanceUiCommand::DelegateActor {
+                parent: "agent-lead".to_owned(),
+                child: "agent-worker".to_owned(),
+            })
+            .unwrap();
+        ctrl1.persist_to_cas(&cas, key).await.unwrap();
+
+        // Fresh post-restart host restores BOTH MGV1 gate and MGF1 fact graph!
+        let host2 = MyGoBridgeHost::new_default_trust(|_| Ok(()));
+        let ctrl2 = GovernanceHostController::new(8, Arc::new(SharedProjectionRecords::new()));
+        let (_snap2, mode2) = ctrl2
+            .restore_from_cas(&host2, &cas, key)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(mode2, "restored");
+
+        // Incremental post-restart revoke builds a request retaining PRE-RESTART delegation edges!
+        let (req, _, _) = ctrl2
+            .mutate_facts_and_build_request(&GovernanceUiCommand::RevokeActor {
+                actor: "agent-lead".to_owned(),
+            })
+            .unwrap()
+            .unwrap();
+        assert!(
+            req.delegation_edges
+                .contains(&("ops-root".to_owned(), "agent-lead".to_owned()))
+                && req
+                    .delegation_edges
+                    .contains(&("agent-lead".to_owned(), "agent-worker".to_owned())),
+            "restored MGF1 fact store must preserve pre-restart delegation edges: {:?}",
+            req.delegation_edges
+        );
+        assert!(req.revoked_actors.contains(&"agent-lead".to_owned()));
+
+        // Bit-flip tamper in companion `:facts` CAS blob MUST auto-trip fail-closed!
+        let fact_key = fact_store_checkpoint_key(key);
+        let mut raw_facts = cas.get_blob(&fact_key).await.unwrap().unwrap();
+        raw_facts[8] ^= 0x55;
+        cas.put_blob(&fact_key, raw_facts).await.unwrap();
+
+        let host3 = MyGoBridgeHost::new_default_trust(|_| Ok(()));
+        let ctrl3 = GovernanceHostController::new(8, Arc::new(SharedProjectionRecords::new()));
+        let (snap3, mode3) = ctrl3
+            .restore_from_cas(&host3, &cas, key)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(mode3, "corrupt_fail_closed");
+        assert!(snap3.breaker.tripped && !snap3.admitted);
+        assert!(ctrl3.authorize_sandbox_effect("ops-bob", "/bin/echo").is_err());
     }
 }

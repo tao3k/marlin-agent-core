@@ -25,6 +25,10 @@ use crate::execution_breaker::{
     ExecutionBreakerCommitReceipt, ExecutionBreakerRearmReceipt, ExecutionBreakerSnapshot,
     ExecutionCircuitBreaker, ToolExecutionLease, ToolIfcContext,
 };
+use crate::governance_cedar::{
+    CedarEvaluationDecision, CedarEvaluationRequest, CompiledCedarPolicy, compile_cedar_policy,
+    evaluate_compiled_cedar_policies,
+};
 
 pub const GOVERNANCE_ADMISSION_SCHEMA_VERSION: u32 = 1;
 pub const GOVERNANCE_DURABLE_CHECKPOINT_MAGIC: &[u8; 4] = b"MGV1";
@@ -180,6 +184,10 @@ pub enum GovernanceAdmissionError {
         policy_id: CedarPolicyId,
         subject: GovernedSubjectName,
     },
+    InvalidCedarPolicy {
+        policy_id: CedarPolicyId,
+        detail: String,
+    },
     ProofEnvelopeRejected(Vec<String>),
     CorruptDurableCheckpoint(String),
     ExecutionBreaker(BreakerRejectionReason),
@@ -222,6 +230,9 @@ impl fmt::Display for GovernanceAdmissionError {
             Self::CedarForbidDenied { policy_id, subject } => {
                 write!(f, "synthesized Cedar forbid {policy_id} denied {subject}")
             }
+            Self::InvalidCedarPolicy { policy_id, detail } => {
+                write!(f, "invalid synthesized Cedar policy {policy_id} (fail-closed): {detail}")
+            }
             Self::ProofEnvelopeRejected(reasons) => {
                 write!(f, "governance proof envelope rejected: {}", reasons.join(","))
             }
@@ -258,6 +269,7 @@ struct GateInner {
     fenced_actors: BTreeSet<GovernedSubjectName>,
     blocked_tools: BTreeSet<GovernedSubjectName>,
     cedar_policies: Vec<SynthesizedCedarPolicy>,
+    compiled_cedar_policies: Vec<CompiledCedarPolicy>,
 }
 
 /// Authoritative Rust admission gate synchronizing Scheme Governance Authority
@@ -288,6 +300,7 @@ impl GovernanceAdmissionGate {
                 fenced_actors: BTreeSet::new(),
                 blocked_tools: BTreeSet::new(),
                 cedar_policies: Vec::new(),
+                compiled_cedar_policies: Vec::new(),
             })),
         }
     }
@@ -443,6 +456,13 @@ impl GovernanceAdmissionGate {
             ));
         }
 
+        // Compile every Scheme-synthesized Cedar policy BEFORE mutating live gate state
+        // so malformed policy syntax fails closed atomically.
+        let mut compiled_cedar = Vec::with_capacity(envelope.cedar_policies.len());
+        for policy in &envelope.cedar_policies {
+            compiled_cedar.push(compile_cedar_policy(policy)?);
+        }
+
         let mut guard = self
             .inner
             .lock()
@@ -467,6 +487,7 @@ impl GovernanceAdmissionGate {
         guard.fenced_actors = envelope.fenced_actors.iter().cloned().collect();
         guard.blocked_tools = envelope.blocked_tools.iter().cloned().collect();
         guard.cedar_policies = envelope.cedar_policies.clone();
+        guard.compiled_cedar_policies = compiled_cedar;
 
         let mut invalidated_active = Vec::new();
         for deriv_id in &envelope.retracted_conclusions {
@@ -546,24 +567,22 @@ impl GovernanceAdmissionGate {
             ));
         }
 
-        // Enforce ASCENT-synthesized Cedar forbid policies on actor & tool identifiers.
-        let actor_pattern = format!("Marlin::Actor::\"{}\"", actor.as_str());
-        let tool_pattern = format!("Marlin::Action::\"{}\"", tool.as_str());
-        for policy in &guard.cedar_policies {
-            if policy.source.trim_start().starts_with("forbid") {
-                if policy.source.contains(&actor_pattern) {
-                    return Err(GovernanceAdmissionError::CedarForbidDenied {
-                        policy_id: policy.policy_id.clone(),
-                        subject: actor.clone(),
-                    });
-                }
-                if policy.source.contains(&tool_pattern) {
-                    return Err(GovernanceAdmissionError::CedarForbidDenied {
-                        policy_id: policy.policy_id.clone(),
-                        subject: tool.clone(),
-                    });
-                }
-            }
+        // Evaluate compiled Scheme-synthesized Cedar policies under strict forbid-overrides-permit.
+        let default_resource = GovernedSubjectName::new("workspace")?;
+        let cedar_req = CedarEvaluationRequest::for_side_effect(
+            actor,
+            tool,
+            &default_resource,
+            ifc.tool_controlled_by_tainted_data,
+            ifc.declassification_approved,
+        );
+        if let CedarEvaluationDecision::Deny { matching_forbids } =
+            evaluate_compiled_cedar_policies(&guard.compiled_cedar_policies, &cedar_req)
+        {
+            return Err(GovernanceAdmissionError::CedarForbidDenied {
+                policy_id: matching_forbids[0].clone(),
+                subject: actor.clone(),
+            });
         }
 
         let Some(lease) = guard.active_derivations.get(derivation_id).cloned() else {
@@ -577,15 +596,45 @@ impl GovernanceAdmissionGate {
         Ok(receipt)
     }
 
+    /// Evaluates an explicit structured Cedar authorization request against the currently
+    /// synchronized compiled Cedar policies using true `forbid`-overrides-`permit` semantics.
+    pub fn evaluate_cedar_request(
+        &self,
+        req: &CedarEvaluationRequest,
+    ) -> Result<CedarEvaluationDecision, GovernanceAdmissionError> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
+        Ok(evaluate_compiled_cedar_policies(
+            &guard.compiled_cedar_policies,
+            req,
+        ))
+    }
+
     /// Authorizes an atomic side effect directly from `LoopProgramRuntimeSideEffectExecutor`:
     /// enforces Bi-Temporal Truth Maintenance retraction, ASCENT transitive fencing,
-    /// ASCENT breaker-blocked tools, dynamically synthesized Cedar `forbid` policies,
+    /// ASCENT breaker-blocked tools, compiled Scheme-synthesized Cedar `forbid` policies,
     /// and the authoritative `ExecutionCircuitBreaker` + CaMeL IFC context in one call.
     pub fn authorize_side_effect(
         &self,
         derivation_id: Option<&DerivationId>,
         actor: &GovernedSubjectName,
         tool: &GovernedSubjectName,
+        ifc: &ToolIfcContext,
+    ) -> Result<ExecutionBreakerCommitReceipt, GovernanceAdmissionError> {
+        let default_resource = GovernedSubjectName::new("workspace")?;
+        self.authorize_side_effect_on_resource(derivation_id, actor, tool, &default_resource, ifc)
+    }
+
+    /// Resource-aware variant of `authorize_side_effect` enforcing compiled Cedar resource-scoped
+    /// `forbid` policies (such as ASCENT 5-scope exfiltration rules on `Marlin::Resource::"<target>"`).
+    pub fn authorize_side_effect_on_resource(
+        &self,
+        derivation_id: Option<&DerivationId>,
+        actor: &GovernedSubjectName,
+        tool: &GovernedSubjectName,
+        resource: &GovernedSubjectName,
         ifc: &ToolIfcContext,
     ) -> Result<ExecutionBreakerCommitReceipt, GovernanceAdmissionError> {
         let guard = self
@@ -613,23 +662,20 @@ impl GovernanceAdmissionGate {
             ));
         }
 
-        let actor_pattern = format!("Marlin::Actor::\"{}\"", actor.as_str());
-        let tool_pattern = format!("Marlin::Action::\"{}\"", tool.as_str());
-        for policy in &guard.cedar_policies {
-            if policy.source.trim_start().starts_with("forbid") {
-                if policy.source.contains(&actor_pattern) {
-                    return Err(GovernanceAdmissionError::CedarForbidDenied {
-                        policy_id: policy.policy_id.clone(),
-                        subject: actor.clone(),
-                    });
-                }
-                if policy.source.contains(&tool_pattern) {
-                    return Err(GovernanceAdmissionError::CedarForbidDenied {
-                        policy_id: policy.policy_id.clone(),
-                        subject: tool.clone(),
-                    });
-                }
-            }
+        let cedar_req = CedarEvaluationRequest::for_side_effect(
+            actor,
+            tool,
+            resource,
+            ifc.tool_controlled_by_tainted_data,
+            ifc.declassification_approved,
+        );
+        if let CedarEvaluationDecision::Deny { matching_forbids } =
+            evaluate_compiled_cedar_policies(&guard.compiled_cedar_policies, &cedar_req)
+        {
+            return Err(GovernanceAdmissionError::CedarForbidDenied {
+                policy_id: matching_forbids[0].clone(),
+                subject: resource.clone(),
+            });
         }
         drop(guard);
 
@@ -710,6 +756,20 @@ impl GovernanceAdmissionGate {
             }
         };
 
+        let compiled_cedar = match cp
+            .cedar_policies
+            .iter()
+            .map(compile_cedar_policy)
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(compiled) => compiled,
+            Err(err) => {
+                let detail = err.to_string();
+                let _ = self.trip_corrupt_checkpoint_fail_closed(&detail);
+                return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(detail));
+            }
+        };
+
         {
             let guard = self
                 .inner
@@ -749,8 +809,19 @@ impl GovernanceAdmissionGate {
             guard.blocked_tools = cp.blocked_tools.into_iter().collect();
             guard.retracted_derivations = cp.retracted_conclusions.into_iter().collect();
             guard.cedar_policies = cp.cedar_policies;
+            guard.compiled_cedar_policies = compiled_cedar;
         }
 
+        self.snapshot()
+    }
+
+    /// Trips the admission gate fail-closed when a companion durable artifact
+    /// (e.g. an `MGF1` runtime fact-graph checkpoint in Turso CAS) fails integrity verification.
+    pub fn trip_corrupt_durable_state(
+        &self,
+        detail: &str,
+    ) -> Result<GovernanceGateSnapshot, GovernanceAdmissionError> {
+        self.trip_corrupt_checkpoint_fail_closed(detail)?;
         self.snapshot()
     }
 
@@ -1124,6 +1195,12 @@ impl<'a> ByteCursor<'a> {
     }
 }
 
+/// Zero-dependency FIPS 180-4 SHA-256 exposed for sealing canonical durable governance artifacts
+/// (`MGV1` admission checkpoints and `MGF1` runtime fact-graph checkpoints).
+pub fn governance_sha256_bytes(input: &[u8]) -> [u8; 32] {
+    sha256_bytes(input)
+}
+
 /// Zero-dependency FIPS 180-4 SHA-256 used to seal canonical `MGV1` durable checkpoints.
 fn sha256_bytes(input: &[u8]) -> [u8; 32] {
     const K: [u32; 64] = [
@@ -1290,5 +1367,126 @@ mod durable_checkpoint_tests {
             snap3.breaker.tripped && !snap3.admitted,
             "corrupted durable checkpoint MUST auto-trip breaker fail-closed"
         );
+    }
+
+    #[test]
+    fn gate_enforces_compiled_cedar_resource_and_role_policies_and_rejects_malformed_cedar() {
+        use crate::governance_cedar::{CedarContextValue, CedarEntityRef};
+
+        let breaker = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(8)));
+        let gate = GovernanceAdmissionGate::new(breaker);
+        let d = |ch: char| {
+            GovernanceProofDigest::new(format!(
+                "sha256:{}",
+                std::iter::repeat_n(ch, 64).collect::<String>()
+            ))
+            .unwrap()
+        };
+
+        // 1. Malformed synthesized Cedar policy MUST fail closed before modifying gate state.
+        let malformed = GovernanceProofEnvelope {
+            schema_version: GOVERNANCE_ADMISSION_SCHEMA_VERSION,
+            admitted: true,
+            revocation_epoch: GovernanceProofEpoch::new(2).unwrap(),
+            policy_revision: 1,
+            assessment_digest: d('a'),
+            taint_proof_digest: d('b'),
+            fixpoint_proof_digest: d('c'),
+            temporal_proof_digest: d('d'),
+            invalidation_digest: d('e'),
+            rejection_reasons: Vec::new(),
+            fenced_actors: Vec::new(),
+            blocked_tools: Vec::new(),
+            retracted_conclusions: Vec::new(),
+            cedar_policies: vec![SynthesizedCedarPolicy {
+                policy_id: CedarPolicyId::new("bad.syntax").unwrap(),
+                source: "forbid (principal == Marlin::Actor::\"x\"".to_owned(),
+            }],
+        };
+        assert!(matches!(
+            gate.synchronize_proof_envelope(&malformed),
+            Err(GovernanceAdmissionError::InvalidCedarPolicy { .. })
+        ));
+
+        // 2. Valid compiled Cedar policies enforce role forbid + resource exfiltration forbid.
+        let valid = GovernanceProofEnvelope {
+            cedar_policies: vec![
+                SynthesizedCedarPolicy {
+                    policy_id: CedarPolicyId::new("marlin.forbid.agent-privileged-governance")
+                        .unwrap(),
+                    source: "forbid (principal in Marlin::Role::\"Agent\", action in [Marlin::Action::\"rearm_breaker\", Marlin::Action::\"promote_context_scope\"], resource);".to_owned(),
+                },
+                SynthesizedCedarPolicy {
+                    policy_id: CedarPolicyId::new("marlin.permit.verified-human-governance")
+                        .unwrap(),
+                    source: "permit (principal in Marlin::Role::\"VerifiedHuman\", action in [Marlin::Action::\"rearm_breaker\"], resource) when { context.step_up_fresh == true };".to_owned(),
+                },
+                SynthesizedCedarPolicy {
+                    policy_id: CedarPolicyId::new("marlin.ascent.forbid.exfil.secret-doc.ext-webhook")
+                        .unwrap(),
+                    source: "forbid (principal, action, resource == Marlin::Resource::\"ext-webhook\");".to_owned(),
+                },
+            ],
+            ..malformed
+        };
+        gate.synchronize_proof_envelope(&valid).unwrap();
+
+        let agent = GovernedSubjectName::new("agent-worker").unwrap();
+        let human = GovernedSubjectName::new("ops-alice").unwrap();
+        let rearm_action = GovernedSubjectName::new("rearm_breaker").unwrap();
+        let read_action = GovernedSubjectName::new("http-post").unwrap();
+        let workspace = GovernedSubjectName::new("workspace").unwrap();
+        let ext_webhook = GovernedSubjectName::new("ext-webhook").unwrap();
+
+        // Agent attempting privileged `rearm_breaker` is denied by compiled Cedar role forbid!
+        assert!(matches!(
+            gate.authorize_side_effect_on_resource(
+                None,
+                &agent,
+                &rearm_action,
+                &workspace,
+                &ToolIfcContext::clean_trusted(),
+            ),
+            Err(GovernanceAdmissionError::CedarForbidDenied { .. })
+        ));
+
+        // Even human targeting exfiltration-forbid resource `ext-webhook` is denied by compiled Cedar!
+        assert!(matches!(
+            gate.authorize_side_effect_on_resource(
+                None,
+                &human,
+                &read_action,
+                &ext_webhook,
+                &ToolIfcContext::clean_trusted(),
+            ),
+            Err(GovernanceAdmissionError::CedarForbidDenied { .. })
+        ));
+
+        // Clean call on `workspace` succeeds.
+        gate.authorize_side_effect_on_resource(
+            None,
+            &human,
+            &read_action,
+            &workspace,
+            &ToolIfcContext::clean_trusted(),
+        )
+        .expect("non-forbidden resource should pass compiled Cedar evaluation");
+
+        // Direct Cedar request evaluation verifies `when { context.step_up_fresh == true }`.
+        let human_req = CedarEvaluationRequest {
+            principal: CedarEntityRef::actor("ops-alice"),
+            principal_roles: vec![CedarEntityRef::role("VerifiedHuman")],
+            action: CedarEntityRef::action("rearm_breaker"),
+            resource: CedarEntityRef::resource("workspace"),
+            resource_groups: Vec::new(),
+            context: BTreeMap::from([(
+                "step_up_fresh".to_owned(),
+                CedarContextValue::Bool(true),
+            )]),
+        };
+        assert!(matches!(
+            gate.evaluate_cedar_request(&human_req).unwrap(),
+            CedarEvaluationDecision::Allow { .. }
+        ));
     }
 }
