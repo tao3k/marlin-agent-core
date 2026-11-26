@@ -20,11 +20,12 @@ use marlin_agent_kernel::{
     DerivationId, ExecutionCircuitBreaker, GenericLoopMachineReceipt, GenericLoopMachineStepIndex,
     GovernanceProofDigest, GovernedSubjectName, GovernanceAdmissionError,
     GovernanceAdmissionGate, GovernanceProofEnvelope, GovernanceProofEpoch,
+    LoopProgramFileSandbox, LoopProgramFileWriteSideEffectStatus, LoopProgramFileWriteTemplate,
     LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffPlan, LoopProgramRuntimeOwner,
     LoopProgramRuntimeSideEffectExecutor, LoopProgramRuntimeSideEffectStatus,
     LoopProgramToolProcessCommandTemplate, LoopProgramToolProcessProgram,
-    StaticLoopProgramToolProcessResolver, SynthesizedCedarPolicy, ToolBudgetUnits,
-    ToolExecutionLeaseId, ToolIfcContext,
+    StaticLoopProgramFileWriteResolver, StaticLoopProgramToolProcessResolver,
+    SynthesizedCedarPolicy, ToolBudgetUnits, ToolExecutionLeaseId, ToolIfcContext,
 };
 use marlin_agent_protocol::{
     LoopProgramActionKind, LoopProgramEventKind, LoopProgramId, LoopProgramStateId,
@@ -320,8 +321,135 @@ async fn live_gerbil_vm_governance_policy_drives_rust_breaker_and_blocks_real_os
     );
 
     // 2. Invoked as clean `ops-bob` -> physically executes `/bin/sh` cleanly!
-    let clean_executor = executor.with_governance_gate(gate_arc, clean_actor, Some(d_fresh));
+    let clean_executor = executor.with_governance_gate(
+        Arc::clone(&gate_arc),
+        clean_actor.clone(),
+        Some(d_fresh),
+    );
     let ok_receipt = clean_executor.execute(&tokio_rt.context(), &handoff).await;
     assert_eq!(ok_receipt.status, LoopProgramRuntimeSideEffectStatus::Completed);
     assert!(sentinel.exists(), "real OS process should succeed after verified recovery");
+
+    // -------------------------------------------------------------------------
+    // Scenario 3: Live Gambit VM synthesizes resource-scoped Cedar exfiltration
+    // `forbid (principal, action, resource == Marlin::Resource::"ext-webhook.txt");`
+    // -> LoopProgramRuntimeSideEffectExecutor PHYSICALLY blocks disk write to
+    // `ext-webhook.txt` while allowing `safe-report.md`, then admits `ext-webhook.txt`
+    // once Scheme evaluates explicit declassification!
+    // -------------------------------------------------------------------------
+    let req_exfil = GovernancePolicyVectorRequest {
+        context_entries: vec![("secret-doc".into(), "private".into())],
+        context_flows: vec![("secret-doc".into(), "ext-webhook.txt".into())],
+        target_scopes: vec![("ext-webhook.txt".into(), "external".into())],
+        declassified_entries: vec![],
+        revocation_epoch: 4,
+        policy_revision: 3,
+        ..Default::default()
+    };
+    let in_exfil = encode_governance_policy_request(&runtime, &req_exfil).unwrap();
+    let out_exfil = runtime.call_rooted(&scheme_project, &in_exfil).unwrap();
+    let proj_exfil = decode_governance_policy_vector(out_exfil).unwrap();
+    assert!(!proj_exfil.admitted);
+    assert!(
+        proj_exfil
+            .cedar_policies
+            .iter()
+            .any(|(id, _)| id == "marlin.ascent.forbid.exfil.secret-doc.ext-webhook.txt"),
+        "expected Scheme ASCENT to synthesize resource-scoped Cedar exfil forbid, got {:?}",
+        proj_exfil.cedar_policies
+    );
+
+    let env_exfil = into_kernel_envelope(&proj_exfil);
+    gate_arc.synchronize_proof_envelope(&env_exfil).unwrap();
+    // Re-arm breaker so ONLY the compiled Scheme Cedar resource forbid guards disk writes!
+    breaker.rearm(&human).unwrap();
+    assert!(!breaker.snapshot().unwrap().tripped);
+
+    let sandbox = LoopProgramFileSandbox::new(temp_dir.path())
+        .with_allowed_relative_paths(["ext-webhook.txt", "safe-report.md"]);
+
+    let make_write_executor = |target_file: &str, body: &[u8]| {
+        let empty_proc_resolver = StaticLoopProgramToolProcessResolver::default();
+        let file_resolver = StaticLoopProgramFileWriteResolver::new(vec![
+            LoopProgramFileWriteTemplate::new(
+                "agent-flow.tool-intent",
+                ["loop-program.dispatch-tools"],
+                target_file,
+                body.to_vec(),
+            ),
+        ]);
+        LoopProgramRuntimeSideEffectExecutor::new(empty_proc_resolver)
+            .with_file_write_resolver(file_resolver)
+            .with_file_sandbox(sandbox.clone())
+            .with_governance_gate(Arc::clone(&gate_arc), clean_actor.clone(), None)
+    };
+
+    // (a) Writing Cedar-forbidden `ext-webhook.txt` MUST be physically blocked before touching disk!
+    let denied_write = make_write_executor("ext-webhook.txt", b"leaked-secret")
+        .execute(&tokio_rt.context(), &handoff)
+        .await;
+    assert_eq!(denied_write.file_writes.len(), 1);
+    assert_eq!(
+        denied_write.file_writes[0].status,
+        LoopProgramFileWriteSideEffectStatus::Denied
+    );
+    assert!(
+        denied_write.file_writes[0]
+            .diagnostic
+            .as_deref()
+            .unwrap_or("")
+            .contains("marlin.ascent.forbid.exfil.secret-doc.ext-webhook.txt"),
+        "expected compiled Cedar exfil forbid diagnostic, got {:?}",
+        denied_write.file_writes[0].diagnostic
+    );
+    assert!(
+        !temp_dir.path().join("ext-webhook.txt").exists(),
+        "Cedar-forbidden resource MUST NOT be written to disk"
+    );
+
+    // (b) Writing unrelated `safe-report.md` succeeds cleanly!
+    let safe_write = make_write_executor("safe-report.md", b"public-summary")
+        .execute(&tokio_rt.context(), &handoff)
+        .await;
+    assert_eq!(
+        safe_write.file_writes[0].status,
+        LoopProgramFileWriteSideEffectStatus::Completed
+    );
+    assert_eq!(
+        std::fs::read(temp_dir.path().join("safe-report.md")).unwrap(),
+        b"public-summary"
+    );
+
+    // (c) Explicit declassification in live Gambit VM clears exfil Cedar forbid -> write admitted!
+    let req_declass = GovernancePolicyVectorRequest {
+        declassified_entries: vec!["secret-doc".into()],
+        revocation_epoch: 5,
+        policy_revision: 4,
+        ..req_exfil
+    };
+    let in_declass = encode_governance_policy_request(&runtime, &req_declass).unwrap();
+    let out_declass = runtime.call_rooted(&scheme_project, &in_declass).unwrap();
+    let proj_declass = decode_governance_policy_vector(out_declass).unwrap();
+    assert!(proj_declass.admitted);
+    assert!(
+        !proj_declass
+            .cedar_policies
+            .iter()
+            .any(|(id, _)| id == "marlin.ascent.forbid.exfil.secret-doc.ext-webhook.txt")
+    );
+    gate_arc
+        .synchronize_proof_envelope(&into_kernel_envelope(&proj_declass))
+        .unwrap();
+
+    let admitted_write = make_write_executor("ext-webhook.txt", b"declassified-summary")
+        .execute(&tokio_rt.context(), &handoff)
+        .await;
+    assert_eq!(
+        admitted_write.file_writes[0].status,
+        LoopProgramFileWriteSideEffectStatus::Completed
+    );
+    assert_eq!(
+        std::fs::read(temp_dir.path().join("ext-webhook.txt")).unwrap(),
+        b"declassified-summary"
+    );
 }
