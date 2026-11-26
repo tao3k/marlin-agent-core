@@ -3,19 +3,13 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 ;;; -*- Gerbil -*-
-;;; Round S6: 100% Pure Scheme Live Fleet <-> Declarative TUI Bi-Directional Controller.
-;;;
-;;; Lives under `scheme/graph-engine/` (NEVER imported by `scheme/ui/session.ss` or
-;;; `scheme/ui-tui/entry.ss` so `MAR-UI-R08` first-frame TUI startup stays lightweight).
-;;;
-;;; Connects declarative Task Workbench `scheme-action` commands (`SPC o 0..3`,
-;;; `SPC o d b/s/r/a/n/x`, `SPC o h a`, `SPC o f s`, `SPC o f c`) directly to a live
-;;; `GraphFleetState.`, updating real `TaskActor.` / `ObligationGraph.` state,
-;;; emitting inert `[AtomicEffect...]` batches for Marlin's thin 4-primitive Rust
-;;; `effect_pump`, and immediately re-projecting the checked `UiScope` + Ratatui
-;;; vector with ZERO Rust UI changes!
+;;; Pure Scheme Live Fleet <-> Declarative TUI Bi-Directional Controller.
+;;; Follows Style 02/03 (`(.o (:: @ Prototype.) ...)`, constant slot capture
+;;; `(slot)` / `(slot := expr)`, and standard functional combinators).
+;;; Lives under `scheme/graph-engine/` (NEVER imported by `scheme/ui/` or
+;;; `scheme/ui-tui/entry.ss` so `MAR-UI-R08` first-frame startup stays lean).
 
-(import (only-in :clan/poo/object .get .o .ref .slot? object?)
+(import (only-in :clan/poo/object .def .get .o .ref .slot? object?)
         (only-in :std/list/list find)
         (rename-in (only-in :tao3k/agentic-ai-lab/modules/graph-engine/interface
                             GraphEngine
@@ -32,39 +26,39 @@
                  marlin-graph-engine-atomic-effect->vector
                  marlin-graph-engine-vector->atomic-receipt))
 
-(export make-marlin-fleet-workbench-controller
+(export FleetWorkbenchController.
+        make-marlin-fleet-workbench-controller
         marlin-fleet-workbench-controller-apply-action
         marlin-fleet-workbench-controller-project
+        marlin-fleet-workbench-controller-audit-capsule
         marlin-fleet-workbench-controller-open-vector
         marlin-fleet-workbench-controller-dispatch-vector)
 
+(.def FleetWorkbenchController.
+  kind: 'marlin.graph-engine.fleet-workbench-controller.v1
+  authorizes-effect?: #f)
+
 (def (opt-ref obj key default)
-  (if (and (object? obj) (.slot? obj key))
-    (.ref obj key)
-    default))
+  (if (and (object? obj) (.slot? obj key)) (.ref obj key) default))
 
-(def (lab-fn name)
-  (.ref (.get LabGraphEngine core exports) name))
+(def (non-empty-str? v) (and (string? v) (> (string-length v) 0)))
 
-(def (open-fleet-session fleet disclosure model-label session-label)
-  (let* ((proj ((lab-fn 'project-fleet->workbench-projection) fleet))
-         (pkg-ui (make-marlin-task-workbench-package proj disclosure-level: disclosure))
-         (sess (marlin-ui-session-open
-                (vector pkg-ui (vector model-label session-label '#() '#()) '#()))))
-    (values proj sess)))
+(def (lab-fn name) (.ref (.get LabGraphEngine core exports) name))
 
-(def (build-controller fleet disclosure model-label session-label last-effects)
-  (let-values (((proj sess) (open-fleet-session fleet disclosure model-label session-label)))
-    (.o bind-these: #f
-        kind: 'marlin.graph-engine.fleet-workbench-controller.v1
-        fleet: fleet
-        projection: proj
-        disclosure-level: disclosure
-        model-label: model-label
-        session-label: session-label
-        last-effects: last-effects
-        session: sess
-        authorizes-effect?: #f)))
+(def (split-colon raw default-left)
+  (let ((idx (string-index raw #\:)))
+    (if (and idx (> idx 0) (< (+ idx 1) (string-length raw)))
+      (values (substring raw 0 idx) (substring raw (+ idx 1) (string-length raw)))
+      (values default-left raw))))
+
+(def (build-controller fleet disclosure-level model-label session-label last-effects)
+  (let* ((projection ((lab-fn 'project-fleet->workbench-projection) fleet))
+         (pkg-ui (make-marlin-task-workbench-package projection disclosure-level: disclosure-level))
+         (session (marlin-ui-session-open
+                   (vector pkg-ui (vector model-label session-label '#() '#()) '#()))))
+    (.o (:: @ FleetWorkbenchController.)
+        (fleet) (projection) (disclosure-level)
+        (model-label) (session-label) (last-effects) (session))))
 
 (def (make-marlin-fleet-workbench-controller
       fleet
@@ -80,9 +74,7 @@
     (cond
      (explicit-task-id explicit-task-id)
      ((let ((foc (.ref fleet 'focused-task-id)))
-        (and foc
-             (find (lambda (st) (equal? (.ref (.ref st 'actor) 'task-id) foc)) drivers)
-             foc)))
+        (and foc (find (lambda (st) (equal? (.ref (.ref st 'actor) 'task-id) foc)) drivers) foc)))
      ((pair? drivers) (.ref (.ref (car drivers) 'actor) 'task-id))
      (else #f))))
 
@@ -90,43 +82,21 @@
   (let ((st (find (lambda (d) (equal? (.ref (.ref d 'actor) 'task-id) task-id))
                   (.ref fleet 'active-drivers))))
     (and st
-         (let loop ((obs (.ref (.ref st 'obligation-graph) 'obligations)))
-           (cond
-            ((null? obs) #f)
-            ((pair? (.ref (car obs) 'active-defeaters))
-             (car (.ref (car obs) 'active-defeaters)))
-            (else (loop (cdr obs))))))))
+         (let ((ob (find (lambda (o) (pair? (.ref o 'active-defeaters)))
+                         (.ref (.ref st 'obligation-graph) 'obligations))))
+           (and ob (car (.ref ob 'active-defeaters)))))))
 
 (def (replace-driver-actor fleet task-id actor-fn)
-  (let* ((make-st (lab-fn 'make-unified-driver-state))
-         (make-fleet (lab-fn 'make-graph-fleet-state))
-         (next-drivers
-          (map (lambda (st)
-                 (if (not (equal? (.ref (.ref st 'actor) 'task-id) task-id))
-                   st
-                   (let ((next-actor (actor-fn (.ref st 'actor))))
-                     (make-st
-                      next-actor
-                      (.ref st 'obligation-graph)
-                      (.ref st 'governed-context)
-                      competing-hypotheses: (.ref st 'competing-hypotheses)
-                      branch-proposals: (.ref st 'branch-proposals)
-                      hypothesis-matrix: (opt-ref st 'hypothesis-matrix #f)
-                      completed-step-outputs: (opt-ref st 'completed-step-outputs '())
-                      step-count: (opt-ref st 'step-count 0)
-                      repair-budget: (opt-ref st 'repair-budget 3)
-                      repair-history: (opt-ref st 'repair-history '())))))
-               (.ref fleet 'active-drivers))))
-    (make-fleet
-     next-drivers
-     archived-actors: (.ref fleet 'archived-actors)
-     peek-set: (.ref fleet 'peek-set)
-     focused-task-id: (.ref fleet 'focused-task-id)
-     round-count: (.ref fleet 'round-count))))
+  (.o (:: @ fleet)
+      (active-drivers :=
+       (map (lambda (st)
+              (if (equal? (.ref (.ref st 'actor) 'task-id) task-id)
+                (.o (:: @ st) (actor := (actor-fn (.ref st 'actor))))
+                st))
+            (.ref fleet 'active-drivers)))))
 
 (def (marlin-fleet-workbench-controller-apply-action
-      controller
-      action-sym
+      controller action-sym
       task-id: (task-id #f)
       arg: (arg #f)
       receipts: (receipts '())
@@ -138,201 +108,141 @@
          (last-effs (.get controller last-effects))
          (sess (.get controller session))
          (target (resolve-target-task-id fleet task-id)))
-    (cond
-     ((memq action-sym '(task-drill-l0 task-drill-l1 task-drill-l2 task-drill-l3))
-      (let ((next-disc (case action-sym
-                         ((task-drill-l0) 'L0)
-                         ((task-drill-l1) 'L1)
-                         ((task-drill-l2) 'L2)
-                         (else 'L3))))
-        (build-controller fleet next-disc model-label session-label last-effs)))
+    (def (reproject next-fleet (next-disc disc) (effs '()))
+      (build-controller next-fleet next-disc model-label session-label effs))
+    (case action-sym
+      ((task-drill-l0 task-drill-l1 task-drill-l2 task-drill-l3)
+       (reproject fleet (case action-sym
+                          ((task-drill-l0) 'L0) ((task-drill-l1) 'L1)
+                          ((task-drill-l2) 'L2) (else 'L3))
+                  last-effs))
 
-     ((eq? action-sym 'task-human-approve)
-      (let* ((def-id (or (and (string? arg) (> (string-length arg) 0) arg)
-                         (and target (first-active-defeater-for fleet target))))
-             (ev (.o bind-these: #f
-                     event-kind: 'human-approved
-                     resolve-defeater-id: def-id))
-             (next-fleet (if target
-                           ((lab-fn 'fleet-apply-bitemporal-event) fleet target ev)
-                           fleet)))
-        (build-controller next-fleet disc model-label session-label '())))
+      ((task-human-approve)
+       (let ((def-id (or (and (non-empty-str? arg) arg)
+                         (and target (first-active-defeater-for fleet target)))))
+         (reproject (if target
+                      ((lab-fn 'fleet-apply-bitemporal-event)
+                       fleet target (.o (event-kind := 'human-approved)
+                                        (resolve-defeater-id := def-id)))
+                      fleet))))
 
-     ((eq? action-sym 'task-propose-branch)
-      (if (not target)
-        controller
-        (let* ((target-st (find (lambda (d) (equal? (.ref (.ref d 'actor) 'task-id) target))
-                                (.ref fleet 'active-drivers)))
-               (existing-count (if target-st (length (.ref target-st 'branch-proposals)) 0))
-               (raw-arg (if (and (string? arg) (> (string-length arg) 0))
-                          arg
-                          "Investigator branch inquiry"))
-               (colon-idx (let loop ((i 0))
-                            (cond
-                             ((>= i (string-length raw-arg)) #f)
-                             ((char=? (string-ref raw-arg i) #\:) i)
-                             (else (loop (+ i 1))))))
-               (bid (if (and colon-idx (> colon-idx 0))
-                      (substring raw-arg 0 colon-idx)
-                      (string-append "B" (number->string (+ existing-count 1)))))
-               (question (if (and colon-idx (< (+ colon-idx 1) (string-length raw-arg)))
-                           (substring raw-arg (+ colon-idx 1) (string-length raw-arg))
-                           raw-arg))
-               (proposal ((lab-fn 'make-hypothesis-branch-proposal)
-                          bid question proposer: 'investigator))
-               (next-fleet ((lab-fn 'fleet-propose-hypothesis-branch)
-                            fleet target proposal)))
-          (build-controller next-fleet disc model-label session-label '()))))
+      ((task-propose-branch)
+       (if (not target)
+         controller
+         (let* ((st (find (lambda (d) (equal? (.ref (.ref d 'actor) 'task-id) target))
+                          (.ref fleet 'active-drivers)))
+                (default-id (string-append "B" (number->string (+ (if st (length (.ref st 'branch-proposals)) 0) 1))))
+                (raw (if (non-empty-str? arg) arg "Investigator branch inquiry")))
+           (let-values (((bid question) (split-colon raw default-id)))
+             (reproject ((lab-fn 'fleet-propose-hypothesis-branch)
+                         fleet target ((lab-fn 'make-hypothesis-branch-proposal)
+                                       bid question proposer: 'investigator)))))))
 
-     ((memq action-sym '(task-detour-blocker task-detour-sidequest))
-      (let* ((mode (if (eq? action-sym 'task-detour-blocker) 'blocker-active 'side-quest-active))
-             (prefix (if (eq? mode 'blocker-active) "blk-" "sq-"))
-             (enter-detour (lab-fn 'enter-task-actor-detour))
-             (next-fleet
-              (if target
-                (replace-driver-actor
-                 fleet target
-                 (lambda (actor)
-                   (.ref (enter-detour
-                          actor mode
-                          (or (and (string? arg) (> (string-length arg) 0) arg)
-                              (string-append prefix target)))
-                         'actor)))
-                fleet)))
-        (build-controller next-fleet disc model-label session-label '())))
+      ((task-propagate-defeater)
+       (let-values (((def-id prem-id)
+                     (split-colon (if (non-empty-str? arg) arg "def-shared:shared-premise")
+                                  "def-shared")))
+         (reproject ((lab-fn 'fleet-propagate-shared-defeater) fleet def-id prem-id))))
 
-     ((memq action-sym '(task-detour-exit-return task-detour-exit-absorb task-detour-exit-abort))
-      (let* ((exit-kind (case action-sym
+      ((task-peek)
+       (let* ((archived (.ref fleet 'archived-actors))
+              (peek-id (or (and (non-empty-str? arg) arg)
+                           (and (pair? archived) (.ref (car archived) 'task-id)))))
+         (if peek-id (reproject ((lab-fn 'fleet-peek-archived-actor) fleet peek-id)) controller)))
+
+      ((task-reopen)
+       (let* ((archived (.ref fleet 'archived-actors))
+              (peek-set (.ref fleet 'peek-set))
+              (reopen-id (or (and (non-empty-str? arg) arg)
+                             (and (pair? peek-set) (car peek-set))
+                             (and (pair? archived) (.ref (car archived) 'task-id)))))
+         (if reopen-id (reproject ((lab-fn 'fleet-reopen-archived-actor) fleet reopen-id)) controller)))
+
+      ((task-detour-blocker task-detour-sidequest)
+       (let* ((mode (if (eq? action-sym 'task-detour-blocker) 'blocker-active 'side-quest-active))
+              (node-id (if (non-empty-str? arg)
+                         arg
+                         (string-append (if (eq? mode 'blocker-active) "blk-" "sq-") (or target "task")))))
+         (reproject (if target
+                      (replace-driver-actor
+                       fleet target
+                       (lambda (actor) (.ref ((lab-fn 'enter-task-actor-detour) actor mode node-id) 'actor)))
+                      fleet))))
+
+      ((task-detour-exit-return task-detour-exit-absorb task-detour-exit-abort)
+       (let ((exit-kind (case action-sym
                           ((task-detour-exit-return) 'return-to-origin)
                           ((task-detour-exit-absorb) 'absorb-and-continue)
-                          (else 'abort-detour)))
-             (exit-detour (lab-fn 'exit-task-actor-detour))
-             (next-fleet
-              (if target
-                (replace-driver-actor
-                 fleet target
-                 (lambda (actor)
-                   (.ref (exit-detour actor exit-kind) 'actor)))
-                fleet)))
-        (build-controller next-fleet disc model-label session-label '())))
+                          (else 'abort-detour))))
+         (reproject (if target
+                      (replace-driver-actor
+                       fleet target
+                       (lambda (actor) (.ref ((lab-fn 'exit-task-actor-detour) actor exit-kind) 'actor)))
+                      fleet))))
 
-     ((eq? action-sym 'task-detour-exit-sibling)
-      (if (not target)
-        controller
-        (let* ((sib-id (if (and (string? arg) (> (string-length arg) 0))
-                         arg
-                         (string-append target "-sibling")))
-               (parent-st (find (lambda (d) (equal? (.ref (.ref d 'actor) 'task-id) target))
-                                (.ref fleet 'active-drivers)))
-               (parent-cut (if parent-st (.ref (.ref parent-st 'obligation-graph) 'cut) 1))
-               (sib-apex (string-append "ob-" sib-id))
-               (sib-ob (make-obligation sib-apex title: (string-append "Sibling " sib-id)
-                                        required-evidence-ids: '()))
-               (sib-g (make-obligation-graph
-                       (string-append "g-" sib-id)
-                       cut: parent-cut
-                       obligations: (list sib-ob)
-                       evidence: '()
-                       det-tasks: '()))
-               (next-fleet
-                ((lab-fn 'fleet-spawn-sibling-from-detour)
-                 fleet target sib-id (string-append "Sibling of " target) sib-g
-                 sibling-apex-id: sib-apex)))
-          (build-controller next-fleet disc model-label session-label '()))))
+      ((task-detour-exit-sibling)
+       (if (not target)
+         controller
+         (let* ((sib-id (if (non-empty-str? arg) arg (string-append target "-sibling")))
+                (parent-st (find (lambda (d) (equal? (.ref (.ref d 'actor) 'task-id) target))
+                                 (.ref fleet 'active-drivers)))
+                (sib-apex (string-append "ob-" sib-id))
+                (sib-g (make-obligation-graph
+                        (string-append "g-" sib-id)
+                        cut: (if parent-st (.ref (.ref parent-st 'obligation-graph) 'cut) 1)
+                        obligations: (list (make-obligation sib-apex title: (string-append "Sibling " sib-id)
+                                                            required-evidence-ids: '()))
+                        evidence: '() det-tasks: '())))
+           (reproject ((lab-fn 'fleet-spawn-sibling-from-detour)
+                       fleet target sib-id (string-append "Sibling of " target) sib-g
+                       sibling-apex-id: sib-apex)))))
 
-     ((eq? action-sym 'task-fleet-step)
-      (let* ((step ((lab-fn 'step-graph-fleet) fleet receipts auto-archive?: auto-archive?))
-             (next-fleet (.ref step 'fleet))
-             (emitted (.ref step 'effects)))
-        (build-controller next-fleet disc model-label session-label emitted)))
+      ((task-fleet-step)
+       (let ((step ((lab-fn 'step-graph-fleet) fleet receipts auto-archive?: auto-archive?)))
+         (reproject (.ref step 'fleet) disc (.ref step 'effects))))
 
-     ((eq? action-sym 'task-fleet-checkpoint)
-      (let* ((cas-key (if (and (string? arg) (> (string-length arg) 0))
-                        arg
-                        "fleet:checkpoint:live"))
-             (cp-eff ((lab-fn 'plan-fleet-cas-checkpoint) fleet cas-key)))
-        (.o bind-these: #f
-            kind: 'marlin.graph-engine.fleet-workbench-controller.v1
-            fleet: fleet
-            projection: (.get controller projection)
-            disclosure-level: disc
-            model-label: model-label
-            session-label: session-label
-            last-effects: (list cp-eff)
-            session: sess
-            authorizes-effect?: #f)))
+      ((task-fleet-checkpoint)
+       (let ((cp-eff ((lab-fn 'plan-fleet-cas-checkpoint)
+                      fleet (if (non-empty-str? arg) arg "fleet:checkpoint:live"))))
+         (.o (:: @ controller) (last-effects := (list cp-eff)))))
 
-     (else
-      (let* ((step (marlin-ui-session-dispatch
-                    (vector sess 'scheme-action (vector action-sym arg))))
-             (next-sess (vector-ref step 0)))
-        (.o bind-these: #f
-            kind: 'marlin.graph-engine.fleet-workbench-controller.v1
-            fleet: fleet
-            projection: (.get controller projection)
-            disclosure-level: disc
-            model-label: model-label
-            session-label: session-label
-            last-effects: last-effs
-            session: next-sess
-            authorizes-effect?: #f))))))
+      (else
+       (let ((step (marlin-ui-session-dispatch (vector sess 'scheme-action (vector action-sym arg)))))
+         (.o (:: @ controller) (session := (vector-ref step 0))))))))
 
 (def (marlin-fleet-workbench-controller-project controller)
   (marlin-ui-session-project (.get controller session)))
 
+(def (marlin-fleet-workbench-controller-audit-capsule controller)
+  ((lab-fn 'fleet-export-audit-capsule) (.get controller fleet)))
+
 ;;; ---------------------------------------------------------------------------
-;;; Thin C-ABI Rooted-Vector Entrypoints for Embedded Gerbil VM (`Round S7`)
+;;; Thin C-ABI Rooted-Vector Entrypoints for Embedded Gerbil VM
 ;;; ---------------------------------------------------------------------------
 
 (def (tab-id->str v)
-  (cond
-   ((string? v) v)
-   ((symbol? v) (symbol->string v))
-   (else "unknown")))
+  (cond ((string? v) v) ((symbol? v) (symbol->string v)) (else "unknown")))
 
-;;; Input:  `#(fleet disclosure-sym)`
-;;; Output: rooted `FleetWorkbenchController.`
 (def (marlin-fleet-workbench-controller-open-vector input)
   (make-marlin-fleet-workbench-controller
-   (vector-ref input 0)
-   disclosure-level: (vector-ref input 1)))
+   (vector-ref input 0) disclosure-level: (vector-ref input 1)))
 
-;;; Input:  `#(controller action-sym task-id-or-#f arg-or-#f #(receipt-vec ...) auto-archive?)`
-;;; Output: `#(next-controller disclosure-sym #(effect-vec ...) #(visible-tab-ids...) #(detour-modes...) #(defeater-counts...) ratatui-projection-vec)`
 (def (marlin-fleet-workbench-controller-dispatch-vector input)
-  (let* ((ctrl (vector-ref input 0))
-         (action-sym (vector-ref input 1))
-         (tid (vector-ref input 2))
-         (arg (vector-ref input 3))
-         (rcpts (map marlin-graph-engine-vector->atomic-receipt
-                     (vector->list (vector-ref input 4))))
-         (auto-arch? (vector-ref input 5))
-         (next-ctrl (marlin-fleet-workbench-controller-apply-action
-                     ctrl action-sym
-                     task-id: tid
-                     arg: arg
-                     receipts: rcpts
-                     auto-archive?: auto-arch?))
-         (next-fleet (.get next-ctrl fleet))
-         (active-drivers (.ref next-fleet 'active-drivers))
-         (eff-vecs (list->vector (map marlin-graph-engine-atomic-effect->vector
-                                      (.get next-ctrl last-effects))))
-         (vis-tabs (list->vector (map tab-id->str
-                                      (.ref (.get next-ctrl projection) 'visible-tab-ids))))
-         (detours (list->vector (map (lambda (st) (opt-ref (.ref st 'actor) 'detour-mode 'mainline))
-                                     active-drivers)))
-         (defeaters (list->vector
-                     (map (lambda (st)
-                            (let loop ((obs (.ref (.ref st 'obligation-graph) 'obligations)) (acc 0))
-                              (if (null? obs)
-                                acc
-                                (loop (cdr obs) (+ acc (length (.ref (car obs) 'active-defeaters)))))))
-                          active-drivers)))
-         (ui-vec (marlin-fleet-workbench-controller-project next-ctrl)))
+  (let* ((next-ctrl (marlin-fleet-workbench-controller-apply-action
+                     (vector-ref input 0) (vector-ref input 1)
+                     task-id: (vector-ref input 2) arg: (vector-ref input 3)
+                     receipts: (map marlin-graph-engine-vector->atomic-receipt
+                                    (vector->list (vector-ref input 4)))
+                     auto-archive?: (vector-ref input 5)))
+         (drivers (.ref (.get next-ctrl fleet) 'active-drivers)))
     (vector next-ctrl
             (.get next-ctrl disclosure-level)
-            eff-vecs
-            vis-tabs
-            detours
-            defeaters
-            ui-vec)))
+            (list->vector (map marlin-graph-engine-atomic-effect->vector
+                               (.get next-ctrl last-effects)))
+            (list->vector (map tab-id->str (.ref (.get next-ctrl projection) 'visible-tab-ids)))
+            (list->vector (map (lambda (st) (opt-ref (.ref st 'actor) 'detour-mode 'mainline)) drivers))
+            (list->vector (map (lambda (st)
+                                 (foldl (lambda (o acc) (+ acc (length (.ref o 'active-defeaters))))
+                                        0 (.ref (.ref st 'obligation-graph) 'obligations)))
+                               drivers))
+            (marlin-fleet-workbench-controller-project next-ctrl))))

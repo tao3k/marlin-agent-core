@@ -328,8 +328,8 @@
                                    task-detour-blocker task-detour-sidequest
                                    task-detour-exit-return task-detour-exit-absorb
                                    task-detour-exit-sibling task-detour-exit-abort
-                                   task-human-approve task-propose-branch
-                                   task-fleet-step task-fleet-checkpoint))
+                                   task-reopen task-human-approve task-propose-branch
+                                   task-propagate-defeater task-fleet-step task-fleet-checkpoint))
                 cur-buf)
                (else #f))))
         (if target-buf
@@ -347,12 +347,11 @@
                 intent))))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Round S5: 100% Pure Scheme Interactive `TaskWorkbenchController.`
+;;; Pure Scheme Interactive `TaskWorkbenchController.` (Style 02 POO refinement)
 ;;; ---------------------------------------------------------------------------
-;;; Rebuilds the checked `UiScope` and re-projects native Ratatui `UiElement`s
-;;; immediately whenever a user triggers `task-drill-l0..l3` or `task-detour-*`
-;;; (`blocker` / `sidequest` / `return` / `absorb` / `sibling` / `abort`) with
-;;; ZERO Rust UI changes!
+
+(.def TaskWorkbenchController.
+  kind: 'marlin.ui.task-workbench-controller.v1)
 
 (def (open-workbench-controller-session proj disclosure model-label session-label)
   (let ((pkg-ui (make-marlin-task-workbench-package proj disclosure-level: disclosure)))
@@ -366,61 +365,38 @@
       session-label: (session-label "task-workbench"))
   (let* ((disc (marlin-task-workbench-next-disclosure disclosure-level disclosure-level))
          (sess (open-workbench-controller-session projection disc model-label session-label)))
-    (.o bind-these: #f
-        kind: 'marlin.ui.task-workbench-controller.v1
-        projection: projection
-        disclosure-level: disc
-        model-label: model-label
-        session-label: session-label
-        session: sess)))
+    (.o (:: @ TaskWorkbenchController.)
+        (projection) (disclosure-level := disc)
+        (model-label) (session-label) (session := sess))))
 
 (def (marlin-task-workbench-controller-apply-action controller action-sym (task-id #f) (arg #f))
-  (let* ((proj (.get controller projection))
-         (disc (.get controller disclosure-level))
-         (model-label (.get controller model-label))
-         (session-label (.get controller session-label))
-         (sess (.get controller session)))
+  (let ((proj (.get controller projection))
+        (disc (.get controller disclosure-level))
+        (model-label (.get controller model-label))
+        (session-label (.get controller session-label))
+        (sess (.get controller session)))
     (cond
      ((memq action-sym '(task-drill-l0 task-drill-l1 task-drill-l2 task-drill-l3))
-      (let* ((next-disc (case action-sym
-                          ((task-drill-l0) 'L0)
-                          ((task-drill-l1) 'L1)
-                          ((task-drill-l2) 'L2)
-                          (else 'L3)))
-             (next-sess (open-workbench-controller-session proj next-disc model-label session-label)))
-        (.o bind-these: #f
-            kind: 'marlin.ui.task-workbench-controller.v1
-            projection: proj
-            disclosure-level: next-disc
-            model-label: model-label
-            session-label: session-label
-            session: next-sess)))
+      (let ((next-disc (case action-sym
+                         ((task-drill-l0) 'L0) ((task-drill-l1) 'L1)
+                         ((task-drill-l2) 'L2) (else 'L3))))
+        (.o (:: @ controller)
+            (disclosure-level := next-disc)
+            (session := (open-workbench-controller-session proj next-disc model-label session-label)))))
      ((memq action-sym '(task-detour-blocker task-detour-sidequest
                          task-detour-exit-return task-detour-exit-absorb
                          task-detour-exit-sibling task-detour-exit-abort))
       (let* ((target (or task-id
                          (let ((dyn (if (object? proj) (.get proj dynamic-tabs) '())))
                            (and (pair? dyn) (.get (car dyn) id)))))
-             (next-proj (marlin-task-workbench-apply-detour-action proj target action-sym arg))
-             (next-sess (open-workbench-controller-session next-proj disc model-label session-label)))
-        (.o bind-these: #f
-            kind: 'marlin.ui.task-workbench-controller.v1
-            projection: next-proj
-            disclosure-level: disc
-            model-label: model-label
-            session-label: session-label
-            session: next-sess)))
+             (next-proj (marlin-task-workbench-apply-detour-action proj target action-sym arg)))
+        (.o (:: @ controller)
+            (projection := next-proj)
+            (session := (open-workbench-controller-session next-proj disc model-label session-label)))))
      (else
-      (let* ((step (marlin-ui-session-dispatch
-                    (vector sess 'scheme-action (vector action-sym arg))))
-             (next-sess (vector-ref step 0)))
-        (.o bind-these: #f
-            kind: 'marlin.ui.task-workbench-controller.v1
-            projection: proj
-            disclosure-level: disc
-            model-label: model-label
-            session-label: session-label
-            session: next-sess))))))
+      (let ((step (marlin-ui-session-dispatch
+                   (vector sess 'scheme-action (vector action-sym arg)))))
+        (.o (:: @ controller) (session := (vector-ref step 0))))))))
 
 (def (marlin-task-workbench-controller-project controller)
   (marlin-ui-session-project (.get controller session)))

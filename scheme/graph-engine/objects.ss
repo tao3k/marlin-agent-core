@@ -24,6 +24,7 @@
                  make-marlin-fleet-workbench-controller
                  marlin-fleet-workbench-controller-apply-action
                  marlin-fleet-workbench-controller-project
+                 marlin-fleet-workbench-controller-audit-capsule
                  marlin-fleet-workbench-controller-open-vector
                  marlin-fleet-workbench-controller-dispatch-vector))
 
@@ -45,6 +46,7 @@
   make-fleet-workbench-controller: make-marlin-fleet-workbench-controller
   fleet-workbench-controller-apply-action: marlin-fleet-workbench-controller-apply-action
   fleet-workbench-controller-project: marlin-fleet-workbench-controller-project
+  fleet-workbench-controller-audit-capsule: marlin-fleet-workbench-controller-audit-capsule
   fleet-workbench-controller-open-vector: marlin-fleet-workbench-controller-open-vector
   fleet-workbench-controller-dispatch-vector: marlin-fleet-workbench-controller-dispatch-vector)
 

@@ -27,7 +27,8 @@
         (only-in :marlin-agent-core/graph-engine/fleet-controller
                  make-marlin-fleet-workbench-controller
                  marlin-fleet-workbench-controller-apply-action
-                 marlin-fleet-workbench-controller-project)
+                 marlin-fleet-workbench-controller-project
+                 marlin-fleet-workbench-controller-audit-capsule)
         (only-in :tao3k/agentic-ai-lab/modules/graph-engine/interface
                  make-capability-envelope
                  make-obligation
@@ -579,4 +580,77 @@
         (check-equal? (.ref (car tabs-prop) 'detour-mode) 'blocker-active)
         (check-equal? (.ref (car tabs-prop) 'active-defeaters-count) 1)
         (check-equal? (.ref (cadr tabs-prop) 'detour-mode) 'mainline)
-        (check-equal? (.ref (cadr tabs-prop) 'active-defeaters-count) 0)))))
+        (check-equal? (.ref (cadr tabs-prop) 'active-defeaters-count) 0)))
+
+    (test-case "Round S9: TUI SPC o p peek -> UTF-8 checkpoint/restore -> SPC o r durable reopen (epoch bump) -> SPC o h p defeater propagation -> FleetAuditCapsule (0 Rust edits)"
+      (let* ((env (make-capability-envelope "owner" allowed-caps: '(context-read) denied-caps: '(host-egress) egress-allowed?: #f))
+             (ctx (.o bind-these: #f
+                      context-cut: 1
+                      kv-prefix-digest: "sha256:s9-tui-zone1"
+                      disclosure-depth: 'L3
+                      has-active-defeater?: #f
+                      sandbox-admitted?: #t
+                      cedar-handoff-valid?: #t))
+             ;; Settled actor ready to auto-archive (watches prem-s9-shared)
+             (ob-s (make-obligation "ob-s9-s" title: "Settled Gate" required-evidence-ids: '() premise-ids: '("prem-s9-shared")))
+             (g-s (make-obligation-graph "g-s9-s" cut: 1 obligations: (list ob-s) evidence: '() det-tasks: '()))
+             (tr-s (make-context-trunk "tr-s9-s" "ob-s9-s" g-s env shared-context-cut: 1 kv-prefix-digest: "sha256:s9-tui-zone1"))
+             (act-s (graph-make-task-actor "task-s9-settled" tr-s '("scope-main") title: "Archived Audit"))
+             (h1 (make-competing-hypothesis "H1" "Hypothesis Alpha" contradictions: '("c1") open-questions: '("q1")))
+             (h2 (make-competing-hypothesis "H2" "Hypothesis Beta" contradictions: '() open-questions: '("q2")))
+             ;; Independent active actor (does NOT watch prem-s9-shared; has pending det task so stays active)
+             (ob-i (make-obligation "ob-s9-i" title: "Independent" required-evidence-ids: '("ev-pending") premise-ids: '("prem-other")))
+             (det-i (make-deterministic-task-node
+                     "det-s9-indep" "ob-s9-i" "ev-pending" 'funflow-indep "in-indep"
+                     effect-class: 'pure-cas read-footprint: '("indep.ss") write-footprint: '()))
+             (g-i (make-obligation-graph "g-s9-i" cut: 1 obligations: (list ob-i) evidence: '() det-tasks: (list det-i)))
+             (tr-i (make-context-trunk "tr-s9-i" "ob-s9-i" g-i env shared-context-cut: 1 kv-prefix-digest: "sha256:s9-tui-zone1"))
+             (act-i (graph-make-task-actor "task-s9-indep" tr-i '("scope-main") title: "Independent Task"))
+             (fl0 (make-graph-fleet-state
+                   (list (make-unified-driver-state act-s g-s ctx competing-hypotheses: (list h1 h2))
+                         (make-unified-driver-state act-i g-i ctx))
+                   focused-task-id: "task-s9-indep"))
+             ;; Step with auto-archive -> task-s9-settled auto-archives cleanly!
+             (fc0 (make-marlin-fleet-workbench-controller fl0 disclosure-level: 'L3))
+             (keys0 (vector->list ((.get (.get (.ref fc0 'session) ui) keymap-entries))))
+             (fc1 (marlin-fleet-workbench-controller-apply-action fc0 'task-fleet-step auto-archive?: #t))
+             ;; 1. User triggers `SPC o p` (`task-peek`) -> mounts task-s9-settled as peek-readonly tab!
+             (fc2 (marlin-fleet-workbench-controller-apply-action fc1 'task-peek arg: "task-s9-settled"))
+             ;; 2. User triggers `SPC o f c` (`task-fleet-checkpoint`), restores Fleet from UTF-8 wire string!
+             (fc3 (marlin-fleet-workbench-controller-apply-action fc2 'task-fleet-checkpoint arg: "fleet:s9:tui"))
+             (cp-eff (car (.ref fc3 'last-effects)))
+             (fl-restored (restore-fleet-from-cas-receipt (make-cas-hit-receipt "r-s9" (.ref cp-eff 'payload))))
+             (fc-r0 (make-marlin-fleet-workbench-controller fl-restored disclosure-level: 'L3))
+             ;; 3. User triggers `SPC o r` (`task-reopen`) on restored Fleet -> task-s9-settled returns to active-drivers with epoch=2!
+             (fc-r1 (marlin-fleet-workbench-controller-apply-action fc-r0 'task-reopen arg: "task-s9-settled"))
+             ;; 4. User triggers `SPC o h p` (`task-propagate-defeater`) -> blocks ONLY task-s9-settled, leaving task-s9-indep mainline!
+             (fc-r2 (marlin-fleet-workbench-controller-apply-action
+                     fc-r1 'task-propagate-defeater arg: "def-s9-root:prem-s9-shared"))
+             (cap (marlin-fleet-workbench-controller-audit-capsule fc-r2))
+             (vec-r2 (marlin-fleet-workbench-controller-project fc-r2))
+             (tabs-r2 (.ref (.ref fc-r2 'projection) 'dynamic-tabs))
+             (indep-tab (find (lambda (t) (equal? (.ref t 'id) "task-s9-indep")) tabs-r2))
+             (reopen-tab (find (lambda (t) (equal? (.ref t 'id) "task-s9-settled")) tabs-r2))
+             (reopen-driver (find (lambda (d) (equal? (.ref (.ref d 'actor) 'task-id) "task-s9-settled"))
+                                  (.ref (.ref fc-r2 'fleet) 'active-drivers))))
+        (check-equal? (and (member '#(normal #(SPC o h p) task-propagate-defeater) keys0) #t) #t)
+        ;; Archived task hidden before peek, visible as peek-readonly after SPC o p!
+        (check-equal? (length (.ref (.ref fc1 'fleet) 'archived-actors)) 1)
+        (check-equal? (.ref (.ref fc2 'projection) 'visible-tab-ids) '(index "task-s9-indep" "task-s9-settled"))
+        ;; After checkpoint -> restore -> SPC o r reopen: active again with fencing-epoch=2 & 2 hypotheses preserved!
+        (check-equal? (length (.ref (.ref fc-r1 'fleet) 'archived-actors)) 0)
+        (check-equal? (length (.ref (.ref fc-r1 'fleet) 'active-drivers)) 2)
+        (check-equal? (.ref (.ref reopen-driver 'actor) 'fencing-epoch) 2)
+        (check-equal? (length (.ref reopen-driver 'competing-hypotheses)) 2)
+        ;; After SPC o h p: task-s9-settled blocked (blocker-active, defeaters=1), task-s9-indep stays mainline!
+        (check-equal? (.ref reopen-tab 'detour-mode) 'blocker-active)
+        (check-equal? (.ref reopen-tab 'active-defeaters-count) 1)
+        (check-equal? (.ref indep-tab 'detour-mode) 'mainline)
+        (check-equal? (.ref indep-tab 'active-defeaters-count) 0)
+        ;; FleetAuditCapsule preserves invariants & Ratatui projection succeeds cleanly!
+        (check-equal? (.ref cap 'active-actor-count) 2)
+        (check-equal? (.ref cap 'total-active-defeaters) 1)
+        (check-equal? (.ref cap 'favored-path-collapsed?) #f)
+        (check-equal? (.ref cap 'authenticates-evidence?) #f)
+        (check-equal? (.ref cap 'authorizes-effect?) #f)
+        (check-equal? (vector? vec-r2) #t)))))
