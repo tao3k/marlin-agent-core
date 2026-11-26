@@ -18,14 +18,16 @@ use serde_json::Value;
 
 use crate::archive::{CargoSourceObserver, SchemeProgram, scheme_link_manifest};
 
-/// Tight upper bound on the linked `programs/graph-engine` closure (currently 515 modules
-/// including the 2 Rust SDK carriers) so kitchen-sink imports fail closed at build time.
-pub const GRAPH_ENGINE_MAX_MODULES: usize = 560;
+/// Tight upper bound on the linked `programs/graph-engine` closure (currently 564 modules
+/// including the 2 Rust SDK carriers and Higher-Order Governance POO/ASCENT/Temporal/Cedar)
+/// so kitchen-sink imports fail closed at build time.
+pub const GRAPH_ENGINE_MAX_MODULES: usize = 590;
 
 /// Modules that MUST be present in the linked `graph-engine` AOT closure.
 pub const GRAPH_ENGINE_REQUIRED_MODULES: &[&str] = &[
     "gerbil-scheme-rust/scheme/runtime",
     "tao3k/yuanxu/module-system/source/autoload-declarations",
+    "marlin-agent-core/policy/higher-order-governance",
 ];
 
 /// Exact modules forbidden from ever re-entering the `graph-engine` AOT closure.
@@ -194,6 +196,7 @@ mod tests {
             "gerbil/runtime/gambit".to_owned(),
             "gerbil-scheme-rust/scheme/runtime".to_owned(),
             "tao3k/yuanxu/module-system/source/autoload-declarations".to_owned(),
+            "marlin-agent-core/policy/higher-order-governance".to_owned(),
             "marlin-agent-core/graph-engine/entry".to_owned(),
         ]
     }
@@ -203,7 +206,7 @@ mod tests {
         let path = write_temp_manifest("valid", &base_valid_modules());
         let res = validate_graph_engine_program_manifest(&path);
         let _ = fs::remove_file(&path);
-        assert_eq!(res, Ok(4));
+        assert_eq!(res, Ok(5));
     }
 
     #[test]

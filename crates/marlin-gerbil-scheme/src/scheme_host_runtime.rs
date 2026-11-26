@@ -38,7 +38,9 @@ use crate::{
     GraphEngineLinkedExports, HigherOrderGovernanceVectorProjection,
     HigherOrderGovernanceVectorRequest, SchemeAtomicEffect, SchemeAtomicReceipt,
     SchemeFleetDispatchStep, SchemeFleetLinkedDriver, SchemeFleetLinkedExports,
-    SchemeFleetQuiescentSummary, encode_scheme_atomic_receipt_vector, graph_engine_oracle_channel,
+    SchemeFleetQuiescentSummary, decode_higher_order_governance_vector,
+    encode_higher_order_governance_request, encode_scheme_atomic_receipt_vector,
+    graph_engine_oracle_channel,
     higher_order_host::{
         DEFAULT_HIGHER_ORDER_CHECKPOINT_KEY, HigherOrderHostController, HigherOrderUiCommand,
         SharedProjectionRecords, default_clean_governance_request,
@@ -48,8 +50,7 @@ use crate::{
 #[cfg(not(feature = "external-program"))]
 use crate::{
     GraphEngineRootedOracle, MARLIN_HIGHER_ORDER_GOVERNANCE_PROJECT_SYMBOL,
-    SchemeFleetSessionDriver, decode_higher_order_governance_vector,
-    encode_higher_order_governance_request, gerbil_package_root,
+    SchemeFleetSessionDriver, gerbil_package_root,
 };
 use gerbil_scheme::{CollectionKind, GerbilRuntime};
 #[cfg(not(feature = "external-program"))]
@@ -148,7 +149,7 @@ struct EffectBatchRequest {
     reply: mpsc::SyncSender<Vec<SchemeAtomicReceipt>>,
 }
 
-/// All 9 statically linked C-ABI function pointers exported by `scheme/c-abi/graph-engine.ss`
+/// All 10 statically linked C-ABI function pointers exported by `scheme/c-abi/graph-engine.ss`
 /// required to run `marlin-scheme-host-aot` without dynamic `.o1` `dlopen`.
 #[derive(Clone, Copy, Debug)]
 pub struct LinkedSchemeHostExports {
@@ -161,6 +162,7 @@ pub struct LinkedSchemeHostExports {
     pub fleet_open_vector: unsafe extern "C" fn(i64) -> i64,
     pub fleet_dispatch_vector: unsafe extern "C" fn(i64) -> i64,
     pub fleet_audit_capsule_vector: unsafe extern "C" fn(i64) -> i64,
+    pub higher_order_governance_project_vector: unsafe extern "C" fn(i64) -> i64,
 }
 
 #[derive(Clone, Copy)]
@@ -1004,6 +1006,7 @@ pub fn run_dynamic_scheme_host() -> Result<(), Box<dyn std::error::Error>> {
         fleet_bootstrap,
         fleet_checkpoint_key,
         Some(scheme_dir_str.to_owned()),
+        None,
     )
 }
 
@@ -1051,6 +1054,7 @@ pub unsafe fn run_linked_scheme_host(
         fleet_bootstrap,
         fleet_checkpoint_key,
         None,
+        Some(exports.higher_order_governance_project_vector),
     )
 }
 
@@ -1060,6 +1064,7 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
     mut fleet_procs: Option<HostFleetBootstrap<'vm>>,
     fleet_checkpoint_key: Option<String>,
     dynamic_scheme_dir: Option<String>,
+    higher_order_linked_export: Option<unsafe extern "C" fn(i64) -> i64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let _ = &dynamic_scheme_dir;
     let bind_addr = env::var("MARLIN_BRIDGE_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_owned());
@@ -1647,44 +1652,76 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
         while let Ok(cmd) = fleet_rx.try_recv() {
             match cmd {
                 FleetVmCommand::EvaluateHigherOrderGovernance { req, reply } => {
-                    #[cfg(not(feature = "external-program"))]
-                    let outcome = (|| -> Result<HigherOrderGovernanceVectorProjection, String> {
-                        if cached_ho_gov_proc.is_none() {
-                            let dir = dynamic_scheme_dir
-                                .as_deref()
-                                .ok_or_else(|| "dynamic scheme dir unavailable".to_owned())?;
-                            let mod_sym = runtime
-                                .intern_identifier(
-                                    IdentifierKind::Symbol,
-                                    ":marlin-agent-core/policy/higher-order-governance",
-                                )
-                                .map_err(|e| format!("intern higher-order governance module: {e}"))?;
-                            let proc_sym = runtime
-                                .intern_identifier(
-                                    IdentifierKind::Symbol,
-                                    MARLIN_HIGHER_ORDER_GOVERNANCE_PROJECT_SYMBOL,
-                                )
-                                .map_err(|e| format!("intern higher-order governance export: {e}"))?;
-                            let resolved = runtime
-                                .resolve_package_export(dir, &mod_sym, &proc_sym)
-                                .map_err(|e| format!("resolve higher-order governance export: {e}"))?;
-                            cached_ho_gov_proc = Some(resolved);
+                    let outcome = if let Some(linked_export) = higher_order_linked_export {
+                        (|| -> Result<HigherOrderGovernanceVectorProjection, String> {
+                            // SAFETY: `linked_export` belongs to `runtime`'s initialized linked program.
+                            let proc = unsafe { runtime.bind_object_export(linked_export) }
+                                .map_err(|e| {
+                                    format!("bind linked higher_order_governance_project_vector: {e}")
+                                })?;
+                            let in_vec = encode_higher_order_governance_request(runtime, &req)
+                                .map_err(|e| format!("encode higher-order governance request: {e}"))?;
+                            let out_vec = proc
+                                .call(&in_vec)
+                                .into_result()
+                                .map_err(|e| format!("call linked higher-order governance proc: {e}"))?;
+                            decode_higher_order_governance_vector(out_vec)
+                                .map_err(|e| format!("decode higher-order governance vector: {e}"))
+                        })()
+                    } else {
+                        #[cfg(not(feature = "external-program"))]
+                        {
+                            (|| -> Result<HigherOrderGovernanceVectorProjection, String> {
+                                if cached_ho_gov_proc.is_none() {
+                                    let dir = dynamic_scheme_dir
+                                        .as_deref()
+                                        .ok_or_else(|| "dynamic scheme dir unavailable".to_owned())?;
+                                    let mod_sym = runtime
+                                        .intern_identifier(
+                                            IdentifierKind::Symbol,
+                                            ":marlin-agent-core/policy/higher-order-governance",
+                                        )
+                                        .map_err(|e| {
+                                            format!("intern higher-order governance module: {e}")
+                                        })?;
+                                    let proc_sym = runtime
+                                        .intern_identifier(
+                                            IdentifierKind::Symbol,
+                                            MARLIN_HIGHER_ORDER_GOVERNANCE_PROJECT_SYMBOL,
+                                        )
+                                        .map_err(|e| {
+                                            format!("intern higher-order governance export: {e}")
+                                        })?;
+                                    let resolved = runtime
+                                        .resolve_package_export(dir, &mod_sym, &proc_sym)
+                                        .map_err(|e| {
+                                            format!("resolve higher-order governance export: {e}")
+                                        })?;
+                                    cached_ho_gov_proc = Some(resolved);
+                                }
+                                let proc = cached_ho_gov_proc.as_ref().ok_or_else(|| {
+                                    "higher-order governance proc missing".to_owned()
+                                })?;
+                                let in_vec = encode_higher_order_governance_request(runtime, &req)
+                                    .map_err(|e| {
+                                        format!("encode higher-order governance request: {e}")
+                                    })?;
+                                let out_vec = runtime
+                                    .call_rooted(proc, &in_vec)
+                                    .map_err(|e| format!("call higher-order governance proc: {e}"))?;
+                                decode_higher_order_governance_vector(out_vec).map_err(|e| {
+                                    format!("decode higher-order governance vector: {e}")
+                                })
+                            })()
                         }
-                        let proc = cached_ho_gov_proc
-                            .as_ref()
-                            .ok_or_else(|| "higher-order governance proc missing".to_owned())?;
-                        let in_vec = encode_higher_order_governance_request(runtime, &req)
-                            .map_err(|e| format!("encode higher-order governance request: {e}"))?;
-                        let out_vec = runtime
-                            .call_rooted(proc, &in_vec)
-                            .map_err(|e| format!("call higher-order governance proc: {e}"))?;
-                        decode_higher_order_governance_vector(out_vec)
-                            .map_err(|e| format!("decode higher-order governance vector: {e}"))
-                    })();
-                    #[cfg(feature = "external-program")]
-                    let outcome: Result<HigherOrderGovernanceVectorProjection, String> = {
-                        let _ = req;
-                        Err("higher-order governance dynamic VM export unavailable in linked-AOT mode".to_owned())
+                        #[cfg(feature = "external-program")]
+                        {
+                            let _ = req;
+                            Err(
+                                "higher-order governance linked export missing in external-program mode"
+                                    .to_owned(),
+                            )
+                        }
                     };
                     let _ = reply.send(outcome);
                 }

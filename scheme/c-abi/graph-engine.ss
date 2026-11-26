@@ -8,7 +8,9 @@
 ;;; (`marlin-gerbil-scheme` / `marlin-agent-graph`).
 (import (only-in :clan/poo/object .get)
         (only-in :marlin-agent-core/c-abi/roots marlin-rooted-call)
-        (only-in :marlin-agent-core/graph-engine/interface GraphEngine))
+        (only-in :marlin-agent-core/graph-engine/interface GraphEngine)
+        (only-in :marlin-agent-core/policy/higher-order-governance
+                 marlin-higher-order-governance-project-vector))
 (export marlin-graph-engine-dispatch-vector
         marlin-graph-engine-reconcile-receipt-vector-abi
         marlin-graph-engine-workbench-tabs-vector
@@ -19,7 +21,8 @@
         marlin-graph-engine-fleet-restore-vector-abi
         marlin-graph-engine-fleet-controller-open-vector-abi
         marlin-graph-engine-fleet-controller-dispatch-vector-abi
-        marlin-graph-engine-fleet-controller-audit-capsule-vector-abi)
+        marlin-graph-engine-fleet-controller-audit-capsule-vector-abi
+        marlin-higher-order-governance-project-vector-abi)
 
 (def (marlin-graph-engine-dispatch-vector input)
   ((.get GraphEngine core exports project-dispatch-vector) input))
@@ -53,6 +56,9 @@
 
 (def (marlin-graph-engine-fleet-controller-audit-capsule-vector-abi input)
   ((.get GraphEngine core exports fleet-workbench-controller-audit-capsule-vector) input))
+
+(def (marlin-higher-order-governance-project-vector-abi input)
+  (marlin-higher-order-governance-project-vector input))
 
 (begin-foreign
   (c-define (graph-engine-dispatch-vector root) (int64) int64
@@ -98,4 +104,8 @@
   (c-define (graph-engine-fleet-controller-audit-capsule-vector root) (int64) int64
     "marlin_graph_engine_fleet_controller_audit_capsule_vector" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root
-      marlin-agent-core/c-abi/graph-engine#marlin-graph-engine-fleet-controller-audit-capsule-vector-abi)))
+      marlin-agent-core/c-abi/graph-engine#marlin-graph-engine-fleet-controller-audit-capsule-vector-abi))
+  (c-define (higher-order-governance-project-vector root) (int64) int64
+    "marlin_higher_order_governance_project_vector" "extern"
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root
+      marlin-agent-core/c-abi/graph-engine#marlin-higher-order-governance-project-vector-abi)))
