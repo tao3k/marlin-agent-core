@@ -30,9 +30,15 @@ pub fn emit_graph_engine_link_directives() {
             out_dir: &out_dir.join("archive"),
         },
         ProgramArchiveContract {
-            max_modules: NonZeroUsize::new(2048).expect("nonzero module budget"),
+            // Bound the slimmed GraphEngine closure (513 modules after decoupling
+            // `marlin-agent-core/interface` and `ui/helm-workbench`) so kitchen-sink
+            // imports cannot silently bloat Linked-AOT binary size or boot latency.
+            max_modules: NonZeroUsize::new(768).expect("nonzero module budget"),
             required_modules: &["gerbil-scheme-rust/scheme/runtime"],
-            forbidden_modules: &[],
+            forbidden_modules: &[
+                "marlin-agent-core/interface",
+                "marlin-agent-core/ui/helm-workbench",
+            ],
             linker_main_symbol: "gerbil_scheme_rust_program_main",
             additional_objects: &[],
             native_headers: &[],

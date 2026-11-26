@@ -376,6 +376,98 @@ async fn linked_aot_scheme_host_boots_fast_without_scheme_tree_and_survives_os_r
     assert!(!cap2.authorizes_effect);
     assert_eq!(llm_calls.load(Ordering::SeqCst), 1);
 
+    // 3. When `marlin-scheme-ctl` binary is available (via `MARLIN_SCHEME_CTL_BIN` or sibling
+    //    target dir), exercise the real compiled CLI against the live Linked-AOT host!
+    let ctl_candidate = std::env::var_os("MARLIN_SCHEME_CTL_BIN")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::path::Path::new(env!("CARGO_BIN_EXE_marlin-scheme-host-aot"))
+                .parent()
+                .map(|dir| dir.join("marlin-scheme-ctl"))
+                .filter(|p| p.is_file())
+        });
+    if let Some(ctl_bin) = ctl_candidate {
+        let ep2 = format!("http://{addr2}");
+        let unauth_ctl = Command::new(&ctl_bin)
+            .env_remove("MARLIN_BRIDGE_ENDPOINT")
+            .env_remove("MARLIN_BRIDGE_TOKEN")
+            .args(["--endpoint", &ep2, "audit"])
+            .output()
+            .await
+            .expect("run unauth marlin-scheme-ctl against aot host");
+        assert!(
+            !unauth_ctl.status.success(),
+            "unauth marlin-scheme-ctl must be rejected by aot host"
+        );
+
+        let audit_ctl = Command::new(&ctl_bin)
+            .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .arg("audit")
+            .output()
+            .await
+            .expect("run marlin-scheme-ctl audit against aot host");
+        assert!(
+            audit_ctl.status.success(),
+            "ctl audit failed: {}",
+            String::from_utf8_lossy(&audit_ctl.stderr)
+        );
+        let audit_out = String::from_utf8_lossy(&audit_ctl.stdout);
+        assert!(
+            audit_out.contains("AUDIT active=2 archived=2")
+                && audit_out.contains("defeaters=0 inbox=2")
+                && audit_out.contains("authorizes=false"),
+            "unexpected ctl audit output from aot host: {audit_out}"
+        );
+
+        let traj_ctl = Command::new(&ctl_bin)
+            .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .args(["watch-trajectory", "--count", "1", "--timeout-ms", "5000"])
+            .output()
+            .await
+            .expect("run marlin-scheme-ctl watch-trajectory against aot host");
+        assert!(
+            traj_ctl.status.success(),
+            "ctl watch-trajectory failed: {}",
+            String::from_utf8_lossy(&traj_ctl.stderr)
+        );
+        let traj_out = String::from_utf8_lossy(&traj_ctl.stdout);
+        assert!(
+            traj_out.contains("TRAJECTORY seq=1") && traj_out.contains("fleet_boot_restored"),
+            "unexpected ctl watch-trajectory output from aot host: {traj_out}"
+        );
+
+        let gates_ctl = Command::new(&ctl_bin)
+            .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .arg("gates")
+            .output()
+            .await
+            .expect("run marlin-scheme-ctl gates against aot host");
+        assert!(gates_ctl.status.success());
+        let gates_out = String::from_utf8_lossy(&gates_ctl.stdout);
+        assert!(
+            gates_out.contains("GATES count=1") && gates_out.contains("GATE id=gate-aot-s32-2"),
+            "unexpected ctl gates output: {gates_out}"
+        );
+
+        let rej_ctl = Command::new(&ctl_bin)
+            .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .args(["reject", "gate-aot-s32-2", "aot-cli-reject"])
+            .output()
+            .await
+            .expect("run marlin-scheme-ctl reject against aot host");
+        assert!(rej_ctl.status.success());
+        let rej_out = String::from_utf8_lossy(&rej_ctl.stdout);
+        assert!(
+            rej_out.contains("GATE_DECISION status=CLAIMED gate=gate-aot-s32-2"),
+            "unexpected ctl reject output: {rej_out}"
+        );
+        eprintln!("LINKED_AOT_CTL_E2E=VERIFIED");
+    }
+
     drop(client2);
     stop_host(child2).await;
     llm_srv.abort();

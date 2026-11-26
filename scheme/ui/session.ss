@@ -19,9 +19,7 @@
                  marlin-task-workbench-peek-set-add
                  marlin-task-workbench-peek-set-remove
                  marlin-task-workbench-next-disclosure
-                 marlin-task-workbench-apply-detour-action)
-        (only-in "./helm-workbench.ss"
-                 make-marlin-helm-workbench-package))
+                 marlin-task-workbench-apply-detour-action))
 (export marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch
         marlin-ui-session-browse-command
         marlin-ui-session-command-candidates
@@ -34,8 +32,7 @@
         marlin-task-workbench-apply-detour-action
         make-marlin-task-workbench-controller
         marlin-task-workbench-controller-apply-action
-        marlin-task-workbench-controller-project
-        make-marlin-helm-workbench-package)
+        marlin-task-workbench-controller-project)
 
 ;;; Each event returns a successor; older frames keep their own rooted state.
 (.def UiNativeSession.)

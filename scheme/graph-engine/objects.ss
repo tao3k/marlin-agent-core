@@ -6,7 +6,8 @@
 ;;; Boundary: POO slot bundle exposing Marlin's GraphEngine integration operations.
 
 (import (only-in :clan/poo/object .def .o)
-        (only-in :marlin-agent-core/interface LabDurableJournal)
+        (rename-in (only-in "./journal.ss" MarlinDurableJournal)
+                   (MarlinDurableJournal LabDurableJournal))
         (only-in "./funcs.ss"
                  marlin-graph-engine-project-workbench-ui
                  marlin-graph-engine-dispatch->continuation

@@ -20,7 +20,8 @@
         (only-in :marlin-agent-core/context-system/convergence
                  marlin-converge-assembly
                  marlin-converge-runtime-overlay)
-        (only-in :marlin-agent-core/interface LabDurableJournal))
+        (rename-in (only-in "./journal.ss" MarlinDurableJournal)
+                   (MarlinDurableJournal LabDurableJournal)))
 
 (export marlin-graph-engine-project-workbench-ui
         marlin-graph-engine-dispatch->continuation
