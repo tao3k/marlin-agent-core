@@ -1845,13 +1845,16 @@ async fn linked_aot_tampered_turso_mgf1_checkpoint_fails_closed_and_requires_mfa
     stop_host(child1).await;
 
     // -------------------------------------------------------------------------
-    // Adversarial On-Disk Storage Attack:
+    // Adversarial On-Disk Storage Attack #1 (`MGF1` fact-graph checkpoint):
     // Flip 1 bit inside the sealed `MGF1` payload AND re-hash the outer Turso
     // CAS `artifact_hash` + `artifact_pointers` so Turso's storage layer passes.
     // -------------------------------------------------------------------------
-    let py_tamper = r#"
+    let tamper_checkpoint_blob = |magic: &'static str| {
+        let db = db_path.clone();
+        async move {
+            let py_tamper = r#"
 import hashlib, sqlite3, sys
-db = sys.argv[1]
+db, magic = sys.argv[1], sys.argv[2]
 conn = sqlite3.connect(db)
 cur = conn.cursor()
 rows = cur.execute(
@@ -1862,13 +1865,14 @@ rows = cur.execute(
     FROM artifact_pointers p
     JOIN artifacts a
       ON a.project_id = p.project_id AND a.artifact_hash = p.target_artifact_hash
-    WHERE substr(a.body, 1, 4) = CAST('MGF1' AS BLOB)
-    """
+    WHERE substr(a.body, 1, 4) = CAST(? AS BLOB)
+    """,
+    (magic,),
 ).fetchall()
-assert len(rows) == 1, f"expected exactly 1 MGF1 checkpoint blob, got {len(rows)}"
+assert len(rows) == 1, f"expected exactly 1 {magic} checkpoint blob, got {len(rows)}"
 (proj, ptr, old_hash, kind, sess, agent, ev, media, body, ts) = rows[0]
 tampered = bytearray(body)
-assert len(tampered) > 12, f"unexpected short MGF1 blob: {len(tampered)}"
+assert len(tampered) > 12, f"unexpected short {magic} blob: {len(tampered)}"
 tampered[8] ^= 0x01
 new_bytes = bytes(tampered)
 new_hash = "sha256:" + hashlib.sha256(new_bytes).hexdigest()
@@ -1887,21 +1891,25 @@ cur.execute(
 )
 conn.commit()
 conn.close()
-print("TAMPERED_MGF1_OK", old_hash, "->", new_hash)
+print("TAMPERED_OK", magic, old_hash, "->", new_hash)
 "#;
-    let tamper_out = Command::new("python3")
-        .arg("-c")
-        .arg(py_tamper)
-        .arg(&db_path)
-        .output()
-        .await
-        .expect("run python3 sqlite3 MGF1 tamper script");
-    assert!(
-        tamper_out.status.success(),
-        "MGF1 tamper helper failed: stdout={} stderr={}",
-        String::from_utf8_lossy(&tamper_out.stdout),
-        String::from_utf8_lossy(&tamper_out.stderr),
-    );
+            let tamper_out = Command::new("python3")
+                .arg("-c")
+                .arg(py_tamper)
+                .arg(&db)
+                .arg(magic)
+                .output()
+                .await
+                .unwrap_or_else(|e| panic!("run python3 sqlite3 {magic} tamper script: {e}"));
+            assert!(
+                tamper_out.status.success(),
+                "{magic} tamper helper failed: stdout={} stderr={}",
+                String::from_utf8_lossy(&tamper_out.stdout),
+                String::from_utf8_lossy(&tamper_out.stderr),
+            );
+        }
+    };
+    tamper_checkpoint_blob("MGF1").await;
 
     // -------------------------------------------------------------------------
     // Boot #2 (`clean`): MUST refuse clean boot and auto-trip fail-closed!
@@ -2013,7 +2021,102 @@ print("TAMPERED_MGF1_OK", old_hash, "->", new_hash)
         })
         .await;
     assert_eq!(gov_recovered["admitted"], true);
-    eprintln!("LINKED_AOT_TAMPER_FAIL_CLOSED_E2E=VERIFIED");
 
     stop_host(child2).await;
+
+    // -------------------------------------------------------------------------
+    // Adversarial On-Disk Storage Attack #2 (`MGV1` gate-state checkpoint):
+    // Flip 1 bit inside the sealed `MGV1` payload (+ outer Turso CAS re-hash)
+    // and verify Boot #3 (`clean`) hits the independent `CorruptDurableCheckpoint`
+    // gate recovery path (`mode=corrupt_fail_closed tripped=true`).
+    // -------------------------------------------------------------------------
+    tamper_checkpoint_blob("MGV1").await;
+
+    let t3 = Instant::now();
+    let mut child3 = spawn_clean_aot().spawn().expect("spawn mgv1 tamper boot3");
+    let mut lines3 = BufReader::new(child3.stdout.take().unwrap()).lines();
+    let mut boot3 = None;
+    let addr3 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), lines3.next_line())
+            .await
+            .expect("linked-aot mgv1 tamper boot3 MUST become READY within 15s")
+            .unwrap()
+            .expect("aot mgv1 tamper boot3 exited early");
+        if line.starts_with("GOVERNANCE_HOST_BOOT ") {
+            boot3 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    let mgv1_boot3_ms = t3.elapsed().as_millis();
+    eprintln!(
+        "LINKED_AOT_MGV1_TAMPER_BOOT3_MS={mgv1_boot3_ms} LINKED_AOT_BOOT2_BUDGET_MS={boot2_budget_ms}"
+    );
+    assert!(
+        mgv1_boot3_ms <= boot2_budget_ms,
+        "Linked-AOT MGV1 tamper fail-closed boot regressed: {mgv1_boot3_ms}ms > {boot2_budget_ms}ms"
+    );
+    let boot3_line = boot3.expect("expected GOVERNANCE_HOST_BOOT on mgv1 tamper boot3");
+    assert!(
+        boot3_line.contains("mode=corrupt_fail_closed")
+            && boot3_line.contains("admitted=false")
+            && boot3_line.contains("tripped=true"),
+        "tampered MGV1 checkpoint MUST fail closed on boot3 (got: {boot3_line})"
+    );
+    let ep3 = format!("http://{addr3}");
+
+    // Exercise human-readable `marlin-scheme-ctl status` output on a corrupt-fail-closed host.
+    let status_human = Command::new(&ctl_bin)
+        .env("MARLIN_BRIDGE_ENDPOINT", &ep3)
+        .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+        .arg("status")
+        .output()
+        .await
+        .expect("run human-readable marlin-scheme-ctl status on boot3");
+    assert!(
+        status_human.status.success(),
+        "ctl status failed: {}",
+        String::from_utf8_lossy(&status_human.stderr)
+    );
+    let status_text = String::from_utf8_lossy(&status_human.stdout);
+    assert!(
+        status_text.contains("GOVERNANCE admitted=false tripped=true"),
+        "expected human-readable GOVERNANCE tripped summary in ctl status: {status_text}"
+    );
+
+    let gov_mgv1_corrupt = run_ctl_json(&ctl_bin, &ep3, bearer_token, &["governance"]).await;
+    assert!(
+        gov_mgv1_corrupt["last_event_note"]
+            .as_str()
+            .unwrap_or("")
+            .starts_with("corrupt durable governance checkpoint (fail-closed):"),
+        "expected MGV1 corrupt note, got: {gov_mgv1_corrupt}"
+    );
+    let gate3 = gov_mgv1_corrupt["rearm_gate_id"]
+        .as_str()
+        .expect("rearm_gate_id on MGV1 corrupt_fail_closed")
+        .to_owned();
+    let mfa_ok_3 = run_ctl_json(
+        &ctl_bin,
+        &ep3,
+        bearer_token,
+        &[
+            "approve",
+            &gate3,
+            "stepup-verified:actor=alice:acr=urn:ietf:params:oauth:acr:mfa",
+        ],
+    )
+    .await;
+    assert_eq!(mfa_ok_3["claimed"], true);
+    let gov_recovered_3 =
+        poll_ctl_governance(&ctl_bin, &ep3, bearer_token, "mgv1-mfa-recovered", |g| {
+            g["breaker_tripped"] == false && g["admitted"] == true
+        })
+        .await;
+    assert_eq!(gov_recovered_3["admitted"], true);
+    eprintln!("LINKED_AOT_TAMPER_FAIL_CLOSED_E2E=VERIFIED");
+
+    stop_host(child3).await;
 }

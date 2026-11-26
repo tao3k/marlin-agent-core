@@ -35,7 +35,8 @@ use std::{
 };
 
 use marlin_agent_app_server::{
-    FleetTaskAction, GovernanceFactAction, GrpcCode, MarlinSchemeHostClient,
+    FleetTaskAction, GovernanceAuthoritySnapshotView, GovernanceFactAction, GrpcCode,
+    MarlinSchemeHostClient,
     scheme_host_client::{
         format_facets_sorted, graph_record_to_json, json_escape, workbench_tab_kind_label,
     },
@@ -235,32 +236,7 @@ async fn run() -> Result<(), String> {
                 );
             } else {
                 match maybe {
-                    Some(gov) => {
-                        println!(
-                            "GOVERNANCE admitted={} tripped={} trip_epoch={} rev_epoch={} policy_rev={} budget={}/{} rearm_gate={}",
-                            gov.admitted,
-                            gov.breaker_tripped,
-                            gov.breaker_trip_epoch,
-                            gov.revocation_epoch,
-                            gov.policy_revision,
-                            gov.breaker_budget_used,
-                            gov.breaker_budget_limit,
-                            if gov.rearm_gate_id.is_empty() {
-                                "none"
-                            } else {
-                                gov.rearm_gate_id.as_str()
-                            }
-                        );
-                        if gov.fenced_actors_json != "[]" {
-                            println!("FENCED {}", gov.fenced_actors_json);
-                        }
-                        if gov.retracted_conclusions_json != "[]" {
-                            println!("RETRACTED {}", gov.retracted_conclusions_json);
-                        }
-                        if let Some(probe) = &gov.last_cedar_probe_json {
-                            println!("CEDAR_PROBE {probe}");
-                        }
-                    }
+                    Some(gov) => print_governance_human(&gov),
                     None => println!("GOVERNANCE none"),
                 }
             }
@@ -376,21 +352,7 @@ async fn run() -> Result<(), String> {
                     None => println!("AUDIT none"),
                 }
                 if let Some(gov) = &snap.governance {
-                    println!(
-                        "GOVERNANCE admitted={} tripped={} trip_epoch={} rev_epoch={} policy_rev={} budget={}/{} rearm_gate={}",
-                        gov.admitted,
-                        gov.breaker_tripped,
-                        gov.breaker_trip_epoch,
-                        gov.revocation_epoch,
-                        gov.policy_revision,
-                        gov.breaker_budget_used,
-                        gov.breaker_budget_limit,
-                        if gov.rearm_gate_id.is_empty() {
-                            "none"
-                        } else {
-                            gov.rearm_gate_id.as_str()
-                        }
-                    );
+                    print_governance_human(gov);
                 }
                 for g in &snap.gates {
                     println!("GATE id={} tool={}", g.gate_id, g.tool_or_node_name);
@@ -719,6 +681,33 @@ struct WatchFlags {
     count: Option<usize>,
     timeout_ms: Option<u64>,
     session: Option<String>,
+}
+
+fn print_governance_human(gov: &GovernanceAuthoritySnapshotView) {
+    println!(
+        "GOVERNANCE admitted={} tripped={} trip_epoch={} rev_epoch={} policy_rev={} budget={}/{} rearm_gate={}",
+        gov.admitted,
+        gov.breaker_tripped,
+        gov.breaker_trip_epoch,
+        gov.revocation_epoch,
+        gov.policy_revision,
+        gov.breaker_budget_used,
+        gov.breaker_budget_limit,
+        if gov.rearm_gate_id.is_empty() {
+            "none"
+        } else {
+            gov.rearm_gate_id.as_str()
+        }
+    );
+    if gov.fenced_actors_json != "[]" {
+        println!("FENCED {}", gov.fenced_actors_json);
+    }
+    if gov.retracted_conclusions_json != "[]" {
+        println!("RETRACTED {}", gov.retracted_conclusions_json);
+    }
+    if let Some(probe) = &gov.last_cedar_probe_json {
+        println!("CEDAR_PROBE {probe}");
+    }
 }
 
 struct WaitReadyFlags {
