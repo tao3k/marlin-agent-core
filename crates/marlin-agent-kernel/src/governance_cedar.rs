@@ -751,4 +751,146 @@ mod tests {
             ));
         }
     }
+
+    #[test]
+    fn adversarial_cedar_mutations_never_panic_and_forbid_always_overrides_permit() {
+        let mut state: u64 = 0x5EED_CEDA_1234_5678;
+        let mut next_u64 = || {
+            state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^ (z >> 31)
+        };
+
+        let seeds = [
+            "forbid (principal in Marlin::Role::\"Agent\", action in [Marlin::Action::\"rearm_breaker\"], resource);",
+            "permit (principal in Marlin::Role::\"VerifiedHuman\", action == Marlin::Action::\"export\", resource) when { context.step_up_fresh && !context.tainted && context.channel_scope != \"untrusted\" };",
+            "forbid (principal, action, resource in Marlin::Scope::\"external\") unless { context.declassified == true };",
+            "forbid (principal == Marlin::Actor::\"ops-bad\", action, resource);",
+        ];
+        let pid = CedarPolicyId::new("fuzz.cedar").unwrap();
+
+        // 1. 2,000 deterministic adversarial mutations against the Cedar compiler -> zero panics!
+        for i in 0..2000usize {
+            let base = seeds[i % seeds.len()].as_bytes();
+            let mut mutated = base.to_vec();
+            match next_u64() % 5 {
+                0 => {
+                    let cut = (next_u64() as usize) % (mutated.len() + 1);
+                    mutated.truncate(cut);
+                }
+                1 => {
+                    if !mutated.is_empty() {
+                        let idx = (next_u64() as usize) % mutated.len();
+                        mutated[idx] = (next_u64() & 0x7F) as u8;
+                    }
+                }
+                2 => {
+                    let idx = (next_u64() as usize) % (mutated.len() + 1);
+                    mutated.insert(idx, b"\"\\{}[]()=!;:\0\n"[((next_u64() as usize) % 14)]);
+                }
+                3 => {
+                    mutated.extend_from_slice(b" unless { context.x == ");
+                }
+                _ => {
+                    let len = (next_u64() as usize) % 96;
+                    mutated = (0..len)
+                        .map(|_| (0x20 + (next_u64() % 95)) as u8)
+                        .collect();
+                }
+            }
+            if let Ok(src) = String::from_utf8(mutated) {
+                let _ = compile_cedar_policy(&SynthesizedCedarPolicy {
+                    policy_id: pid.clone(),
+                    source: src,
+                });
+            }
+        }
+
+        // 2. 512 randomized Cedar policy-set evaluations verifying strict forbid-overrides-permit!
+        let compiled_pool = vec![
+            mk_policy("p.permit.human", seeds[1]),
+            mk_policy("p.forbid.agent", seeds[0]),
+            mk_policy("p.forbid.ext", seeds[2]),
+            mk_policy("p.forbid.actor", seeds[3]),
+        ];
+        let actors = ["ops-alice", "ops-bad", "agent-worker"];
+        let actions = ["export", "rearm_breaker", "read"];
+        let scopes = ["workspace", "external", "untrusted"];
+
+        for _ in 0..512 {
+            let mask = (next_u64() & 0xF) as usize;
+            let active: Vec<CompiledCedarPolicy> = compiled_pool
+                .iter()
+                .enumerate()
+                .filter(|(idx, _)| (mask & (1 << idx)) != 0)
+                .map(|(_, p)| p.clone())
+                .collect();
+
+            let actor = actors[(next_u64() as usize) % actors.len()];
+            let mut roles = infer_actor_roles(actor);
+            if next_u64() % 2 == 0 {
+                roles.push(CedarEntityRef::role("VerifiedHuman"));
+            }
+            let action = actions[(next_u64() as usize) % actions.len()];
+            let scope = scopes[(next_u64() as usize) % scopes.len()];
+            let mut context = BTreeMap::new();
+            if next_u64() % 3 != 0 {
+                context.insert(
+                    "step_up_fresh".to_owned(),
+                    CedarContextValue::Bool(next_u64() % 2 == 0),
+                );
+            }
+            if next_u64() % 3 != 0 {
+                context.insert(
+                    "tainted".to_owned(),
+                    CedarContextValue::Bool(next_u64() % 2 == 0),
+                );
+            }
+            if next_u64() % 3 != 0 {
+                context.insert(
+                    "declassified".to_owned(),
+                    CedarContextValue::Bool(next_u64() % 2 == 0),
+                );
+            }
+            if next_u64() % 3 != 0 {
+                context.insert(
+                    "channel_scope".to_owned(),
+                    CedarContextValue::Str(scopes[(next_u64() as usize) % scopes.len()].to_owned()),
+                );
+            }
+
+            let req = CedarEvaluationRequest {
+                principal: CedarEntityRef::actor(actor),
+                principal_roles: roles,
+                action: CedarEntityRef::action(action),
+                resource: CedarEntityRef::resource("res-1"),
+                resource_groups: vec![CedarEntityRef::scope(scope)],
+                context,
+            };
+
+            let any_forbid = active
+                .iter()
+                .any(|p| p.effect == CedarEffect::Forbid && p.matches(&req));
+            let any_permit = active
+                .iter()
+                .any(|p| p.effect == CedarEffect::Permit && p.matches(&req));
+
+            let decision = evaluate_compiled_cedar_policies(&active, &req);
+            if any_forbid {
+                assert!(
+                    matches!(decision, CedarEvaluationDecision::Deny { .. }),
+                    "matching forbid MUST always yield Deny, got {decision:?}"
+                );
+            } else if any_permit {
+                assert!(
+                    matches!(decision, CedarEvaluationDecision::Allow { .. }),
+                    "matching permit without forbid MUST yield Allow, got {decision:?}"
+                );
+            } else {
+                assert_eq!(decision, CedarEvaluationDecision::ImplicitDeny);
+            }
+        }
+    }
 }

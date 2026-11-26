@@ -1489,4 +1489,85 @@ mod durable_checkpoint_tests {
             CedarEvaluationDecision::Allow { .. }
         ));
     }
+
+    #[test]
+    fn mgv1_exhaustive_single_byte_bitflip_and_truncation_always_fail_closed() {
+        let breaker = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(8)));
+        let gate = GovernanceAdmissionGate::new(Arc::clone(&breaker));
+        let digest = |ch: char| {
+            GovernanceProofDigest::new(format!("sha256:{}", std::iter::repeat_n(ch, 64).collect::<String>()))
+                .unwrap()
+        };
+        let env = GovernanceProofEnvelope {
+            schema_version: GOVERNANCE_ADMISSION_SCHEMA_VERSION,
+            admitted: false,
+            revocation_epoch: GovernanceProofEpoch::new(4).unwrap(),
+            policy_revision: 7,
+            assessment_digest: digest('a'),
+            taint_proof_digest: digest('b'),
+            fixpoint_proof_digest: digest('c'),
+            temporal_proof_digest: digest('d'),
+            invalidation_digest: digest('e'),
+            rejection_reasons: vec!["ascent-scope-exfiltration-alert".to_owned()],
+            fenced_actors: vec![GovernedSubjectName::new("agent-sub").unwrap()],
+            blocked_tools: vec![GovernedSubjectName::new("os-shell").unwrap()],
+            retracted_conclusions: vec![DerivationId::new("D-TOOL-EXEC").unwrap()],
+            cedar_policies: vec![
+                SynthesizedCedarPolicy {
+                    policy_id: CedarPolicyId::new("marlin.ascent.forbid.fenced.agent-sub").unwrap(),
+                    source: "forbid (principal == Marlin::Actor::\"agent-sub\", action, resource);"
+                        .to_owned(),
+                },
+                SynthesizedCedarPolicy {
+                    policy_id: CedarPolicyId::new(
+                        "marlin.ascent.forbid.scope.external-unless-declassified",
+                    )
+                    .unwrap(),
+                    source: "forbid (principal, action, resource in Marlin::Scope::\"external\") unless { context.declassified == true };".to_owned(),
+                },
+            ],
+        };
+        gate.synchronize_proof_envelope(&env).unwrap();
+        let valid_blob = gate.export_durable_checkpoint_bytes().unwrap();
+        assert!(valid_blob.len() > 128);
+
+        // 1. Every single byte position bit-flip MUST return CorruptDurableCheckpoint AND auto-trip fail-closed!
+        for idx in 0..valid_blob.len() {
+            let mut tampered = valid_blob.clone();
+            tampered[idx] ^= 0x01;
+            let fresh_b = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(8)));
+            let fresh_g = GovernanceAdmissionGate::new(fresh_b);
+            let err = fresh_g
+                .restore_durable_checkpoint_bytes(&tampered)
+                .expect_err("single-byte MGV1 bit-flip must fail closed");
+            assert!(
+                matches!(err, GovernanceAdmissionError::CorruptDurableCheckpoint(_)),
+                "byte {idx}: unexpected error {err:?}"
+            );
+            assert!(
+                fresh_g.snapshot().unwrap().breaker.tripped,
+                "byte {idx}: corrupt MGV1 must auto-trip breaker"
+            );
+        }
+
+        // 2. Every truncation length 0..len and trailing-byte append MUST fail closed!
+        for cut in 0..valid_blob.len() {
+            let fresh_b = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(8)));
+            let fresh_g = GovernanceAdmissionGate::new(fresh_b);
+            assert!(matches!(
+                fresh_g.restore_durable_checkpoint_bytes(&valid_blob[..cut]),
+                Err(GovernanceAdmissionError::CorruptDurableCheckpoint(_))
+            ));
+            assert!(fresh_g.snapshot().unwrap().breaker.tripped);
+        }
+        let mut extended = valid_blob.clone();
+        extended.push(0x00);
+        let fresh_b = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(8)));
+        let fresh_g = GovernanceAdmissionGate::new(fresh_b);
+        assert!(matches!(
+            fresh_g.restore_durable_checkpoint_bytes(&extended),
+            Err(GovernanceAdmissionError::CorruptDurableCheckpoint(_))
+        ));
+        assert!(fresh_g.snapshot().unwrap().breaker.tripped);
+    }
 }

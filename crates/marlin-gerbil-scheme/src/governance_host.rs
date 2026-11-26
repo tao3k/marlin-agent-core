@@ -2221,4 +2221,92 @@ mod tests {
             vec!["marlin.permit.verified-human-governance".to_owned()]
         );
     }
+
+    #[test]
+    fn mgf1_v2_exhaustive_bitflip_truncation_and_ui_command_injection_refusal() {
+        let mut store = GovernanceFactStore::default();
+        store
+            .delegation_edges
+            .insert(("ops-root".to_owned(), "agent-lead".to_owned()));
+        store.revoked_actors.insert("agent-lead".to_owned());
+        store
+            .taint_edges
+            .insert(("chat-ext".to_owned(), "os-shell".to_owned()));
+        store.taint_sources.insert("chat-ext".to_owned());
+        store.taint_sinks.insert("os-shell".to_owned());
+        store.taint_sanitizers.insert("human-gate".to_owned());
+        store
+            .context_entries
+            .insert("vault-key".to_owned(), "private".to_owned());
+        store
+            .context_flows
+            .insert(("vault-key".to_owned(), "ext-hook".to_owned()));
+        store
+            .target_scopes
+            .insert("ext-hook".to_owned(), "external".to_owned());
+        store.declassified_entries.insert("public-note".to_owned());
+        store.retracted_subjects.insert("cert-v1".to_owned());
+        store.derivations.insert(
+            "D-DEPLOY".to_owned(),
+            GovernanceDerivationSpec {
+                derivation_id: "D-DEPLOY".to_owned(),
+                policy_id: "pol.deploy".to_owned(),
+                subject_premises: vec!["cert-v1".to_owned()],
+                parent_derivations: vec!["D-TOKEN".to_owned()],
+            },
+        );
+
+        let valid_blob = store.to_canonical_bytes();
+        assert_eq!(
+            GovernanceFactStore::from_canonical_bytes(&valid_blob).unwrap(),
+            store
+        );
+
+        // 1. Every single byte bit-flip across the full MGF1 v2 blob MUST fail SHA-256/schema check!
+        for idx in 0..valid_blob.len() {
+            let mut tampered = valid_blob.clone();
+            tampered[idx] ^= 0x80;
+            assert!(
+                GovernanceFactStore::from_canonical_bytes(&tampered).is_err(),
+                "MGF1 v2 bit-flip at byte {idx} MUST be rejected"
+            );
+        }
+
+        // 2. Every truncation length 0..len and trailing-byte append MUST be rejected!
+        for cut in 0..valid_blob.len() {
+            assert!(
+                GovernanceFactStore::from_canonical_bytes(&valid_blob[..cut]).is_err(),
+                "MGF1 v2 truncation at {cut} MUST be rejected"
+            );
+        }
+        let mut extended = valid_blob.clone();
+        extended.push(0x42);
+        assert!(GovernanceFactStore::from_canonical_bytes(&extended).is_err());
+
+        // 3. Adversarial UI command injection sweep: re-arm bypass & malformed syntax MUST return None!
+        for hostile in [
+            "",
+            "scheme:",
+            "scheme:governance-rearm",
+            "scheme:governance-rearm ops-alice",
+            "scheme:GOVERNANCE-REARM ops-alice",
+            "scheme:governance-rearm\tstepup=true",
+            "scheme:governance-rearm\nops-alice",
+            "scheme:governance-estop-rearm",
+            "scheme:governance-delegate only-one",
+            "scheme:governance-delegate a b c",
+            "scheme:governance-context-flow a b c",
+            "scheme:governance-register-derivation D1 pol -",
+            "scheme:governance-register-derivation D1 pol none",
+            "scheme:governance-check-cedar a b",
+            "governance-eval-clean",
+            "scheme:unknown-cmd\0payload",
+        ] {
+            assert_eq!(
+                parse_governance_ui_command(hostile),
+                None,
+                "hostile UI command {hostile:?} must be rejected fail-closed"
+            );
+        }
+    }
 }
