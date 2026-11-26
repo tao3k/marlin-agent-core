@@ -40,9 +40,9 @@ use crate::{
     SchemeFleetDispatchStep, SchemeFleetLinkedDriver, SchemeFleetLinkedExports,
     SchemeFleetQuiescentSummary, encode_scheme_atomic_receipt_vector, graph_engine_oracle_channel,
     higher_order_host::{
-        HigherOrderHostController, HigherOrderUiCommand, SharedProjectionRecords,
-        default_clean_governance_request, default_incident_governance_request,
-        parse_higher_order_governance_ui_command,
+        DEFAULT_HIGHER_ORDER_CHECKPOINT_KEY, HigherOrderHostController, HigherOrderUiCommand,
+        SharedProjectionRecords, default_clean_governance_request,
+        default_incident_governance_request, parse_higher_order_governance_ui_command,
     },
 };
 #[cfg(not(feature = "external-program"))]
@@ -1081,6 +1081,10 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
         .ok()
         .map(|s| s.trim().to_ascii_lowercase())
         .filter(|s| !s.is_empty() && s != "off");
+    let governance_checkpoint_key_env = env::var("MARLIN_SCHEME_GOVERNANCE_CHECKPOINT_KEY")
+        .ok()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
     let breaker_budget = env::var("MARLIN_SCHEME_BREAKER_BUDGET")
         .ok()
         .and_then(|v| v.trim().parse::<u32>().ok())
@@ -1233,13 +1237,58 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                 );
             }
 
-            // Initialize and publish authoritative Higher-Order Governance state when
-            // `MARLIN_SCHEME_GOVERNANCE_MODE` is configured (`incident` | `clean` | `armed`).
-            // When unset, `ho_governance` stays armed in-memory (gating `SandboxRun` and
-            // handling explicit `scheme:governance-*` commands) without emitting extra boot
-            // projection records/events that legacy fleet-only callers do not expect.
-            if let Some(mode) = governance_boot_mode.as_deref() {
+            // Determine durable Turso CAS checkpoint key for Higher-Order Governance.
+            // Enabled whenever `MARLIN_SCHEME_GOVERNANCE_CHECKPOINT_KEY` is explicitly set,
+            // OR automatically when both Turso storage and `MARLIN_SCHEME_GOVERNANCE_MODE` are active.
+            let governance_checkpoint_key: Option<String> = if cas_store.is_some() {
+                governance_checkpoint_key_env.clone().or_else(|| {
+                    governance_boot_mode
+                        .as_ref()
+                        .map(|_| DEFAULT_HIGHER_ORDER_CHECKPOINT_KEY.to_owned())
+                })
+            } else {
+                None
+            };
+
+            // Initialize and publish authoritative Higher-Order Governance state.
+            // Anti-Restart-Reset invariant: if Turso CAS already holds a durable governance
+            // checkpoint, restore it FIRST and NEVER let a cold `clean` boot wipe a tripped
+            // E-Stop latch, monotonic epoch floor, or ASCENT/Cedar fences!
+            let restored_from_cas = if let (Some(cas), Some(cp_key)) =
+                (cas_store.as_ref(), governance_checkpoint_key.as_deref())
+            {
+                match ho_governance.restore_from_cas(&host, cas, cp_key).await? {
+                    Some((snap, restore_mode)) => {
+                        println!(
+                            "HIGHER_ORDER_GOV_BOOT mode={restore_mode} admitted={} tripped={} trip_epoch={} rev_epoch={} fenced={} retracted={} cedar={}",
+                            snap.admitted,
+                            snap.breaker.tripped,
+                            snap.breaker.trip_epoch.get(),
+                            snap.revocation_epoch.get(),
+                            snap.fenced_actors.len(),
+                            snap.retracted_conclusions.len(),
+                            snap.cedar_policies.len(),
+                        );
+                        io::stdout()
+                            .flush()
+                            .map_err(|err| format!("flush restored governance boot line: {err}"))?;
+                        true
+                    }
+                    None => false,
+                }
+            } else {
+                false
+            };
+
+            if !restored_from_cas
+                && let Some(mode) = governance_boot_mode.as_deref()
+            {
                 if mode == "armed" {
+                    if let (Some(cas), Some(cp_key)) =
+                        (cas_store.as_ref(), governance_checkpoint_key.as_deref())
+                    {
+                        ho_governance.persist_to_cas(cas, cp_key).await?;
+                    }
                     let _ = ho_governance.publish_snapshot(
                         &host,
                         "governance_boot_armed",
@@ -1260,16 +1309,22 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                         .await
                         .map_err(|err| format!("join higher-order governance boot eval: {err}"))?
                         .map_err(|_| "gambit vm thread dropped governance boot reply".to_owned())??;
-                    let snap = ho_governance.apply_scheme_projection(
-                        &host,
-                        &proj,
-                        &format!("governance_boot_{mode}"),
-                        &format!("live scheme higher-order governance boot ({mode})"),
-                    )?;
+                    let snap = ho_governance
+                        .apply_scheme_projection_durable(
+                            &host,
+                            cas_store.as_deref(),
+                            governance_checkpoint_key.as_deref(),
+                            &proj,
+                            &format!("governance_boot_{mode}"),
+                            &format!("live scheme higher-order governance boot ({mode})"),
+                        )
+                        .await?;
                     println!(
-                        "HIGHER_ORDER_GOV_BOOT mode={mode} admitted={} tripped={} fenced={} retracted={} cedar={}",
+                        "HIGHER_ORDER_GOV_BOOT mode={mode} admitted={} tripped={} trip_epoch={} rev_epoch={} fenced={} retracted={} cedar={}",
                         snap.admitted,
                         snap.breaker.tripped,
+                        snap.breaker.trip_epoch.get(),
+                        snap.revocation_epoch.get(),
                         snap.fenced_actors.len(),
                         snap.retracted_conclusions.len(),
                         snap.cedar_policies.len(),
@@ -1306,6 +1361,8 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                 let host_for_gate = host.clone();
                 let records_for_gate = Arc::clone(&projection_records);
                 let gov_for_gate = Arc::clone(&ho_governance);
+                let cas_for_gate = cas_store.clone();
+                let cp_key_for_gate = governance_checkpoint_key.clone();
                 let fleet_enabled = fleet_checkpoint_key_srv.is_some();
                 Some(tokio::spawn(async move {
                     loop {
@@ -1316,12 +1373,17 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                                 Err(_) => break,
                             }
                         };
-                        if gov_for_gate.handle_claimed_gate_decision(
-                            &host_for_gate,
-                            &ev.gate_id,
-                            ev.decision,
-                            ev.note.as_deref(),
-                        ) {
+                        if gov_for_gate
+                            .handle_claimed_gate_decision_durable(
+                                &host_for_gate,
+                                cas_for_gate.as_deref(),
+                                cp_key_for_gate.as_deref(),
+                                &ev.gate_id,
+                                ev.decision,
+                                ev.note.as_deref(),
+                            )
+                            .await
+                        {
                             continue;
                         }
                         if !fleet_enabled {
@@ -1388,6 +1450,8 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                 let host_for_ui = host.clone();
                 let records_for_ui = Arc::clone(&projection_records);
                 let gov_for_ui = Arc::clone(&ho_governance);
+                let cas_for_ui = cas_store.clone();
+                let cp_key_for_ui = governance_checkpoint_key.clone();
                 let fleet_enabled = fleet_checkpoint_key_srv.is_some();
                 Some(tokio::spawn(async move {
                     loop {
@@ -1402,11 +1466,15 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                         {
                             match gov_cmd {
                                 HigherOrderUiCommand::OperatorEStop { actor, reason } => {
-                                    let _ = gov_for_ui.apply_operator_estop(
-                                        &host_for_ui,
-                                        &actor,
-                                        &reason,
-                                    );
+                                    let _ = gov_for_ui
+                                        .apply_operator_estop_durable(
+                                            &host_for_ui,
+                                            cas_for_ui.as_deref(),
+                                            cp_key_for_ui.as_deref(),
+                                            &actor,
+                                            &reason,
+                                        )
+                                        .await;
                                 }
                                 HigherOrderUiCommand::EvaluateIncident => {
                                     if let Ok((epoch, rev)) = gov_for_ui.next_evaluation_coords() {
@@ -1421,12 +1489,16 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                                                 tokio::task::spawn_blocking(move || reply_rx.recv())
                                                     .await
                                         {
-                                            let _ = gov_for_ui.apply_scheme_projection(
-                                                &host_for_ui,
-                                                &proj,
-                                                "governance_eval_incident",
-                                                "live scheme higher-order incident evaluated",
-                                            );
+                                            let _ = gov_for_ui
+                                                .apply_scheme_projection_durable(
+                                                    &host_for_ui,
+                                                    cas_for_ui.as_deref(),
+                                                    cp_key_for_ui.as_deref(),
+                                                    &proj,
+                                                    "governance_eval_incident",
+                                                    "live scheme higher-order incident evaluated",
+                                                )
+                                                .await;
                                         }
                                     }
                                 }
@@ -1443,12 +1515,16 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                                                 tokio::task::spawn_blocking(move || reply_rx.recv())
                                                     .await
                                         {
-                                            let _ = gov_for_ui.apply_scheme_projection(
-                                                &host_for_ui,
-                                                &proj,
-                                                "governance_eval_clean",
-                                                "live scheme higher-order clean baseline evaluated",
-                                            );
+                                            let _ = gov_for_ui
+                                                .apply_scheme_projection_durable(
+                                                    &host_for_ui,
+                                                    cas_for_ui.as_deref(),
+                                                    cp_key_for_ui.as_deref(),
+                                                    &proj,
+                                                    "governance_eval_clean",
+                                                    "live scheme higher-order clean baseline evaluated",
+                                                )
+                                                .await;
                                         }
                                     }
                                 }

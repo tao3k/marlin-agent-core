@@ -20,6 +20,7 @@ use std::{
 };
 
 use marlin_agent_app_server::{
+    StorageCasStore,
     ui_grpc::MyGoBridgeHost,
     wire::marlin::{
         gate::v1::{GateKind, GraphHumanDecision, PendingGate},
@@ -32,6 +33,7 @@ use marlin_agent_kernel::{
     HigherOrderGovernanceAdmissionGate, HigherOrderGovernanceProofEnvelope, HigherOrderProofEpoch,
     SynthesizedCedarPolicy, ToolBudgetUnits, ToolIfcContext,
 };
+use marlin_agent_storage::AgentStorage;
 
 use crate::{HigherOrderGovernanceVectorProjection, HigherOrderGovernanceVectorRequest};
 
@@ -40,6 +42,7 @@ pub const HIGHER_ORDER_GOVERNANCE_RECORD_KIND: &str = "scheme.higher_order.gover
 pub const HIGHER_ORDER_GOVERNANCE_RUN_ID: &str = "scheme-higher-order-governance";
 pub const HIGHER_ORDER_GOVERNANCE_NODE_KIND: &str = "scheme_higher_order_governance";
 pub const HIGHER_ORDER_GOVERNANCE_REARM_GATE_PREFIX: &str = "gov-rearm-epoch-";
+pub const DEFAULT_HIGHER_ORDER_CHECKPOINT_KEY: &str = "checkpoint:higher-order-governance:v1";
 
 static GOVERNANCE_TRAJECTORY_SEQ: AtomicU64 = AtomicU64::new(1);
 
@@ -317,6 +320,215 @@ impl HigherOrderHostController {
             .authorize_side_effect(None, &actor_id, &tool_id, &ToolIfcContext::clean_trusted())
             .map(|_| ())
             .map_err(|e| format!("higher-order governance denied sandbox execution: {e}"))
+    }
+
+    /// Persists the current tamper-evident `MHG1` governance checkpoint bytes to Turso CAS.
+    pub async fn persist_to_cas<S: AgentStorage + Clone + 'static>(
+        &self,
+        cas: &StorageCasStore<S>,
+        checkpoint_key: &str,
+    ) -> Result<(), String> {
+        let bytes = self
+            .gate
+            .export_durable_checkpoint_bytes()
+            .map_err(|e| format!("export durable governance checkpoint: {e}"))?;
+        cas.put_blob(checkpoint_key, bytes)
+            .await
+            .map_err(|e| format!("persist durable governance checkpoint to CAS: {e}"))
+    }
+
+    /// Restores a tamper-evident `MHG1` governance checkpoint from Turso CAS on daemon boot.
+    ///
+    /// Returns:
+    /// - `Ok(None)` when no prior checkpoint exists in CAS (cold boot).
+    /// - `Ok(Some((snap, "restored")))` when a valid persisted checkpoint was restored.
+    /// - `Ok(Some((snap, "corrupt_fail_closed")))` when persisted bytes failed SHA-256 or
+    ///   schema integrity checks and the host automatically failed closed (`tripped = true`).
+    pub async fn restore_from_cas<S: AgentStorage + Clone + 'static>(
+        &self,
+        host: &MyGoBridgeHost,
+        cas: &StorageCasStore<S>,
+        checkpoint_key: &str,
+    ) -> Result<Option<(HigherOrderGateSnapshot, &'static str)>, String> {
+        let Some(bytes) = cas
+            .get_blob(checkpoint_key)
+            .await
+            .map_err(|e| format!("read durable governance checkpoint from CAS: {e}"))?
+        else {
+            return Ok(None);
+        };
+
+        match self.gate.restore_durable_checkpoint_bytes(&bytes) {
+            Ok(snap) => {
+                {
+                    let mut meta = self.meta.lock().expect("host governance meta poisoned");
+                    meta.policy_revision_seq = meta.policy_revision_seq.max(snap.policy_revision);
+                    if !snap.breaker.tripped {
+                        meta.active_rearm_gate_id = None;
+                    }
+                }
+                let note = format!(
+                    "restored durable governance checkpoint (trip_epoch={}, rev_epoch={})",
+                    snap.breaker.trip_epoch.get(),
+                    snap.revocation_epoch.get()
+                );
+                if snap.breaker.tripped {
+                    self.ensure_rearm_gate_enqueued(host, snap.breaker.trip_epoch.get(), &note);
+                }
+                let published = self.publish_snapshot(host, "governance_boot_restored", &note)?;
+                Ok(Some((published, "restored")))
+            }
+            Err(HigherOrderBridgeError::CorruptDurableCheckpoint(detail)) => {
+                let snap = self
+                    .gate
+                    .snapshot()
+                    .map_err(|e| format!("snapshot fail-closed corrupt recovery: {e}"))?;
+                let note = format!("corrupt durable governance checkpoint (fail-closed): {detail}");
+                self.ensure_rearm_gate_enqueued(host, snap.breaker.trip_epoch.get(), &note);
+                let published =
+                    self.publish_snapshot(host, "governance_boot_corrupt_fail_closed", &note)?;
+                Ok(Some((published, "corrupt_fail_closed")))
+            }
+            Err(other) => Err(format!("restore durable governance checkpoint: {other}")),
+        }
+    }
+
+    /// Crash-consistent durable variant of `apply_scheme_projection`: flushes the updated
+    /// tamper-evident checkpoint to Turso CAS BEFORE publishing to gRPC clients.
+    pub async fn apply_scheme_projection_durable<S: AgentStorage + Clone + 'static>(
+        &self,
+        host: &MyGoBridgeHost,
+        cas: Option<&StorageCasStore<S>>,
+        checkpoint_key: Option<&str>,
+        proj: &HigherOrderGovernanceVectorProjection,
+        node_id: &str,
+        note: &str,
+    ) -> Result<HigherOrderGateSnapshot, String> {
+        let envelope = projection_to_kernel_envelope(proj)
+            .map_err(|e| format!("validate scheme proof envelope: {e}"))?;
+        let _receipt = self
+            .gate
+            .synchronize_proof_envelope(&envelope)
+            .map_err(|e| format!("synchronize scheme proof envelope: {e}"))?;
+        if let (Some(store), Some(key)) = (cas, checkpoint_key) {
+            self.persist_to_cas(store, key).await?;
+        }
+        let snap = self
+            .gate
+            .snapshot()
+            .map_err(|e| format!("snapshot governance gate: {e}"))?;
+        if snap.breaker.tripped {
+            self.ensure_rearm_gate_enqueued(host, snap.breaker.trip_epoch.get(), note);
+        } else {
+            let mut meta = self.meta.lock().expect("host governance meta poisoned");
+            meta.active_rearm_gate_id = None;
+            meta.last_event_note = note.to_owned();
+        }
+        self.publish_snapshot(host, node_id, note)
+    }
+
+    /// Crash-consistent durable variant of `apply_operator_estop`: flushes E-Stop latch
+    /// to Turso CAS BEFORE publishing to gRPC clients.
+    pub async fn apply_operator_estop_durable<S: AgentStorage + Clone + 'static>(
+        &self,
+        host: &MyGoBridgeHost,
+        cas: Option<&StorageCasStore<S>>,
+        checkpoint_key: Option<&str>,
+        actor: &str,
+        reason: &str,
+    ) -> Result<HigherOrderGateSnapshot, String> {
+        let snap = self
+            .gate
+            .trip_operator_estop(actor, reason)
+            .map_err(|e| format!("trip operator e-stop: {e}"))?;
+        if let (Some(store), Some(key)) = (cas, checkpoint_key) {
+            self.persist_to_cas(store, key).await?;
+        }
+        let note = format!("operator e-stop tripped by {actor}: {reason}");
+        self.ensure_rearm_gate_enqueued(host, snap.breaker.trip_epoch.get(), &note);
+        self.publish_snapshot(host, "governance_operator_estop", &note)
+    }
+
+    /// Crash-consistent durable variant of `handle_claimed_gate_decision`: flushes updated
+    /// breaker/epoch state to Turso CAS BEFORE publishing to gRPC clients.
+    pub async fn handle_claimed_gate_decision_durable<S: AgentStorage + Clone + 'static>(
+        &self,
+        host: &MyGoBridgeHost,
+        cas: Option<&StorageCasStore<S>>,
+        checkpoint_key: Option<&str>,
+        gate_id: &str,
+        decision: i32,
+        note: Option<&str>,
+    ) -> bool {
+        if !gate_id.starts_with(HIGHER_ORDER_GOVERNANCE_REARM_GATE_PREFIX) {
+            return false;
+        }
+        let expected_match = {
+            let meta = self.meta.lock().expect("host governance meta poisoned");
+            meta.active_rearm_gate_id.as_deref() == Some(gate_id)
+        };
+        if !expected_match {
+            let _ = self.publish_snapshot(
+                host,
+                "governance_rearm_stale_gate",
+                &format!("ignored stale re-arm gate {gate_id}"),
+            );
+            return true;
+        }
+
+        if decision != GraphHumanDecision::Approve as i32 {
+            let msg = format!("step-up re-arm rejected on {gate_id}");
+            if let Ok(snap) = self.gate.snapshot()
+                && snap.breaker.tripped
+            {
+                self.rotate_rearm_gate(host, snap.breaker.trip_epoch.get(), &msg);
+            }
+            let _ = self.publish_snapshot(host, "governance_rearm_rejected", &msg);
+            return true;
+        }
+
+        let actor = match parse_verified_step_up_actor(note) {
+            Ok(a) => a,
+            Err(err) => {
+                let msg = format!("step-up attestation invalid on {gate_id}: {err}");
+                if let Ok(snap) = self.gate.snapshot()
+                    && snap.breaker.tripped
+                {
+                    self.rotate_rearm_gate(host, snap.breaker.trip_epoch.get(), &msg);
+                }
+                let _ = self.publish_snapshot(host, "governance_rearm_denied", &msg);
+                return true;
+            }
+        };
+
+        match self.gate.rearm_by_verified_human(actor) {
+            Ok((receipt, _snap)) => {
+                if let (Some(store), Some(key)) = (cas, checkpoint_key) {
+                    let _ = self.persist_to_cas(store, key).await;
+                }
+                {
+                    let mut meta = self.meta.lock().expect("host governance meta poisoned");
+                    meta.active_rearm_gate_id = None;
+                }
+                let msg = format!(
+                    "step-up re-arm approved by {} (epoch {} -> {})",
+                    receipt.approved_by,
+                    receipt.previous_epoch.get(),
+                    receipt.new_epoch.get()
+                );
+                let _ = self.publish_snapshot(host, "governance_rearm_approved", &msg);
+            }
+            Err(err) => {
+                let msg = format!("step-up re-arm denied fail-closed: {err}");
+                if let Ok(snap) = self.gate.snapshot()
+                    && snap.breaker.tripped
+                {
+                    self.rotate_rearm_gate(host, snap.breaker.trip_epoch.get(), &msg);
+                }
+                let _ = self.publish_snapshot(host, "governance_rearm_denied", &msg);
+            }
+        }
+        true
     }
 
     /// Synchronizes a live Scheme VM 14-slot projection into Rust's `HigherOrderGovernanceAdmissionGate`,
@@ -798,5 +1010,58 @@ mod tests {
         assert_eq!(armed.breaker.trip_epoch.get(), 2);
         ctrl.authorize_sandbox_effect("ops-bob", "/bin/echo")
             .expect("re-armed controller allows clean sandbox call");
+    }
+
+    #[tokio::test]
+    async fn host_controller_persists_restores_and_fails_closed_on_tampered_cas_blob() {
+        use marlin_agent_storage::{AgentId, InMemoryAgentStorage, ProjectId, SessionId};
+
+        let storage = InMemoryAgentStorage::default();
+        let cas = StorageCasStore::new(
+            storage,
+            ProjectId::new("default").unwrap(),
+            SessionId::new("sess-durable-test").unwrap(),
+            AgentId::new("agent-durable-test").unwrap(),
+        );
+        let key = DEFAULT_HIGHER_ORDER_CHECKPOINT_KEY;
+
+        let host1 = MyGoBridgeHost::new_default_trust(|_| Ok(()));
+        let ctrl1 = HigherOrderHostController::new(8, Arc::new(SharedProjectionRecords::new()));
+        ctrl1
+            .apply_operator_estop_durable(&host1, Some(&cas), Some(key), "ops-alice", "pre-crash")
+            .await
+            .expect("persist estop");
+
+        // Fresh post-restart host restores tripped latch & enqueues one-shot gate.
+        let host2 = MyGoBridgeHost::new_default_trust(|_| Ok(()));
+        let ctrl2 = HigherOrderHostController::new(8, Arc::new(SharedProjectionRecords::new()));
+        let (snap2, mode2) = ctrl2
+            .restore_from_cas(&host2, &cas, key)
+            .await
+            .expect("restore valid cas")
+            .expect("checkpoint present");
+        assert_eq!(mode2, "restored");
+        assert!(snap2.breaker.tripped);
+        assert!(ctrl2.authorize_sandbox_effect("ops-bob", "/bin/echo").is_err());
+
+        // Tamper with stored CAS bytes -> fresh host MUST boot fail-closed (`corrupt_fail_closed`)!
+        let mut raw = cas.get_blob(key).await.unwrap().unwrap();
+        raw[10] ^= 0xAA;
+        cas.put_blob(key, raw).await.unwrap();
+
+        let host3 = MyGoBridgeHost::new_default_trust(|_| Ok(()));
+        let ctrl3 = HigherOrderHostController::new(8, Arc::new(SharedProjectionRecords::new()));
+        let (snap3, mode3) = ctrl3
+            .restore_from_cas(&host3, &cas, key)
+            .await
+            .expect("corrupt recovery succeeds fail-closed")
+            .expect("corrupt checkpoint observed");
+        assert_eq!(mode3, "corrupt_fail_closed");
+        assert!(snap3.breaker.tripped);
+        assert!(!snap3.admitted);
+        assert!(
+            ctrl3.authorize_sandbox_effect("ops-bob", "/bin/echo").is_err(),
+            "corrupted durable checkpoint MUST physically block sandbox execution"
+        );
     }
 }

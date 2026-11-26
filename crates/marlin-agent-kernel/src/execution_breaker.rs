@@ -526,6 +526,46 @@ impl ExecutionCircuitBreaker {
         })
     }
 
+    /// Restores durable persisted circuit-breaker state across an OS process restart.
+    ///
+    /// Invariants:
+    /// - Clears volatile in-flight leases (killed by process crash/restart).
+    /// - Preserves monotonic `trip_epoch` (never regresses below current live epoch).
+    /// - Preserves persisted `tripped` fail-closed latch (anti-restart-reset bypass).
+    pub fn restore_durable_state(
+        &self,
+        tripped: bool,
+        trip_epoch: BreakerTripEpoch,
+        budget_used: u32,
+        last_trip_reason: Option<BreakerTripReason>,
+    ) -> Result<ExecutionBreakerSnapshot, BreakerRejectionReason> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BreakerRejectionReason::LockPoisoned)?;
+
+        if trip_epoch < guard.trip_epoch {
+            return Err(BreakerRejectionReason::StaleLeaseEpoch {
+                lease_epoch: trip_epoch,
+                current_epoch: guard.trip_epoch,
+            });
+        }
+        guard.active_leases.clear();
+        guard.tripped = tripped;
+        guard.trip_epoch = trip_epoch;
+        guard.budget_used = budget_used.min(guard.budget_limit);
+        guard.last_trip_reason = last_trip_reason;
+
+        Ok(ExecutionBreakerSnapshot {
+            tripped: guard.tripped,
+            trip_epoch: guard.trip_epoch,
+            budget_used: guard.budget_used,
+            budget_limit: guard.budget_limit,
+            active_lease_count: 0,
+            last_trip_reason: guard.last_trip_reason.clone(),
+        })
+    }
+
     /// Atomic acquire + commit helper used at real OS side-effect boundaries
     /// (process spawn & workspace file write) so rejected commits clean up their lease.
     pub fn authorize_side_effect(
