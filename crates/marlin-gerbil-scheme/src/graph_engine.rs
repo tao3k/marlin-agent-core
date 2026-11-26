@@ -471,7 +471,11 @@ pub fn decode_graph_engine_workbench_tabs_vector(
         let kind = parse_tab_kind(&decode_symbol(native(entry_vec.element(0))?)?)?;
         let id = decode_string(native(entry_vec.element(1))?, MAX_IDENTIFIER_BYTES)?;
         let title = decode_string(native(entry_vec.element(2))?, MAX_IDENTIFIER_BYTES)?;
-        let status_label = decode_symbol(native(entry_vec.element(3))?)?;
+        let raw_status = decode_symbol(native(entry_vec.element(3))?)?;
+        let status_label = match kind {
+            WorkbenchTabKind::ActiveTask => format!("{:?}", parse_actor_status(&raw_status)?),
+            WorkbenchTabKind::PinnedIndex | WorkbenchTabKind::ReadOnlyPeek => raw_status,
+        };
         let focused = decode_bool(native(entry_vec.element(4))?)?;
         let fencing_epoch = decode_u64(native(entry_vec.element(5))?)?;
 
@@ -976,24 +980,55 @@ impl<'vm> GraphEngineLinkedBridge<'vm> {
     }
 }
 
+fn map_dispatch_oracle_projection(
+    proj: GraphEngineDispatchProjection,
+) -> Result<Result<AdmittedMarlinDispatch, GraphDispatchRejection>, String> {
+    match proj {
+        GraphEngineDispatchProjection::Admitted(admitted) => Ok(Ok(admitted)),
+        GraphEngineDispatchProjection::Rejected { reason } => match reason.as_str() {
+            "invalid-fencing-epoch" => Ok(Err(GraphDispatchRejection::InvalidFencingEpoch)),
+            "steering-requires-join-node-id" => {
+                Ok(Err(GraphDispatchRejection::SteeringRequiresJoinNode))
+            }
+            "detached-scope-cannot-commit-project-settlement" => Ok(Err(
+                GraphDispatchRejection::DetachedScopeCannotCommitProjectSettlement,
+            )),
+            _ => Err(format!("scheme dispatch rejected: {reason}")),
+        },
+    }
+}
+
+fn map_governed_context_oracle_projection(
+    proj: GraphEngineGovernedContextProjection,
+) -> Result<Result<AdmittedGovernedContext, GovernedContextRejection>, String> {
+    match proj {
+        GraphEngineGovernedContextProjection::Admitted(admitted) => Ok(Ok(admitted)),
+        GraphEngineGovernedContextProjection::Rejected { reason } => match reason.as_str() {
+            "invalid-context-cut" => Ok(Err(GovernedContextRejection::InvalidContextCut)),
+            "active-defeater-requires-l3-disclosure" => Ok(Err(
+                GovernedContextRejection::ActiveDefeaterRequiresL3Disclosure,
+            )),
+            "sandbox-lethal-trifecta-denied" => {
+                Ok(Err(GovernedContextRejection::SandboxLethalTrifectaDenied))
+            }
+            "invalid-cedar-policy-handoff" => {
+                Ok(Err(GovernedContextRejection::InvalidCedarHandoff))
+            }
+            "blocker-detour-must-disable-auto-archive" => Ok(Err(
+                GovernedContextRejection::BlockerDetourMustDisableAutoArchive,
+            )),
+            _ => Err(format!("scheme governed context rejected: {reason}")),
+        },
+    }
+}
+
 impl<'vm> marlin_agent_graph::GraphEngineOracle for GraphEngineLinkedBridge<'vm> {
     fn project_dispatch(
         &self,
         envelope: &MarlinDispatchEnvelope,
     ) -> Result<Result<AdmittedMarlinDispatch, GraphDispatchRejection>, String> {
-        match self.project_dispatch(envelope).map_err(|e| e.to_string())? {
-            GraphEngineDispatchProjection::Admitted(admitted) => Ok(Ok(admitted)),
-            GraphEngineDispatchProjection::Rejected { reason } => match reason.as_str() {
-                "invalid-fencing-epoch" => Ok(Err(GraphDispatchRejection::InvalidFencingEpoch)),
-                "steering-requires-join-node-id" => {
-                    Ok(Err(GraphDispatchRejection::SteeringRequiresJoinNode))
-                }
-                "detached-scope-cannot-commit-project-settlement" => Ok(Err(
-                    GraphDispatchRejection::DetachedScopeCannotCommitProjectSettlement,
-                )),
-                _ => Err(format!("scheme dispatch rejected: {reason}")),
-            },
-        }
+        let proj = self.project_dispatch(envelope).map_err(|e| e.to_string())?;
+        map_dispatch_oracle_projection(proj)
     }
 
     fn reconcile_receipt(
@@ -1026,28 +1061,112 @@ impl<'vm> marlin_agent_graph::GraphEngineOracle for GraphEngineLinkedBridge<'vm>
         &self,
         capsule: &GovernedContextCapsule,
     ) -> Result<Result<AdmittedGovernedContext, GovernedContextRejection>, String> {
-        match self
+        let proj = self
             .project_governed_context(capsule)
-            .map_err(|e| e.to_string())?
-        {
-            GraphEngineGovernedContextProjection::Admitted(admitted) => Ok(Ok(admitted)),
-            GraphEngineGovernedContextProjection::Rejected { reason } => match reason.as_str() {
-                "invalid-context-cut" => Ok(Err(GovernedContextRejection::InvalidContextCut)),
-                "active-defeater-requires-l3-disclosure" => Ok(Err(
-                    GovernedContextRejection::ActiveDefeaterRequiresL3Disclosure,
-                )),
-                "sandbox-lethal-trifecta-denied" => {
-                    Ok(Err(GovernedContextRejection::SandboxLethalTrifectaDenied))
-                }
-                "invalid-cedar-policy-handoff" => {
-                    Ok(Err(GovernedContextRejection::InvalidCedarHandoff))
-                }
-                "blocker-detour-must-disable-auto-archive" => Ok(Err(
-                    GovernedContextRejection::BlockerDetourMustDisableAutoArchive,
-                )),
-                _ => Err(format!("scheme governed context rejected: {reason}")),
-            },
+            .map_err(|e| e.to_string())?;
+        map_governed_context_oracle_projection(proj)
+    }
+}
+
+/// Borrowed `GraphEngineOracle` backed by 4 live resolved `RootedSchemeObject<'vm>` procedures
+/// (e.g., resolved via `GerbilRuntime::resolve_package_export` on
+/// `:marlin-agent-core/graph-engine/funcs`).
+pub struct GraphEngineRootedOracle<'vm> {
+    runtime: &'vm GerbilRuntime,
+    dispatch_proc: RootedSchemeObject<'vm>,
+    reconcile_proc: RootedSchemeObject<'vm>,
+    workbench_tabs_proc: RootedSchemeObject<'vm>,
+    governed_context_proc: RootedSchemeObject<'vm>,
+}
+
+impl<'vm> GraphEngineRootedOracle<'vm> {
+    /// Creates an authoritative live-VM `GraphEngineOracle` over 4 rooted Scheme procedures.
+    pub fn new(
+        runtime: &'vm GerbilRuntime,
+        dispatch_proc: RootedSchemeObject<'vm>,
+        reconcile_proc: RootedSchemeObject<'vm>,
+        workbench_tabs_proc: RootedSchemeObject<'vm>,
+        governed_context_proc: RootedSchemeObject<'vm>,
+    ) -> Self {
+        Self {
+            runtime,
+            dispatch_proc,
+            reconcile_proc,
+            workbench_tabs_proc,
+            governed_context_proc,
         }
+    }
+}
+
+impl<'vm> marlin_agent_graph::GraphEngineOracle for GraphEngineRootedOracle<'vm> {
+    fn project_dispatch(
+        &self,
+        envelope: &MarlinDispatchEnvelope,
+    ) -> Result<Result<AdmittedMarlinDispatch, GraphDispatchRejection>, String> {
+        let input = encode_graph_engine_dispatch_request(self.runtime, envelope)
+            .map_err(|e| e.to_string())?;
+        let output = self
+            .runtime
+            .call_rooted(&self.dispatch_proc, &input)
+            .map_err(|e| e.to_string())?;
+        let proj = decode_graph_engine_dispatch_vector(output).map_err(|e| e.to_string())?;
+        map_dispatch_oracle_projection(proj)
+    }
+
+    fn reconcile_receipt(
+        &self,
+        cursor: &TaskActorCursor,
+        receipt: &MarlinExecutionReceipt,
+    ) -> Result<ReceiptReconciliationDecision, String> {
+        let input = encode_graph_engine_reconcile_request(self.runtime, cursor, receipt)
+            .map_err(|e| e.to_string())?;
+        let output = self
+            .runtime
+            .call_rooted(&self.reconcile_proc, &input)
+            .map_err(|e| e.to_string())?;
+        decode_graph_engine_reconcile_vector(output).map_err(|e| e.to_string())
+    }
+
+    fn project_workbench_tabs(
+        &self,
+        focused_task_id: Option<&TaskActorId>,
+        active_tasks: &[marlin_agent_graph::WorkbenchActiveTaskInput],
+        peek_task_ids: &[TaskActorId],
+    ) -> Result<WorkbenchTabProjection, String> {
+        let rows: Vec<GraphEngineWorkbenchTaskRow> = active_tasks
+            .iter()
+            .map(|row| GraphEngineWorkbenchTaskRow {
+                task: row.clone(),
+                scope_mode: TaskActorScopeMode::Project,
+            })
+            .collect();
+        let input = encode_graph_engine_workbench_tabs_request(
+            self.runtime,
+            focused_task_id,
+            &rows,
+            peek_task_ids,
+        )
+        .map_err(|e| e.to_string())?;
+        let output = self
+            .runtime
+            .call_rooted(&self.workbench_tabs_proc, &input)
+            .map_err(|e| e.to_string())?;
+        decode_graph_engine_workbench_tabs_vector(output).map_err(|e| e.to_string())
+    }
+
+    fn project_governed_context(
+        &self,
+        capsule: &GovernedContextCapsule,
+    ) -> Result<Result<AdmittedGovernedContext, GovernedContextRejection>, String> {
+        let input = encode_graph_engine_governed_context_request(self.runtime, capsule)
+            .map_err(|e| e.to_string())?;
+        let output = self
+            .runtime
+            .call_rooted(&self.governed_context_proc, &input)
+            .map_err(|e| e.to_string())?;
+        let proj =
+            decode_graph_engine_governed_context_vector(output).map_err(|e| e.to_string())?;
+        map_governed_context_oracle_projection(proj)
     }
 }
 

@@ -16,7 +16,8 @@ use gerbil_scheme::{
     PackageResolutionProgress, RootedSchemeObject, SchemeScalar,
 };
 use marlin_agent_app_server::{
-    BoundedTokioSandboxRunner, CompositeAtomicEffectExecutor,
+    BoundedTokioSandboxRunner, CompositeAtomicEffectExecutor, RegisterTaskActorRequest,
+    TaskActorControlPlane,
     ui_grpc::MyGoBridgeHost,
     wire::marlin::{
         common::v1::{DenialCode, TargetKind},
@@ -46,13 +47,14 @@ use marlin_agent_runtime::{
 };
 use marlin_gerbil_scheme::{
     GraphEngineDispatchProjection, GraphEngineGovernedContextProjection,
-    GraphEngineProjectionError, GraphEngineWorkbenchTaskRow, SchemeAtomicEffect,
-    SchemeAtomicReceipt, decode_fleet_audit_capsule_vector, decode_graph_engine_dispatch_vector,
-    decode_graph_engine_governed_context_vector, decode_graph_engine_reconcile_vector,
-    decode_graph_engine_workbench_tabs_vector, decode_scheme_atomic_effect_vector,
-    encode_graph_engine_dispatch_request, encode_graph_engine_governed_context_request,
-    encode_graph_engine_reconcile_request, encode_graph_engine_workbench_tabs_request,
-    encode_scheme_atomic_receipt_vector, gerbil_package_root,
+    GraphEngineProjectionError, GraphEngineRootedOracle, GraphEngineWorkbenchTaskRow,
+    SchemeAtomicEffect, SchemeAtomicReceipt, decode_fleet_audit_capsule_vector,
+    decode_graph_engine_dispatch_vector, decode_graph_engine_governed_context_vector,
+    decode_graph_engine_reconcile_vector, decode_graph_engine_workbench_tabs_vector,
+    decode_scheme_atomic_effect_vector, encode_graph_engine_dispatch_request,
+    encode_graph_engine_governed_context_request, encode_graph_engine_reconcile_request,
+    encode_graph_engine_workbench_tabs_request, encode_scheme_atomic_receipt_vector,
+    gerbil_package_root,
 };
 
 fn vec_obj<'vm>(
@@ -1503,4 +1505,175 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
     assert!(!audit5.favored_path_collapsed);
     assert!(!audit5.authenticates_evidence);
     assert!(!audit5.authorizes_effect);
+
+    // -------------------------------------------------------------------------
+    // Phase 8 (Round S18): Live Embedded Gerbil Scheme `GraphEngineRootedOracle`
+    // Fail-Closed Cross-Check on `TaskActorControlPlane` + Real Disk Turso WAL
+    // Boot #5 -> Boot #6 Cold Restart!
+    // -------------------------------------------------------------------------
+    let live_oracle = GraphEngineRootedOracle::new(
+        &runtime,
+        scheme_dispatch,
+        scheme_reconcile,
+        scheme_tabs,
+        scheme_governed,
+    );
+    let oracle_project = marlin_agent_storage::ProjectId::new("proj-oracle-s18").unwrap();
+    let oracle_pointer =
+        marlin_agent_storage::ArtifactPointerKey::new("ptr:s18:oracle-control-plane").unwrap();
+    let oracle_agent = marlin_agent_storage::AgentId::new("agent-oracle-s18").unwrap();
+    let oracle_task_id = TaskActorId::new("task-oracle-s18").unwrap();
+
+    let turso_cfg_s18 = marlin_agent_storage::TursoAgentStorageConfig {
+        path: tmp_dir.path().join("gerbil-vm-oracle-s18.db"),
+        optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvcc,
+        batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent,
+    };
+    let storage_s18_1 = rt_tokio
+        .block_on(marlin_agent_storage::TursoAgentStorage::open_local(
+            turso_cfg_s18.clone(),
+        ))
+        .expect("open turso oracle boot #5");
+    let plane_s18_1 = rt_tokio
+        .block_on(TaskActorControlPlane::rehydrate_or_new(
+            &storage_s18_1,
+            &oracle_project,
+            &oracle_pointer,
+        ))
+        .expect("rehydrate empty s18 plane");
+    let persist_s18_1 = rt_tokio.block_on(async {
+        plane_s18_1.spawn_storage_persistence_loop(
+            storage_s18_1.clone(),
+            oracle_project.clone(),
+            oracle_pointer.clone(),
+            oracle_agent.clone(),
+        )
+    });
+    plane_s18_1
+        .register_actor(RegisterTaskActorRequest {
+            task_id: oracle_task_id.clone(),
+            title: "S18 Live Scheme Oracle Actor".to_owned(),
+            scope_mode: TaskActorScopeMode::Project,
+        })
+        .expect("register s18 actor");
+
+    // 1. Live Scheme Oracle admits valid ApplySteering & rejects steering without join_node_id.
+    let valid_s18_steer = MarlinDispatchEnvelope {
+        request_id: DispatchRequestId::new("req-s18-steer").unwrap(),
+        task_id: oracle_task_id.clone(),
+        operation: GraphDispatchOperation::ApplySteering,
+        fencing_epoch: FencingEpoch::new(1).unwrap(),
+        scope_mode: TaskActorScopeMode::Project,
+        join_node_id: Some(GraphConvergenceNodeId::new("join-s18").unwrap()),
+        substrate_target: GraphSubstrateTarget::SqliteTurso,
+    };
+    plane_s18_1
+        .registry()
+        .admit_dispatch_with_oracle(&live_oracle, valid_s18_steer)
+        .expect("live Scheme oracle admits valid steering");
+
+    let bad_s18_steer = MarlinDispatchEnvelope {
+        request_id: DispatchRequestId::new("req-s18-bad-steer").unwrap(),
+        task_id: oracle_task_id.clone(),
+        operation: GraphDispatchOperation::ApplySteering,
+        fencing_epoch: FencingEpoch::new(1).unwrap(),
+        scope_mode: TaskActorScopeMode::Project,
+        join_node_id: None,
+        substrate_target: GraphSubstrateTarget::SqliteTurso,
+    };
+    assert!(matches!(
+        plane_s18_1
+            .registry()
+            .admit_dispatch_with_oracle(&live_oracle, bad_s18_steer),
+        Err(
+            marlin_agent_runtime::TaskActorRuntimeError::DispatchRejected(
+                GraphDispatchRejection::SteeringRequiresJoinNode
+            )
+        )
+    ));
+
+    // 2. Live Scheme Oracle reconciles execution receipt fail-closed (epoch 1 -> 2, WaitingSteering).
+    let s18_receipt = MarlinExecutionReceipt {
+        request_id: DispatchRequestId::new("req-s18-steer").unwrap(),
+        task_id: oracle_task_id.clone(),
+        fencing_epoch: FencingEpoch::new(1).unwrap(),
+        status: ExecutionReceiptStatus::Ok,
+    };
+    let s18_decision = plane_s18_1
+        .registry()
+        .reconcile_receipt_with_oracle(&live_oracle, &s18_receipt)
+        .expect("live Scheme oracle reconciles receipt");
+    assert!(s18_decision.accepted);
+    assert_eq!(s18_decision.next_epoch, FencingEpoch::new(2).unwrap());
+    assert_eq!(s18_decision.next_status, TaskActorStatus::WaitingSteering);
+    assert_eq!(
+        s18_decision.reason,
+        ReceiptReconciliationReason::AwaitingSteeringConvergence
+    );
+
+    // 3. Live Scheme Oracle admits valid L3 blocker governed context & rejects auto_archive=true.
+    let valid_s18_ctx = GovernedContextCapsule {
+        task_id: oracle_task_id.clone(),
+        context_cut: 3,
+        kv_prefix_digest: KvPrefixDigest::new("sha256:s18-oracle-kv").unwrap(),
+        disclosure_depth: DisclosureDepth::L3,
+        has_active_defeater: true,
+        quarantined_memory_count: 1,
+        sandbox_admitted: true,
+        cedar_handoff_valid: true,
+        detour_mode: DetourMode::BlockerActive,
+        auto_archive_enabled: false,
+    };
+    plane_s18_1
+        .registry()
+        .bind_governed_context_with_oracle(&live_oracle, valid_s18_ctx.clone())
+        .expect("live Scheme oracle admits valid L3 blocker context");
+
+    let mut invalid_s18_ctx = valid_s18_ctx;
+    invalid_s18_ctx.auto_archive_enabled = true;
+    assert!(matches!(
+        plane_s18_1
+            .registry()
+            .bind_governed_context_with_oracle(&live_oracle, invalid_s18_ctx),
+        Err(
+            marlin_agent_runtime::TaskActorRuntimeError::GovernedContextRejected(
+                GovernedContextRejection::BlockerDetourMustDisableAutoArchive
+            )
+        )
+    ));
+
+    // 4. Live Scheme Oracle cross-checks pinned-Index Workbench tabs & survives Turso Boot #6!
+    let tabs_s18_1 = plane_s18_1
+        .registry()
+        .project_workbench_tabs_with_oracle(&live_oracle)
+        .expect("live Scheme oracle projects workbench tabs");
+    assert_eq!(tabs_s18_1.tabs.len(), 2);
+    assert_eq!(tabs_s18_1.tabs[0].kind, WorkbenchTabKind::PinnedIndex);
+    assert_eq!(tabs_s18_1.tabs[1].id, "task-oracle-s18");
+    assert_eq!(tabs_s18_1.tabs[1].fencing_epoch, 2);
+
+    rt_tokio
+        .block_on(persist_s18_1.flush_and_stop())
+        .expect("flush s18 plane to turso WAL");
+    drop(plane_s18_1);
+    drop(storage_s18_1);
+
+    // Boot #6 Cold Restart: Reopen disk Turso WAL -> rehydrate -> re-verify against live Scheme Oracle!
+    let storage_s18_2 = rt_tokio
+        .block_on(marlin_agent_storage::TursoAgentStorage::open_local(
+            turso_cfg_s18,
+        ))
+        .expect("open turso oracle boot #6");
+    let plane_s18_2 = rt_tokio
+        .block_on(TaskActorControlPlane::rehydrate_or_new(
+            &storage_s18_2,
+            &oracle_project,
+            &oracle_pointer,
+        ))
+        .expect("rehydrate s18 plane boot #6");
+    let tabs_s18_2 = plane_s18_2
+        .registry()
+        .project_workbench_tabs_with_oracle(&live_oracle)
+        .expect("boot #6 live Scheme oracle cross-check");
+    assert_eq!(tabs_s18_2, tabs_s18_1);
 }

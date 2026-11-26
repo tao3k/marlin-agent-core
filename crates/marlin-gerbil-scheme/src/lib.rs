@@ -95,8 +95,8 @@ pub use deck_runtime_policy::{
 };
 pub use graph_engine::{
     GraphEngineDispatchProjection, GraphEngineGovernedContextProjection, GraphEngineLinkedBridge,
-    GraphEngineLinkedExports, GraphEngineProjectionError, GraphEngineWorkbenchTaskRow,
-    MARLIN_GRAPH_ENGINE_ABI_ID, MARLIN_GRAPH_ENGINE_ABI_VERSION,
+    GraphEngineLinkedExports, GraphEngineProjectionError, GraphEngineRootedOracle,
+    GraphEngineWorkbenchTaskRow, MARLIN_GRAPH_ENGINE_ABI_ID, MARLIN_GRAPH_ENGINE_ABI_VERSION,
     MARLIN_GRAPH_ENGINE_DISPATCH_SYMBOL, MARLIN_GRAPH_ENGINE_GOVERNED_CONTEXT_SYMBOL,
     MARLIN_GRAPH_ENGINE_RECONCILE_SYMBOL, MARLIN_GRAPH_ENGINE_WORKBENCH_TABS_SYMBOL,
     decode_graph_engine_dispatch_vector, decode_graph_engine_governed_context_vector,
