@@ -69,6 +69,11 @@ name = "marlin-mygo-host"
 path = "src/bin/marlin_mygo_host.rs"
 required-features = ["ui-grpc"]
 
+[[bin]]
+name = "marlin-scheme-ctl"
+path = "src/bin/marlin_scheme_ctl.rs"
+required-features = ["ui-grpc"]
+
 [[example]]
 name = "mygo_bridge_server"
 path = "examples/mygo_bridge_server.rs"

@@ -87,6 +87,14 @@
                          (.ref (.ref st 'obligation-graph) 'obligations))))
            (and ob (car (.ref ob 'active-defeaters)))))))
 
+(def (owner-task-id-for-defeater fleet def-id)
+  (and (non-empty-str? def-id)
+       (let ((st (find (lambda (d)
+                         (find (lambda (o) (member def-id (.ref o 'active-defeaters)))
+                               (.ref (.ref d 'obligation-graph) 'obligations)))
+                       (.ref fleet 'active-drivers))))
+         (and st (.ref (.ref st 'actor) 'task-id)))))
+
 (def (replace-driver-actor fleet task-id actor-fn)
   (.o (:: @ fleet)
       (active-drivers :=
@@ -119,12 +127,15 @@
                   last-effs))
 
       ((task-human-approve)
-       (let ((def-id (or (and (non-empty-str? arg) arg)
-                         (and target (first-active-defeater-for fleet target)))))
-         (reproject (if target
+       (let* ((approve-target (or task-id
+                                  (and (non-empty-str? arg) (owner-task-id-for-defeater fleet arg))
+                                  target))
+              (def-id (or (and (non-empty-str? arg) arg)
+                          (and approve-target (first-active-defeater-for fleet approve-target)))))
+         (reproject (if approve-target
                       ((lab-fn 'fleet-apply-bitemporal-event)
-                       fleet target (.o (event-kind := 'human-approved)
-                                        (resolve-defeater-id := def-id)))
+                       fleet approve-target (.o (event-kind := 'human-approved)
+                                                (resolve-defeater-id := def-id)))
                       fleet))))
 
       ((task-propose-branch)

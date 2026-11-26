@@ -1398,3 +1398,116 @@ async fn marlin_mygo_host_binary_turso_cancellation_and_task_actor_tabs_survive_
     drop(client2);
     stop_mygo_host_process(child2).await;
 }
+
+#[tokio::test]
+async fn marlin_scheme_ctl_binary_round_trips_bearer_auth_tabs_gates_and_dispatch_against_mygo_host()
+ {
+    let (child, endpoint) = spawn_mygo_host_process("gate-ctl-e2e-1", None).await;
+    let ctl_bin = env!("CARGO_BIN_EXE_marlin-scheme-ctl");
+
+    // 1. Unauthenticated CLI invocation must fail closed (Bearer token required).
+    let unauth = Command::new(ctl_bin)
+        .env_remove("MARLIN_BRIDGE_ENDPOINT")
+        .env_remove("MARLIN_BRIDGE_TOKEN")
+        .args(["--endpoint", &endpoint, "tabs"])
+        .output()
+        .await
+        .expect("run marlin-scheme-ctl without token");
+    assert!(
+        !unauth.status.success(),
+        "marlin-scheme-ctl without token must exit non-zero"
+    );
+    let unauth_err = String::from_utf8_lossy(&unauth.stderr);
+    assert!(
+        unauth_err.contains("invalid bearer token")
+            || unauth_err.contains("authentication credentials"),
+        "expected unauthenticated bearer error on stderr, got: {unauth_err}"
+    );
+
+    // 2. Authenticated `tabs` via CLI flags returns PinnedIndex workbench tab.
+    let tabs_out = Command::new(ctl_bin)
+        .env_remove("MARLIN_BRIDGE_ENDPOINT")
+        .env_remove("MARLIN_BRIDGE_TOKEN")
+        .args(["--endpoint", &endpoint, "--token", "test-token", "tabs"])
+        .output()
+        .await
+        .expect("run marlin-scheme-ctl tabs");
+    assert!(
+        tabs_out.status.success(),
+        "tabs failed: {}",
+        String::from_utf8_lossy(&tabs_out.stderr)
+    );
+    let tabs_stdout = String::from_utf8_lossy(&tabs_out.stdout);
+    assert!(
+        tabs_stdout.contains("TABS count=")
+            && tabs_stdout.contains("TAB kind=PinnedIndex id=index"),
+        "unexpected tabs output: {tabs_stdout}"
+    );
+
+    // 3. Authenticated `gates` via MARLIN_BRIDGE_* env vars lists the seeded gate.
+    let gates_out = Command::new(ctl_bin)
+        .env("MARLIN_BRIDGE_ENDPOINT", &endpoint)
+        .env("MARLIN_BRIDGE_TOKEN", "test-token")
+        .arg("gates")
+        .output()
+        .await
+        .expect("run marlin-scheme-ctl gates");
+    assert!(
+        gates_out.status.success(),
+        "gates failed: {}",
+        String::from_utf8_lossy(&gates_out.stderr)
+    );
+    let gates_stdout = String::from_utf8_lossy(&gates_out.stdout);
+    assert!(
+        gates_stdout.contains("GATES count=1") && gates_stdout.contains("GATE id=gate-ctl-e2e-1"),
+        "unexpected gates output: {gates_stdout}"
+    );
+
+    // 4. Authenticated `dispatch` submits declarative `scheme:<action>` command.
+    let dispatch_out = Command::new(ctl_bin)
+        .env_remove("MARLIN_BRIDGE_ENDPOINT")
+        .env_remove("MARLIN_BRIDGE_TOKEN")
+        .args([
+            "--endpoint",
+            &endpoint,
+            "--token",
+            "test-token",
+            "dispatch",
+            "task-drill-l3",
+            "task-alpha",
+        ])
+        .output()
+        .await
+        .expect("run marlin-scheme-ctl dispatch");
+    assert!(
+        dispatch_out.status.success(),
+        "dispatch failed: {}",
+        String::from_utf8_lossy(&dispatch_out.stderr)
+    );
+    let dispatch_stdout = String::from_utf8_lossy(&dispatch_out.stdout);
+    assert!(
+        dispatch_stdout.contains("DISPATCH admitted=true action=task-drill-l3"),
+        "unexpected dispatch output: {dispatch_stdout}"
+    );
+
+    // 5. Authenticated `audit` queries ProjectionQueryService without leaking secrets.
+    let audit_out = Command::new(ctl_bin)
+        .env_remove("MARLIN_BRIDGE_ENDPOINT")
+        .env_remove("MARLIN_BRIDGE_TOKEN")
+        .args(["--endpoint", &endpoint, "--token", "test-token", "audit"])
+        .output()
+        .await
+        .expect("run marlin-scheme-ctl audit");
+    assert!(
+        audit_out.status.success(),
+        "audit failed: {}",
+        String::from_utf8_lossy(&audit_out.stderr)
+    );
+    let audit_stdout = String::from_utf8_lossy(&audit_out.stdout);
+    assert!(
+        audit_stdout.contains("AUDIT"),
+        "unexpected audit output: {audit_stdout}"
+    );
+
+    stop_mygo_host_process(child).await;
+}

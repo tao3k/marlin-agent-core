@@ -35,4 +35,8 @@ pub mod v1;
 pub mod wire;
 
 #[cfg(feature = "ui-grpc")]
+pub mod scheme_host_client;
+#[cfg(feature = "ui-grpc")]
+pub use scheme_host_client::{FleetAuditCapsuleView, GrpcCode, GrpcStatus, MarlinSchemeHostClient};
+#[cfg(feature = "ui-grpc")]
 pub mod ui_grpc;

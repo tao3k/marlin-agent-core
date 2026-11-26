@@ -22,6 +22,7 @@ use std::{
 };
 
 use marlin_agent_app_server::{
+    GrpcCode, MarlinSchemeHostClient,
     v1::{
         BindGovernedContextRequest, DetourModeProto, DisclosureDepthProto,
         DispatchTaskActorRequest, ExecutionReceiptStatusProto, GetWorkbenchTabsRequest,
@@ -1038,6 +1039,210 @@ async fn marlin_scheme_host_real_http_openai_llm_and_dispatch_ui_event_survive_o
 
     drop(proj2);
     drop(v2);
+    stop_scheme_host(child2).await;
+    llm_srv.abort();
+}
+
+#[tokio::test]
+async fn marlin_scheme_host_client_enforces_bearer_auth_and_drives_full_lifecycle_across_restart() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("scheme-host-client-s30.db");
+    let cp_key = "cas:fleet:scheme-host-client-s30";
+    let bearer_token = "secret-s30-operator-token";
+
+    let (llm_url, llm_calls, llm_srv) = spawn_mock_openai_http_server(
+        "sk-marlin-s30".to_owned(),
+        "marlin-s30-model".to_owned(),
+        "s30-client-llm-ok".to_owned(),
+    )
+    .await;
+
+    let spawn_authed = |gate_id: &str| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_marlin-scheme-host"));
+        cmd.env("MARLIN_BRIDGE_ADDR", "127.0.0.1:0")
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .env("MARLIN_BRIDGE_TURSO_PATH", &db_path)
+            .env("MARLIN_BRIDGE_GATE_ID", gate_id)
+            .env("MARLIN_SCHEME_FLEET_CHECKPOINT_KEY", cp_key)
+            .env("MARLIN_SCHEME_LLM_BASE_URL", &llm_url)
+            .env("MARLIN_SCHEME_LLM_MODEL", "marlin-s30-model")
+            .env("MARLIN_SCHEME_LLM_API_KEY", "sk-marlin-s30")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true);
+        cmd
+    };
+
+    // Boot #1 with Bearer auth enforced.
+    let mut child1 = spawn_authed("gate-s30-1").spawn().expect("spawn boot1");
+    let mut lines1 = BufReader::new(child1.stdout.take().unwrap()).lines();
+    let mut boot1 = None;
+    let addr1 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(90), lines1.next_line())
+            .await
+            .expect("boot1 READY timeout")
+            .unwrap()
+            .expect("boot1 exited early");
+        if line.starts_with("FLEET_BOOT ") {
+            boot1 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    assert!(boot1.unwrap().contains("mode=cold"));
+    let ep1 = format!("http://{addr1}");
+
+    // 1. Unauthenticated client MUST be rejected fail-closed across all services!
+    let unauth = MarlinSchemeHostClient::connect(ep1.clone(), None)
+        .await
+        .expect("connect unauth");
+    assert_eq!(
+        unauth.get_workbench_tabs().await.unwrap_err().code(),
+        GrpcCode::Unauthenticated
+    );
+    assert_eq!(
+        unauth
+            .query_fleet_audit_capsule("default")
+            .await
+            .unwrap_err()
+            .code(),
+        GrpcCode::Unauthenticated
+    );
+    assert_eq!(
+        unauth.list_pending_gates().await.unwrap_err().code(),
+        GrpcCode::Unauthenticated
+    );
+
+    // 2. Authenticated `MarlinSchemeHostClient` drives tabs, audit, UI dispatch, and one-shot gate.
+    let client1 = MarlinSchemeHostClient::connect(ep1, Some(bearer_token))
+        .await
+        .expect("connect authed");
+    let cap0 = client1
+        .query_fleet_audit_capsule("default")
+        .await
+        .unwrap()
+        .expect("cold capsule");
+    assert_eq!(cap0.active_actor_count, 1);
+    assert_eq!(cap0.archived_actor_count, 1);
+    assert_eq!(cap0.total_active_defeaters, 1);
+    assert!(!cap0.authorizes_effect);
+
+    let gates = client1.list_pending_gates().await.unwrap();
+    assert_eq!(gates.len(), 1);
+    assert_eq!(gates[0].gate_id, "gate-s30-1");
+
+    let mut traj = client1.watch_graph_trajectory("s30-traj").await.unwrap();
+    let first_ev = tokio::time::timeout(Duration::from_secs(5), traj.message())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .event
+        .unwrap();
+    assert_eq!(first_ev.node_id, "fleet_boot_cold");
+
+    client1
+        .dispatch_scheme_command("s30-ctl", "task-reopen", Some("fleet-host-sib"))
+        .await
+        .unwrap();
+    let _ = tokio::time::timeout(Duration::from_secs(10), lines1.next_line())
+        .await
+        .unwrap()
+        .unwrap();
+
+    let claim = client1
+        .submit_graph_human_decision(
+            "gate-s30-1",
+            GraphHumanDecision::Approve,
+            "idem-s30-approve",
+            Some("def-turso-01".to_owned()),
+        )
+        .await
+        .unwrap();
+    assert!(claim.claimed);
+    let _ = tokio::time::timeout(Duration::from_secs(10), lines1.next_line())
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Wait for `fleet_human_gate:gate-s30-1` trajectory event confirming control-plane sync.
+    let mut saw_gate_traj = false;
+    for _ in 0..8 {
+        if let Some(msg) = tokio::time::timeout(Duration::from_secs(5), traj.message())
+            .await
+            .unwrap()
+            .unwrap()
+            && let Some(ev) = msg.event
+            && ev.node_id == "fleet_human_gate:gate-s30-1"
+            && ev
+                .metadata
+                .get("total_active_defeaters")
+                .map(String::as_str)
+                == Some("0")
+        {
+            saw_gate_traj = true;
+            break;
+        }
+    }
+    assert!(saw_gate_traj, "expected fleet_human_gate trajectory event");
+
+    // One-shot replay must be denied.
+    let replay = client1
+        .submit_graph_human_decision(
+            "gate-s30-1",
+            GraphHumanDecision::Approve,
+            "idem-s30-replay",
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(!replay.claimed);
+
+    drop(traj);
+    drop(client1);
+    drop(unauth);
+    stop_scheme_host(child1).await;
+
+    // Boot #2 on SAME Turso WAL with Bearer auth: verify restored capsule (active=2, defeaters=0)
+    // and ZERO extra HTTP LLM calls!
+    let mut child2 = spawn_authed("gate-s30-2").spawn().expect("spawn boot2");
+    let mut lines2 = BufReader::new(child2.stdout.take().unwrap()).lines();
+    let mut boot2 = None;
+    let addr2 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(90), lines2.next_line())
+            .await
+            .expect("boot2 READY timeout")
+            .unwrap()
+            .expect("boot2 exited early");
+        if line.starts_with("FLEET_BOOT ") {
+            boot2 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    assert!(boot2.unwrap().contains("mode=restored"));
+
+    let client2 = MarlinSchemeHostClient::connect(format!("http://{addr2}"), Some(bearer_token))
+        .await
+        .expect("connect authed boot2");
+    let cap2 = client2
+        .query_fleet_audit_capsule("default")
+        .await
+        .unwrap()
+        .expect("restored capsule");
+    assert_eq!(cap2.active_actor_count, 2);
+    assert_eq!(cap2.archived_actor_count, 0);
+    assert_eq!(cap2.total_active_defeaters, 0);
+    assert!(!cap2.favored_path_collapsed);
+    assert!(!cap2.authenticates_evidence);
+    assert!(!cap2.authorizes_effect);
+    assert_eq!(llm_calls.load(Ordering::SeqCst), 1);
+
+    drop(client2);
     stop_scheme_host(child2).await;
     llm_srv.abort();
 }
