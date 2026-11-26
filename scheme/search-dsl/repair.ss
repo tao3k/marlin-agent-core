@@ -2,32 +2,39 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-;;; Safe Pre-Tool-Call Model AST Repair Hook (`scheme/search-dsl/repair.ss`).
+;;; Safe Pre-Tool-Call Model AST Repair Hook v2 (`scheme/search-dsl/repair.ss`).
 ;;;
 ;;; LLMs write valid native `:gerbil-ascent` S-expressions ~90-95% of the time,
-;;; occasionally slipping on deterministic syntax details (markdown code fences,
-;;; 1-6 omitted trailing `)`, `<-` / `:-` arrow typos, omitting column predicate
-;;; annotations, omitting head `(relation answer ...)` declarations, or omitting
-;;; `(limits ...)` in Dusa choice programs).
+;;; occasionally slipping on deterministic syntax details:
+;;;   1. `strip-code-fence`: outer ```scheme ... ``` or `(...)` fences
+;;;   2. `close-missing-parens` / `trim-extra-closing-parens`: bounded string- &
+;;;      comment-aware parenthesis balancing
+;;;   3. `wrap-bare-rule`: bare `((head ...) <-- body ...)` -> `(ascent-fragment ...)`
+;;;   4. `normalize-rule-arrow`: `<-` / `:-` -> `<--`
+;;;   5. `pad-relation-wildcards`: losslessly pads omitted trailing `_` / `?_`
+;;;      columns on known EDB/POO relations (e.g. `(edge a b "imports")` ->
+;;;      `(edge a b "imports" _ _)`)
+;;;   6. `infer-column-predicates` & `synthesize-head-relation`: infers missing
+;;;      column predicates or missing head `(relation ...)` from POO signatures
+;;;   7. `normalize-choice-values` & `append-default-limits`: wraps bare `'sym`
+;;;      in `(value 'sym)` and appends `(limits 4096 4096 4096)` for Dusa choice
 ;;;
-;;; This pure-functional, zero-`eval`, AOT `linked-ui`-safe hook heals ONLY
-;;; unambiguous deterministic syntax slips using the POO `SearchLanguageRegistry.`
-;;; relation type signatures, records every applied repair as an auditable symbol
-;;; tag, and ALWAYS fails closed on:
-;;;   - legacy `@lang:` / `@sym:` / `@graph:` strings or non-S-expressions,
-;;;   - read-time evaluation `#.(...)`,
-;;;   - unknown top-level forms (e.g. `(search ...)`, `(eval ...)`),
-;;;   - unterminated strings or structurally ambiguous parentheses,
-;;;   - arbitrary Scheme host callbacks (rejected downstream by `ascent-closed-dsl-parts`).
+;;; Strict Fail-Closed Security + Registry "Did You Mean?" Diagnostics:
+;;;   - Rejects legacy `@lang:` / `@sym:` / `@graph:` strings, `#.(...)` read-eval,
+;;;     unterminated strings, unknown top-level forms, and host callbacks.
+;;;   - Rejects unknown relation names fail-closed while returning compact
+;;;     POO-registry-backed `did you mean: ...?` suggestions so the model or
+;;;     Helm user can fix typos in one step.
 (import (only-in :clan/poo/object .get)
         (only-in :gerbil/runtime/gambit
                  current-readtable
                  readtable-eval-allowed?-set
                  readtable-sharing-allowed?-set)
-        (only-in :std/string/misc string-trim)
+        (only-in :std/string/misc string-contains string-trim)
         "./objects.ss")
 (export repair-and-read-ascent-query
-        repair-ascent-ast)
+        repair-ascent-ast
+        suggest-similar-relations)
 
 (def +max-dsl-bytes+ 65536)
 (def +max-dsl-nodes+ 4096)
@@ -37,6 +44,7 @@
 (def +admitted-top-heads+ '(ascent ascent-fragment relational-choice-program search-selector))
 (def +closed-column-predicates+ '(symbol? integer? exact-integer? boolean? string?))
 (def +numeric-guard-ops+ '(< <= > >= = + - * /))
+(def +ascent-body-builtins+ '(not if for agg let))
 
 (def (add-repair-tag tags tag)
   (if (memq tag tags) tags (append tags (list tag))))
@@ -86,9 +94,6 @@
       (else (values s tags)))))
 
 ;;; Stage A.2: String-, char-literal-, and comment-aware parenthesis balancer.
-;;; Safely closes up to `+max-close-parens-repair+` missing trailing `)` or trims
-;;; up to `+max-trim-parens-repair+` stray extra trailing `)`. Fails closed on
-;;; unterminated strings or multiple/ambiguous top-level forms.
 (def (balance-sexp-parens text tags)
   (let ((len (string-length text)))
     (let loop ((i 0)
@@ -168,6 +173,78 @@
                    (or non-close-after-zero? (and first-zero-end #t))))))))))
 
 ;;; ============================================================================
+;;; Registry-Backed "Did You Mean?" Similarity Scoring
+;;; ============================================================================
+
+(def (common-prefix-len a b)
+  (let ((limit (min (string-length a) (string-length b))))
+    (let loop ((i 0))
+      (if (and (< i limit) (char=? (string-ref a i) (string-ref b i)))
+        (loop (+ i 1))
+        i))))
+
+(def (shared-bigram-count a b)
+  (let ((la (string-length a))
+        (lb (string-length b)))
+    (if (or (< la 2) (< lb 2))
+      0
+      (let loop ((i 0) (hits 0))
+        (if (>= (+ i 1) la)
+          hits
+          (let ((bg (substring a i (+ i 2))))
+            (loop (+ i 1) (if (string-contains b bg) (+ hits 1) hits))))))))
+
+(def (relation-similarity-score needle cand)
+  (let* ((n (string-downcase needle))
+         (c (string-downcase cand))
+         (pref (common-prefix-len n c))
+         (bg (shared-bigram-count n c))
+         (sub (if (or (string-contains c n) (string-contains n c)) 6 0))
+         (len-pen (abs (- (string-length n) (string-length c)))))
+    (- (+ (* pref 4) (* bg 2) sub) len-pen)))
+
+(def (insert-ranked-candidate pair ranked)
+  (cond
+    ((null? ranked) (list pair))
+    ((> (car pair) (caar ranked)) (cons pair ranked))
+    (else (cons (car ranked) (insert-ranked-candidate pair (cdr ranked))))))
+
+(def (take-at-most lst n)
+  (if (or (<= n 0) (null? lst))
+    '()
+    (cons (car lst) (take-at-most (cdr lst) (- n 1)))))
+
+;;; Return up to 4 closest known relation names from `known-names` for `unknown-sym`.
+(def (suggest-similar-relations unknown-sym known-names)
+  (let ((needle (symbol->string unknown-sym)))
+    (let loop ((rest known-names) (ranked '()))
+      (if (null? rest)
+        (map cdr (take-at-most ranked 4))
+        (let* ((cand-sym (car rest))
+               (cand-str (symbol->string cand-sym))
+               (score (relation-similarity-score needle cand-str)))
+          (loop (cdr rest)
+                (if (> score 0)
+                  (insert-ranked-candidate (cons score cand-str) ranked)
+                  ranked)))))))
+
+(def (raise-unknown-relation-error rel-sym known-table)
+  (let* ((names (let ((acc '()))
+                  (hash-for-each (lambda (k _v) (set! acc (cons k acc))) known-table)
+                  acc))
+         (suggestions (suggest-similar-relations rel-sym names))
+         (msg (call-with-output-string
+                (lambda (p)
+                  (display "unknown :gerbil-ascent relation '" p)
+                  (display rel-sym p)
+                  (display "'" p)
+                  (when (pair? suggestions)
+                    (display "; did you mean: " p)
+                    (display (string-join suggestions ", ") p)
+                    (display "?" p))))))
+    (error msg)))
+
+;;; ============================================================================
 ;;; Stage B: Pure Scheme AST Structural Repair Guided by POO Registry Schemas
 ;;; ============================================================================
 
@@ -212,6 +289,37 @@
           (loop (cdr rest)
                 (cons (cons (car c) (cons '<-- (cddr c))) acc)
                 (add-repair-tag t 'normalize-rule-arrow))
+          (loop (cdr rest) (cons c acc) t))))))
+
+(def (pad-atom-wildcards atom sig-table wildcard-sym tags)
+  (cond
+    ((not (and (pair? atom) (symbol? (car atom))))
+     (values atom tags))
+    ((and (eq? (car atom) 'not) (= (length atom) 2) (pair? (cadr atom)))
+     (let-values (((inner t1) (pad-atom-wildcards (cadr atom) sig-table wildcard-sym tags)))
+       (values (list 'not inner) t1)))
+    (else
+     (let ((sig (hash-get sig-table (car atom)))
+           (args (cdr atom)))
+       (if (and sig (pair? args) (< (length args) (length sig)))
+         (let ((missing (- (length sig) (length args))))
+           (values (cons (car atom) (append args (make-list missing wildcard-sym)))
+                   (add-repair-tag tags 'pad-relation-wildcards)))
+         (values atom tags))))))
+
+(def (pad-ascent-body-wildcards clauses sig-table tags)
+  (let loop ((rest clauses) (acc '()) (t tags))
+    (if (null? rest)
+      (values (reverse acc) t)
+      (let ((c (car rest)))
+        (if (and (rule-clause? c) (eq? (cadr c) '<--))
+          (let body-loop ((bs (cddr c)) (b-acc '()) (bt t))
+            (if (null? bs)
+              (loop (cdr rest)
+                    (cons (cons (car c) (cons '<-- (reverse b-acc))) acc)
+                    bt)
+              (let-values (((nb nt) (pad-atom-wildcards (car bs) sig-table '_ bt)))
+                (body-loop (cdr bs) (cons nb b-acc) nt))))
           (loop (cdr rest) (cons c acc) t))))))
 
 (def (record-numeric-guard-vars! expr var-types)
@@ -276,6 +384,27 @@
         (let ((col (make-column-name (car args) idx used)))
           (loop (cdr args) (cdr ps) (+ idx 1) (cons (list col (car ps)) acc)))))))
 
+(def (validate-ascent-body-relations! clauses known-table)
+  (for-each
+    (lambda (c)
+      (when (and (rule-clause? c) (eq? (cadr c) '<--))
+        (for-each
+          (lambda (atom)
+            (when (and (pair? atom) (symbol? (car atom)))
+              (let ((head (car atom)))
+                (cond
+                  ((and (eq? head 'not) (= (length atom) 2)
+                        (pair? (cadr atom)) (symbol? (caadr atom)))
+                   (let ((inner-head (caadr atom)))
+                     (unless (or (memq inner-head +ascent-body-builtins+)
+                                 (hash-get known-table inner-head))
+                       (raise-unknown-relation-error inner-head known-table))))
+                  ((memq head +ascent-body-builtins+) #t)
+                  ((hash-get known-table head) #t)
+                  (else (raise-unknown-relation-error head known-table))))))
+          (cddr c))))
+    clauses))
+
 (def (repair-ascent-clauses clauses registry tags)
   (let* ((sig-table (build-registry-signature-table registry))
          (registry-rels (make-hash-table-eq)))
@@ -284,80 +413,149 @@
     (for-each
       (lambda (c)
         (when (and (pair? c) (eq? (car c) 'relation) (>= (length c) 3)
-                   (symbol? (cadr c)) (list? (caddr c))
-                   (andmap typed-column-spec? (caddr c)))
-          (hash-put! sig-table (cadr c) (map cadr (caddr c)))))
+                   (symbol? (cadr c)) (list? (caddr c)))
+          (if (andmap typed-column-spec? (caddr c))
+            (hash-put! sig-table (cadr c) (map cadr (caddr c)))
+            (unless (hash-get sig-table (cadr c))
+              (hash-put! sig-table (cadr c) (make-list (length (caddr c)) 'string?))))))
       clauses)
-    ;; Two fixed-point inference sweeps over rules handle chained/recursive derived relations.
-    (let ((inferred-heads (make-hash-table-eq))
-          (head-order '()))
-      (for-each
-        (lambda (_pass)
-          (for-each
-            (lambda (c)
-              (when (and (rule-clause? c) (eq? (cadr c) '<--))
-                (let* ((head (car c))
-                       (h-name (car head))
-                       (h-args (cdr head))
-                       (preds (infer-rule-head-signature c sig-table)))
-                  (unless (hash-get sig-table h-name)
-                    (hash-put! sig-table h-name preds))
-                  (unless (hash-get inferred-heads h-name)
-                    (set! head-order (cons h-name head-order)))
-                  (hash-put! inferred-heads h-name (cons h-args preds)))))
-            clauses))
-        '(1 2))
-      ;; 1. Upgrade any untyped `(relation name (col ...))` declarations.
-      (let ((declared (make-hash-table-eq)))
-        (let loop ((rest clauses) (acc '()) (t tags))
-          (if (null? rest)
-            ;; 2. Synthesize missing `(relation head ...)` declarations for undeclared rule heads.
-            (let ((synth-decls '())
-                  (t-final t))
-              (for-each
-                (lambda (h-name)
-                  (when (and (not (hash-get declared h-name))
-                             (not (hash-get registry-rels h-name)))
-                    (let* ((info (hash-ref inferred-heads h-name))
-                           (decl (synthesize-relation-decl h-name (car info) (cdr info))))
-                      (set! synth-decls (append synth-decls (list decl)))
-                      (set! t-final (add-repair-tag t-final 'synthesize-head-relation)))))
-                (reverse head-order))
-              (values (append synth-decls (reverse acc)) t-final))
-            (let ((c (car rest)))
-              (if (and (pair? c) (eq? (car c) 'relation) (= (length c) 3)
-                       (symbol? (cadr c)) (list? (caddr c)))
-                (let* ((rel-name (cadr c))
-                       (cols (caddr c))
-                       (inferred-sig (hash-get sig-table rel-name)))
-                  (hash-put! declared rel-name #t)
-                  (if (andmap typed-column-spec? cols)
-                    (loop (cdr rest) (cons c acc) t)
-                    (let ((upgraded
-                            (let col-loop ((cs cols) (ps (or inferred-sig '())) (out '()))
-                              (if (null? cs)
-                                (reverse out)
-                                (let* ((col (car cs))
-                                       (pred (if (pair? ps) (car ps) 'string?))
-                                       (next-ps (if (pair? ps) (cdr ps) '())))
-                                  (cond
-                                    ((typed-column-spec? col)
-                                     (col-loop (cdr cs) next-ps (cons col out)))
-                                    ((symbol? col)
-                                     (col-loop (cdr cs) next-ps (cons (list col pred) out)))
-                                    (else
-                                     (error "invalid column declaration in (relation ...)" col))))))))
-                      (loop (cdr rest)
-                            (cons (list 'relation rel-name upgraded) acc)
-                            (add-repair-tag t 'infer-column-predicates)))))
-                (loop (cdr rest) (cons c acc) t)))))))))
+    ;; First pad omitted trailing wildcards on known EDB/POO/declared relations.
+    (let-values (((padded-clauses t-pad) (pad-ascent-body-wildcards clauses sig-table tags)))
+      ;; Two fixed-point inference sweeps over rules handle chained/recursive derived relations.
+      (let ((inferred-heads (make-hash-table-eq))
+            (head-order '()))
+        (for-each
+          (lambda (_pass)
+            (for-each
+              (lambda (c)
+                (when (and (rule-clause? c) (eq? (cadr c) '<--))
+                  (let* ((head (car c))
+                         (h-name (car head))
+                         (h-args (cdr head))
+                         (preds (infer-rule-head-signature c sig-table)))
+                    (hash-put! sig-table h-name preds)
+                    (unless (hash-get inferred-heads h-name)
+                      (set! head-order (cons h-name head-order)))
+                    (hash-put! inferred-heads h-name (cons h-args preds)))))
+              padded-clauses))
+          '(1 2))
+        ;; Fail-closed check with POO-registry "did you mean?" diagnostics.
+        (validate-ascent-body-relations! padded-clauses sig-table)
+        ;; 1. Upgrade any untyped `(relation name (col ...))` declarations.
+        (let ((declared (make-hash-table-eq)))
+          (let loop ((rest padded-clauses) (acc '()) (t t-pad))
+            (if (null? rest)
+              ;; 2. Synthesize missing `(relation head ...)` declarations for undeclared rule heads.
+              (let ((synth-decls '())
+                    (t-final t))
+                (for-each
+                  (lambda (h-name)
+                    (when (and (not (hash-get declared h-name))
+                               (not (hash-get registry-rels h-name)))
+                      (let* ((info (hash-ref inferred-heads h-name))
+                             (decl (synthesize-relation-decl h-name (car info) (cdr info))))
+                        (set! synth-decls (append synth-decls (list decl)))
+                        (set! t-final (add-repair-tag t-final 'synthesize-head-relation)))))
+                  (reverse head-order))
+                (values (append synth-decls (reverse acc)) t-final))
+              (let ((c (car rest)))
+                (if (and (pair? c) (eq? (car c) 'relation) (= (length c) 3)
+                         (symbol? (cadr c)) (list? (caddr c)))
+                  (let* ((rel-name (cadr c))
+                         (cols (caddr c))
+                         (inferred-sig (hash-get sig-table rel-name)))
+                    (hash-put! declared rel-name #t)
+                    (if (andmap typed-column-spec? cols)
+                      (loop (cdr rest) (cons c acc) t)
+                      (let ((upgraded
+                              (let col-loop ((cs cols) (ps (or inferred-sig '())) (out '()))
+                                (if (null? cs)
+                                  (reverse out)
+                                  (let* ((col (car cs))
+                                         (pred (if (pair? ps) (car ps) 'string?))
+                                         (next-ps (if (pair? ps) (cdr ps) '())))
+                                    (cond
+                                      ((typed-column-spec? col)
+                                       (col-loop (cdr cs) next-ps (cons col out)))
+                                      ((symbol? col)
+                                       (col-loop (cdr cs) next-ps (cons (list col pred) out)))
+                                      (else
+                                       (error "invalid column declaration in (relation ...)" col))))))))
+                        (loop (cdr rest)
+                              (cons (list 'relation rel-name upgraded) acc)
+                              (add-repair-tag t 'infer-column-predicates)))))
+                  (loop (cdr rest) (cons c acc) t))))))))))
 
-(def (repair-choice-clauses clauses tags)
-  (let ((has-limits? (ormap (lambda (c) (and (pair? c) (eq? (car c) 'limits))) clauses)))
-    (if has-limits?
-      (values clauses tags)
-      (values (append clauses '((limits 4096 4096 4096)))
-              (add-repair-tag tags 'append-default-limits)))))
+;;; Normalize bare `'sym` literals in Dusa choice rules into `(value 'sym)`.
+(def (normalize-choice-term term tags)
+  (if (and (pair? term) (eq? (car term) 'quote) (= (length term) 2))
+    (values (list 'value term) (add-repair-tag tags 'normalize-choice-values))
+    (values term tags)))
+
+(def (normalize-choice-terms terms tags)
+  (let loop ((rest terms) (acc '()) (t tags))
+    (if (null? rest)
+      (values (reverse acc) t)
+      (let-values (((nt t1) (normalize-choice-term (car rest) t)))
+        (loop (cdr rest) (cons nt acc) t1)))))
+
+(def (normalize-choice-atom atom sig-table tags)
+  (if (not (and (pair? atom) (symbol? (car atom))))
+    (values atom tags)
+    (let*-values (((norm-args t1) (normalize-choice-terms (cdr atom) tags))
+                  ((padded t2) (pad-atom-wildcards (cons (car atom) norm-args) sig-table '?_ t1)))
+      (values padded t2))))
+
+(def (repair-choice-clauses clauses registry tags)
+  (let ((sig-table (build-registry-signature-table registry)))
+    ;; Register local `(relation ...)` and `(choice ...)` arities.
+    (for-each
+      (lambda (c)
+        (when (and (pair? c) (memq (car c) '(relation choice)) (>= (length c) 3)
+                   (symbol? (cadr c)) (list? (caddr c)))
+          (hash-put! sig-table (cadr c) (make-list (length (caddr c)) 'symbol?))))
+      clauses)
+    (let loop ((rest clauses) (acc '()) (t tags) (has-limits? #f))
+      (if (null? rest)
+        (let ((out (reverse acc)))
+          (if has-limits?
+            (values out t)
+            (values (append out '((limits 4096 4096 4096)))
+                    (add-repair-tag t 'append-default-limits))))
+        (let ((c (car rest)))
+          (cond
+            ((and (pair? c) (eq? (car c) 'limits))
+             (loop (cdr rest) (cons c acc) t #t))
+            ((and (pair? c) (eq? (car c) 'rule) (>= (length c) 2))
+             (let* ((head (cadr c))
+                    (body (cddr c)))
+               (let-values (((new-head t1)
+                             (cond
+                               ((and (pair? head) (eq? (car head) 'closed) (= (length head) 3)
+                                     (list? (caddr head)))
+                                (let-values (((nvals tv) (normalize-choice-terms (caddr head) t)))
+                                  (values (list 'closed (cadr head) nvals) tv)))
+                               ((and (pair? head) (eq? (car head) 'open) (= (length head) 3))
+                                (let-values (((nval tv) (normalize-choice-term (caddr head) t)))
+                                  (values (list 'open (cadr head) nval) tv)))
+                               (else (values head t)))))
+                 (let body-loop ((bs body) (b-acc '()) (bt t1))
+                   (if (null? bs)
+                     (let ((repaired-body (reverse b-acc)))
+                       ;; Validate choice body relation names fail-closed with suggestions.
+                       (for-each
+                         (lambda (atom)
+                           (when (and (pair? atom) (symbol? (car atom))
+                                      (not (hash-get sig-table (car atom))))
+                             (raise-unknown-relation-error (car atom) sig-table)))
+                         repaired-body)
+                       (loop (cdr rest)
+                             (cons (cons 'rule (cons new-head repaired-body)) acc)
+                             bt has-limits?))
+                     (let-values (((na nt) (normalize-choice-atom (car bs) sig-table bt)))
+                       (body-loop (cdr bs) (cons na b-acc) nt)))))))
+            (else
+             (loop (cdr rest) (cons c acc) t has-limits?))))))))
 
 ;;; Pure AST-to-AST safe repair pass over an already-read Scheme datum.
 ;;; Returns `(values repaired-form repair-tags)`.
@@ -377,7 +575,7 @@
                      ((c2 t2) (repair-ascent-clauses c1 registry t1)))
          (values (cons (car f0) c2) t2)))
       ((relational-choice-program)
-       (let-values (((c1 t1) (repair-choice-clauses (cdr f0) t0)))
+       (let-values (((c1 t1) (repair-choice-clauses (cdr f0) registry t0)))
          (values (cons 'relational-choice-program c1) t1)))
       ((search-selector)
        (values f0 t0))

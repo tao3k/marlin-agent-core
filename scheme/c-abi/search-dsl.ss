@@ -9,6 +9,7 @@
         (only-in :marlin-agent-core/search-dsl/config SearchDslScope))
 (export marlin-search-dsl-compile-prefilter
         marlin-search-dsl-eval-edb
+        marlin-search-dsl-extract-facts
         marlin-search-dsl-completions
         marlin-search-dsl-tool-description)
 
@@ -40,6 +41,9 @@
                     (cons 'attr (vec->rows (vector-ref edb-vec 3))))))
     (deep-list->vector ((.get SearchDslScope evaluate-edb) query edb))))
 
+(def (marlin-search-dsl-extract-facts input)
+  ((.get SearchDslScope extract-facts) input))
+
 (def (marlin-search-dsl-completions input)
   (let ((prefix (if (string? input) input "")))
     ((.get SearchDslScope completions) prefix)))
@@ -56,6 +60,10 @@
     "marlin_search_dsl_eval_edb" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root
       marlin-agent-core/c-abi/search-dsl#marlin-search-dsl-eval-edb))
+  (c-define (search-dsl-extract-facts root) (int64) int64
+    "marlin_search_dsl_extract_facts" "extern"
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root
+      marlin-agent-core/c-abi/search-dsl#marlin-search-dsl-extract-facts))
   (c-define (search-dsl-completions root) (int64) int64
     "marlin_search_dsl_completions" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root

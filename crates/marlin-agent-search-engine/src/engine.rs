@@ -44,6 +44,28 @@ pub fn default_workspace_snapshot_path(workspace_root: &Path) -> PathBuf {
         .join(format!("workspace-{short_hex}.asp-index.bin"))
 }
 
+/// Deterministic user-cache path for a workspace's BLAKE3 content-hash-verified
+/// Open EDB fact cache (`semantic-open-edb.v1`).
+#[must_use]
+pub fn default_workspace_edb_cache_path(workspace_root: &Path) -> PathBuf {
+    let canonical =
+        std::fs::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
+    let short_hex = fnv1a_64_hex(canonical.to_string_lossy().as_bytes());
+    let cache_base = std::env::var_os("XDG_CACHE_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .filter(|value| !value.is_empty())
+                .map(|home| PathBuf::from(home).join(".cache"))
+        })
+        .unwrap_or_else(std::env::temp_dir);
+    cache_base
+        .join("marlin")
+        .join("search")
+        .join(format!("workspace-{short_hex}.open-edb.json"))
+}
+
 fn fnv1a_64_hex(bytes: &[u8]) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for &byte in bytes {

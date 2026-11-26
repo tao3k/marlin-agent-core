@@ -56,7 +56,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-content-identity"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=d4469e5fc87a537fd7472498250609a04a32443e#d4469e5fc87a537fd7472498250609a04a32443e"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=c8186b8d1d744988e5bce99ebc578d0913d4ed34#c8186b8d1d744988e5bce99ebc578d0913d4ed34"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -68,7 +68,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-search"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=d4469e5fc87a537fd7472498250609a04a32443e#d4469e5fc87a537fd7472498250609a04a32443e"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=c8186b8d1d744988e5bce99ebc578d0913d4ed34#c8186b8d1d744988e5bce99ebc578d0913d4ed34"
 dependencies = [
  "agent-semantic-search-playbook",
  "agent-semantic-topology",
@@ -89,7 +89,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-search-playbook"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=d4469e5fc87a537fd7472498250609a04a32443e#d4469e5fc87a537fd7472498250609a04a32443e"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=c8186b8d1d744988e5bce99ebc578d0913d4ed34#c8186b8d1d744988e5bce99ebc578d0913d4ed34"
 dependencies = [
  "blake3",
  "serde",
@@ -99,7 +99,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-topology"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=d4469e5fc87a537fd7472498250609a04a32443e#d4469e5fc87a537fd7472498250609a04a32443e"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=c8186b8d1d744988e5bce99ebc578d0913d4ed34#c8186b8d1d744988e5bce99ebc578d0913d4ed34"
 dependencies = [
  "agent-semantic-content-identity",
  "agent-semantic-workspace-scheduler",
@@ -113,7 +113,7 @@ dependencies = [
 [[package]]
 name = "agent-semantic-workspace-scheduler"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=d4469e5fc87a537fd7472498250609a04a32443e#d4469e5fc87a537fd7472498250609a04a32443e"
+source = "git+https://github.com/tao3k/agent-semantic-protocols?rev=c8186b8d1d744988e5bce99ebc578d0913d4ed34#c8186b8d1d744988e5bce99ebc578d0913d4ed34"
 dependencies = [
  "libc",
  "serde",

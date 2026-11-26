@@ -13,6 +13,8 @@
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
         (only-in :marlin-agent-core/search-dsl/syntax
                  relational-choice-program)
+        (only-in :marlin-agent-core/search-dsl/extract
+                 extract-open-edb-facts-batch)
         (only-in :marlin-agent-core/search-dsl/funcs
                  read-ascent-search-form
                  repair-ascent-search-form
@@ -20,7 +22,9 @@
                  evaluate-search-dsl-over-edb
                  evaluate-choice-program-over-edb
                  search-dsl-completions
-                 parse-search-dsl-selector))
+                 parse-search-dsl-selector
+                 project-language-conformance-pack
+                 project-all-conformance-packs))
 (export search-dsl-test)
 
 ;;; Sample Open EDB matching ASP `schemas/semantic-open-edb.v1.schema.json`:
@@ -149,18 +153,43 @@
         (let ((tags (vector-ref r3 4)))
           (check (and (memq 'wrap-bare-rule tags) #t) => #t)
           (check (and (memq 'synthesize-head-relation tags) #t) => #t)))
-      ;; 4. Missing `(limits ...)` in Dusa `(relational-choice-program ...)`
+      ;; 4. Missing `(limits ...)` and bare `'hot` / `'warm` values in Dusa choice program
       (let ((r4 (evaluate-search-dsl-over-edb
                   "(relational-choice-program
                      (choice tier (f t))
-                     (rule (closed (tier ?f) ((value 'hot) (value 'warm)))
-                           (file ?f (value 'rust) ?_))
-                     (rule (closed (tier ?f) ((value 'hot)))
-                           (rust_fn ?_ ?f (value 'open_or_build_cached) ?_)))"
+                     (rule (closed (tier ?f) ('hot 'warm))
+                           (file ?f 'rust))
+                     (rule (closed (tier ?f) ('hot))
+                           (rust_fn ?_ ?f 'open_or_build_cached)))"
                   sample-edb)))
         (check (vector-ref r4 1) => 'choice)
         (check (length (vector-ref r4 3)) => 2)
-        (check (and (memq 'append-default-limits (vector-ref r4 4)) #t) => #t)))
+        (let ((tags (vector-ref r4 4)))
+          (check (and (memq 'normalize-choice-values tags) #t) => #t)
+          (check (and (memq 'pad-relation-wildcards tags) #t) => #t)
+          (check (and (memq 'append-default-limits tags) #t) => #t)))
+      ;; 5. Omitted trailing wildcards on 5-col `edge` (3-col shorthand `(edge a b "imports")`)
+      (let ((r5 (evaluate-search-dsl-over-edb
+                  "(ascent-fragment
+                     ((answer a b) <-- (edge a b \"imports\")))"
+                  sample-edb)))
+        (check (vector-ref r5 3) => '(("e2" "e1")))
+        (let ((tags (vector-ref r5 4)))
+          (check (and (memq 'pad-relation-wildcards tags) #t) => #t)
+          (check (and (memq 'synthesize-head-relation tags) #t) => #t)))
+      ;; 6. Fail-closed unknown relation produces POO-registry "did you mean?" diagnostic
+      (let ((err-msg
+              (with-catch
+                (lambda (e) (error-message e))
+                (lambda ()
+                  (read-ascent-search-form
+                    "(ascent-fragment ((answer n) <-- (rust_function _ _ n _)))")
+                  ""))))
+        (check (and (string-contains err-msg "unknown :gerbil-ascent relation")
+                    (string-contains err-msg "did you mean:")
+                    (string-contains err-msg "rust_fn")
+                    #t)
+               => #t)))
 
     (test-case "Real upstream (ascent-fragment ...) evaluates recursive multi-hop closure over 5-col edges"
       (let ((res (evaluate-search-dsl-over-edb
@@ -218,4 +247,95 @@
         (check (> (vector-length root-rows) 4) => #t)
         (check (>= (vector-length rust-rows) 9) => #t)
         (check (vector-ref (vector-ref rust-rows 0) 0) => "rust_fn")
-        (check (vector-ref (vector-ref rust-rows 0) 1) => "relation")))))
+        (check (vector-ref (vector-ref rust-rows 0) 1) => "relation")))
+
+    (test-case "Zero-regex Scheme, SysML, and Quint native AST extractor emits protocol-native Open EDB facts"
+      (let* ((batch
+               (extract-open-edb-facts-batch
+                 (vector
+                   (vector "scheme/search-dsl/objects.ss" "scheme"
+                           "(import :clan/poo/object)\n(.def RustSearchFragment. languages: '(rust))\n(def Registry (.mix RustSearchFragment. Base.))\n(deflanguage selector (syntax))\n(c-define (eval-fn r) (int64) int64 \"marlin_eval_fn\" \"extern\")\n")
+                   (vector "dev/sysml/search-engine.sysml" "sysml"
+                           "package MarlinSearch {\n  requirement <'MAR-R01'> openEdb {}\n  allocation a1 allocate openEdb to target.kernel;\n}\n")
+                   (vector "dev/quint/search.qnt" "quint"
+                           "module Search {\n  action step = all { true }\n  val safe = true\n}\n"))))
+             (ents (vector->list (vector-ref batch 0)))
+             (edges (vector->list (vector-ref batch 1))))
+        (check (and (ormap (lambda (e) (and (string=? (vector-ref e 2) "RustSearchFragment.")
+                                            (string=? (vector-ref e 5) "poo_def")))
+                           ents) #t) => #t)
+        (check (and (ormap (lambda (e) (and (string=? (vector-ref e 2) "selector")
+                                            (string=? (vector-ref e 5) "deflanguage")))
+                           ents) #t) => #t)
+        (check (and (ormap (lambda (e) (and (string=? (vector-ref e 2) "marlin_eval_fn")
+                                            (string=? (vector-ref e 5) "c_define")))
+                           ents) #t) => #t)
+        (check (and (ormap (lambda (e) (and (string=? (vector-ref e 2) "openEdb")
+                                            (string=? (vector-ref e 5) "requirement_def")))
+                           ents) #t) => #t)
+        (check (and (ormap (lambda (e) (and (string=? (vector-ref e 2) "safe")
+                                            (string=? (vector-ref e 5) "quint_invariant")))
+                           ents) #t) => #t)
+        (check (and (ormap (lambda (g) (and (string=? (vector-ref g 1) "mixes")
+                                            (string=? (vector-ref g 2) "RustSearchFragment.")))
+                           edges) #t) => #t)
+        (check (and (ormap (lambda (g) (and (string=? (vector-ref g 1) "allocates")
+                                            (string=? (vector-ref g 0) "openEdb")))
+                           edges) #t) => #t)))
+
+    (test-case "General Language Ontology + POO extensions (including Julia) compose cleanly"
+      (let* ((polyglot-edb
+               '((file . ((1 "rust" "src/lib.rs")
+                          (2 "python" "src/math_ops.py")
+                          (3 "julia" "src/math.jl")
+                          (4 "scheme" "src/sample.ss")))
+                 (entity . (("r1" 1 "rust"   "function" "fn_item"     "add_rs"   5)
+                            ("r2" 1 "rust"   "struct"   "struct_item" "Widget"   1)
+                            ("p1" 2 "python" "function" "FunctionDef" "add_py"   4)
+                            ("j1" 3 "julia"  "function" "function"    "add_jl"   6)
+                            ("j2" 3 "julia"  "macro"    "macro"       "fastmath" 12)
+                            ("s1" 4 "scheme" "function" "def"         "add_scm"  2)))
+                 (edge . ())
+                 (attr . ())))
+             (callables (evaluate-search-dsl-over-edb
+                          "(ascent-fragment
+                             (relation answer ((lang string?) (name string?)))
+                             ((answer lang name) <-- (callable _ _ lang name _)))"
+                          polyglot-edb))
+             (types (evaluate-search-dsl-over-edb
+                      "(ascent-fragment
+                         (relation answer ((lang string?) (name string?)))
+                         ((answer lang name) <-- (type_decl _ _ lang name _)))"
+                      polyglot-edb))
+             (jl-macros (evaluate-search-dsl-over-edb
+                          "(ascent-fragment
+                             (relation answer ((name string?)))
+                             ((answer name) <-- (julia_macro _ _ name _)))"
+                          polyglot-edb)))
+        (check (length (vector-ref callables 3)) => 4)
+        (check (and (member '("rust" "add_rs") (vector-ref callables 3))
+                    (member '("python" "add_py") (vector-ref callables 3))
+                    (member '("julia" "add_jl") (vector-ref callables 3))
+                    (member '("scheme" "add_scm") (vector-ref callables 3))
+                    #t)
+               => #t)
+        (check (vector-ref types 3) => '(("rust" "Widget")))
+        (check (vector-ref jl-macros 3) => '(("fastmath")))))
+
+    (test-case "defasp-language projects all 5 provider conformance packs without lexical duplication"
+      (let* ((packs (project-all-conformance-packs))
+             (rust-pack (project-language-conformance-pack 'rust))
+             (gerbil-pack (project-language-conformance-pack "gerbil-scheme"))
+             (julia-pack (project-language-conformance-pack 'julia)))
+        (check (length packs) => 5)
+        (check (hash-ref rust-pack "schemaId") => "agent.semantic-protocols.language-conformance-pack")
+        (check (hash-ref rust-pack "schemaVersion") => "1")
+        (check (hash-ref rust-pack "providerLanguageId") => "rust")
+        (check (hash-ref gerbil-pack "providerLanguageId") => "gerbil-scheme")
+        (check (hash-ref julia-pack "providerLanguageId") => "julia")
+        ;; Verify zero lexical pairs/comments hardcoded in Scheme conformance packs
+        (check (hash-key? rust-pack "lexicalProfile") => #f)
+        (check (hash-key? rust-pack "pairs") => #f)
+        (check (hash-key? julia-pack "comments") => #f)
+        (check (>= (length (hash-ref julia-pack "kindMappings")) 5) => #t)
+        (check (>= (length (hash-ref gerbil-pack "probes")) 2) => #t)))))

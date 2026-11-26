@@ -21,17 +21,26 @@ S-expressions and zero regex extractors in Rust or Scheme:
 2. *=:gerbil-parser=* (=grammar.ss=):
    - Typed structured syntax engine (=deflanguage= / =deflanguage-parser-loader=)
      owning lightweight selector/sub-syntax parsing directly in Scheme.
-3. *Safe Pre-Tool-Call Model AST Repair Hook (=repair.ss=)*:
+3. *Safe Pre-Tool-Call Model AST Repair Hook v2 (=repair.ss=)*:
    - Deterministically heals common LLM S-expression slips (markdown fences,
      bounded missing/extra trailing parens, =<-=/=:-= arrows, omitted column
      predicates, missing head =(relation ...)= declarations inferred from POO
-     signatures, missing =(limits ...)= in choice programs) while emitting an
-     auditable =repairs:= receipt and failing closed on legacy =@sym:=,
-     =#.(...)=, and arbitrary Scheme callbacks.
-4. *=:clan/poo/object= + =defsyntax= / =defrules= (=syntax.ss=, =objects.ss=)*:
+     signatures, missing trailing wildcards via =pad-relation-wildcards=, bare
+     Dusa choice literals via =normalize-choice-values=, missing =(limits ...)=
+     in choice programs) while emitting an auditable =repairs:= receipt and
+     failing closed with POO-registry-backed =did you mean: ...?= suggestions on
+     unknown relations, legacy =@sym:=, =#.(...)=, and arbitrary Scheme callbacks.
+4. *Zero-Regex Native Open EDB Fact Extractor (=extract.ss=)*:
+   - Uses Gerbil's safe reader (=readtable-eval-allowed? #f=) for =.ss= and pure
+     lexical token-stream parsers for =.sysml= and =.qnt= to produce native
+     =semantic-open-edb.v1= facts (=poo_def=, =deflanguage=, =requirement_def=,
+     =quint_invariant=, =mixes=, =ffi_binds=, =depends=, =allocates=, =imports=)
+     over zero-JSON C-ABI (=marlin_search_dsl_extract_facts=).
+5. *=:clan/poo/object= + =defsyntax= / =defrules= (=syntax.ss=, =objects.ss=)*:
    - =defsearch-language= compiles one declarative language specification into a
      POO prototype carrying its real =ascent-fragment= object over universal
      =(lang, kind, language_kind)= facts (zero regexes).
-   - Helm's interactive *TAB completion table* and =workspace_search='s Tool
-     Schema (=defsearch-tool-spec=) are *live-introspected* directly from the
-     composed =:gerbil-ascent= relation objects.
+   - Helm's live =HELM-DSL= execution, interactive *TAB completion table*, and
+     =workspace_search='s Tool Schema (=defsearch-tool-spec=) are
+     *live-introspected* directly from the composed =:gerbil-ascent= relation
+     objects.

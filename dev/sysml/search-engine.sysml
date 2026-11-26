@@ -68,15 +68,18 @@ package MarlinSearchEngine {
 
     part <'MAR-SRCH-A01'> actual {
         part schemeSearchDsl {
-            doc /* `scheme/search-dsl/{types,grammar,syntax,objects,repair,funcs,config,interface}.ss`
+            doc /* `scheme/search-dsl/{types,grammar,syntax,objects,repair,extract,funcs,config,interface}.ss`
                    and `scheme/c-abi/search-dsl.ss`: unified pure S-expression
                    search DSL powered by `:gerbil-ascent` (zero-eval closed-source
                    Datalog + Dusa POPL 2025 finite-choice), `:gerbil-parser`
                    (`deflanguage` typed structured sub-syntax parsing), zero-regex
-                   POO `SearchLanguageRegistry.` fragments over ASP's universal
-                   `semantic-open-edb.v1` `(lang, kind, language_kind)` protocol,
-                   the Safe Pre-Tool-Call Model AST Repair Hook (`repair.ss`),
-                   live LLM Tool Schema generation, and Helm TAB completions. */
+                   native AST extraction (`extract.ss` for `.ss`/`.sysml`/`.qnt`),
+                   zero-regex POO `SearchLanguageRegistry.` fragments over ASP's
+                   universal `semantic-open-edb.v1` `(lang, kind, language_kind)`
+                   protocol, the Safe Pre-Tool-Call Model AST Repair Hook v2
+                   (`repair.ss` with wildcard padding, choice-value normalization,
+                   and registry-backed did-you-mean diagnostics), live LLM Tool
+                   Schema generation, and Helm TAB completions. */
         }
         part schemeSearchEngine {
             doc /* `scheme/search-engine/{types,objects,funcs,config,interface}.ss`
@@ -87,9 +90,12 @@ package MarlinSearchEngine {
         part marlinSearchBridge {
             doc /* `crates/marlin-agent-search-engine`: decodes
                    `RootedSchemeObject` plans into ASP `SearchPlaybookPlanInput`,
-                   projects `WorkspaceEdbPrefilter` and `WorkspaceEdbSnapshot`
-                   across the native ABI, implements `OrgDocumentProjectionPort`
-                   over `marlin-context-org-model`, and implements
+                   projects `WorkspaceEdbPrefilter`, `WorkspaceEdbSnapshot`, and
+                   `SearchDslStructuredResult` across `edb_bridge/{mod,types,codec,runner}.rs`,
+                   hydrates zero-regex `.org` + Scheme/SysML/Quint Open EDB facts
+                   with BLAKE3 `content_hash` persistence via `open_edb_hydrator.rs`,
+                   implements `OrgDocumentProjectionPort` over
+                   `marlin-context-org-model`, and implements
                    `SearchEngineStoragePort` over `marlin-agent-storage`. */
         }
         part aspNativeEngine {

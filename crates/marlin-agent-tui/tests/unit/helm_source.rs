@@ -574,3 +574,119 @@ fn helm_tab_completion_table_completes_native_ascent_and_poo_relations() {
     assert_eq!(overlay.completion_entries.len(), 1);
     assert_eq!(overlay.completion_entries[0].form, "rust_fn");
 }
+
+#[test]
+fn helm_live_ascent_dsl_mode_projects_rows_ram_preview_repair_badge_and_citations() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let workspace = tempfile::tempdir().expect("temp workspace");
+    std::fs::create_dir_all(workspace.path().join("src")).unwrap();
+    std::fs::write(
+        workspace.path().join("src/kernel.rs"),
+        "// line 1 header\npub fn live_helm_dsl_kernel() -> usize { 99 }\n// line 3 footer\n",
+    )
+    .unwrap();
+
+    let cfg = scheme_like_config();
+    let raw_index = WorkspaceSearchIndex::build_with_config(workspace.path(), cfg.clone());
+    let generation = raw_index.generation_digest().as_str().to_owned();
+    let warm_index = wrap_index(raw_index);
+
+    let mock_runner: marlin_agent_search_engine::SearchDslStructuredRunner =
+        Arc::new(move |_idx, _query, _limit| {
+            Ok(marlin_agent_search_engine::SearchDslStructuredResult {
+                generation_digest: generation.clone(),
+                elapsed_micros: 140,
+                indexed_files: 1,
+                matched_files: 1,
+                mode: marlin_agent_search_engine::SearchDslExecutionMode::Ascent,
+                relation: "answer".to_owned(),
+                repairs: vec!["synthesize-head-relation".to_owned()],
+                rows: vec![marlin_agent_search_engine::SearchDslStructuredRow {
+                    cells: vec![
+                        "src/kernel.rs".to_owned(),
+                        "live_helm_dsl_kernel".to_owned(),
+                        "2".to_owned(),
+                    ],
+                    display: "(src/kernel.rs live_helm_dsl_kernel 2)".to_owned(),
+                    path: Some("src/kernel.rs".to_owned()),
+                    line: Some(2),
+                }],
+                rendered_text: "mode: ascent\n".to_owned(),
+            })
+        });
+
+    let mut overlay = HelmOverlay::open(
+        None,
+        workspace.path().to_path_buf(),
+        &[],
+        cfg,
+        Some(warm_index),
+        rt.handle(),
+    )
+    .with_dsl_runner(mock_runner);
+
+    overlay.insert_text(
+        "((answer path name line) <-- (file f \"rust\" path) (rust_fn _ f name line))",
+    );
+    assert_eq!(overlay.search_candidates.len(), 1);
+    let cand = &overlay.search_candidates[0];
+    assert_eq!(cand.source, HelmSourceKind::Dsl);
+    assert_eq!(cand.citation.as_deref(), Some("@src/kernel.rs:2"));
+    assert!(
+        cand.context_lines
+            .iter()
+            .any(|ctx| ctx.text.contains("live_helm_dsl_kernel") && ctx.is_match),
+        "expected RAM follow-preview lines for src/kernel.rs:2, got {:?}",
+        cand.context_lines
+    );
+
+    // Render and verify HELM-DSL badge, Ascent / Dusa DSL source header, repair badge, and RAM preview.
+    let area = helm_window_area(ratatui::layout::Rect::new(0, 0, 120, 28)).expect("area");
+    let element = project_helm_ui_element(&overlay, area);
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 28)).expect("terminal");
+    terminal
+        .draw(|frame| {
+            render_overlay_element(frame, area, &element, &sample_theme());
+        })
+        .expect("draw");
+    let screen: String = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect();
+    assert!(screen.contains("HELM-DSL"), "{screen}");
+    assert!(screen.contains("Ascent / Dusa DSL"), "{screen}");
+    assert!(
+        screen.contains("repaired[synthesize-head-relation]"),
+        "{screen}"
+    );
+    assert!(screen.contains("live_helm_dsl_kernel"), "{screen}");
+
+    // Multi-mark + Embark citation export works identically on DSL candidates.
+    overlay.toggle_mark_and_advance();
+    assert_eq!(overlay.marked_ids.len(), 1);
+    let (should_close, action) = overlay.accept(true);
+    assert!(should_close);
+    assert_eq!(
+        action,
+        Some(HelmAction::InsertCitations("@src/kernel.rs:2".to_owned()))
+    );
+
+    // Main-thread AOT error delivery clears stale candidates and surfaces fail-closed diagnostic.
+    overlay.apply_dsl_result(Err(
+        "unknown :gerbil-ascent relation 'rust_function'; did you mean: rust_fn?".to_owned(),
+    ));
+    assert!(overlay.search_candidates.is_empty());
+    assert!(
+        overlay
+            .last_error
+            .as_deref()
+            .is_some_and(|e| e.contains("did you mean: rust_fn"))
+    );
+}

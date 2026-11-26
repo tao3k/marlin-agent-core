@@ -27,6 +27,7 @@ unsafe extern "C" {
     fn marlin_ui_helm_index_config(root: i64) -> i64;
     fn marlin_search_dsl_compile_prefilter(root: i64) -> i64;
     fn marlin_search_dsl_eval_edb(root: i64) -> i64;
+    fn marlin_search_dsl_extract_facts(root: i64) -> i64;
     fn marlin_search_dsl_completions(root: i64) -> i64;
     fn marlin_tooling_project(root: i64) -> i64;
     fn marlin_envrc_plan(root: i64) -> i64;
@@ -169,15 +170,19 @@ pub(crate) fn search_dsl_completions(
     }
 }
 
-pub(crate) fn execute_search_dsl(
+pub(crate) fn execute_search_dsl_structured(
     runtime: &GerbilRuntime,
     index: &marlin_agent_search_engine::WorkspaceSearchIndex,
     query: &str,
     output_limit: usize,
-) -> Result<String, marlin_agent_search_engine::SearchPlanProjectionError> {
+) -> Result<
+    marlin_agent_search_engine::SearchDslStructuredResult,
+    marlin_agent_search_engine::SearchPlanProjectionError,
+> {
     let exports = marlin_agent_search_engine::SearchDslLinkedExports {
         compile_prefilter: marlin_search_dsl_compile_prefilter,
         eval_edb: marlin_search_dsl_eval_edb,
+        extract_facts: marlin_search_dsl_extract_facts,
         completions: marlin_search_dsl_completions,
     };
     let request = marlin_agent_search_engine::SearchDslExecutionRequest {
@@ -186,7 +191,39 @@ pub(crate) fn execute_search_dsl(
         output_limit,
     };
     // SAFETY: `exports` belong to the linked Marlin TUI programme initialized in `runtime`.
-    unsafe { marlin_agent_search_engine::execute_linked_search_dsl(runtime, exports, &request) }
+    unsafe {
+        marlin_agent_search_engine::execute_linked_search_dsl_structured(runtime, exports, &request)
+    }
+}
+
+pub(crate) fn execute_search_dsl(
+    runtime: &GerbilRuntime,
+    index: &marlin_agent_search_engine::WorkspaceSearchIndex,
+    query: &str,
+    output_limit: usize,
+) -> Result<String, marlin_agent_search_engine::SearchPlanProjectionError> {
+    Ok(execute_search_dsl_structured(runtime, index, query, output_limit)?.rendered_text)
+}
+
+/// Service any pending Helm `:gerbil-ascent` / Dusa query directly on the TUI's
+/// owning Gerbil VM thread (zero channel deadlock, sub-millisecond evaluation).
+pub(crate) fn service_helm_dsl(runtime: &GerbilRuntime, app: &mut super::app::App) -> bool {
+    let Some((shared_index, query)) = app
+        .helm
+        .as_mut()
+        .and_then(super::helm::HelmOverlay::take_pending_dsl_query)
+    else {
+        return false;
+    };
+    let outcome = match shared_index.read() {
+        Ok(index) => execute_search_dsl_structured(runtime, &index, &query, 16_384)
+            .map_err(|err| err.to_string()),
+        Err(_) => Err("resident search index lock poisoned".to_owned()),
+    };
+    if let Some(helm) = app.helm.as_mut() {
+        helm.apply_dsl_result(outcome);
+    }
+    true
 }
 
 struct LinkedSearchDslJob {

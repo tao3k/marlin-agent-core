@@ -18,7 +18,8 @@ use marlin_agent_runtime::{
     ModelToolDeclaration, ModelToolOutcome, RuntimeContext, RuntimeFuture, ToolRuntime,
 };
 use marlin_agent_search_engine::{
-    SearchDslRunner, WorkspaceIndexConfig, WorkspaceSearchIndex, default_workspace_snapshot_path,
+    SearchDslRunner, WorkspaceIndexConfig, WorkspaceSearchIndex, default_workspace_edb_cache_path,
+    default_workspace_snapshot_path, hydrate_workspace_open_edb_org_and_cache,
 };
 
 /// Shared resident index handle reused across TUI Helm and Agent tool calls.
@@ -85,11 +86,14 @@ impl SharedSearchIndexSlot {
             return existing.clone();
         }
         let snapshot_path = default_workspace_snapshot_path(workspace);
-        let opened = Arc::new(RwLock::new(WorkspaceSearchIndex::open_or_build_cached(
+        let edb_cache_path = default_workspace_edb_cache_path(workspace);
+        let mut idx = WorkspaceSearchIndex::open_or_build_cached(
             workspace,
             &snapshot_path,
             WorkspaceIndexConfig::default(),
-        )));
+        );
+        let _ = hydrate_workspace_open_edb_org_and_cache(&mut idx, &edb_cache_path);
+        let opened = Arc::new(RwLock::new(idx));
         self.attach(opened.clone());
         opened
     }
@@ -104,6 +108,8 @@ impl SharedSearchIndexSlot {
         };
         let receipt = guard.sync_workspace_from_disk();
         let changed = receipt.upserted_files > 0 || receipt.deleted_files > 0;
+        let edb_cache_path = default_workspace_edb_cache_path(workspace);
+        let _ = hydrate_workspace_open_edb_org_and_cache(&mut guard, &edb_cache_path);
         if changed {
             let snapshot_path = default_workspace_snapshot_path(workspace);
             let _ = guard.save_snapshot(&snapshot_path);

@@ -19,8 +19,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use marlin_agent_search_engine::{
-    SearchDslCompletionEntry, WorkspaceIndexConfig, WorkspaceSearchIndex, WorkspaceSearchQuery,
-    default_workspace_snapshot_path,
+    SearchDslCompletionEntry, SearchDslExecutionMode, SearchDslStructuredResult,
+    SearchDslStructuredRunner, WorkspaceIndexConfig, WorkspaceSearchIndex, WorkspaceSearchQuery,
+    default_search_dsl_structured_runner, default_workspace_edb_cache_path,
+    default_workspace_snapshot_path, hydrate_workspace_open_edb_org_and_cache,
 };
 use marlin_agent_ui::UiCommand;
 use tokio::sync::oneshot;
@@ -28,7 +30,7 @@ use tokio::sync::oneshot;
 use super::types::{
     HelmAction, HelmCandidate, HelmDisplayRow, HelmMenuActionItem, HelmMenuActionKind,
     HelmParsedInput, HelmSourceKind, SharedSearchIndex, admit_helm_playbook,
-    build_static_candidates, hit_to_candidate,
+    build_static_candidates, dsl_row_to_candidate, hit_to_candidate,
 };
 
 const MAX_HELM_HITS: usize = 64;
@@ -56,12 +58,19 @@ pub(crate) struct HelmOverlay {
     pub(crate) last_query_micros: Option<u64>,
     pub(crate) indexed_files: usize,
     pub(crate) last_error: Option<String>,
+    pub(crate) last_dsl_repairs: Vec<String>,
+    pub(crate) last_dsl_mode: Option<SearchDslExecutionMode>,
+    pub(crate) last_dsl_relation: Option<String>,
     pub(crate) indexing: bool,
     workspace_root: PathBuf,
     snapshot_path: PathBuf,
+    edb_cache_path: PathBuf,
     index_config: WorkspaceIndexConfig,
     index: Option<SharedSearchIndex>,
     index_receiver: Option<oneshot::Receiver<SharedSearchIndex>>,
+    dsl_runner: Option<SearchDslStructuredRunner>,
+    #[cfg(feature = "linked-ui")]
+    pending_dsl_query: Option<String>,
 }
 
 impl HelmOverlay {
@@ -77,6 +86,7 @@ impl HelmOverlay {
         let parsed = HelmParsedInput::parse(&input);
         let static_candidates = build_static_candidates(command_catalog);
         let snapshot_path = default_workspace_snapshot_path(&workspace_root);
+        let edb_cache_path = default_workspace_edb_cache_path(&workspace_root);
         let (indexed_files, generation_digest) = warm_index
             .as_ref()
             .and_then(|shared| shared.read().ok())
@@ -109,12 +119,19 @@ impl HelmOverlay {
             last_query_micros: None,
             indexed_files,
             last_error: None,
+            last_dsl_repairs: Vec::new(),
+            last_dsl_mode: None,
+            last_dsl_relation: None,
             indexing: warm_index.is_none(),
             workspace_root,
             snapshot_path,
+            edb_cache_path,
             index_config,
             index: warm_index,
             index_receiver: None,
+            dsl_runner: default_search_dsl_structured_runner(),
+            #[cfg(feature = "linked-ui")]
+            pending_dsl_query: None,
         };
 
         if overlay.index.is_some() {
@@ -144,12 +161,14 @@ impl HelmOverlay {
     pub(crate) fn refresh_index(&mut self, runtime: &tokio::runtime::Handle) {
         if let Some(existing) = self.index.clone() {
             let snapshot_path = self.snapshot_path.clone();
+            let edb_cache_path = self.edb_cache_path.clone();
             let (tx, rx) = oneshot::channel();
             self.indexing = true;
             self.index_receiver = Some(rx);
             runtime.spawn_blocking(move || {
                 if let Ok(mut guard) = existing.write() {
                     let receipt = guard.sync_workspace_from_disk();
+                    let _ = hydrate_workspace_open_edb_org_and_cache(&mut guard, &edb_cache_path);
                     if receipt.upserted_files > 0 || receipt.deleted_files > 0 {
                         let _ = guard.save_snapshot(&snapshot_path);
                     }
@@ -164,16 +183,15 @@ impl HelmOverlay {
     fn spawn_index_build(&mut self, runtime: &tokio::runtime::Handle) {
         let root = self.workspace_root.clone();
         let snapshot_path = self.snapshot_path.clone();
+        let edb_cache_path = self.edb_cache_path.clone();
         let config = self.index_config.clone();
         let (tx, rx) = oneshot::channel();
         self.indexing = true;
         self.index_receiver = Some(rx);
         runtime.spawn_blocking(move || {
-            let built = Arc::new(RwLock::new(WorkspaceSearchIndex::open_or_build_cached(
-                &root,
-                &snapshot_path,
-                config,
-            )));
+            let mut idx = WorkspaceSearchIndex::open_or_build_cached(&root, &snapshot_path, config);
+            let _ = hydrate_workspace_open_edb_org_and_cache(&mut idx, &edb_cache_path);
+            let built = Arc::new(RwLock::new(idx));
             let _ = tx.send(built);
         });
     }
@@ -207,6 +225,57 @@ impl HelmOverlay {
             self.refresh_completions();
         }
         self
+    }
+
+    /// Attach a custom structured `:gerbil-ascent` / Dusa DSL runner (e.g. for tests).
+    #[cfg(test)]
+    pub(crate) fn with_dsl_runner(mut self, runner: SearchDslStructuredRunner) -> Self {
+        self.dsl_runner = Some(runner);
+        if self.is_sexp_prompt() && self.index.is_some() {
+            self.run_resident_query();
+        }
+        self
+    }
+
+    /// Take a pending S-expression query for main-thread AOT `linked-ui` execution.
+    #[cfg(feature = "linked-ui")]
+    pub(crate) fn take_pending_dsl_query(&mut self) -> Option<(SharedSearchIndex, String)> {
+        let query = self.pending_dsl_query.take()?;
+        let index = self.index.clone()?;
+        Some((index, query))
+    }
+
+    /// Apply the outcome of a live `:gerbil-ascent` / Dusa query to Helm candidates.
+    pub(crate) fn apply_dsl_result(&mut self, outcome: Result<SearchDslStructuredResult, String>) {
+        match outcome {
+            Ok(result) => {
+                let guard = self.index.as_ref().and_then(|shared| shared.read().ok());
+                let index_ref = guard.as_deref();
+                self.generation_digest = Some(result.generation_digest.clone());
+                self.last_query_micros = Some(result.elapsed_micros);
+                self.indexed_files = result.indexed_files;
+                self.last_dsl_repairs = result.repairs.clone();
+                self.last_dsl_mode = Some(result.mode);
+                self.last_dsl_relation = Some(result.relation.clone());
+                self.last_error = None;
+                self.search_candidates = result
+                    .rows
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, row)| {
+                        dsl_row_to_candidate(idx, row, &result, index_ref, PREVIEW_CONTEXT_RADIUS)
+                    })
+                    .collect();
+            }
+            Err(message) => {
+                self.last_dsl_repairs.clear();
+                self.last_dsl_mode = None;
+                self.last_dsl_relation = None;
+                self.last_error = Some(message);
+                self.search_candidates.clear();
+            }
+        }
+        self.rebuild_view();
     }
 
     pub(crate) fn is_sexp_prompt(&self) -> bool {
@@ -314,6 +383,17 @@ impl HelmOverlay {
             self.rebuild_view();
             return;
         };
+        if self.is_sexp_prompt() {
+            self.run_dsl_query(shared);
+            return;
+        }
+        #[cfg(feature = "linked-ui")]
+        {
+            self.pending_dsl_query = None;
+        }
+        self.last_dsl_repairs.clear();
+        self.last_dsl_mode = None;
+        self.last_dsl_relation = None;
         let has_filters = !self.parsed.languages.is_empty()
             || !self.parsed.documents.is_empty()
             || self.parsed.path_prefix.is_some()
@@ -374,6 +454,44 @@ impl HelmOverlay {
         self.last_error = None;
         self.search_candidates = report.hits.into_iter().map(hit_to_candidate).collect();
         self.rebuild_view();
+    }
+
+    fn run_dsl_query(&mut self, shared: SharedSearchIndex) {
+        let trimmed = self.input.trim();
+        if trimmed.len() <= 2 || !trimmed.contains(char::is_whitespace) {
+            #[cfg(feature = "linked-ui")]
+            {
+                self.pending_dsl_query = None;
+            }
+            self.last_dsl_repairs.clear();
+            self.last_dsl_mode = None;
+            self.last_dsl_relation = None;
+            self.last_error = Some(
+                "  :gerbil-ascent mode · press TAB for POO relation completions or type a query"
+                    .to_owned(),
+            );
+            self.search_candidates.clear();
+            self.rebuild_view();
+            return;
+        }
+        if let Some(runner) = self.dsl_runner.clone() {
+            #[cfg(feature = "linked-ui")]
+            {
+                self.pending_dsl_query = None;
+            }
+            let outcome = runner(shared, trimmed, 16_384).map_err(|err| err.to_string());
+            self.apply_dsl_result(outcome);
+        } else {
+            #[cfg(feature = "linked-ui")]
+            {
+                self.pending_dsl_query = Some(trimmed.to_owned());
+            }
+            #[cfg(not(feature = "linked-ui"))]
+            {
+                self.last_error = Some("search DSL runner unavailable".to_owned());
+            }
+            self.rebuild_view();
+        }
     }
 
     pub(crate) fn move_selection(&mut self, delta: isize) {
@@ -498,7 +616,7 @@ impl HelmOverlay {
         let primary_label = match selected.source {
             HelmSourceKind::Buffers => format!("Switch to buffer {}", selected.display),
             HelmSourceKind::Commands => format!("Invoke command M-x {}", selected.display),
-            HelmSourceKind::Search | HelmSourceKind::All => {
+            HelmSourceKind::Search | HelmSourceKind::Dsl | HelmSourceKind::All => {
                 if self.marked_ids.is_empty() {
                     format!("Insert citation {} into Composer", selected.display)
                 } else {
@@ -744,6 +862,7 @@ impl HelmOverlay {
         let active = self.active_source;
 
         let mut grouped: Vec<(HelmSourceKind, Vec<usize>)> = vec![
+            (HelmSourceKind::Dsl, Vec::new()),
             (HelmSourceKind::Search, Vec::new()),
             (HelmSourceKind::Buffers, Vec::new()),
             (HelmSourceKind::Commands, Vec::new()),
@@ -756,7 +875,7 @@ impl HelmOverlay {
             if !cand.matches_tokens(local_tokens) {
                 continue;
             }
-            if cand.source != HelmSourceKind::Search
+            if !matches!(cand.source, HelmSourceKind::Search | HelmSourceKind::Dsl)
                 && !async_query.is_empty()
                 && !cand.display.to_lowercase().contains(&async_query)
                 && !cand.snippet.to_lowercase().contains(&async_query)
@@ -776,10 +895,23 @@ impl HelmOverlay {
             if bucket.is_empty() {
                 continue;
             }
-            let meta = if source == HelmSourceKind::Search {
-                format!("{} · {} files", latency, self.indexed_files)
-            } else {
-                String::new()
+            let meta = match source {
+                HelmSourceKind::Search => format!("{} · {} files", latency, self.indexed_files),
+                HelmSourceKind::Dsl => {
+                    let rel = self.last_dsl_relation.as_deref().unwrap_or("answer");
+                    let mode = self
+                        .last_dsl_mode
+                        .map_or("ascent", SearchDslExecutionMode::as_str);
+                    if self.last_dsl_repairs.is_empty() {
+                        format!("{mode}:{rel} · {latency}")
+                    } else {
+                        format!(
+                            "{mode}:{rel} · {latency} · repaired[{}]",
+                            self.last_dsl_repairs.join(",")
+                        )
+                    }
+                }
+                _ => String::new(),
             };
             display_rows.push(HelmDisplayRow::SourceHeader {
                 source,

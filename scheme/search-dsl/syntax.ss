@@ -5,18 +5,16 @@
 ;;; Hygienic Gerbil Scheme metaprogramming (`defsyntax` / `defrules`) built
 ;;; directly on the upstream `:gerbil-ascent` library and `:clan/poo/object`.
 ;;;
-;;; Zero pseudo S-expressions, zero regexes, zero `string-append`, zero `eval-syntax`:
-;;;   - Re-exports real upstream `:gerbil-ascent` macros (`ascent`,
-;;;     `ascent-fragment`, `relational-program`, `relational-fragment`,
-;;;     `relational-choice-program`, `relational-choice-solve`).
-;;;   - `defsearch-language` (`defrules`): expands ONE declarative language
-;;;     specification purely over ASP's universal `semantic-open-edb.v1`
-;;;     `(language, kind, language_kind)` protocol into a POO prototype carrying
-;;;     a REAL compiled `:gerbil-ascent` `ascent-fragment` (publishing real typed
-;;;     Datalog relations such as `rust_fn`, `rust_impl`, `rust_macro`,
-;;;     `scheme_poo_def`, `sysml_requirement`) plus live metadata.
-;;;   - `defsearch-tool-spec` (`defsyntax`): derives `WorkspaceSearchToolSpecValue`
-;;;     by introspecting the real `:gerbil-ascent` forms and POO registry.
+;;; Two-Plane Orthogonal Design (ASP RFC 10.36):
+;;;   - Native language providers own low-level lexical syntax (comment openers,
+;;;     delimiter pairs, string quotes) and report `ProviderSyntaxSurface` up.
+;;;   - Gerbil Scheme owns the General Language Ontology (`callable`, `type_decl`,
+;;;     `module_decl`, `import_decl`, `binding_decl`, `macro_decl`, `comment_node`,
+;;;     `test_decl`) and per-language POO extensions (`defasp-language` via `.mix`):
+;;;       1. Native compiler `language_kind` -> General Ontology `kind` mappings
+;;;       2. Language-specific special `:gerbil-ascent` relations (`rust_impl`,
+;;;          `scheme_poo_def`, `julia_macro`, `ts_interface`, `py_class`, ...)
+;;;       3. Golden conformance probes projected to ASP's black-box provider harness
 (import (only-in :clan/poo/object .def .get .o .ref seal-object!)
         (only-in :gerbil-ascent/program/syntax ascent ascent-fragment)
         (only-in :gerbil-ascent/program/api
@@ -29,6 +27,7 @@
         relational-fragment
         relational-choice-program
         relational-choice-solve
+        defasp-language
         defsearch-language
         defsearch-tool-spec
         collect-unique-relations
@@ -83,12 +82,51 @@
       (display (string-join lang-names ",") port)
       (display "." port))))
 
-;;; Declare a composable POO language fragment via `defrules` purely over ASP's
-;;; universal `semantic-open-edb.v1` protocol (ZERO regexes!).
-;;; Each `(rel-name lang-str kind-str lang-kind-pat doc-str)` entry binds a real
-;;; `:gerbil-ascent` relation over `(entity id f lang-str kind-str lang-kind-pat name line)`
-;;; where `lang-kind-pat` is either `_` (any native AST node kind) or an exact
-;;; native parser node kind string such as `"impl_item"` or `"poo_def"`.
+;;; Declare a full POO language extension over ASP's General Language Ontology
+;;; (ZERO regexes, ZERO duplicated lexical delimiter/comment rules!):
+;;;   - `provider-language`: canonical ASP provider `languageId`
+;;;   - `extensions` / `project-markers`: workspace routing anchors
+;;;   - `kind-map`: native AST `language_kind` -> General Ontology `kind` mapping
+;;;   - `relations`: language-specific `:gerbil-ascent` POO extension relations
+;;;   - `conformance-probes`: minimal golden probes projected to ASP's harness
+(defrules defasp-language
+  (languages provider-language extensions project-markers kind-map relations conformance-probes)
+  ((_ FragmentName
+      (languages lang-sym ...)
+      (provider-language provider-lang-str)
+      (extensions ext-str ...)
+      (project-markers marker-str ...)
+      (kind-map (native-kind general-kind kind-doc) ...)
+      (relations (rel-name lang-str kind-str lang-kind-pat doc-str) ...)
+      (conformance-probes (probe-id probe-path probe-src probe-valid? ((exp-kind exp-lk exp-name) ...)) ...))
+   (.def FragmentName
+     (languages => append '(lang-sym ...))
+     (ascent-fragments => append
+       (list
+         (ascent-fragment
+           (relation entity
+             ((id string?) (file_id integer?) (lang string?)
+              (kind string?) (language_kind string?)
+              (name string?) (line integer?)))
+           (relation rel-name ((id string?) (file_id integer?) (name string?) (line integer?))) ...
+           ((rel-name id f name line)
+            <-- (entity id f lang-str kind-str lang-kind-pat name line)) ...)))
+     (relation-meta => append
+       (list (list 'rel-name lang-str kind-str 'lang-kind-pat doc-str) ...))
+     (language-contracts => append
+       (list
+         (list (car '(lang-sym ...))
+               provider-lang-str
+               (list ext-str ...)
+               (list marker-str ...)
+               (list (list native-kind general-kind kind-doc) ...)
+               (list 'rel-name ...)
+               (list (list probe-id probe-path probe-src probe-valid?
+                           (list (list exp-kind exp-lk exp-name) ...))
+                     ...)))))))
+
+;;; Lightweight POO fragment macro for embedded document/model languages
+;;; (SysML, Quint, Org) without an external HTTP compiler server.
 (defrules defsearch-language (languages relations)
   ((_ FragmentName
       (languages lang-sym ...)

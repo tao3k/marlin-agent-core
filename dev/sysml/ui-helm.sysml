@@ -17,6 +17,7 @@ package MarlinUiHelm {
 
     enum def HelmSourceKind {
         enum search;
+        enum dsl;
         enum buffers;
         enum commands;
         enum org;
@@ -47,22 +48,28 @@ package MarlinUiHelm {
         }
         part nativeSearchBackend {
             doc /* `WorkspaceSearchIndex::open_or_build_cached`,
-                   `WorkspaceSearchIndex::sync_workspace_from_disk`, and
+                   `WorkspaceSearchIndex::sync_workspace_from_disk`,
+                   `WorkspaceSearchIndex::live_file_context`,
+                   `hydrate_workspace_open_edb_org_and_cache`, and
                    `MarlinConvergedSearchEngine::execute_admitted_playbook_with_index`:
                    pure-Rust resident multi-axis workspace engine with zero-copy
-                   mmap cold-start snapshots, in-place incremental delta sync on
-                   refresh (`C-l`), and BLAKE3 generation-bound hits in microseconds. */
+                   mmap cold-start snapshots, BLAKE3 `content_hash`-verified
+                   Open EDB caching, in-place incremental delta sync on refresh
+                   (`C-l`), and BLAKE3 generation-bound hits in microseconds. */
         }
         part embarkActionSink {
-            doc /* Dispatches confirmed/marked Helm hits to buffer navigation,
-                   Shared Org Context export, or Agent turns carrying verified
-                   generation provenance. */
+            doc /* Dispatches confirmed/marked Helm hits (including live
+                   `HELM-DSL` `:gerbil-ascent` / Dusa answer rows carrying
+                   `@path:line` citations) to buffer navigation, Shared Org
+                   Context export, or Agent turns carrying verified generation
+                   provenance. */
         }
         part agentSearchTool {
             doc /* `scheme/tooling/objects.ss` (`workspace_search`, pure S-exp
                    description projected from `scheme/search-dsl`) +
                    `scheme/search-dsl/repair.ss` (safe pre-tool-call Model AST
-                   repair hook with audit receipt) +
+                   repair hook v2 with wildcard padding, choice-value
+                   normalization, audit receipt, and POO did-you-mean diagnostics) +
                    `marlin-agent-tooling::ResidentSearchToolHandler`:
                    executes pure `:gerbil-ascent` S-expression queries over the
                    shared resident `SharedSearchIndexSlot` + zero-regex
@@ -70,10 +77,12 @@ package MarlinUiHelm {
                    evidence and zero legacy `@sym:` shim. */
         }
         part searchDslCompletionTable {
-            doc /* `scheme/search-dsl/funcs.ss` (`search-dsl-completions`):
+            doc /* `scheme/search-dsl/funcs.ss` (`search-dsl-completions`) +
+                   `HelmOverlay::apply_dsl_result` / `linked_ui::service_helm_dsl`:
                    POO `SearchLanguageRegistry.`-driven context-aware TAB
                    completion table (`Form | Kind | Signature | Lang | Doc`)
-                   rendered inside Helm for S-expression queries. */
+                   plus live `HELM-DSL` S-expression execution with RAM preview
+                   and `repaired[...]` mode-line receipts. */
         }
 
         dependency uiToAbi from helmSchemeUi to helmCAbiBridge;

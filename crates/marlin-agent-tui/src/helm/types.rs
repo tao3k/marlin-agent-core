@@ -8,9 +8,9 @@
 use std::sync::{Arc, RwLock};
 
 use marlin_agent_search_engine::{
-    SearchPlaybookComposition, SearchPlaybookLeaf, SearchPlaybookPlanInput,
-    TopologyOwnerMembershipBlock, WorkspaceContextLine, WorkspaceSearchHit, WorkspaceSearchIndex,
-    admit_search_playbook_plan,
+    SearchDslStructuredResult, SearchDslStructuredRow, SearchPlaybookComposition,
+    SearchPlaybookLeaf, SearchPlaybookPlanInput, TopologyOwnerMembershipBlock,
+    WorkspaceContextLine, WorkspaceSearchHit, WorkspaceSearchIndex, admit_search_playbook_plan,
 };
 use marlin_agent_ui::{UiBufferId, UiCommand, UiCommandName};
 
@@ -19,6 +19,7 @@ pub(crate) type SharedSearchIndex = Arc<RwLock<WorkspaceSearchIndex>>;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum HelmSourceKind {
     All,
+    Dsl,
     Search,
     Buffers,
     Commands,
@@ -28,6 +29,7 @@ impl HelmSourceKind {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::All => "all",
+            Self::Dsl => "dsl",
             Self::Search => "search",
             Self::Buffers => "buffers",
             Self::Commands => "commands",
@@ -37,6 +39,7 @@ impl HelmSourceKind {
     pub(crate) fn section_title(self) -> &'static str {
         match self {
             Self::All => "All Sources",
+            Self::Dsl => "Ascent / Dusa DSL",
             Self::Search => "Workspace Search",
             Self::Buffers => "Buffers",
             Self::Commands => "Commands (M-x)",
@@ -46,7 +49,8 @@ impl HelmSourceKind {
     pub(super) fn next(self) -> Self {
         match self {
             Self::All => Self::Search,
-            Self::Search => Self::Buffers,
+            Self::Search => Self::Dsl,
+            Self::Dsl => Self::Buffers,
             Self::Buffers => Self::Commands,
             Self::Commands => Self::All,
         }
@@ -256,6 +260,54 @@ pub(crate) enum HelmAction {
     InsertCitations(String),
     SelectBuffer(UiBufferId),
     PrepareCommand(UiCommandName),
+}
+
+pub(super) fn dsl_row_to_candidate(
+    idx: usize,
+    row: &SearchDslStructuredRow,
+    result: &SearchDslStructuredResult,
+    index: Option<&WorkspaceSearchIndex>,
+    context_radius: usize,
+) -> HelmCandidate {
+    let (display, citation, context_lines) = match (&row.path, row.line) {
+        (Some(path), Some(line)) => {
+            let ctx = index
+                .map(|idx_ref| idx_ref.live_file_context(path, line, context_radius))
+                .unwrap_or_default();
+            (
+                format!("{path}:{line}"),
+                Some(format!("@{path}:{line}")),
+                ctx,
+            )
+        }
+        (Some(path), None) => {
+            let ctx = index
+                .map(|idx_ref| idx_ref.live_file_context(path, 1, context_radius))
+                .unwrap_or_default();
+            (path.clone(), Some(format!("@{path}")), ctx)
+        }
+        _ => (row.display.clone(), Some(row.display.clone()), Vec::new()),
+    };
+    let badge = format!("{}:{}", result.mode.as_str(), result.relation);
+    HelmCandidate {
+        id: format!("dsl:{}:{}:{idx}", result.relation, display),
+        source: HelmSourceKind::Dsl,
+        display,
+        path: row.path.clone(),
+        language: None,
+        primary_symbol: row
+            .cells
+            .iter()
+            .find(|c| Some(*c) != row.path.as_ref() && c.parse::<usize>().is_err())
+            .cloned(),
+        graph_relations: result.repairs.clone(),
+        snippet: row.display.clone(),
+        citation,
+        badge,
+        context_lines,
+        buffer_id: None,
+        command_name: None,
+    }
 }
 
 pub(super) fn admit_helm_playbook(parsed: &HelmParsedInput) -> Result<(), String> {

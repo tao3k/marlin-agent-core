@@ -22,7 +22,10 @@
                repair-query: [(Fun SearchDslVector <- String)]
                compile-prefilter: [(Fun SearchDslVector <- String)]
                evaluate-edb: [(Fun SearchDslAny <- String SearchDslAny)]
+               extract-facts: [(Fun SearchDslVector <- SearchDslVector)]
                completions: [(Fun SearchDslVector <- String)]
                tool-description: [(Fun String <-)]
-               parse-selector: [(Fun SearchDslAny <- String)])
+               parse-selector: [(Fun SearchDslAny <- String)]
+               conformance-pack: [(Fun SearchDslAny <- SearchDslAny)]
+               all-conformance-packs: [(Fun SearchDslAny <-)])
        identity: 'marlin/search-dsl))

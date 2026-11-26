@@ -341,6 +341,49 @@ async fn resident_search_tool_handler_executes_symbol_and_graph_queries_with_gen
         }
         other => panic!("expected Completed for native impl_item query, got {other:?}"),
     }
+
+    // Repair Hook v2: missing trailing wildcards on known EDB relation `(edge a b "imports")`
+    // are safely padded to 5 columns and reported via `pad-relation-wildcards`.
+    let padded_edge_call = ModelToolCall {
+        id: ModelToolCallId::new("call-pad-edge-1").unwrap(),
+        name: ModelToolName::new("workspace_search").unwrap(),
+        arguments: serde_json::Map::from_iter([(
+            "query".to_owned(),
+            serde_json::Value::String(
+                "((answer path target) <-- (edge path target \"imports\") (file f \"rust\" path))"
+                    .to_owned(),
+            ),
+        )]),
+    };
+    match handler.run_tool(padded_edge_call, owner.context()).await {
+        ModelToolOutcome::Completed(body) => {
+            assert!(body.contains("src/caller.rs"), "{body}");
+            assert!(body.contains("resident_kernel_entry"), "{body}");
+            assert!(body.contains("pad-relation-wildcards"), "{body}");
+        }
+        other => panic!("expected Completed for padded 3-col edge query, got {other:?}"),
+    }
+
+    // Repair Hook v2 fail-closed diagnostic: unknown relation name rejects with POO
+    // registry-backed `"did you mean: ..."` guidance instead of silently succeeding.
+    let typo_rel_call = ModelToolCall {
+        id: ModelToolCallId::new("call-typo-rel-1").unwrap(),
+        name: ModelToolName::new("workspace_search").unwrap(),
+        arguments: serde_json::Map::from_iter([(
+            "query".to_owned(),
+            serde_json::Value::String(
+                "((answer path name) <-- (file f \"rust\" path) (rust_function id f name line))"
+                    .to_owned(),
+            ),
+        )]),
+    };
+    match handler.run_tool(typo_rel_call, owner.context()).await {
+        ModelToolOutcome::Failed(err) => {
+            assert!(err.contains("did you mean:"), "{err}");
+            assert!(err.contains("rust_fn"), "{err}");
+        }
+        other => panic!("expected Failed with did-you-mean suggestion, got {other:?}"),
+    }
 }
 
 #[tokio::test]

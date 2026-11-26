@@ -478,6 +478,8 @@ fn project_helm_modeline(helm: &HelmOverlay, width: u16) -> UiElement {
         " HELM-TAB "
     } else if helm.action_mode {
         " HELM-ACT "
+    } else if helm.is_sexp_prompt() {
+        " HELM-DSL "
     } else {
         " HELM "
     };
@@ -502,13 +504,19 @@ fn project_helm_modeline(helm: &HelmOverlay, width: u16) -> UiElement {
     } else {
         ""
     };
+    let repair_part = if helm.last_dsl_repairs.is_empty() {
+        String::new()
+    } else {
+        format!(" · repaired[{}]", helm.last_dsl_repairs.join(","))
+    };
     let left_info = format!(
-        " {} · {}{} · {}{}{} ",
+        " {} · {}{} · {}{}{}{} ",
         helm.active_source.label(),
         pos_text,
         mark_part,
         helm.format_latency(),
         follow_part,
+        repair_part,
         gen_part
     );
     let hints = if helm.completion_mode {

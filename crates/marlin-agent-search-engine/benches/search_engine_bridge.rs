@@ -19,8 +19,14 @@ use gerbil_scheme::{
 use marlin_agent_search_engine::{
     AgentTopologyRelationship, MarlinAgentStorageSearchPort, MarlinContextOrgPort,
     MarlinSearchStorageProvenance, SearchGenerationDigest, SearchProjectId, SearchTopologyEdgeId,
-    SearchTopologyEdgeRecord, SearchWorkspaceId, WorkspaceIndexConfig, WorkspaceSearchIndex,
-    WorkspaceSearchQuery, admit_rooted_search_plan, marlin_search_engine,
+    SearchTopologyEdgeRecord, SearchWorkspaceId, WorkspaceEdbPrefilter, WorkspaceIndexConfig,
+    WorkspaceOpenEdbPendingFile, WorkspaceSearchIndex, WorkspaceSearchQuery,
+    admit_rooted_search_plan, encode_edb_snapshot, extract_org_open_edb_batch,
+    marlin_search_engine,
+};
+#[cfg(not(feature = "linked-ui"))]
+use marlin_agent_search_engine::{
+    SearchDslExecutionRequest, default_marlin_scheme_dir, execute_package_search_dsl_structured,
 };
 use marlin_agent_storage::InMemoryAgentStorage;
 use marlin_context_org_model::{OrgNode, OrgNodeKind};
@@ -334,6 +340,80 @@ fn bench_rooted_scheme_abi_admission(c: &mut Criterion) {
     });
 
     group.finish();
+
+    // Open EDB zero-regex Org hydration, zero-JSON RootedSchemeObject EDB projection,
+    // and live `:gerbil-ascent` + `repair.ss` execution sharing the single Gerbil VM.
+    let mut edb_group = c.benchmark_group("marlin_open_edb_hydration_and_dsl");
+
+    let mut org_body = String::new();
+    for i in 0..64_usize {
+        use std::fmt::Write as _;
+        let _ = writeln!(
+            org_body,
+            "* Requirement Node {i}\n:PROPERTIES:\n:ID: req-{i}\n:STATUS: active\n:END:\n"
+        );
+    }
+    let pending_org = vec![WorkspaceOpenEdbPendingFile {
+        path: "docs/bench.org".to_owned(),
+        language: "org".to_owned(),
+        body: org_body,
+    }];
+    edb_group.throughput(Throughput::Elements(64));
+    edb_group.bench_function("extract_org_open_edb_64_headings", |bencher| {
+        bencher.iter(|| {
+            let batch = extract_org_open_edb_batch(black_box(&pending_org));
+            black_box(batch.entities.len());
+        });
+    });
+
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let resident =
+        WorkspaceSearchIndex::build_with_config(crate_root, WorkspaceIndexConfig::default());
+    let rust_langs = vec!["rust".to_owned()];
+    let tokens = vec!["marlin_search_engine".to_owned()];
+    let snapshot = resident.project_prefiltered_edb(&WorkspaceEdbPrefilter {
+        languages: &rust_langs,
+        required_tokens: &tokens,
+        max_files: 32,
+        max_facts: 4096,
+        ..Default::default()
+    });
+    edb_group.throughput(Throughput::Elements(snapshot.entities.len().max(1) as u64));
+    edb_group.bench_function("encode_edb_snapshot_zero_json", |bencher| {
+        bencher.iter(|| {
+            let rooted = encode_edb_snapshot(&runtime, black_box(&snapshot))
+                .expect("encode rooted EDB snapshot");
+            black_box(rooted);
+        });
+    });
+
+    #[cfg(not(feature = "linked-ui"))]
+    if let Some(scheme_dir) = default_marlin_scheme_dir()
+        && scheme_dir
+            .join(".gerbil/lib/marlin-agent-core/c-abi/search-dsl.ssi")
+            .exists()
+    {
+        let scheme_dir_str = scheme_dir.to_str().expect("utf-8 scheme dir");
+        let query = "((answer path name line) <-- (file f \"rust\" path) (rust_fn _ f name line))";
+        edb_group.throughput(Throughput::Elements(1));
+        edb_group.bench_function("execute_package_search_dsl_structured", |bencher| {
+            bencher.iter(|| {
+                let res = execute_package_search_dsl_structured(
+                    &runtime,
+                    scheme_dir_str,
+                    black_box(&SearchDslExecutionRequest {
+                        index: &resident,
+                        query,
+                        output_limit: 4096,
+                    }),
+                )
+                .expect("execute live :gerbil-ascent structured query");
+                black_box(res.rows.len());
+            });
+        });
+    }
+
+    edb_group.finish();
 }
 
 fn bench_resident_cached_open_sync_and_sym_graph(c: &mut Criterion) {

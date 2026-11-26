@@ -60,7 +60,9 @@
         search-dsl-completions
         search-dsl-tool-description
         search-dsl-tool-summary
-        parse-search-dsl-selector)
+        parse-search-dsl-selector
+        project-language-conformance-pack
+        project-all-conformance-packs)
 
 (def +default-max-files+ 128)
 (def +default-choice-state-budget+ 1024)
@@ -100,7 +102,9 @@
   (let ((entry (assq rel-name (.get registry relation-meta))))
     (and entry
          (let ((lang (cadr entry)))
-           (and (not (string=? lang "edb")) lang)))))
+           (and (not (string=? lang "edb"))
+                (not (string=? lang "general"))
+                lang)))))
 
 (def (extract-atom-hints atom registry langs tokens)
   (if (not (and (pair? atom) (symbol? (car atom))))
@@ -363,7 +367,9 @@
                (relational-with-role (relational-source 'edge 5 (normalize-choice-rows (edb-table-ref edb 'edge))) 'input)
                (relational-with-role (relational-source 'attr 3 (normalize-choice-rows (edb-table-ref edb 'attr))) 'input)))
            (poo-helper-entries
-             (filter (lambda (m) (not (string=? (cadr m) "edb")))
+             (filter (lambda (m)
+                       (and (not (string=? (cadr m) "edb"))
+                            (not (string=? (cadr m) "general"))))
                      (.get registry relation-meta)))
            (poo-helper-rels
              (map (lambda (m)
@@ -483,3 +489,67 @@
 
 (def (search-dsl-tool-summary (_registry SearchLanguageRegistryValue))
   (.get WorkspaceSearchToolSpecValue summary))
+
+;;; ============================================================================
+;;; 4. Pure Functional Language Conformance Pack Projection (ASP RFC 10.36)
+;;; ============================================================================
+
+(def (contract-entry->conformance-pack entry)
+  (let ((lang-sym (list-ref entry 0))
+        (provider-lang (list-ref entry 1))
+        (extensions (list-ref entry 2))
+        (markers (list-ref entry 3))
+        (kind-map (list-ref entry 4))
+        (special-rels (list-ref entry 5))
+        (probes (list-ref entry 6)))
+    (list->hash-table
+      (list
+        (cons "schemaId" "agent.semantic-protocols.language-conformance-pack")
+        (cons "schemaVersion" "1")
+        (cons "languageId" (symbol->string lang-sym))
+        (cons "providerLanguageId" provider-lang)
+        (cons "extensions" extensions)
+        (cons "projectMarkers" markers)
+        (cons "kindMappings"
+              (map (lambda (km)
+                     (list->hash-table
+                       (list (cons "nativeLanguageKind" (list-ref km 0))
+                             (cons "generalKind" (list-ref km 1))
+                             (cons "description" (list-ref km 2)))))
+                   kind-map))
+        (cons "specialRelations" (map symbol->string special-rels))
+        (cons "probes"
+              (map (lambda (probe)
+                     (list->hash-table
+                       (list (cons "probeId" (list-ref probe 0))
+                             (cons "path" (list-ref probe 1))
+                             (cons "source" (list-ref probe 2))
+                             (cons "expectValid" (list-ref probe 3))
+                             (cons "expectedNodes"
+                                   (map (lambda (node)
+                                          (list->hash-table
+                                            (list (cons "kind" (list-ref node 0))
+                                                  (cons "languageKind" (list-ref node 1))
+                                                  (cons "name" (list-ref node 2)))))
+                                        (list-ref probe 4))))))
+                   probes))))))
+
+;;; Project ONE language's POO `defasp-language` contract into structured data
+;;; aligned 1:1 with ASP's `schemas/language-conformance-pack.schema.json`.
+;;; Matches either the Scheme language symbol (`'scheme`, `'rust`, `'julia`) or
+;;; the ASP provider language id (`"gerbil-scheme"`, `"rust"`, `"julia"`).
+(def (project-language-conformance-pack lang-key (registry SearchLanguageRegistryValue))
+  (let* ((needle (if (symbol? lang-key) (symbol->string lang-key) lang-key))
+         (contracts (.get registry language-contracts))
+         (matched
+           (find (lambda (entry)
+                   (or (string=? (symbol->string (list-ref entry 0)) needle)
+                       (string=? (list-ref entry 1) needle)))
+                 contracts)))
+    (if matched
+      (contract-entry->conformance-pack matched)
+      (error "unknown ASP language contract in SearchLanguageRegistry" lang-key))))
+
+;;; Project ALL native provider language contracts from `SearchLanguageRegistryValue`.
+(def (project-all-conformance-packs (registry SearchLanguageRegistryValue))
+  (map contract-entry->conformance-pack (.get registry language-contracts)))

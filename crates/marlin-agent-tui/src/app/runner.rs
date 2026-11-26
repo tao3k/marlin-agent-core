@@ -636,7 +636,12 @@ pub(super) fn run(
             };
             let received = keys_rx.recv_timeout(wait);
             #[cfg(feature = "linked-ui")]
-            search_dsl_mailbox.drain(&scheme_runtime);
+            {
+                search_dsl_mailbox.drain(&scheme_runtime);
+                if super::super::linked_ui::service_helm_dsl(&scheme_runtime, &mut app) {
+                    schedule.mark_dirty();
+                }
+            }
             if let Some((up, pulses, column, row)) = wheel_steps.take_steps() {
                 apply_wheel_scroll(&mut app, &ui, &painted_regions, up, pulses, column, row);
                 schedule.mark_dirty();

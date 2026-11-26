@@ -18,8 +18,10 @@ use marlin_agent_search_engine::{
 };
 #[cfg(not(feature = "linked-ui"))]
 use marlin_agent_search_engine::{
-    WorkspaceSearchIndex, WorkspaceSearchQuery, project_from_package, project_helm_index_config,
-    project_helm_prompt,
+    SearchDslExecutionMode, SearchDslExecutionRequest, WorkspaceIndexConfig, WorkspaceSearchIndex,
+    WorkspaceSearchQuery, execute_package_search_dsl_structured,
+    hydrate_package_workspace_open_edb, hydrate_workspace_open_edb_org_and_cache,
+    project_from_package, project_helm_index_config, project_helm_prompt,
 };
 use marlin_agent_storage::InMemoryAgentStorage;
 use marlin_context_org_model::{OrgNode, OrgNodeKind};
@@ -340,6 +342,163 @@ fn rooted_scheme_plans_and_compiled_module_project_into_asp() {
                 "converged 4-axis query should stay ultra-fast even in debug build, got {}µs",
                 fast_report.elapsed_micros
             );
+        }
+
+        // 6. Zero-regex Open EDB native AST hydration (.org, .ss, .sysml, .qnt)
+        //    + BLAKE3 content_hash persistent cache + structured :gerbil-ascent execution.
+        if scheme_dir
+            .join(".gerbil/lib/marlin-agent-core/c-abi/search-dsl.ssi")
+            .exists()
+        {
+            let scheme_dir_str = scheme_dir.to_str().expect("utf-8 scheme dir");
+            let ws = tempfile::tempdir().expect("temp hydration workspace");
+            std::fs::create_dir_all(ws.path().join("docs")).unwrap();
+            std::fs::create_dir_all(ws.path().join("scheme")).unwrap();
+            std::fs::create_dir_all(ws.path().join("dev/sysml")).unwrap();
+            std::fs::create_dir_all(ws.path().join("dev/quint")).unwrap();
+
+            std::fs::write(
+                ws.path().join("docs/spec.org"),
+                "* Kernel Search Spec\n:PROPERTIES:\n:STATUS: active\n:END:\n",
+            )
+            .unwrap();
+            std::fs::write(
+                ws.path().join("scheme/sample.ss"),
+                "(defstruct Foo (x))\n(.def KernelOps. mode: 'fast)\n(deflanguage mini-lang (token A \"a\"))\n",
+            )
+            .unwrap();
+            std::fs::write(
+                ws.path().join("dev/sysml/sample.sysml"),
+                "package SamplePkg {\n  requirement def <'REQ_SRCH_1'> FastSearch { }\n}\n",
+            )
+            .unwrap();
+            std::fs::write(
+                ws.path().join("dev/quint/sample.qnt"),
+                "module SampleModel {\n  val inv_safe = true\n}\n",
+            )
+            .unwrap();
+
+            let cache_path = ws.path().join(".marlin-open-edb.bin");
+            let mut idx =
+                WorkspaceSearchIndex::build_with_config(ws.path(), WorkspaceIndexConfig::default());
+            let receipt =
+                hydrate_package_workspace_open_edb(&runtime, scheme_dir_str, &mut idx, &cache_path)
+                    .expect("hydrate Open EDB across .org/.ss/.sysml/.qnt");
+            assert_eq!(receipt.org_files_hydrated, 1);
+            assert_eq!(receipt.scheme_files_hydrated, 3);
+            assert!(receipt.cache_saved);
+            assert!(cache_path.is_file());
+
+            // Structured :gerbil-ascent query against hydrated POO `scheme_poo_def` facts.
+            let poo_res = execute_package_search_dsl_structured(
+                &runtime,
+                scheme_dir_str,
+                &SearchDslExecutionRequest {
+                    index: &idx,
+                    query: "((answer path name line) <-- (file f \"scheme\" path) (scheme_poo_def _ f name line))",
+                    output_limit: 4096,
+                },
+            )
+            .expect("structured query over hydrated scheme_poo_def");
+            assert_eq!(poo_res.mode, SearchDslExecutionMode::Ascent);
+            assert!(poo_res.repairs.iter().any(|r| r == "wrap-bare-rule"));
+            assert!(
+                poo_res
+                    .repairs
+                    .iter()
+                    .any(|r| r == "synthesize-head-relation")
+            );
+            assert!(
+                poo_res.rows.iter().any(|row| {
+                    row.path.as_deref() == Some("scheme/sample.ss")
+                        && row.line == Some(2)
+                        && row.cells.iter().any(|c| c == "KernelOps.")
+                }),
+                "expected KernelOps. at scheme/sample.ss:2, got {:?}",
+                poo_res.rows
+            );
+
+            // Verify SysML, Quint, and Org hydrated facts are live in the same Open EDB.
+            let sysml_res = execute_package_search_dsl_structured(
+                &runtime,
+                scheme_dir_str,
+                &SearchDslExecutionRequest {
+                    index: &idx,
+                    query: "((answer path name) <-- (file f \"sysml\" path) (sysml_requirement _ f name _))",
+                    output_limit: 4096,
+                },
+            )
+            .expect("structured query over hydrated sysml_requirement");
+            assert!(
+                sysml_res
+                    .rows
+                    .iter()
+                    .any(|row| row.path.as_deref() == Some("dev/sysml/sample.sysml")
+                        && row.cells.iter().any(|c| c == "FastSearch")),
+                "expected FastSearch sysml_requirement, got {:?}",
+                sysml_res.rows
+            );
+
+            let quint_res = execute_package_search_dsl_structured(
+                &runtime,
+                scheme_dir_str,
+                &SearchDslExecutionRequest {
+                    index: &idx,
+                    query: "((answer path name) <-- (file f \"quint\" path) (quint_invariant _ f name _))",
+                    output_limit: 4096,
+                },
+            )
+            .expect("structured query over hydrated quint_invariant");
+            assert!(
+                quint_res
+                    .rows
+                    .iter()
+                    .any(|row| row.path.as_deref() == Some("dev/quint/sample.qnt")
+                        && row.cells.iter().any(|c| c == "inv_safe")),
+                "expected inv_safe quint_invariant, got {:?}",
+                quint_res.rows
+            );
+
+            let org_res = execute_package_search_dsl_structured(
+                &runtime,
+                scheme_dir_str,
+                &SearchDslExecutionRequest {
+                    index: &idx,
+                    query: "((answer path name) <-- (file f \"org\" path) (org_heading _ f name _))",
+                    output_limit: 4096,
+                },
+            )
+            .expect("structured query over hydrated org_heading");
+            assert!(
+                org_res
+                    .rows
+                    .iter()
+                    .any(|row| row.path.as_deref() == Some("docs/spec.org")
+                        && row.cells.iter().any(|c| c == "Kernel Search Spec")),
+                "expected Kernel Search Spec org_heading, got {:?}",
+                org_res.rows
+            );
+
+            // Cold restore from BLAKE3 content_hash cache restores all 4 files with zero re-extraction,
+            // and mutating a file on disk invalidates its stale facts fail-closed.
+            let mut cold_idx =
+                WorkspaceSearchIndex::build_with_config(ws.path(), WorkspaceIndexConfig::default());
+            let restored = hydrate_workspace_open_edb_org_and_cache(&mut cold_idx, &cache_path);
+            assert_eq!(restored.restored_files, 4);
+            assert_eq!(restored.org_files_hydrated, 0);
+
+            std::fs::write(
+                ws.path().join("scheme/sample.ss"),
+                "(.def FreshKernelOps. mode: 'v2)\n",
+            )
+            .unwrap();
+            let mut modified_idx =
+                WorkspaceSearchIndex::build_with_config(ws.path(), WorkspaceIndexConfig::default());
+            let partial = hydrate_workspace_open_edb_org_and_cache(&mut modified_idx, &cache_path);
+            assert_eq!(partial.restored_files, 3);
+            let pending_scheme = modified_idx.live_files_needing_open_edb(&["scheme"], 32);
+            assert_eq!(pending_scheme.len(), 1);
+            assert_eq!(pending_scheme[0].path, "scheme/sample.ss");
         }
     }
 }

@@ -7,6 +7,7 @@
 (import (only-in :clan/poo/mop .new/checked)
         "./types.ss"
         "./objects.ss"
+        "./extract.ss"
         "./funcs.ss")
 (export SearchDslScope)
 
@@ -18,6 +19,9 @@
     repair-query: (lambda (text) (repair-ascent-search-form text SearchLanguageRegistryValue))
     compile-prefilter: (lambda (text) (compile-search-dsl-prefilter text SearchLanguageRegistryValue))
     evaluate-edb: (lambda (text edb) (evaluate-search-dsl-over-edb text edb SearchLanguageRegistryValue))
+    extract-facts: extract-open-edb-facts-batch
     completions: (lambda (text) (search-dsl-completions text SearchLanguageRegistryValue))
     tool-description: (lambda () (search-dsl-tool-description SearchLanguageRegistryValue))
-    parse-selector: parse-search-dsl-selector))
+    parse-selector: parse-search-dsl-selector
+    conformance-pack: (lambda (lang) (project-language-conformance-pack lang SearchLanguageRegistryValue))
+    all-conformance-packs: (lambda () (project-all-conformance-packs SearchLanguageRegistryValue))))

@@ -437,16 +437,21 @@ impl App {
             .unwrap_or_else(|| std::path::PathBuf::from("."));
         let snapshot_path =
             marlin_agent_search_engine::default_workspace_snapshot_path(&workspace_root);
+        let edb_cache_path =
+            marlin_agent_search_engine::default_workspace_edb_cache_path(&workspace_root);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.search_index_warming = Some(rx);
         runtime.spawn_blocking(move || {
-            let built = Arc::new(std::sync::RwLock::new(
-                marlin_agent_search_engine::WorkspaceSearchIndex::open_or_build_cached(
-                    &workspace_root,
-                    &snapshot_path,
-                    config,
-                ),
-            ));
+            let mut idx = marlin_agent_search_engine::WorkspaceSearchIndex::open_or_build_cached(
+                &workspace_root,
+                &snapshot_path,
+                config,
+            );
+            let _ = marlin_agent_search_engine::hydrate_workspace_open_edb_org_and_cache(
+                &mut idx,
+                &edb_cache_path,
+            );
+            let built = Arc::new(std::sync::RwLock::new(idx));
             let _ = tx.send(built);
         });
     }
