@@ -13,6 +13,7 @@
         "ui-workbench-test"
         "ui-helm-test"
         "ui-mygo-test"
+        "ui-workspaces-test"
         "task-workbench-tabs-test"
         "end-to-end-task-workflow-test"
         "context-org-contract-test"
@@ -36,6 +37,7 @@
         brief-to-draft-options-test
         marlin-ui-helm-test
         ui-mygo-test
+        ui-workspaces-test
         task-workbench-tabs-test
         end-to-end-task-workflow-test
         context-progressive-dispatch-test

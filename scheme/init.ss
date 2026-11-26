@@ -23,6 +23,7 @@
   (ui-transcript)
   (ui-themes)
   (ui-layout)
+  (ui-workspaces)
   (search-engine)
   (search-dsl)
   (ast-style)
