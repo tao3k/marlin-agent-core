@@ -95,17 +95,19 @@ pub use deck_runtime_policy::{
 };
 pub use graph_engine::{
     GraphEngineDispatchProjection, GraphEngineGovernedContextProjection, GraphEngineLinkedBridge,
-    GraphEngineLinkedExports, GraphEngineProjectionError, GraphEngineRootedOracle,
-    GraphEngineWorkbenchTaskRow, MARLIN_GRAPH_ENGINE_ABI_ID, MARLIN_GRAPH_ENGINE_ABI_VERSION,
+    GraphEngineLinkedExports, GraphEngineOracleHandle, GraphEngineOracleServer,
+    GraphEngineProjectionError, GraphEngineRootedOracle, GraphEngineWorkbenchTaskRow,
+    MARLIN_GRAPH_ENGINE_ABI_ID, MARLIN_GRAPH_ENGINE_ABI_VERSION,
     MARLIN_GRAPH_ENGINE_DISPATCH_SYMBOL, MARLIN_GRAPH_ENGINE_GOVERNED_CONTEXT_SYMBOL,
     MARLIN_GRAPH_ENGINE_RECONCILE_SYMBOL, MARLIN_GRAPH_ENGINE_WORKBENCH_TABS_SYMBOL,
     decode_graph_engine_dispatch_vector, decode_graph_engine_governed_context_vector,
     decode_graph_engine_reconcile_vector, decode_graph_engine_workbench_tabs_vector,
     encode_graph_engine_dispatch_request, encode_graph_engine_governed_context_request,
     encode_graph_engine_reconcile_request, encode_graph_engine_workbench_tabs_request,
-    invoke_linked_graph_engine_dispatch, invoke_linked_graph_engine_governed_context,
-    invoke_linked_graph_engine_reconcile, invoke_linked_graph_engine_workbench_tabs,
-    marlin_graph_engine_abi_contract, marlin_graph_engine_readiness_plan,
+    graph_engine_oracle_channel, invoke_linked_graph_engine_dispatch,
+    invoke_linked_graph_engine_governed_context, invoke_linked_graph_engine_reconcile,
+    invoke_linked_graph_engine_workbench_tabs, marlin_graph_engine_abi_contract,
+    marlin_graph_engine_readiness_plan,
 };
 pub use graph_loop_continuation::{
     GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_ID,

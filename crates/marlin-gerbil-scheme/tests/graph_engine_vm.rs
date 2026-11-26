@@ -54,7 +54,7 @@ use marlin_gerbil_scheme::{
     decode_scheme_atomic_effect_vector, encode_graph_engine_dispatch_request,
     encode_graph_engine_governed_context_request, encode_graph_engine_reconcile_request,
     encode_graph_engine_workbench_tabs_request, encode_scheme_atomic_receipt_vector,
-    gerbil_package_root,
+    gerbil_package_root, graph_engine_oracle_channel,
 };
 
 fn vec_obj<'vm>(
@@ -1676,4 +1676,180 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
         .project_workbench_tabs_with_oracle(&live_oracle)
         .expect("boot #6 live Scheme oracle cross-check");
     assert_eq!(tabs_s18_2, tabs_s18_1);
+
+    // -------------------------------------------------------------------------
+    // Phase 9 (Round S19): Multi-Threaded Tokio Host Thread <-> Send+Sync
+    // `GraphEngineOracleHandle` <-> VM-Owner Thread `GraphEngineRootedOracle`
+    // + `TaskActorControlPlane::with_oracle` + `MyGoBridgeHost` + Turso WAL Boot #7!
+    // -------------------------------------------------------------------------
+    let (oracle_handle, oracle_server) = graph_engine_oracle_channel(32);
+    let s19_db_path = tmp_dir.path().join("gerbil-vm-mt-oracle-s19.db");
+
+    let mt_host_thread = std::thread::spawn(move || {
+        let mt_rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("multi-thread tokio runtime");
+        mt_rt.block_on(async move {
+            let cfg = marlin_agent_storage::TursoAgentStorageConfig {
+                path: s19_db_path,
+                optimization_profile:
+                    marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvcc,
+                batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent,
+            };
+            let proj = marlin_agent_storage::ProjectId::new("proj-mt-s19").unwrap();
+            let ptr = marlin_agent_storage::ArtifactPointerKey::new("ptr:s19:mt-oracle").unwrap();
+            let agent = marlin_agent_storage::AgentId::new("agent-mt-s19").unwrap();
+            let tid = TaskActorId::new("task-s19-mt").unwrap();
+            let oracle_arc: Arc<dyn marlin_agent_graph::GraphEngineOracle + Send + Sync> =
+                Arc::new(oracle_handle);
+
+            // Boot #6b on separate OS thread with `TaskActorControlPlane::with_oracle`
+            let storage1 = marlin_agent_storage::TursoAgentStorage::open_local(cfg.clone())
+                .await
+                .expect("open s19 turso #1");
+            let plane1 = TaskActorControlPlane::rehydrate_or_new(&storage1, &proj, &ptr)
+                .await
+                .expect("rehydrate empty s19 plane")
+                .with_oracle(Arc::clone(&oracle_arc));
+            let persist1 = plane1.spawn_storage_persistence_loop(
+                storage1.clone(),
+                proj.clone(),
+                ptr.clone(),
+                agent.clone(),
+            );
+            let host1 = MyGoBridgeHost::new(
+                marlin_agent_runtime::plugin::ReleaseTrust::new(BTreeMap::new()),
+                |_meta| Ok(()),
+            )
+            .with_task_actors(plane1.clone());
+
+            host1
+                .task_actors()
+                .register_actor(RegisterTaskActorRequest {
+                    task_id: tid.clone(),
+                    title: "S19 Multi-Thread Oracle Actor".to_owned(),
+                    scope_mode: TaskActorScopeMode::Project,
+                })
+                .expect("register s19 actor");
+
+            // Cross-thread Scheme Oracle admits valid ApplySteering & rejects steering without join.
+            host1
+                .task_actors()
+                .admit_dispatch(MarlinDispatchEnvelope {
+                    request_id: DispatchRequestId::new("req-s19-ok").unwrap(),
+                    task_id: tid.clone(),
+                    operation: GraphDispatchOperation::ApplySteering,
+                    fencing_epoch: FencingEpoch::new(1).unwrap(),
+                    scope_mode: TaskActorScopeMode::Project,
+                    join_node_id: Some(GraphConvergenceNodeId::new("join-s19").unwrap()),
+                    substrate_target: GraphSubstrateTarget::SqliteTurso,
+                })
+                .expect("mt Scheme oracle admits valid steering");
+
+            assert!(matches!(
+                host1.task_actors().admit_dispatch(MarlinDispatchEnvelope {
+                    request_id: DispatchRequestId::new("req-s19-bad").unwrap(),
+                    task_id: tid.clone(),
+                    operation: GraphDispatchOperation::ApplySteering,
+                    fencing_epoch: FencingEpoch::new(1).unwrap(),
+                    scope_mode: TaskActorScopeMode::Project,
+                    join_node_id: None,
+                    substrate_target: GraphSubstrateTarget::SqliteTurso,
+                }),
+                Err(
+                    marlin_agent_runtime::TaskActorRuntimeError::DispatchRejected(
+                        GraphDispatchRejection::SteeringRequiresJoinNode
+                    )
+                )
+            ));
+
+            // Cross-thread Scheme Oracle reconciles receipt (epoch 1 -> 2, WaitingSteering).
+            let decision = host1
+                .task_actors()
+                .reconcile_receipt(&MarlinExecutionReceipt {
+                    request_id: DispatchRequestId::new("req-s19-ok").unwrap(),
+                    task_id: tid.clone(),
+                    fencing_epoch: FencingEpoch::new(1).unwrap(),
+                    status: ExecutionReceiptStatus::Ok,
+                })
+                .expect("mt Scheme oracle reconciles receipt");
+            assert!(decision.accepted);
+            assert_eq!(decision.next_epoch, FencingEpoch::new(2).unwrap());
+            assert_eq!(decision.next_status, TaskActorStatus::WaitingSteering);
+
+            // Cross-thread Scheme Oracle gates governed context & Workbench tabs.
+            let ctx = GovernedContextCapsule {
+                task_id: tid.clone(),
+                context_cut: 4,
+                kv_prefix_digest: KvPrefixDigest::new("sha256:s19-mt-kv").unwrap(),
+                disclosure_depth: DisclosureDepth::L3,
+                has_active_defeater: true,
+                quarantined_memory_count: 1,
+                sandbox_admitted: true,
+                cedar_handoff_valid: true,
+                detour_mode: DetourMode::BlockerActive,
+                auto_archive_enabled: false,
+            };
+            host1
+                .task_actors()
+                .bind_governed_context(ctx.clone())
+                .expect("mt Scheme oracle admits L3 blocker context");
+            let mut bad_ctx = ctx;
+            bad_ctx.auto_archive_enabled = true;
+            assert!(matches!(
+                host1.task_actors().bind_governed_context(bad_ctx),
+                Err(
+                    marlin_agent_runtime::TaskActorRuntimeError::GovernedContextRejected(
+                        GovernedContextRejection::BlockerDetourMustDisableAutoArchive
+                    )
+                )
+            ));
+
+            let tabs1 = host1
+                .task_actors()
+                .project_workbench_tabs()
+                .expect("mt Scheme oracle projects tabs");
+            assert_eq!(tabs1.tabs.len(), 2);
+            assert_eq!(tabs1.tabs[0].kind, WorkbenchTabKind::PinnedIndex);
+            assert_eq!(tabs1.tabs[1].id, "task-s19-mt");
+            assert_eq!(tabs1.tabs[1].fencing_epoch, 2);
+
+            persist1.flush_and_stop().await.expect("flush s19 boot #1");
+            drop(host1);
+            drop(plane1);
+            drop(storage1);
+
+            // Boot #7 Cold Restart on separate OS thread -> rehydrate -> re-verify via live Scheme Oracle!
+            let storage2 = marlin_agent_storage::TursoAgentStorage::open_local(cfg)
+                .await
+                .expect("open s19 turso #2");
+            let plane2 = TaskActorControlPlane::rehydrate_or_new(&storage2, &proj, &ptr)
+                .await
+                .expect("rehydrate s19 boot #2")
+                .with_oracle(oracle_arc);
+            let tabs2 = plane2
+                .project_workbench_tabs()
+                .expect("boot #7 mt Scheme oracle cross-check");
+            assert_eq!(tabs2, tabs1);
+        });
+    });
+
+    oracle_server.serve_until_closed(&live_oracle);
+    mt_host_thread
+        .join()
+        .expect("multi-threaded host thread completed cleanly");
+
+    // Verify fail-closed behavior once server half is dropped.
+    let (closed_handle, closed_server) = graph_engine_oracle_channel(4);
+    drop(closed_server);
+    let closed_err = marlin_agent_graph::GraphEngineOracle::project_workbench_tabs(
+        &closed_handle,
+        None,
+        &[],
+        &[],
+    )
+    .expect_err("closed oracle channel must fail closed");
+    assert!(closed_err.contains("closed"));
 }

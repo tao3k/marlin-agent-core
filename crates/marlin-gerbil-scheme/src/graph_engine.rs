@@ -1170,6 +1170,189 @@ impl<'vm> marlin_agent_graph::GraphEngineOracle for GraphEngineRootedOracle<'vm>
     }
 }
 
+enum GraphEngineOracleCommand {
+    ProjectDispatch {
+        envelope: MarlinDispatchEnvelope,
+        reply: std::sync::mpsc::SyncSender<
+            Result<Result<AdmittedMarlinDispatch, GraphDispatchRejection>, String>,
+        >,
+    },
+    ReconcileReceipt {
+        cursor: TaskActorCursor,
+        receipt: MarlinExecutionReceipt,
+        reply: std::sync::mpsc::SyncSender<Result<ReceiptReconciliationDecision, String>>,
+    },
+    ProjectWorkbenchTabs {
+        focused_task_id: Option<TaskActorId>,
+        active_tasks: Vec<marlin_agent_graph::WorkbenchActiveTaskInput>,
+        peek_task_ids: Vec<TaskActorId>,
+        reply: std::sync::mpsc::SyncSender<Result<WorkbenchTabProjection, String>>,
+    },
+    ProjectGovernedContext {
+        capsule: GovernedContextCapsule,
+        reply: std::sync::mpsc::SyncSender<
+            Result<Result<AdmittedGovernedContext, GovernedContextRejection>, String>,
+        >,
+    },
+}
+
+/// Thread-safe (`Send + Sync + 'static`) handle implementing `GraphEngineOracle` by forwarding
+/// requests over a bounded synchronous channel to the Gambit/Gerbil VM-owner thread.
+/// Fails closed if the VM server has disconnected.
+#[derive(Clone, Debug)]
+pub struct GraphEngineOracleHandle {
+    tx: std::sync::Arc<std::sync::Mutex<std::sync::mpsc::SyncSender<GraphEngineOracleCommand>>>,
+}
+
+/// VM-thread receiver half paired with `GraphEngineOracleHandle`.
+/// Drive `serve_until_closed` or `try_serve_one` strictly on the thread that owns `GerbilRuntime`.
+pub struct GraphEngineOracleServer {
+    rx: std::sync::mpsc::Receiver<GraphEngineOracleCommand>,
+}
+
+/// Creates a bounded cross-thread channel bridging multi-threaded Tokio hosts (e.g.
+/// `TaskActorControlPlane::with_oracle`) to a single-threaded live Gambit/Gerbil VM oracle.
+pub fn graph_engine_oracle_channel(
+    bound: usize,
+) -> (GraphEngineOracleHandle, GraphEngineOracleServer) {
+    let (tx, rx) = std::sync::mpsc::sync_channel(bound.max(1));
+    (
+        GraphEngineOracleHandle {
+            tx: std::sync::Arc::new(std::sync::Mutex::new(tx)),
+        },
+        GraphEngineOracleServer { rx },
+    )
+}
+
+impl GraphEngineOracleHandle {
+    fn dispatch_cmd<R>(
+        &self,
+        build: impl FnOnce(std::sync::mpsc::SyncSender<Result<R, String>>) -> GraphEngineOracleCommand,
+    ) -> Result<R, String> {
+        let (reply_tx, reply_rx) = std::sync::mpsc::sync_channel(1);
+        let cmd = build(reply_tx);
+        {
+            let sender = self
+                .tx
+                .lock()
+                .map_err(|_| "scheme graph-engine oracle mutex poisoned".to_owned())?;
+            sender
+                .send(cmd)
+                .map_err(|_| "scheme graph-engine oracle channel closed".to_owned())?;
+        }
+        reply_rx
+            .recv()
+            .map_err(|_| "scheme graph-engine oracle server dropped reply".to_owned())?
+    }
+}
+
+impl marlin_agent_graph::GraphEngineOracle for GraphEngineOracleHandle {
+    fn project_dispatch(
+        &self,
+        envelope: &MarlinDispatchEnvelope,
+    ) -> Result<Result<AdmittedMarlinDispatch, GraphDispatchRejection>, String> {
+        self.dispatch_cmd(|reply| GraphEngineOracleCommand::ProjectDispatch {
+            envelope: envelope.clone(),
+            reply,
+        })
+    }
+
+    fn reconcile_receipt(
+        &self,
+        cursor: &TaskActorCursor,
+        receipt: &MarlinExecutionReceipt,
+    ) -> Result<ReceiptReconciliationDecision, String> {
+        self.dispatch_cmd(|reply| GraphEngineOracleCommand::ReconcileReceipt {
+            cursor: cursor.clone(),
+            receipt: receipt.clone(),
+            reply,
+        })
+    }
+
+    fn project_workbench_tabs(
+        &self,
+        focused_task_id: Option<&TaskActorId>,
+        active_tasks: &[marlin_agent_graph::WorkbenchActiveTaskInput],
+        peek_task_ids: &[TaskActorId],
+    ) -> Result<WorkbenchTabProjection, String> {
+        self.dispatch_cmd(|reply| GraphEngineOracleCommand::ProjectWorkbenchTabs {
+            focused_task_id: focused_task_id.cloned(),
+            active_tasks: active_tasks.to_vec(),
+            peek_task_ids: peek_task_ids.to_vec(),
+            reply,
+        })
+    }
+
+    fn project_governed_context(
+        &self,
+        capsule: &GovernedContextCapsule,
+    ) -> Result<Result<AdmittedGovernedContext, GovernedContextRejection>, String> {
+        self.dispatch_cmd(|reply| GraphEngineOracleCommand::ProjectGovernedContext {
+            capsule: capsule.clone(),
+            reply,
+        })
+    }
+}
+
+impl GraphEngineOracleServer {
+    fn handle_command<O: marlin_agent_graph::GraphEngineOracle + ?Sized>(
+        oracle: &O,
+        cmd: GraphEngineOracleCommand,
+    ) {
+        match cmd {
+            GraphEngineOracleCommand::ProjectDispatch { envelope, reply } => {
+                let _ = reply.send(oracle.project_dispatch(&envelope));
+            }
+            GraphEngineOracleCommand::ReconcileReceipt {
+                cursor,
+                receipt,
+                reply,
+            } => {
+                let _ = reply.send(oracle.reconcile_receipt(&cursor, &receipt));
+            }
+            GraphEngineOracleCommand::ProjectWorkbenchTabs {
+                focused_task_id,
+                active_tasks,
+                peek_task_ids,
+                reply,
+            } => {
+                let _ = reply.send(oracle.project_workbench_tabs(
+                    focused_task_id.as_ref(),
+                    &active_tasks,
+                    &peek_task_ids,
+                ));
+            }
+            GraphEngineOracleCommand::ProjectGovernedContext { capsule, reply } => {
+                let _ = reply.send(oracle.project_governed_context(&capsule));
+            }
+        }
+    }
+
+    /// Processes a single queued oracle request if one is ready; returns `true` when handled.
+    pub fn try_serve_one<O: marlin_agent_graph::GraphEngineOracle + ?Sized>(
+        &self,
+        oracle: &O,
+    ) -> bool {
+        match self.rx.try_recv() {
+            Ok(cmd) => {
+                Self::handle_command(oracle, cmd);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Serves all incoming oracle requests on the VM-owner thread until all handles are dropped.
+    pub fn serve_until_closed<O: marlin_agent_graph::GraphEngineOracle + ?Sized>(
+        &self,
+        oracle: &O,
+    ) {
+        while let Ok(cmd) = self.rx.recv() {
+            Self::handle_command(oracle, cmd);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

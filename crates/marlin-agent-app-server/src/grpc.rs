@@ -575,7 +575,10 @@ impl<S: marlin_agent_storage::SessionEventStore + Clone + 'static> app_server_se
         request: Request<crate::v1::GetWorkbenchTabsRequest>,
     ) -> Result<Response<crate::v1::WorkbenchTabsResponse>, Status> {
         (self.authorize)(request.metadata())?;
-        let tabs = self.task_actors.snapshot().workbench_tabs;
+        let tabs = self
+            .task_actors
+            .project_workbench_tabs()
+            .map_err(task_actor_error_status)?;
         Ok(Response::new(workbench_tabs_to_proto(&tabs)))
     }
 
