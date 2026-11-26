@@ -29,7 +29,7 @@ unsafe extern "C" {
     fn marlin_graph_engine_fleet_controller_open_vector(root: i64) -> i64;
     fn marlin_graph_engine_fleet_controller_dispatch_vector(root: i64) -> i64;
     fn marlin_graph_engine_fleet_controller_audit_capsule_vector(root: i64) -> i64;
-    fn marlin_higher_order_governance_project_vector(root: i64) -> i64;
+    fn marlin_governance_project_vector(root: i64) -> i64;
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fleet_open_vector: marlin_graph_engine_fleet_controller_open_vector,
         fleet_dispatch_vector: marlin_graph_engine_fleet_controller_dispatch_vector,
         fleet_audit_capsule_vector: marlin_graph_engine_fleet_controller_audit_capsule_vector,
-        higher_order_governance_project_vector: marlin_higher_order_governance_project_vector,
+        governance_project_vector: marlin_governance_project_vector,
     };
     // SAFETY: all 10 C-ABI exports belong to `runtime`'s statically linked program.
     unsafe { run_linked_scheme_host(runtime, exports) }

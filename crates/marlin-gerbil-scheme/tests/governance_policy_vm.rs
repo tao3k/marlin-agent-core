@@ -4,12 +4,12 @@
 
 //! Live Embedded Gambit/Gerbil VM -> Zero-JSON Rooted Vector -> Rust Kernel E2E Verification!
 //!
-//! Executes REAL Gerbil Scheme `scheme/policy/higher-order-governance.ss`
+//! Executes REAL Gerbil Scheme `scheme/policy/governance.ss`
 //! (Atomic POO × `gerbil-ascent` Stratified Taint & Multi-Hop Delegation Fixpoint ×
 //! `agentic-ai-lab/modules/temporal-causality` Bi-Temporal Truth Maintenance ×
 //! Dynamic Cedar Policy Synthesis) inside the live embedded `GerbilRuntime`,
 //! decodes the 14-slot rooted Gambit heap vector with ZERO JSON serialization,
-//! and drives Rust `HigherOrderGovernanceAdmissionGate` + `ExecutionCircuitBreaker` +
+//! and drives Rust `GovernanceAdmissionGate` + `ExecutionCircuitBreaker` +
 //! `LoopProgramRuntimeSideEffectExecutor` to physically block/allow real `/bin/sh` OS spawns.
 
 use std::sync::Arc;
@@ -18,8 +18,8 @@ use gerbil_scheme::{GerbilRuntime, IdentifierKind, PackageResolutionProgress};
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, BreakerActor, BreakerActorId, CedarPolicyId,
     DerivationId, ExecutionCircuitBreaker, GenericLoopMachineReceipt, GenericLoopMachineStepIndex,
-    GovernanceProofDigest, GovernedSubjectName, HigherOrderBridgeError,
-    HigherOrderGovernanceAdmissionGate, HigherOrderGovernanceProofEnvelope, HigherOrderProofEpoch,
+    GovernanceProofDigest, GovernedSubjectName, GovernanceAdmissionError,
+    GovernanceAdmissionGate, GovernanceProofEnvelope, GovernanceProofEpoch,
     LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffPlan, LoopProgramRuntimeOwner,
     LoopProgramRuntimeSideEffectExecutor, LoopProgramRuntimeSideEffectStatus,
     LoopProgramToolProcessCommandTemplate, LoopProgramToolProcessProgram,
@@ -32,18 +32,18 @@ use marlin_agent_protocol::{
 };
 use marlin_agent_runtime::TokioAgentRuntime;
 use marlin_gerbil_scheme::{
-    HigherOrderGovernanceVectorProjection, HigherOrderGovernanceVectorRequest,
-    MARLIN_HIGHER_ORDER_GOVERNANCE_PROJECT_SYMBOL, decode_higher_order_governance_vector,
-    encode_higher_order_governance_request, gerbil_package_root,
+    GovernancePolicyVectorProjection, GovernancePolicyVectorRequest,
+    MARLIN_GOVERNANCE_PROJECT_SYMBOL, decode_governance_policy_vector,
+    encode_governance_policy_request, gerbil_package_root,
 };
 
 fn into_kernel_envelope(
-    proj: &HigherOrderGovernanceVectorProjection,
-) -> HigherOrderGovernanceProofEnvelope {
-    HigherOrderGovernanceProofEnvelope {
+    proj: &GovernancePolicyVectorProjection,
+) -> GovernanceProofEnvelope {
+    GovernanceProofEnvelope {
         schema_version: proj.schema_version,
         admitted: proj.admitted,
-        revocation_epoch: HigherOrderProofEpoch::new(proj.revocation_epoch).unwrap(),
+        revocation_epoch: GovernanceProofEpoch::new(proj.revocation_epoch).unwrap(),
         policy_revision: proj.policy_revision,
         assessment_digest: GovernanceProofDigest::new(proj.assessment_digest.clone()).unwrap(),
         taint_proof_digest: GovernanceProofDigest::new(proj.taint_proof_digest.clone()).unwrap(),
@@ -101,7 +101,7 @@ fn dispatch_handoff() -> marlin_agent_kernel::LoopProgramRuntimeHandoffExecution
 
 #[cfg(unix)]
 #[tokio::test]
-async fn live_gerbil_vm_higher_order_governance_drives_rust_breaker_and_blocks_real_os_spawn() {
+async fn live_gerbil_vm_governance_policy_drives_rust_breaker_and_blocks_real_os_spawn() {
     let runtime = GerbilRuntime::initialize().expect("initialize embedded Gambit/Gerbil VM");
     let _ = runtime.set_package_resolution_progress(PackageResolutionProgress::Quiet);
 
@@ -110,21 +110,21 @@ async fn live_gerbil_vm_higher_order_governance_drives_rust_breaker_and_blocks_r
     let module_sym = runtime
         .intern_identifier(
             IdentifierKind::Symbol,
-            ":marlin-agent-core/policy/higher-order-governance",
+            ":marlin-agent-core/policy/governance",
         )
         .unwrap();
     let proc_sym = runtime
         .intern_identifier(
             IdentifierKind::Symbol,
-            MARLIN_HIGHER_ORDER_GOVERNANCE_PROJECT_SYMBOL,
+            MARLIN_GOVERNANCE_PROJECT_SYMBOL,
         )
         .unwrap();
     let scheme_project = runtime
         .resolve_package_export(scheme_dir_str, &module_sym, &proc_sym)
-        .expect("resolve live Scheme marlin-higher-order-governance-project-vector");
+        .expect("resolve live Scheme marlin-governance-project-vector");
 
     let breaker = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(4)));
-    let gate = HigherOrderGovernanceAdmissionGate::new(Arc::clone(&breaker));
+    let gate = GovernanceAdmissionGate::new(Arc::clone(&breaker));
 
     let temp_dir = tempfile::tempdir().expect("temp workspace");
     let sentinel = temp_dir.path().join("vm-gov-os-process.sentinel");
@@ -164,7 +164,7 @@ async fn live_gerbil_vm_higher_order_governance_drives_rust_breaker_and_blocks_r
     // Scenario 1: Live Gerbil Scheme ASCENT detects multi-hop CaMeL taint AND
     // Bi-Temporal Truth Maintenance retracts `human-session-alice`!
     // -------------------------------------------------------------------------
-    let req_attack = HigherOrderGovernanceVectorRequest {
+    let req_attack = GovernancePolicyVectorRequest {
         delegation_edges: vec![("alice".into(), "agent-sub".into())],
         revoked_actors: vec!["alice".into()],
         taint_edges: vec![
@@ -179,9 +179,9 @@ async fn live_gerbil_vm_higher_order_governance_drives_rust_breaker_and_blocks_r
         policy_revision: 1,
         ..Default::default()
     };
-    let in_attack = encode_higher_order_governance_request(&runtime, &req_attack).unwrap();
+    let in_attack = encode_governance_policy_request(&runtime, &req_attack).unwrap();
     let out_attack = runtime.call_rooted(&scheme_project, &in_attack).unwrap();
-    let proj_attack = decode_higher_order_governance_vector(out_attack).unwrap();
+    let proj_attack = decode_governance_policy_vector(out_attack).unwrap();
 
     assert!(!proj_attack.admitted);
     assert!(
@@ -222,7 +222,7 @@ async fn live_gerbil_vm_higher_order_governance_drives_rust_breaker_and_blocks_r
     // Scenario 2: Live Scheme clears taint with `human-gate` sanitizer at epoch 3,
     // while still exporting ASCENT transitive fencing & Cedar forbid for `agent-sub`!
     // -------------------------------------------------------------------------
-    let req_clean = HigherOrderGovernanceVectorRequest {
+    let req_clean = GovernancePolicyVectorRequest {
         delegation_edges: vec![("alice".into(), "agent-sub".into())],
         revoked_actors: vec!["alice".into()],
         taint_edges: vec![
@@ -237,9 +237,9 @@ async fn live_gerbil_vm_higher_order_governance_drives_rust_breaker_and_blocks_r
         policy_revision: 2,
         ..Default::default()
     };
-    let in_clean = encode_higher_order_governance_request(&runtime, &req_clean).unwrap();
+    let in_clean = encode_governance_policy_request(&runtime, &req_clean).unwrap();
     let out_clean = runtime.call_rooted(&scheme_project, &in_clean).unwrap();
-    let proj_clean = decode_higher_order_governance_vector(out_clean).unwrap();
+    let proj_clean = decode_governance_policy_vector(out_clean).unwrap();
 
     assert!(proj_clean.admitted);
     assert!(proj_clean.fenced_actors.iter().any(|a| a == "agent-sub"));
@@ -258,7 +258,7 @@ async fn live_gerbil_vm_higher_order_governance_drives_rust_breaker_and_blocks_r
     // Replaying the older epoch-2 proof envelope MUST fail closed (`StaleProofEpoch`)!
     assert!(matches!(
         gate.synchronize_proof_envelope(&env_attack),
-        Err(HigherOrderBridgeError::StaleProofEpoch { .. })
+        Err(GovernanceAdmissionError::StaleProofEpoch { .. })
     ));
 
     // Verified human re-arms breaker (epoch 2) -> register fresh derivation ->
@@ -284,7 +284,7 @@ async fn live_gerbil_vm_higher_order_governance_drives_rust_breaker_and_blocks_r
             &shell_tool,
             &ToolIfcContext::clean_trusted(),
         ),
-        Err(HigherOrderBridgeError::AscentFencedActorDenied(_))
+        Err(GovernanceAdmissionError::AscentFencedActorDenied(_))
     ));
 
     let committed = gate
@@ -297,10 +297,10 @@ async fn live_gerbil_vm_higher_order_governance_drives_rust_breaker_and_blocks_r
         .expect("verified clean actor with sanitized proof and armed breaker commits cleanly");
     assert_eq!(committed.trip_epoch.get(), 2);
 
-    // Physical OS side effect via LoopProgramRuntimeSideEffectExecutor::with_higher_order_gate:
+    // Physical OS side effect via LoopProgramRuntimeSideEffectExecutor::with_governance_gate:
     // 1. Invoked as ASCENT-fenced `agent-sub` -> physically blocks `/bin/sh` OS spawn!
     let gate_arc = Arc::new(gate);
-    let fenced_executor = executor.clone().with_higher_order_gate(
+    let fenced_executor = executor.clone().with_governance_gate(
         Arc::clone(&gate_arc),
         fenced_agent,
         Some(d_fresh.clone()),
@@ -312,7 +312,7 @@ async fn live_gerbil_vm_higher_order_governance_drives_rust_breaker_and_blocks_r
             .diagnostic
             .as_deref()
             .unwrap_or("")
-            .contains("higher_order_blocked")
+            .contains("governance_blocked")
     );
     assert!(
         !sentinel.exists(),
@@ -320,7 +320,7 @@ async fn live_gerbil_vm_higher_order_governance_drives_rust_breaker_and_blocks_r
     );
 
     // 2. Invoked as clean `ops-bob` -> physically executes `/bin/sh` cleanly!
-    let clean_executor = executor.with_higher_order_gate(gate_arc, clean_actor, Some(d_fresh));
+    let clean_executor = executor.with_governance_gate(gate_arc, clean_actor, Some(d_fresh));
     let ok_receipt = clean_executor.execute(&tokio_rt.context(), &handoff).await;
     assert_eq!(ok_receipt.status, LoopProgramRuntimeSideEffectStatus::Completed);
     assert!(sentinel.exists(), "real OS process should succeed after verified recovery");

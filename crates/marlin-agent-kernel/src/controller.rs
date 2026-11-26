@@ -230,17 +230,17 @@ impl TokioGraphLoopController {
         self
     }
 
-    /// Attaches a live Scheme-synchronized `HigherOrderGovernanceAdmissionGate` directly
+    /// Attaches a live Scheme-synchronized `GovernanceAdmissionGate` directly
     /// to the controller's side-effect executor.
-    pub fn with_higher_order_gate(
+    pub fn with_governance_gate(
         mut self,
-        gate: Arc<crate::HigherOrderGovernanceAdmissionGate>,
+        gate: Arc<crate::GovernanceAdmissionGate>,
         actor: crate::GovernedSubjectName,
         derivation_id: Option<crate::DerivationId>,
     ) -> Self {
         self.loop_program_side_effect_executor = self
             .loop_program_side_effect_executor
-            .with_higher_order_gate(gate, actor, derivation_id);
+            .with_governance_gate(gate, actor, derivation_id);
         self
     }
 

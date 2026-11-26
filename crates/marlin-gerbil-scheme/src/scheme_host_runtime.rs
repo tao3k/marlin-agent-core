@@ -35,21 +35,21 @@ use std::{
 
 use crate::{
     AtomicEffectAbiError, FleetAuditCapsuleProjection, GraphEngineLinkedBridge,
-    GraphEngineLinkedExports, HigherOrderGovernanceVectorProjection,
-    HigherOrderGovernanceVectorRequest, SchemeAtomicEffect, SchemeAtomicReceipt,
+    GraphEngineLinkedExports, GovernancePolicyVectorProjection,
+    GovernancePolicyVectorRequest, SchemeAtomicEffect, SchemeAtomicReceipt,
     SchemeFleetDispatchStep, SchemeFleetLinkedDriver, SchemeFleetLinkedExports,
-    SchemeFleetQuiescentSummary, decode_higher_order_governance_vector,
-    encode_higher_order_governance_request, encode_scheme_atomic_receipt_vector,
+    SchemeFleetQuiescentSummary, decode_governance_policy_vector,
+    encode_governance_policy_request, encode_scheme_atomic_receipt_vector,
     graph_engine_oracle_channel,
-    higher_order_host::{
-        DEFAULT_HIGHER_ORDER_CHECKPOINT_KEY, HigherOrderHostController, HigherOrderUiCommand,
+    governance_host::{
+        DEFAULT_GOVERNANCE_CHECKPOINT_KEY, GovernanceHostController, GovernanceUiCommand,
         SharedProjectionRecords, default_clean_governance_request,
-        default_incident_governance_request, parse_higher_order_governance_ui_command,
+        default_incident_governance_request, parse_governance_ui_command,
     },
 };
 #[cfg(not(feature = "external-program"))]
 use crate::{
-    GraphEngineRootedOracle, MARLIN_HIGHER_ORDER_GOVERNANCE_PROJECT_SYMBOL,
+    GraphEngineRootedOracle, MARLIN_GOVERNANCE_PROJECT_SYMBOL,
     SchemeFleetSessionDriver, gerbil_package_root,
 };
 use gerbil_scheme::{CollectionKind, GerbilRuntime};
@@ -138,9 +138,9 @@ enum FleetVmCommand {
             Result<(SchemeFleetDispatchStep, FleetAuditCapsuleProjection), String>,
         >,
     },
-    EvaluateHigherOrderGovernance {
-        req: HigherOrderGovernanceVectorRequest,
-        reply: mpsc::SyncSender<Result<HigherOrderGovernanceVectorProjection, String>>,
+    EvaluateGovernance {
+        req: GovernancePolicyVectorRequest,
+        reply: mpsc::SyncSender<Result<GovernancePolicyVectorProjection, String>>,
     },
 }
 
@@ -162,7 +162,7 @@ pub struct LinkedSchemeHostExports {
     pub fleet_open_vector: unsafe extern "C" fn(i64) -> i64,
     pub fleet_dispatch_vector: unsafe extern "C" fn(i64) -> i64,
     pub fleet_audit_capsule_vector: unsafe extern "C" fn(i64) -> i64,
-    pub higher_order_governance_project_vector: unsafe extern "C" fn(i64) -> i64,
+    pub governance_project_vector: unsafe extern "C" fn(i64) -> i64,
 }
 
 #[derive(Clone, Copy)]
@@ -602,7 +602,7 @@ fn parse_detour_mode(raw: &str) -> DetourMode {
 async fn run_one_atomic_effect(
     cas: Option<Arc<StorageCasStore<TursoAgentStorage>>>,
     sandbox: Option<Arc<AllowlistSandboxRunner>>,
-    ho_governance: Arc<HigherOrderHostController>,
+    governance_host: Arc<GovernanceHostController>,
     http_llm: Option<Arc<OpenAiCompatibleHttpClient>>,
     loopback_llm_response: Option<Arc<str>>,
     effect: SchemeAtomicEffect,
@@ -644,7 +644,7 @@ async fn run_one_atomic_effect(
             cwd,
         } => {
             if let Err(err) =
-                ho_governance.authorize_sandbox_effect("scheme-sandbox-worker", &program)
+                governance_host.authorize_sandbox_effect("scheme-sandbox-worker", &program)
             {
                 return SchemeAtomicReceipt::SandboxExited {
                     effect_id,
@@ -1054,7 +1054,7 @@ pub unsafe fn run_linked_scheme_host(
         fleet_bootstrap,
         fleet_checkpoint_key,
         None,
-        Some(exports.higher_order_governance_project_vector),
+        Some(exports.governance_project_vector),
     )
 }
 
@@ -1064,7 +1064,7 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
     mut fleet_procs: Option<HostFleetBootstrap<'vm>>,
     fleet_checkpoint_key: Option<String>,
     dynamic_scheme_dir: Option<String>,
-    higher_order_linked_export: Option<unsafe extern "C" fn(i64) -> i64>,
+    governance_linked_export: Option<unsafe extern "C" fn(i64) -> i64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let _ = &dynamic_scheme_dir;
     let bind_addr = env::var("MARLIN_BRIDGE_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_owned());
@@ -1110,7 +1110,7 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
     let (effect_tx, mut effect_rx) = tokio::sync::mpsc::unbounded_channel::<EffectBatchRequest>();
     let fleet_checkpoint_key_srv = fleet_checkpoint_key.clone();
     let projection_records = Arc::new(SharedProjectionRecords::new());
-    let ho_governance = Arc::new(HigherOrderHostController::new(
+    let governance_host = Arc::new(GovernanceHostController::new(
         breaker_budget,
         Arc::clone(&projection_records),
     ));
@@ -1161,7 +1161,7 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
             // Spawn thin Tokio atomic-effect worker serving CasGet/CasPut/SandboxRun/LlmComplete for the Gambit VM thread.
             let cas_for_worker = cas_store.clone();
             let sandbox_for_worker = sandbox_runner.clone();
-            let gov_for_worker = Arc::clone(&ho_governance);
+            let gov_for_worker = Arc::clone(&governance_host);
             let http_llm_for_worker = http_llm_client.clone();
             let llm_for_worker = loopback_llm_response.clone();
             let effect_worker = tokio::spawn(async move {
@@ -1242,30 +1242,30 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                 );
             }
 
-            // Determine durable Turso CAS checkpoint key for Higher-Order Governance.
+            // Determine durable Turso CAS checkpoint key for Governance Authority.
             // Enabled whenever `MARLIN_SCHEME_GOVERNANCE_CHECKPOINT_KEY` is explicitly set,
             // OR automatically when both Turso storage and `MARLIN_SCHEME_GOVERNANCE_MODE` are active.
             let governance_checkpoint_key: Option<String> = if cas_store.is_some() {
                 governance_checkpoint_key_env.clone().or_else(|| {
                     governance_boot_mode
                         .as_ref()
-                        .map(|_| DEFAULT_HIGHER_ORDER_CHECKPOINT_KEY.to_owned())
+                        .map(|_| DEFAULT_GOVERNANCE_CHECKPOINT_KEY.to_owned())
                 })
             } else {
                 None
             };
 
-            // Initialize and publish authoritative Higher-Order Governance state.
+            // Initialize and publish authoritative Governance Authority state.
             // Anti-Restart-Reset invariant: if Turso CAS already holds a durable governance
             // checkpoint, restore it FIRST and NEVER let a cold `clean` boot wipe a tripped
             // E-Stop latch, monotonic epoch floor, or ASCENT/Cedar fences!
             let restored_from_cas = if let (Some(cas), Some(cp_key)) =
                 (cas_store.as_ref(), governance_checkpoint_key.as_deref())
             {
-                match ho_governance.restore_from_cas(&host, cas, cp_key).await? {
+                match governance_host.restore_from_cas(&host, cas, cp_key).await? {
                     Some((snap, restore_mode)) => {
                         println!(
-                            "HIGHER_ORDER_GOV_BOOT mode={restore_mode} admitted={} tripped={} trip_epoch={} rev_epoch={} fenced={} retracted={} cedar={}",
+                            "GOVERNANCE_HOST_BOOT mode={restore_mode} admitted={} tripped={} trip_epoch={} rev_epoch={} fenced={} retracted={} cedar={}",
                             snap.admitted,
                             snap.breaker.tripped,
                             snap.breaker.trip_epoch.get(),
@@ -1292,40 +1292,41 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                     if let (Some(cas), Some(cp_key)) =
                         (cas_store.as_ref(), governance_checkpoint_key.as_deref())
                     {
-                        ho_governance.persist_to_cas(cas, cp_key).await?;
+                        governance_host.persist_to_cas(cas, cp_key).await?;
                     }
-                    let _ = ho_governance.publish_snapshot(
+                    let _ = governance_host.publish_snapshot(
                         &host,
                         "governance_boot_armed",
-                        "higher-order governance host armed",
+                        "governance host armed",
                     );
                 } else {
                     let req = match mode {
                         "incident" => default_incident_governance_request(2, 1),
                         _ => default_clean_governance_request(1, 1),
                     };
+                    governance_host.seed_fact_store(&req);
                     let (gov_tx, gov_rx) = mpsc::sync_channel(1);
                     fleet_tx
-                        .send(FleetVmCommand::EvaluateHigherOrderGovernance { req, reply: gov_tx })
+                        .send(FleetVmCommand::EvaluateGovernance { req, reply: gov_tx })
                         .map_err(|_| {
-                            "send higher-order governance boot eval to gambit vm thread".to_owned()
+                            "send governance boot eval to gambit vm thread".to_owned()
                         })?;
                     let proj = tokio::task::spawn_blocking(move || gov_rx.recv())
                         .await
-                        .map_err(|err| format!("join higher-order governance boot eval: {err}"))?
+                        .map_err(|err| format!("join governance boot eval: {err}"))?
                         .map_err(|_| "gambit vm thread dropped governance boot reply".to_owned())??;
-                    let snap = ho_governance
+                    let snap = governance_host
                         .apply_scheme_projection_durable(
                             &host,
                             cas_store.as_deref(),
                             governance_checkpoint_key.as_deref(),
                             &proj,
                             &format!("governance_boot_{mode}"),
-                            &format!("live scheme higher-order governance boot ({mode})"),
+                            &format!("live scheme governance boot ({mode})"),
                         )
                         .await?;
                     println!(
-                        "HIGHER_ORDER_GOV_BOOT mode={mode} admitted={} tripped={} trip_epoch={} rev_epoch={} fenced={} retracted={} cedar={}",
+                        "GOVERNANCE_HOST_BOOT mode={mode} admitted={} tripped={} trip_epoch={} rev_epoch={} fenced={} retracted={} cedar={}",
                         snap.admitted,
                         snap.breaker.tripped,
                         snap.breaker.trip_epoch.get(),
@@ -1365,7 +1366,7 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                 let actors_for_gate = task_actors.clone();
                 let host_for_gate = host.clone();
                 let records_for_gate = Arc::clone(&projection_records);
-                let gov_for_gate = Arc::clone(&ho_governance);
+                let gov_for_gate = Arc::clone(&governance_host);
                 let cas_for_gate = cas_store.clone();
                 let cp_key_for_gate = governance_checkpoint_key.clone();
                 let fleet_enabled = fleet_checkpoint_key_srv.is_some();
@@ -1454,7 +1455,7 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                 let actors_for_ui = task_actors.clone();
                 let host_for_ui = host.clone();
                 let records_for_ui = Arc::clone(&projection_records);
-                let gov_for_ui = Arc::clone(&ho_governance);
+                let gov_for_ui = Arc::clone(&governance_host);
                 let cas_for_ui = cas_store.clone();
                 let cp_key_for_ui = governance_checkpoint_key.clone();
                 let fleet_enabled = fleet_checkpoint_key_srv.is_some();
@@ -1467,10 +1468,10 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                                 Err(_) => break,
                             }
                         };
-                        if let Some(gov_cmd) = parse_higher_order_governance_ui_command(&ev.command)
+                        if let Some(gov_cmd) = parse_governance_ui_command(&ev.command)
                         {
                             match gov_cmd {
-                                HigherOrderUiCommand::OperatorEStop { actor, reason } => {
+                                GovernanceUiCommand::OperatorEStop { actor, reason } => {
                                     let _ = gov_for_ui
                                         .apply_operator_estop_durable(
                                             &host_for_ui,
@@ -1481,12 +1482,14 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                                         )
                                         .await;
                                 }
-                                HigherOrderUiCommand::EvaluateIncident => {
-                                    if let Ok((epoch, rev)) = gov_for_ui.next_evaluation_coords() {
+                                dynamic_cmd => {
+                                    if let Ok(Some((req, node_id, note))) =
+                                        gov_for_ui.mutate_facts_and_build_request(&dynamic_cmd)
+                                    {
                                         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
                                         if fleet_tx_ui
-                                            .send(FleetVmCommand::EvaluateHigherOrderGovernance {
-                                                req: default_incident_governance_request(epoch, rev),
+                                            .send(FleetVmCommand::EvaluateGovernance {
+                                                req,
                                                 reply: reply_tx,
                                             })
                                             .is_ok()
@@ -1500,34 +1503,8 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                                                     cas_for_ui.as_deref(),
                                                     cp_key_for_ui.as_deref(),
                                                     &proj,
-                                                    "governance_eval_incident",
-                                                    "live scheme higher-order incident evaluated",
-                                                )
-                                                .await;
-                                        }
-                                    }
-                                }
-                                HigherOrderUiCommand::EvaluateClean => {
-                                    if let Ok((epoch, rev)) = gov_for_ui.next_evaluation_coords() {
-                                        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-                                        if fleet_tx_ui
-                                            .send(FleetVmCommand::EvaluateHigherOrderGovernance {
-                                                req: default_clean_governance_request(epoch, rev),
-                                                reply: reply_tx,
-                                            })
-                                            .is_ok()
-                                            && let Ok(Ok(Ok(proj))) =
-                                                tokio::task::spawn_blocking(move || reply_rx.recv())
-                                                    .await
-                                        {
-                                            let _ = gov_for_ui
-                                                .apply_scheme_projection_durable(
-                                                    &host_for_ui,
-                                                    cas_for_ui.as_deref(),
-                                                    cp_key_for_ui.as_deref(),
-                                                    &proj,
-                                                    "governance_eval_clean",
-                                                    "live scheme higher-order clean baseline evaluated",
+                                                    &node_id,
+                                                    &note,
                                                 )
                                                 .await;
                                         }
@@ -1643,74 +1620,74 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
         result
     });
 
-    // 3. Multiplex live Scheme Oracle + Fleet Controller + Higher-Order Governance commands on the Gambit VM-owner thread.
+    // 3. Multiplex live Scheme Oracle + Fleet Controller + Governance Authority commands on the Gambit VM-owner thread.
     let mut active_fleet_driver: Option<HostFleetDriver<'_>> = None;
     let mut active_checkpoint_key = fleet_checkpoint_key;
     #[cfg(not(feature = "external-program"))]
-    let mut cached_ho_gov_proc: Option<RootedSchemeObject<'_>> = None;
+    let mut cached_governance_proc: Option<RootedSchemeObject<'_>> = None;
     loop {
         while let Ok(cmd) = fleet_rx.try_recv() {
             match cmd {
-                FleetVmCommand::EvaluateHigherOrderGovernance { req, reply } => {
-                    let outcome = if let Some(linked_export) = higher_order_linked_export {
-                        (|| -> Result<HigherOrderGovernanceVectorProjection, String> {
+                FleetVmCommand::EvaluateGovernance { req, reply } => {
+                    let outcome = if let Some(linked_export) = governance_linked_export {
+                        (|| -> Result<GovernancePolicyVectorProjection, String> {
                             // SAFETY: `linked_export` belongs to `runtime`'s initialized linked program.
                             let proc = unsafe { runtime.bind_object_export(linked_export) }
                                 .map_err(|e| {
-                                    format!("bind linked higher_order_governance_project_vector: {e}")
+                                    format!("bind linked governance_project_vector: {e}")
                                 })?;
-                            let in_vec = encode_higher_order_governance_request(runtime, &req)
-                                .map_err(|e| format!("encode higher-order governance request: {e}"))?;
+                            let in_vec = encode_governance_policy_request(runtime, &req)
+                                .map_err(|e| format!("encode governance request: {e}"))?;
                             let out_vec = proc
                                 .call(&in_vec)
                                 .into_result()
-                                .map_err(|e| format!("call linked higher-order governance proc: {e}"))?;
-                            decode_higher_order_governance_vector(out_vec)
-                                .map_err(|e| format!("decode higher-order governance vector: {e}"))
+                                .map_err(|e| format!("call linked governance proc: {e}"))?;
+                            decode_governance_policy_vector(out_vec)
+                                .map_err(|e| format!("decode governance vector: {e}"))
                         })()
                     } else {
                         #[cfg(not(feature = "external-program"))]
                         {
-                            (|| -> Result<HigherOrderGovernanceVectorProjection, String> {
-                                if cached_ho_gov_proc.is_none() {
+                            (|| -> Result<GovernancePolicyVectorProjection, String> {
+                                if cached_governance_proc.is_none() {
                                     let dir = dynamic_scheme_dir
                                         .as_deref()
                                         .ok_or_else(|| "dynamic scheme dir unavailable".to_owned())?;
                                     let mod_sym = runtime
                                         .intern_identifier(
                                             IdentifierKind::Symbol,
-                                            ":marlin-agent-core/policy/higher-order-governance",
+                                            ":marlin-agent-core/policy/governance",
                                         )
                                         .map_err(|e| {
-                                            format!("intern higher-order governance module: {e}")
+                                            format!("intern governance module: {e}")
                                         })?;
                                     let proc_sym = runtime
                                         .intern_identifier(
                                             IdentifierKind::Symbol,
-                                            MARLIN_HIGHER_ORDER_GOVERNANCE_PROJECT_SYMBOL,
+                                            MARLIN_GOVERNANCE_PROJECT_SYMBOL,
                                         )
                                         .map_err(|e| {
-                                            format!("intern higher-order governance export: {e}")
+                                            format!("intern governance export: {e}")
                                         })?;
                                     let resolved = runtime
                                         .resolve_package_export(dir, &mod_sym, &proc_sym)
                                         .map_err(|e| {
-                                            format!("resolve higher-order governance export: {e}")
+                                            format!("resolve governance export: {e}")
                                         })?;
-                                    cached_ho_gov_proc = Some(resolved);
+                                    cached_governance_proc = Some(resolved);
                                 }
-                                let proc = cached_ho_gov_proc.as_ref().ok_or_else(|| {
-                                    "higher-order governance proc missing".to_owned()
+                                let proc = cached_governance_proc.as_ref().ok_or_else(|| {
+                                    "governance proc missing".to_owned()
                                 })?;
-                                let in_vec = encode_higher_order_governance_request(runtime, &req)
+                                let in_vec = encode_governance_policy_request(runtime, &req)
                                     .map_err(|e| {
-                                        format!("encode higher-order governance request: {e}")
+                                        format!("encode governance request: {e}")
                                     })?;
                                 let out_vec = runtime
                                     .call_rooted(proc, &in_vec)
-                                    .map_err(|e| format!("call higher-order governance proc: {e}"))?;
-                                decode_higher_order_governance_vector(out_vec).map_err(|e| {
-                                    format!("decode higher-order governance vector: {e}")
+                                    .map_err(|e| format!("call governance proc: {e}"))?;
+                                decode_governance_policy_vector(out_vec).map_err(|e| {
+                                    format!("decode governance vector: {e}")
                                 })
                             })()
                         }
@@ -1718,7 +1695,7 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                         {
                             let _ = req;
                             Err(
-                                "higher-order governance linked export missing in external-program mode"
+                                "governance linked export missing in external-program mode"
                                     .to_owned(),
                             )
                         }
@@ -1883,7 +1860,7 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
         }
     }
     #[cfg(not(feature = "external-program"))]
-    drop(cached_ho_gov_proc);
+    drop(cached_governance_proc);
     drop(active_fleet_driver);
     drop(live_oracle);
 

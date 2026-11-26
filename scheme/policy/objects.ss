@@ -9,7 +9,7 @@
         (only-in "./projection/graph/topology.ss" marlin-deck-runtime-compile-loop-graph)
         (only-in "./projection/graph/continuation.ss" marlin-graph-loop-continuation-next-action)
         (only-in "./security.ss" SecurityGovernancePolicy)
-        (only-in "./higher-order-governance.ss" HigherOrderGovernancePolicy))
+        (only-in "./governance.ss" GovernancePolicy))
 
 (export PolicyOperations)
 
@@ -18,4 +18,4 @@
       compile-loop-graph: marlin-deck-runtime-compile-loop-graph
       next-continuation: marlin-graph-loop-continuation-next-action
       security-governance: SecurityGovernancePolicy
-      higher-order-governance: HigherOrderGovernancePolicy))
+      governance: GovernancePolicy))

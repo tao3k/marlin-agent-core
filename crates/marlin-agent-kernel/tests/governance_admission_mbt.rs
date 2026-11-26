@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 //! Live Quint -> ITF -> Rust Model-Based Testing (MBT) refinement suite for
-//! `marlin_agent_kernel::higher_order_bridge::HigherOrderGovernanceAdmissionGate`
+//! `marlin_agent_kernel::governance_admission::GovernanceAdmissionGate`
 //! against `dev/quint/threat/MarlinBackendCausalRetractionOverlay.qnt`.
 //!
 //! Proves all 6 composed countermodels (4 inherited ExecutionCircuitBreaker +
@@ -22,8 +22,8 @@ use std::{
 use marlin_agent_kernel::{
     BreakerActor, BreakerActorId, BreakerRejectionReason, BreakerTripReason, CedarPolicyId,
     DerivationId, ExecutionCircuitBreaker, GovernanceProofDigest, GovernedSubjectName,
-    HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION, HigherOrderBridgeError,
-    HigherOrderGovernanceAdmissionGate, HigherOrderGovernanceProofEnvelope, HigherOrderProofEpoch,
+    GOVERNANCE_ADMISSION_SCHEMA_VERSION, GovernanceAdmissionError,
+    GovernanceAdmissionGate, GovernanceProofEnvelope, GovernanceProofEpoch,
     SynthesizedCedarPolicy, ToolBudgetUnits, ToolExecutionLease, ToolExecutionLeaseId,
     ToolIfcContext,
 };
@@ -342,11 +342,11 @@ fn digest(ch: char) -> GovernanceProofDigest {
         .unwrap()
 }
 
-fn envelope(admitted: bool, epoch: u64, retracted: Vec<DerivationId>) -> HigherOrderGovernanceProofEnvelope {
-    HigherOrderGovernanceProofEnvelope {
-        schema_version: HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION,
+fn envelope(admitted: bool, epoch: u64, retracted: Vec<DerivationId>) -> GovernanceProofEnvelope {
+    GovernanceProofEnvelope {
+        schema_version: GOVERNANCE_ADMISSION_SCHEMA_VERSION,
         admitted,
-        revocation_epoch: HigherOrderProofEpoch::new(epoch).unwrap(),
+        revocation_epoch: GovernanceProofEpoch::new(epoch).unwrap(),
         policy_revision: 1,
         assessment_digest: digest('a'),
         taint_proof_digest: digest('b'),
@@ -369,7 +369,7 @@ fn envelope(admitted: bool, epoch: u64, retracted: Vec<DerivationId>) -> HigherO
 }
 
 #[test]
-fn mbt_causal_retraction_overlay_refines_higher_order_admission_gate() {
+fn mbt_causal_retraction_overlay_refines_governance_admission_gate() {
     let model_path =
         workspace_root().join("dev/quint/threat/MarlinBackendCausalRetractionOverlay.qnt");
     let traces = generate_itf_traces(
@@ -397,7 +397,7 @@ fn mbt_causal_retraction_overlay_refines_higher_order_admission_gate() {
         let breaker = Arc::new(
             ExecutionCircuitBreaker::new(ToolBudgetUnits::new(1)).with_single_lease_enforced(true),
         );
-        let gate = HigherOrderGovernanceAdmissionGate::new(Arc::clone(&breaker));
+        let gate = GovernanceAdmissionGate::new(Arc::clone(&breaker));
         let mut active_lease: Option<(DerivationId, ToolExecutionLease)> = None;
         let mut seq = 0u64;
 
@@ -422,9 +422,9 @@ fn mbt_causal_retraction_overlay_refines_higher_order_admission_gate() {
                     .expect_err("must refuse commit while breaker tripped");
                 assert!(matches!(
                     err,
-                    HigherOrderBridgeError::ExecutionBreaker(
+                    GovernanceAdmissionError::ExecutionBreaker(
                         BreakerRejectionReason::BreakerTripped { .. }
-                    ) | HigherOrderBridgeError::DerivationRetractedDenied(_)
+                    ) | GovernanceAdmissionError::DerivationRetractedDenied(_)
                 ));
                 countermodels_refused += 1;
                 break;
@@ -436,9 +436,9 @@ fn mbt_causal_retraction_overlay_refines_higher_order_admission_gate() {
                     .expect_err("must refuse stale pre-trip lease after re-arm");
                 assert!(matches!(
                     err,
-                    HigherOrderBridgeError::ExecutionBreaker(
+                    GovernanceAdmissionError::ExecutionBreaker(
                         BreakerRejectionReason::StaleLeaseEpoch { .. }
-                    ) | HigherOrderBridgeError::DerivationRetractedDenied(_)
+                    ) | GovernanceAdmissionError::DerivationRetractedDenied(_)
                 ));
                 countermodels_refused += 1;
                 break;
@@ -461,7 +461,7 @@ fn mbt_causal_retraction_overlay_refines_higher_order_admission_gate() {
                     .expect_err("must refuse budget overrun");
                 assert!(matches!(
                     err,
-                    HigherOrderBridgeError::ExecutionBreaker(
+                    GovernanceAdmissionError::ExecutionBreaker(
                         BreakerRejectionReason::BudgetExhausted { .. }
                     )
                 ));
@@ -475,7 +475,7 @@ fn mbt_causal_retraction_overlay_refines_higher_order_admission_gate() {
                     .expect_err("must refuse committing a retracted causal derivation");
                 assert!(matches!(
                     err,
-                    HigherOrderBridgeError::DerivationRetractedDenied(_)
+                    GovernanceAdmissionError::DerivationRetractedDenied(_)
                 ));
                 countermodels_refused += 1;
                 break;
@@ -488,7 +488,7 @@ fn mbt_causal_retraction_overlay_refines_higher_order_admission_gate() {
                     .expect_err("must refuse stale pre-retraction proof envelope");
                 assert!(matches!(
                     err,
-                    HigherOrderBridgeError::StaleProofEpoch { .. }
+                    GovernanceAdmissionError::StaleProofEpoch { .. }
                 ));
                 countermodels_refused += 1;
                 break;

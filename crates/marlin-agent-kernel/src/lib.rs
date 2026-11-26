@@ -9,7 +9,7 @@ mod controller;
 mod driver;
 pub mod execution_breaker;
 pub mod governance_plane;
-pub mod higher_order_bridge;
+pub mod governance_admission;
 mod loop_machine;
 mod loop_program_controller;
 mod loop_program_execution;
@@ -44,12 +44,12 @@ pub use governance_plane::{
     GovernanceTenantId, MultiTenantIsolationFence, PrivilegedHumanReceipt, SodProposalRecord,
     TenantExecutionTicket, TenantExecutionTicketId, TenantOutboxEntry, TenantOutboxEntryId,
 };
-pub use higher_order_bridge::{
+pub use governance_admission::{
     CedarPolicyId, DerivationId, GovernanceProofDigest, GovernedSubjectName,
-    HIGHER_ORDER_DURABLE_CHECKPOINT_VERSION, HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION,
-    HigherOrderBridgeError, HigherOrderDurableCheckpoint, HigherOrderGateSnapshot,
-    HigherOrderGovernanceAdmissionGate, HigherOrderGovernanceProofEnvelope,
-    HigherOrderProofEpoch, HigherOrderProofSyncReceipt, SynthesizedCedarPolicy,
+    GOVERNANCE_DURABLE_CHECKPOINT_VERSION, GOVERNANCE_ADMISSION_SCHEMA_VERSION,
+    GovernanceAdmissionError, GovernanceDurableCheckpoint, GovernanceGateSnapshot,
+    GovernanceAdmissionGate, GovernanceProofEnvelope,
+    GovernanceProofEpoch, GovernanceProofSyncReceipt, SynthesizedCedarPolicy,
 };
 pub use loop_machine::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,

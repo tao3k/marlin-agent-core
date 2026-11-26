@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Zero-JSON rooted Gambit Scheme vector C-ABI codec for Marlin's Higher-Order
-//! Governance Plane (`scheme/policy/higher-order-governance.ss`).
+//! Zero-JSON rooted Gambit Scheme vector C-ABI codec for Marlin's Governance Policy
+//! Engine (`scheme/policy/governance.ss`).
 //!
 //! Encodes 15-slot rooted Scheme request vectors and decodes 14-slot rooted Scheme
 //! proof vectors directly across the embedded Gambit heap boundary without text or
@@ -15,24 +15,24 @@ use gerbil_scheme::{
     CollectionKind, GerbilRuntime, RootedSchemeCollection, RootedSchemeObject, SchemeScalar,
 };
 
-pub const MARLIN_HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION: u32 = 1;
-pub const MARLIN_HIGHER_ORDER_GOVERNANCE_PROJECT_SYMBOL: &str =
-    "marlin-higher-order-governance-project-vector";
+pub const MARLIN_GOVERNANCE_ADMISSION_SCHEMA_VERSION: u32 = 1;
+pub const MARLIN_GOVERNANCE_PROJECT_SYMBOL: &str =
+    "marlin-governance-project-vector";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HigherOrderGovernanceAbiError(pub String);
+pub struct GovernancePolicyAbiError(pub String);
 
-impl fmt::Display for HigherOrderGovernanceAbiError {
+impl fmt::Display for GovernancePolicyAbiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }
 
-impl std::error::Error for HigherOrderGovernanceAbiError {}
+impl std::error::Error for GovernancePolicyAbiError {}
 
 /// Zero-JSON request payload encoded into a 15-slot rooted Gambit Scheme vector.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct HigherOrderGovernanceVectorRequest {
+pub struct GovernancePolicyVectorRequest {
     pub delegation_edges: Vec<(String, String)>,
     pub revoked_actors: Vec<String>,
     pub taint_edges: Vec<(String, String)>,
@@ -52,7 +52,7 @@ pub struct HigherOrderGovernanceVectorRequest {
 
 /// Decoded 14-slot rooted Gambit Scheme governance proof projection.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HigherOrderGovernanceVectorProjection {
+pub struct GovernancePolicyVectorProjection {
     pub schema_version: u32,
     pub admitted: bool,
     pub revocation_epoch: u64,
@@ -72,28 +72,28 @@ pub struct HigherOrderGovernanceVectorProjection {
 fn encode_str<'vm>(
     runtime: &'vm GerbilRuntime,
     value: &str,
-) -> Result<RootedSchemeObject<'vm>, HigherOrderGovernanceAbiError> {
+) -> Result<RootedSchemeObject<'vm>, GovernancePolicyAbiError> {
     runtime
         .string_from_utf8(value)
         .map(|s| s.into_object())
-        .map_err(|e| HigherOrderGovernanceAbiError(format!("encode string '{value}': {e}")))
+        .map_err(|e| GovernancePolicyAbiError(format!("encode string '{value}': {e}")))
 }
 
 fn encode_vec<'vm>(
     runtime: &'vm GerbilRuntime,
     items: &[RootedSchemeObject<'vm>],
-) -> Result<RootedSchemeObject<'vm>, HigherOrderGovernanceAbiError> {
+) -> Result<RootedSchemeObject<'vm>, GovernancePolicyAbiError> {
     let refs: Vec<&RootedSchemeObject<'vm>> = items.iter().collect();
     runtime
         .collection_from_objects(CollectionKind::Vector, &refs)
         .map(|c| c.into_object())
-        .map_err(|e| HigherOrderGovernanceAbiError(format!("encode vector: {e}")))
+        .map_err(|e| GovernancePolicyAbiError(format!("encode vector: {e}")))
 }
 
 fn encode_string_vec<'vm>(
     runtime: &'vm GerbilRuntime,
     items: &[String],
-) -> Result<RootedSchemeObject<'vm>, HigherOrderGovernanceAbiError> {
+) -> Result<RootedSchemeObject<'vm>, GovernancePolicyAbiError> {
     let mut rooted = Vec::with_capacity(items.len());
     for item in items {
         rooted.push(encode_str(runtime, item)?);
@@ -104,7 +104,7 @@ fn encode_string_vec<'vm>(
 fn encode_pair_vec<'vm>(
     runtime: &'vm GerbilRuntime,
     items: &[(String, String)],
-) -> Result<RootedSchemeObject<'vm>, HigherOrderGovernanceAbiError> {
+) -> Result<RootedSchemeObject<'vm>, GovernancePolicyAbiError> {
     let mut rooted = Vec::with_capacity(items.len());
     for (left, right) in items {
         let pair = [encode_str(runtime, left)?, encode_str(runtime, right)?];
@@ -113,11 +113,11 @@ fn encode_pair_vec<'vm>(
     encode_vec(runtime, &rooted)
 }
 
-/// Encodes `HigherOrderGovernanceVectorRequest` into a 15-slot rooted Gambit heap vector.
-pub fn encode_higher_order_governance_request<'vm>(
+/// Encodes `GovernancePolicyVectorRequest` into a 15-slot rooted Gambit heap vector.
+pub fn encode_governance_policy_request<'vm>(
     runtime: &'vm GerbilRuntime,
-    req: &HigherOrderGovernanceVectorRequest,
-) -> Result<RootedSchemeObject<'vm>, HigherOrderGovernanceAbiError> {
+    req: &GovernancePolicyVectorRequest,
+) -> Result<RootedSchemeObject<'vm>, GovernancePolicyAbiError> {
     let slots = [
         encode_pair_vec(runtime, &req.delegation_edges)?,
         encode_string_vec(runtime, &req.revoked_actors)?,
@@ -134,10 +134,10 @@ pub fn encode_higher_order_governance_request<'vm>(
         encode_string_vec(runtime, &req.retracted_subjects)?,
         runtime
             .scalar_object(SchemeScalar::Fixnum(req.revocation_epoch as isize))
-            .map_err(|e| HigherOrderGovernanceAbiError(format!("encode revocation_epoch: {e}")))?,
+            .map_err(|e| GovernancePolicyAbiError(format!("encode revocation_epoch: {e}")))?,
         runtime
             .scalar_object(SchemeScalar::Fixnum(req.policy_revision as isize))
-            .map_err(|e| HigherOrderGovernanceAbiError(format!("encode policy_revision: {e}")))?,
+            .map_err(|e| GovernancePolicyAbiError(format!("encode policy_revision: {e}")))?,
     ];
     encode_vec(runtime, &slots)
 }
@@ -146,13 +146,13 @@ fn read_u64_slot(
     vec: &RootedSchemeCollection<'_>,
     idx: usize,
     label: &str,
-) -> Result<u64, HigherOrderGovernanceAbiError> {
+) -> Result<u64, GovernancePolicyAbiError> {
     let obj = vec
         .element(idx)
-        .map_err(|e| HigherOrderGovernanceAbiError(format!("missing slot {idx} ({label}): {e}")))?;
+        .map_err(|e| GovernancePolicyAbiError(format!("missing slot {idx} ({label}): {e}")))?;
     match obj.as_ref().scalar() {
         Ok(SchemeScalar::Fixnum(n)) if n >= 0 => Ok(n as u64),
-        other => Err(HigherOrderGovernanceAbiError(format!(
+        other => Err(GovernancePolicyAbiError(format!(
             "slot {idx} ({label}) expected non-negative fixnum, got {other:?}"
         ))),
     }
@@ -162,13 +162,13 @@ fn read_bool_slot(
     vec: &RootedSchemeCollection<'_>,
     idx: usize,
     label: &str,
-) -> Result<bool, HigherOrderGovernanceAbiError> {
+) -> Result<bool, GovernancePolicyAbiError> {
     let obj = vec
         .element(idx)
-        .map_err(|e| HigherOrderGovernanceAbiError(format!("missing slot {idx} ({label}): {e}")))?;
+        .map_err(|e| GovernancePolicyAbiError(format!("missing slot {idx} ({label}): {e}")))?;
     match obj.as_ref().scalar() {
         Ok(SchemeScalar::Boolean(b)) => Ok(b),
-        other => Err(HigherOrderGovernanceAbiError(format!(
+        other => Err(GovernancePolicyAbiError(format!(
             "slot {idx} ({label}) expected boolean, got {other:?}"
         ))),
     }
@@ -177,22 +177,22 @@ fn read_bool_slot(
 fn read_string_obj(
     obj: RootedSchemeObject<'_>,
     label: &str,
-) -> Result<String, HigherOrderGovernanceAbiError> {
+) -> Result<String, GovernancePolicyAbiError> {
     obj.into_string()
-        .map_err(|e| HigherOrderGovernanceAbiError(format!("expected string for {label}: {e}")))?
+        .map_err(|e| GovernancePolicyAbiError(format!("expected string for {label}: {e}")))?
         .to_string()
         .into_result()
-        .map_err(|e| HigherOrderGovernanceAbiError(format!("decode utf8 string for {label}: {e}")))
+        .map_err(|e| GovernancePolicyAbiError(format!("decode utf8 string for {label}: {e}")))
 }
 
 fn read_string_slot(
     vec: &RootedSchemeCollection<'_>,
     idx: usize,
     label: &str,
-) -> Result<String, HigherOrderGovernanceAbiError> {
+) -> Result<String, GovernancePolicyAbiError> {
     let obj = vec
         .element(idx)
-        .map_err(|e| HigherOrderGovernanceAbiError(format!("missing slot {idx} ({label}): {e}")))?;
+        .map_err(|e| GovernancePolicyAbiError(format!("missing slot {idx} ({label}): {e}")))?;
     read_string_obj(obj, label)
 }
 
@@ -200,19 +200,19 @@ fn read_string_vec_slot(
     vec: &RootedSchemeCollection<'_>,
     idx: usize,
     label: &str,
-) -> Result<Vec<String>, HigherOrderGovernanceAbiError> {
+) -> Result<Vec<String>, GovernancePolicyAbiError> {
     let sub = vec
         .element(idx)
-        .map_err(|e| HigherOrderGovernanceAbiError(format!("missing slot {idx} ({label}): {e}")))?
+        .map_err(|e| GovernancePolicyAbiError(format!("missing slot {idx} ({label}): {e}")))?
         .into_collection(CollectionKind::Vector)
         .map_err(|e| {
-            HigherOrderGovernanceAbiError(format!("slot {idx} ({label}) expected vector: {e}"))
+            GovernancePolicyAbiError(format!("slot {idx} ({label}) expected vector: {e}"))
         })?;
     let mut out = Vec::with_capacity(sub.len());
     for i in 0..sub.len() {
         let item = sub
             .element(i)
-            .map_err(|e| HigherOrderGovernanceAbiError(format!("{label}[{i}]: {e}")))?;
+            .map_err(|e| GovernancePolicyAbiError(format!("{label}[{i}]: {e}")))?;
         out.push(read_string_obj(item, label)?);
     }
     Ok(out)
@@ -222,25 +222,25 @@ fn read_pair_vec_slot(
     vec: &RootedSchemeCollection<'_>,
     idx: usize,
     label: &str,
-) -> Result<Vec<(String, String)>, HigherOrderGovernanceAbiError> {
+) -> Result<Vec<(String, String)>, GovernancePolicyAbiError> {
     let sub = vec
         .element(idx)
-        .map_err(|e| HigherOrderGovernanceAbiError(format!("missing slot {idx} ({label}): {e}")))?
+        .map_err(|e| GovernancePolicyAbiError(format!("missing slot {idx} ({label}): {e}")))?
         .into_collection(CollectionKind::Vector)
         .map_err(|e| {
-            HigherOrderGovernanceAbiError(format!("slot {idx} ({label}) expected vector: {e}"))
+            GovernancePolicyAbiError(format!("slot {idx} ({label}) expected vector: {e}"))
         })?;
     let mut out = Vec::with_capacity(sub.len());
     for i in 0..sub.len() {
         let pair = sub
             .element(i)
-            .map_err(|e| HigherOrderGovernanceAbiError(format!("{label}[{i}]: {e}")))?
+            .map_err(|e| GovernancePolicyAbiError(format!("{label}[{i}]: {e}")))?
             .into_collection(CollectionKind::Vector)
             .map_err(|e| {
-                HigherOrderGovernanceAbiError(format!("{label}[{i}] expected 2-slot vector: {e}"))
+                GovernancePolicyAbiError(format!("{label}[{i}] expected 2-slot vector: {e}"))
             })?;
         if pair.len() != 2 {
-            return Err(HigherOrderGovernanceAbiError(format!(
+            return Err(GovernancePolicyAbiError(format!(
                 "{label}[{i}] expected length 2, got {}",
                 pair.len()
             )));
@@ -253,27 +253,27 @@ fn read_pair_vec_slot(
 }
 
 /// Decodes a 14-slot rooted Gambit heap governance proof vector with fail-closed arity & version validation.
-pub fn decode_higher_order_governance_vector(
+pub fn decode_governance_policy_vector(
     object: RootedSchemeObject<'_>,
-) -> Result<HigherOrderGovernanceVectorProjection, HigherOrderGovernanceAbiError> {
+) -> Result<GovernancePolicyVectorProjection, GovernancePolicyAbiError> {
     let vec = object
         .into_collection(CollectionKind::Vector)
         .map_err(|e| {
-            HigherOrderGovernanceAbiError(format!("expected 14-slot rooted vector: {e}"))
+            GovernancePolicyAbiError(format!("expected 14-slot rooted vector: {e}"))
         })?;
     if vec.len() != 14 {
-        return Err(HigherOrderGovernanceAbiError(format!(
-            "expected 14-slot higher-order governance vector, got {}",
+        return Err(GovernancePolicyAbiError(format!(
+            "expected 14-slot governance vector, got {}",
             vec.len()
         )));
     }
     let schema_version = read_u64_slot(&vec, 0, "schema_version")? as u32;
-    if schema_version != MARLIN_HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION {
-        return Err(HigherOrderGovernanceAbiError(format!(
+    if schema_version != MARLIN_GOVERNANCE_ADMISSION_SCHEMA_VERSION {
+        return Err(GovernancePolicyAbiError(format!(
             "unsupported schema_version {schema_version}"
         )));
     }
-    Ok(HigherOrderGovernanceVectorProjection {
+    Ok(GovernancePolicyVectorProjection {
         schema_version,
         admitted: read_bool_slot(&vec, 1, "admitted")?,
         revocation_epoch: read_u64_slot(&vec, 2, "revocation_epoch")?,

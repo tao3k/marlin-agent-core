@@ -2,17 +2,17 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Authoritative Higher-Order Governance Host Controller for `marlin-scheme-host`.
+//! Authoritative Governance Authority Host Controller for `marlin-scheme-host`.
 //!
-//! Bridges the live embedded Gambit/Gerbil Scheme VM (`:marlin-agent-core/policy/higher-order-governance`)
-//! through zero-JSON 14-slot rooted vectors into `marlin_agent_kernel::HigherOrderGovernanceAdmissionGate`
+//! Bridges the live embedded Gambit/Gerbil Scheme VM (`:marlin-agent-core/policy/governance`)
+//! through zero-JSON 14-slot rooted vectors into `marlin_agent_kernel::GovernanceAdmissionGate`
 //! + `ExecutionCircuitBreaker`, enforces side-effect gating on `SchemeAtomicEffect::SandboxRun`,
 //! publishes authoritative snapshots over `ProjectionQueryService` (`QueryProjectGraph` +
 //! `WatchGraphTrajectory`), and enforces one-shot RFC 9470 human Step-Up Re-Arm strictly through
 //! `ApprovalGateService` (never forgeable via `DispatchUiEvent`).
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -29,25 +29,25 @@ use marlin_agent_app_server::{
 };
 use marlin_agent_kernel::{
     BreakerActor, BreakerActorId, CedarPolicyId, DerivationId, ExecutionCircuitBreaker,
-    GovernanceProofDigest, GovernedSubjectName, HigherOrderBridgeError, HigherOrderGateSnapshot,
-    HigherOrderGovernanceAdmissionGate, HigherOrderGovernanceProofEnvelope, HigherOrderProofEpoch,
+    GovernanceProofDigest, GovernedSubjectName, GovernanceAdmissionError, GovernanceGateSnapshot,
+    GovernanceAdmissionGate, GovernanceProofEnvelope, GovernanceProofEpoch,
     SynthesizedCedarPolicy, ToolBudgetUnits, ToolIfcContext,
 };
 use marlin_agent_storage::AgentStorage;
 
-use crate::{HigherOrderGovernanceVectorProjection, HigherOrderGovernanceVectorRequest};
+use crate::{GovernancePolicyVectorProjection, GovernancePolicyVectorRequest};
 
-pub const HIGHER_ORDER_GOVERNANCE_RECORD_ID: &str = "scheme:higher-order:governance-snapshot";
-pub const HIGHER_ORDER_GOVERNANCE_RECORD_KIND: &str = "scheme.higher_order.governance_snapshot";
-pub const HIGHER_ORDER_GOVERNANCE_RUN_ID: &str = "scheme-higher-order-governance";
-pub const HIGHER_ORDER_GOVERNANCE_NODE_KIND: &str = "scheme_higher_order_governance";
-pub const HIGHER_ORDER_GOVERNANCE_REARM_GATE_PREFIX: &str = "gov-rearm-epoch-";
-pub const DEFAULT_HIGHER_ORDER_CHECKPOINT_KEY: &str = "checkpoint:higher-order-governance:v1";
+pub const GOVERNANCE_AUTHORITY_RECORD_ID: &str = "scheme:governance:authority-snapshot";
+pub const GOVERNANCE_AUTHORITY_RECORD_KIND: &str = "scheme.governance.authority_snapshot";
+pub const GOVERNANCE_AUTHORITY_RUN_ID: &str = "scheme-governance-authority";
+pub const GOVERNANCE_AUTHORITY_NODE_KIND: &str = "scheme_governance_authority";
+pub const GOVERNANCE_REARM_GATE_PREFIX: &str = "gov-rearm-epoch-";
+pub const DEFAULT_GOVERNANCE_CHECKPOINT_KEY: &str = "checkpoint:governance-authority:v1";
 
 static GOVERNANCE_TRAJECTORY_SEQ: AtomicU64 = AtomicU64::new(1);
 
 /// Shared registry merging multiple non-authorizing `GraphRecordView` records
-/// (e.g. `scheme:fleet:audit-capsule` + `scheme:higher-order:governance-snapshot`)
+/// (e.g. `scheme:fleet:audit-capsule` + `scheme:governance:authority-snapshot`)
 /// before publishing to `MyGoBridgeHost::set_graph_projection_records`.
 #[derive(Default)]
 pub struct SharedProjectionRecords {
@@ -69,25 +69,57 @@ impl SharedProjectionRecords {
     }
 }
 
-/// Strictly allowlisted UI commands for the Higher-Order Governance Host.
+/// Strictly allowlisted UI commands for the Governance Authority Host.
 ///
 /// Security invariant: re-arm is deliberately EXCLUDED so UI presentation events can
 /// NEVER bypass one-shot `ApprovalGateService` + RFC 9470 verified human step-up.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum HigherOrderUiCommand {
-    OperatorEStop { actor: String, reason: String },
+pub enum GovernanceUiCommand {
+    OperatorEStop {
+        actor: String,
+        reason: String,
+    },
     EvaluateIncident,
     EvaluateClean,
+    DelegateActor {
+        parent: String,
+        child: String,
+    },
+    RevokeActor {
+        actor: String,
+    },
+    ContextFlow {
+        entry: String,
+        src_scope: String,
+        target: String,
+        dst_scope: String,
+    },
+    DeclassifyContext {
+        entry: String,
+    },
+    RetractPremise {
+        subject: String,
+    },
+    AddTaintEdge {
+        src: String,
+        dst: String,
+        mark_source: bool,
+        mark_sink: bool,
+    },
+    AddTaintSanitizer {
+        node: String,
+    },
 }
 
 /// Parses declarative `scheme:governance-*` commands dispatched via `DispatchUiEvent`.
 /// Any re-arm or privileged bypass attempt is rejected fail-closed (`None`).
-pub fn parse_higher_order_governance_ui_command(raw: &str) -> Option<HigherOrderUiCommand> {
+pub fn parse_governance_ui_command(raw: &str) -> Option<GovernanceUiCommand> {
     let body = raw.trim().strip_prefix("scheme:")?.trim();
     let (cmd, arg) = match body.split_once(char::is_whitespace) {
         Some((head, tail)) => (head, tail.trim()),
         None => (body, ""),
     };
+    let parts: Vec<&str> = arg.split_whitespace().collect();
     match cmd {
         "governance-estop" => {
             let (actor, reason) = if let Some((a, r)) = arg.split_once(':') {
@@ -97,11 +129,115 @@ pub fn parse_higher_order_governance_ui_command(raw: &str) -> Option<HigherOrder
             } else {
                 ("operator".to_owned(), "ui-emergency-stop".to_owned())
             };
-            Some(HigherOrderUiCommand::OperatorEStop { actor, reason })
+            Some(GovernanceUiCommand::OperatorEStop { actor, reason })
         }
-        "governance-eval-incident" => Some(HigherOrderUiCommand::EvaluateIncident),
-        "governance-eval-clean" => Some(HigherOrderUiCommand::EvaluateClean),
+        "governance-eval-incident" => Some(GovernanceUiCommand::EvaluateIncident),
+        "governance-eval-clean" => Some(GovernanceUiCommand::EvaluateClean),
+        "governance-delegate" if parts.len() == 2 => Some(GovernanceUiCommand::DelegateActor {
+            parent: parts[0].to_owned(),
+            child: parts[1].to_owned(),
+        }),
+        "governance-revoke" if parts.len() == 1 => Some(GovernanceUiCommand::RevokeActor {
+            actor: parts[0].to_owned(),
+        }),
+        "governance-context-flow" if parts.len() == 4 => Some(GovernanceUiCommand::ContextFlow {
+            entry: parts[0].to_owned(),
+            src_scope: parts[1].to_owned(),
+            target: parts[2].to_owned(),
+            dst_scope: parts[3].to_owned(),
+        }),
+        "governance-declassify" if parts.len() == 1 => {
+            Some(GovernanceUiCommand::DeclassifyContext {
+                entry: parts[0].to_owned(),
+            })
+        }
+        "governance-retract" if parts.len() == 1 => Some(GovernanceUiCommand::RetractPremise {
+            subject: parts[0].to_owned(),
+        }),
+        "governance-taint-edge" if parts.len() >= 2 && parts.len() <= 3 => {
+            let role = parts.get(2).copied().unwrap_or("");
+            Some(GovernanceUiCommand::AddTaintEdge {
+                src: parts[0].to_owned(),
+                dst: parts[1].to_owned(),
+                mark_source: matches!(role, "source" | "both"),
+                mark_sink: matches!(role, "sink" | "both"),
+            })
+        }
+        "governance-sanitize" if parts.len() == 1 => {
+            Some(GovernanceUiCommand::AddTaintSanitizer {
+                node: parts[0].to_owned(),
+            })
+        }
         _ => None,
+    }
+}
+
+/// Live mutable runtime security fact graph driving real-time Linked-AOT/VM Scheme
+/// `POO × ASCENT × Bi-Temporal TM × Cedar` incremental re-evaluation.
+#[derive(Clone, Debug, Default)]
+pub struct GovernanceFactStore {
+    pub delegation_edges: BTreeSet<(String, String)>,
+    pub revoked_actors: BTreeSet<String>,
+    pub taint_edges: BTreeSet<(String, String)>,
+    pub taint_sources: BTreeSet<String>,
+    pub taint_sinks: BTreeSet<String>,
+    pub taint_sanitizers: BTreeSet<String>,
+    pub context_entries: BTreeMap<String, String>,
+    pub context_flows: BTreeSet<(String, String)>,
+    pub target_scopes: BTreeMap<String, String>,
+    pub declassified_entries: BTreeSet<String>,
+    pub tripped_breakers: BTreeSet<String>,
+    pub breaker_tools: BTreeSet<(String, String)>,
+    pub retracted_subjects: BTreeSet<String>,
+}
+
+impl GovernanceFactStore {
+    pub fn reset_from_request(&mut self, req: &GovernancePolicyVectorRequest) {
+        self.delegation_edges = req.delegation_edges.iter().cloned().collect();
+        self.revoked_actors = req.revoked_actors.iter().cloned().collect();
+        self.taint_edges = req.taint_edges.iter().cloned().collect();
+        self.taint_sources = req.taint_sources.iter().cloned().collect();
+        self.taint_sinks = req.taint_sinks.iter().cloned().collect();
+        self.taint_sanitizers = req.taint_sanitizers.iter().cloned().collect();
+        self.context_entries = req.context_entries.iter().cloned().collect();
+        self.context_flows = req.context_flows.iter().cloned().collect();
+        self.target_scopes = req.target_scopes.iter().cloned().collect();
+        self.declassified_entries = req.declassified_entries.iter().cloned().collect();
+        self.tripped_breakers = req.tripped_breakers.iter().cloned().collect();
+        self.breaker_tools = req.breaker_tools.iter().cloned().collect();
+        self.retracted_subjects = req.retracted_subjects.iter().cloned().collect();
+    }
+
+    pub fn to_vector_request(
+        &self,
+        revocation_epoch: u64,
+        policy_revision: u64,
+    ) -> GovernancePolicyVectorRequest {
+        GovernancePolicyVectorRequest {
+            delegation_edges: self.delegation_edges.iter().cloned().collect(),
+            revoked_actors: self.revoked_actors.iter().cloned().collect(),
+            taint_edges: self.taint_edges.iter().cloned().collect(),
+            taint_sources: self.taint_sources.iter().cloned().collect(),
+            taint_sinks: self.taint_sinks.iter().cloned().collect(),
+            taint_sanitizers: self.taint_sanitizers.iter().cloned().collect(),
+            context_entries: self
+                .context_entries
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            context_flows: self.context_flows.iter().cloned().collect(),
+            target_scopes: self
+                .target_scopes
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            declassified_entries: self.declassified_entries.iter().cloned().collect(),
+            tripped_breakers: self.tripped_breakers.iter().cloned().collect(),
+            breaker_tools: self.breaker_tools.iter().cloned().collect(),
+            retracted_subjects: self.retracted_subjects.iter().cloned().collect(),
+            revocation_epoch,
+            policy_revision,
+        }
     }
 }
 
@@ -150,10 +286,10 @@ pub fn parse_verified_step_up_actor(note: Option<&str>) -> Result<BreakerActor, 
 }
 
 /// Converts a zero-JSON 14-slot Gambit Scheme vector projection into a validated
-/// kernel `HigherOrderGovernanceProofEnvelope`.
+/// kernel `GovernanceProofEnvelope`.
 pub fn projection_to_kernel_envelope(
-    proj: &HigherOrderGovernanceVectorProjection,
-) -> Result<HigherOrderGovernanceProofEnvelope, HigherOrderBridgeError> {
+    proj: &GovernancePolicyVectorProjection,
+) -> Result<GovernanceProofEnvelope, GovernanceAdmissionError> {
     let mut fenced_actors = Vec::with_capacity(proj.fenced_actors.len());
     for actor in &proj.fenced_actors {
         fenced_actors.push(GovernedSubjectName::new(actor.clone())?);
@@ -173,10 +309,10 @@ pub fn projection_to_kernel_envelope(
             source: source.clone(),
         });
     }
-    Ok(HigherOrderGovernanceProofEnvelope {
+    Ok(GovernanceProofEnvelope {
         schema_version: proj.schema_version,
         admitted: proj.admitted,
-        revocation_epoch: HigherOrderProofEpoch::new(proj.revocation_epoch)?,
+        revocation_epoch: GovernanceProofEpoch::new(proj.revocation_epoch)?,
         policy_revision: proj.policy_revision,
         assessment_digest: GovernanceProofDigest::new(proj.assessment_digest.clone())?,
         taint_proof_digest: GovernanceProofDigest::new(proj.taint_proof_digest.clone())?,
@@ -196,8 +332,8 @@ pub fn projection_to_kernel_envelope(
 pub fn default_incident_governance_request(
     revocation_epoch: u64,
     policy_revision: u64,
-) -> HigherOrderGovernanceVectorRequest {
-    HigherOrderGovernanceVectorRequest {
+) -> GovernancePolicyVectorRequest {
+    GovernancePolicyVectorRequest {
         delegation_edges: vec![
             ("alice".to_owned(), "agent-lead".to_owned()),
             ("agent-lead".to_owned(), "agent-sub".to_owned()),
@@ -226,8 +362,8 @@ pub fn default_incident_governance_request(
 pub fn default_clean_governance_request(
     revocation_epoch: u64,
     policy_revision: u64,
-) -> HigherOrderGovernanceVectorRequest {
-    HigherOrderGovernanceVectorRequest {
+) -> GovernancePolicyVectorRequest {
+    GovernancePolicyVectorRequest {
         delegation_edges: vec![("ops-admin".to_owned(), "ops-bob".to_owned())],
         revoked_actors: Vec::new(),
         taint_edges: vec![
@@ -255,36 +391,153 @@ struct HostGovernanceMeta {
     rearm_gate_seq: u64,
     policy_revision_seq: u64,
     last_event_note: String,
+    facts: GovernanceFactStore,
 }
 
 /// Thread-safe Rust control-plane controller synchronizing live Gambit Scheme
-/// Higher-Order Governance projections with `ExecutionCircuitBreaker`,
+/// Governance Authority projections with `ExecutionCircuitBreaker`,
 /// `ApprovalGateService` one-shot Step-Up Re-Arm gates, and `ProjectionQueryService`.
-pub struct HigherOrderHostController {
-    gate: Arc<HigherOrderGovernanceAdmissionGate>,
+pub struct GovernanceHostController {
+    gate: Arc<GovernanceAdmissionGate>,
     records: Arc<SharedProjectionRecords>,
     meta: Mutex<HostGovernanceMeta>,
 }
 
-impl HigherOrderHostController {
+impl GovernanceHostController {
     pub fn new(budget_limit: u32, records: Arc<SharedProjectionRecords>) -> Self {
         let breaker = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(
             budget_limit.max(1),
         )));
         Self {
-            gate: Arc::new(HigherOrderGovernanceAdmissionGate::new(breaker)),
+            gate: Arc::new(GovernanceAdmissionGate::new(breaker)),
             records,
             meta: Mutex::new(HostGovernanceMeta {
                 active_rearm_gate_id: None,
                 rearm_gate_seq: 0,
                 policy_revision_seq: 1,
                 last_event_note: "initialized".to_owned(),
+                facts: GovernanceFactStore::default(),
             }),
         }
     }
 
-    pub fn gate(&self) -> Arc<HigherOrderGovernanceAdmissionGate> {
+    pub fn gate(&self) -> Arc<GovernanceAdmissionGate> {
         Arc::clone(&self.gate)
+    }
+
+    /// Synchronizes the internal dynamic fact graph from a baseline evaluation request.
+    pub fn seed_fact_store(&self, req: &GovernancePolicyVectorRequest) {
+        let mut meta = self.meta.lock().expect("host governance meta poisoned");
+        meta.facts.reset_from_request(req);
+    }
+
+    /// Applies one dynamic runtime governance mutation to the live fact store and returns
+    /// a freshly timestamped `(GovernancePolicyVectorRequest, node_id, event_note)`
+    /// ready for immediate Linked-AOT/VM Scheme evaluation.
+    pub fn mutate_facts_and_build_request(
+        &self,
+        cmd: &GovernanceUiCommand,
+    ) -> Result<Option<(GovernancePolicyVectorRequest, String, String)>, String> {
+        let (epoch, rev) = self.next_evaluation_coords()?;
+        let mut meta = self.meta.lock().expect("host governance meta poisoned");
+        let (node_id, note) = match cmd {
+            GovernanceUiCommand::EvaluateIncident => {
+                let req = default_incident_governance_request(epoch, rev);
+                meta.facts.reset_from_request(&req);
+                return Ok(Some((
+                    req,
+                    "governance_eval_incident".to_owned(),
+                    "live scheme governance incident evaluated".to_owned(),
+                )));
+            }
+            GovernanceUiCommand::EvaluateClean => {
+                let req = default_clean_governance_request(epoch, rev);
+                meta.facts.reset_from_request(&req);
+                return Ok(Some((
+                    req,
+                    "governance_eval_clean".to_owned(),
+                    "live scheme governance clean baseline evaluated".to_owned(),
+                )));
+            }
+            GovernanceUiCommand::DelegateActor { parent, child } => {
+                meta.facts
+                    .delegation_edges
+                    .insert((parent.clone(), child.clone()));
+                (
+                    format!("governance_delegate:{parent}->{child}"),
+                    format!("delegated {parent} -> {child} (live ASCENT re-eval)"),
+                )
+            }
+            GovernanceUiCommand::RevokeActor { actor } => {
+                meta.facts.revoked_actors.insert(actor.clone());
+                (
+                    format!("governance_revoke:{actor}"),
+                    format!("revoked {actor} (live ASCENT transitive closure)"),
+                )
+            }
+            GovernanceUiCommand::ContextFlow {
+                entry,
+                src_scope,
+                target,
+                dst_scope,
+            } => {
+                meta.facts
+                    .context_entries
+                    .insert(entry.clone(), src_scope.clone());
+                meta.facts
+                    .context_flows
+                    .insert((entry.clone(), target.clone()));
+                meta.facts
+                    .target_scopes
+                    .insert(target.clone(), dst_scope.clone());
+                (
+                    format!("governance_context_flow:{entry}->{target}"),
+                    format!("context flow {entry}({src_scope}) -> {target}({dst_scope})"),
+                )
+            }
+            GovernanceUiCommand::DeclassifyContext { entry } => {
+                meta.facts.declassified_entries.insert(entry.clone());
+                (
+                    format!("governance_declassify:{entry}"),
+                    format!("declassified shared context entry {entry}"),
+                )
+            }
+            GovernanceUiCommand::RetractPremise { subject } => {
+                meta.facts.retracted_subjects.insert(subject.clone());
+                (
+                    format!("governance_retract:{subject}"),
+                    format!("retracted bi-temporal premise {subject}"),
+                )
+            }
+            GovernanceUiCommand::AddTaintEdge {
+                src,
+                dst,
+                mark_source,
+                mark_sink,
+            } => {
+                meta.facts.taint_edges.insert((src.clone(), dst.clone()));
+                if *mark_source {
+                    meta.facts.taint_sources.insert(src.clone());
+                }
+                if *mark_sink {
+                    meta.facts.taint_sinks.insert(dst.clone());
+                }
+                (
+                    format!("governance_taint_edge:{src}->{dst}"),
+                    format!("recorded CaMeL taint edge {src} -> {dst}"),
+                )
+            }
+            GovernanceUiCommand::AddTaintSanitizer { node } => {
+                meta.facts.taint_sanitizers.insert(node.clone());
+                (
+                    format!("governance_sanitize:{node}"),
+                    format!("registered CaMeL sanitizer {node}"),
+                )
+            }
+            GovernanceUiCommand::OperatorEStop { .. } => return Ok(None),
+        };
+        let req = meta.facts.to_vector_request(epoch, rev);
+        Ok(Some((req, node_id, note)))
     }
 
     /// Allocates strictly advancing `(revocation_epoch, policy_revision)` coordinates
@@ -302,7 +555,7 @@ impl HigherOrderHostController {
         Ok((epoch, rev))
     }
 
-    /// Gates a real OS `SandboxRun` atomic effect through `HigherOrderGovernanceAdmissionGate`.
+    /// Gates a real OS `SandboxRun` atomic effect through `GovernanceAdmissionGate`.
     pub fn authorize_sandbox_effect(&self, actor: &str, program: &str) -> Result<(), String> {
         let actor_id = GovernedSubjectName::new(if actor.trim().is_empty() {
             "scheme-sandbox-worker"
@@ -319,10 +572,10 @@ impl HigherOrderHostController {
         self.gate
             .authorize_side_effect(None, &actor_id, &tool_id, &ToolIfcContext::clean_trusted())
             .map(|_| ())
-            .map_err(|e| format!("higher-order governance denied sandbox execution: {e}"))
+            .map_err(|e| format!("governance denied sandbox execution: {e}"))
     }
 
-    /// Persists the current tamper-evident `MHG1` governance checkpoint bytes to Turso CAS.
+    /// Persists the current tamper-evident `MGV1` governance checkpoint bytes to Turso CAS.
     pub async fn persist_to_cas<S: AgentStorage + Clone + 'static>(
         &self,
         cas: &StorageCasStore<S>,
@@ -337,7 +590,7 @@ impl HigherOrderHostController {
             .map_err(|e| format!("persist durable governance checkpoint to CAS: {e}"))
     }
 
-    /// Restores a tamper-evident `MHG1` governance checkpoint from Turso CAS on daemon boot.
+    /// Restores a tamper-evident `MGV1` governance checkpoint from Turso CAS on daemon boot.
     ///
     /// Returns:
     /// - `Ok(None)` when no prior checkpoint exists in CAS (cold boot).
@@ -349,7 +602,7 @@ impl HigherOrderHostController {
         host: &MyGoBridgeHost,
         cas: &StorageCasStore<S>,
         checkpoint_key: &str,
-    ) -> Result<Option<(HigherOrderGateSnapshot, &'static str)>, String> {
+    ) -> Result<Option<(GovernanceGateSnapshot, &'static str)>, String> {
         let Some(bytes) = cas
             .get_blob(checkpoint_key)
             .await
@@ -378,7 +631,7 @@ impl HigherOrderHostController {
                 let published = self.publish_snapshot(host, "governance_boot_restored", &note)?;
                 Ok(Some((published, "restored")))
             }
-            Err(HigherOrderBridgeError::CorruptDurableCheckpoint(detail)) => {
+            Err(GovernanceAdmissionError::CorruptDurableCheckpoint(detail)) => {
                 let snap = self
                     .gate
                     .snapshot()
@@ -400,10 +653,10 @@ impl HigherOrderHostController {
         host: &MyGoBridgeHost,
         cas: Option<&StorageCasStore<S>>,
         checkpoint_key: Option<&str>,
-        proj: &HigherOrderGovernanceVectorProjection,
+        proj: &GovernancePolicyVectorProjection,
         node_id: &str,
         note: &str,
-    ) -> Result<HigherOrderGateSnapshot, String> {
+    ) -> Result<GovernanceGateSnapshot, String> {
         let envelope = projection_to_kernel_envelope(proj)
             .map_err(|e| format!("validate scheme proof envelope: {e}"))?;
         let _receipt = self
@@ -436,7 +689,7 @@ impl HigherOrderHostController {
         checkpoint_key: Option<&str>,
         actor: &str,
         reason: &str,
-    ) -> Result<HigherOrderGateSnapshot, String> {
+    ) -> Result<GovernanceGateSnapshot, String> {
         let snap = self
             .gate
             .trip_operator_estop(actor, reason)
@@ -460,7 +713,7 @@ impl HigherOrderHostController {
         decision: i32,
         note: Option<&str>,
     ) -> bool {
-        if !gate_id.starts_with(HIGHER_ORDER_GOVERNANCE_REARM_GATE_PREFIX) {
+        if !gate_id.starts_with(GOVERNANCE_REARM_GATE_PREFIX) {
             return false;
         }
         let expected_match = {
@@ -531,16 +784,16 @@ impl HigherOrderHostController {
         true
     }
 
-    /// Synchronizes a live Scheme VM 14-slot projection into Rust's `HigherOrderGovernanceAdmissionGate`,
+    /// Synchronizes a live Scheme VM 14-slot projection into Rust's `GovernanceAdmissionGate`,
     /// enqueues a one-shot `ApprovalGateService` Step-Up Re-Arm gate if tripped, and publishes
     /// the authoritative snapshot over `ProjectionQueryService`.
     pub fn apply_scheme_projection(
         &self,
         host: &MyGoBridgeHost,
-        proj: &HigherOrderGovernanceVectorProjection,
+        proj: &GovernancePolicyVectorProjection,
         node_id: &str,
         note: &str,
-    ) -> Result<HigherOrderGateSnapshot, String> {
+    ) -> Result<GovernanceGateSnapshot, String> {
         let envelope = projection_to_kernel_envelope(proj)
             .map_err(|e| format!("validate scheme proof envelope: {e}"))?;
         let _receipt = self
@@ -568,7 +821,7 @@ impl HigherOrderHostController {
         host: &MyGoBridgeHost,
         actor: &str,
         reason: &str,
-    ) -> Result<HigherOrderGateSnapshot, String> {
+    ) -> Result<GovernanceGateSnapshot, String> {
         let snap = self
             .gate
             .trip_operator_estop(actor, reason)
@@ -587,7 +840,7 @@ impl HigherOrderHostController {
         decision: i32,
         note: Option<&str>,
     ) -> bool {
-        if !gate_id.starts_with(HIGHER_ORDER_GOVERNANCE_REARM_GATE_PREFIX) {
+        if !gate_id.starts_with(GOVERNANCE_REARM_GATE_PREFIX) {
             return false;
         }
         let expected_match = {
@@ -671,10 +924,10 @@ impl HigherOrderHostController {
             let mut meta = self.meta.lock().expect("host governance meta poisoned");
             meta.rearm_gate_seq = meta.rearm_gate_seq.saturating_add(1);
             let id = if meta.rearm_gate_seq == 1 {
-                format!("{HIGHER_ORDER_GOVERNANCE_REARM_GATE_PREFIX}{trip_epoch}")
+                format!("{GOVERNANCE_REARM_GATE_PREFIX}{trip_epoch}")
             } else {
                 format!(
-                    "{HIGHER_ORDER_GOVERNANCE_REARM_GATE_PREFIX}{trip_epoch}-r{}",
+                    "{GOVERNANCE_REARM_GATE_PREFIX}{trip_epoch}-r{}",
                     meta.rearm_gate_seq
                 )
             };
@@ -690,7 +943,7 @@ impl HigherOrderHostController {
             prompt: format!(
                 "RFC 9470 Human Step-Up required to re-arm ExecutionCircuitBreaker (epoch {trip_epoch}): {prompt_note}"
             ),
-            details_heading: "Rust+Scheme Higher-Order Governance E-Stop Re-Arm".to_owned(),
+            details_heading: "Rust+Scheme Governance Authority E-Stop Re-Arm".to_owned(),
             choices: Vec::new(),
             card: None,
             created_at_unix_ms: 1,
@@ -705,7 +958,7 @@ impl HigherOrderHostController {
         host: &MyGoBridgeHost,
         node_id: &str,
         note: &str,
-    ) -> Result<HigherOrderGateSnapshot, String> {
+    ) -> Result<GovernanceGateSnapshot, String> {
         let snap = self
             .gate
             .snapshot()
@@ -718,10 +971,10 @@ impl HigherOrderHostController {
 
         let facets = encode_snapshot_facets(&snap, &rearm_gate_id, note);
         let record = GraphRecordView {
-            record_id: HIGHER_ORDER_GOVERNANCE_RECORD_ID.to_owned(),
+            record_id: GOVERNANCE_AUTHORITY_RECORD_ID.to_owned(),
             surface: GraphVisibleSurface::Evidence as i32,
-            kind: HIGHER_ORDER_GOVERNANCE_RECORD_KIND.to_owned(),
-            title: "Scheme Higher-Order Governance Authority Snapshot".to_owned(),
+            kind: GOVERNANCE_AUTHORITY_RECORD_KIND.to_owned(),
+            title: "Scheme Governance Authority Authority Snapshot".to_owned(),
             summary: format!(
                 "admitted={} breaker_tripped={} trip_epoch={} rev_epoch={} fenced={} retracted={} cedar={}",
                 snap.admitted,
@@ -732,7 +985,7 @@ impl HigherOrderHostController {
                 snap.retracted_conclusions.len(),
                 snap.cedar_policies.len(),
             ),
-            source_path: Some("scheme/policy/higher-order-governance.ss".to_owned()),
+            source_path: Some("scheme/policy/governance.ss".to_owned()),
             start_line: None,
             end_line: None,
             facets: facets.clone(),
@@ -742,9 +995,9 @@ impl HigherOrderHostController {
         let seq = GOVERNANCE_TRAJECTORY_SEQ.fetch_add(1, Ordering::Relaxed);
         host.publish_graph_trajectory_event(GraphTrajectoryEvent {
             event_id: format!("scheme-gov-ev-{seq}"),
-            run_id: HIGHER_ORDER_GOVERNANCE_RUN_ID.to_owned(),
+            run_id: GOVERNANCE_AUTHORITY_RUN_ID.to_owned(),
             node_id: node_id.to_owned(),
-            node_kind: HIGHER_ORDER_GOVERNANCE_NODE_KIND.to_owned(),
+            node_kind: GOVERNANCE_AUTHORITY_NODE_KIND.to_owned(),
             status: if snap.breaker.tripped {
                 "tripped".to_owned()
             } else {
@@ -758,7 +1011,7 @@ impl HigherOrderHostController {
 }
 
 fn encode_snapshot_facets(
-    snap: &HigherOrderGateSnapshot,
+    snap: &GovernanceGateSnapshot,
     rearm_gate_id: &str,
     note: &str,
 ) -> HashMap<String, String> {
@@ -897,26 +1150,62 @@ mod tests {
             "",
         ] {
             assert_eq!(
-                parse_higher_order_governance_ui_command(forbidden),
+                parse_governance_ui_command(forbidden),
                 None,
                 "privileged bypass `{forbidden}` must fail closed"
             );
         }
 
         assert_eq!(
-            parse_higher_order_governance_ui_command("scheme:governance-estop ops-alice:red-button"),
-            Some(HigherOrderUiCommand::OperatorEStop {
+            parse_governance_ui_command("scheme:governance-estop ops-alice:red-button"),
+            Some(GovernanceUiCommand::OperatorEStop {
                 actor: "ops-alice".to_owned(),
                 reason: "red-button".to_owned(),
             })
         );
         assert_eq!(
-            parse_higher_order_governance_ui_command("scheme:governance-eval-incident"),
-            Some(HigherOrderUiCommand::EvaluateIncident)
+            parse_governance_ui_command("scheme:governance-eval-incident"),
+            Some(GovernanceUiCommand::EvaluateIncident)
         );
         assert_eq!(
-            parse_higher_order_governance_ui_command("scheme:governance-eval-clean"),
-            Some(HigherOrderUiCommand::EvaluateClean)
+            parse_governance_ui_command("scheme:governance-eval-clean"),
+            Some(GovernanceUiCommand::EvaluateClean)
+        );
+        assert_eq!(
+            parse_governance_ui_command("scheme:governance-delegate ops-lead agent-coder"),
+            Some(GovernanceUiCommand::DelegateActor {
+                parent: "ops-lead".to_owned(),
+                child: "agent-coder".to_owned(),
+            })
+        );
+        assert_eq!(
+            parse_governance_ui_command("scheme:governance-revoke ops-lead"),
+            Some(GovernanceUiCommand::RevokeActor {
+                actor: "ops-lead".to_owned(),
+            })
+        );
+        assert_eq!(
+            parse_governance_ui_command(
+                "scheme:governance-context-flow payroll-csv private public-webhook external"
+            ),
+            Some(GovernanceUiCommand::ContextFlow {
+                entry: "payroll-csv".to_owned(),
+                src_scope: "private".to_owned(),
+                target: "public-webhook".to_owned(),
+                dst_scope: "external".to_owned(),
+            })
+        );
+        assert_eq!(
+            parse_governance_ui_command("scheme:governance-declassify payroll-csv"),
+            Some(GovernanceUiCommand::DeclassifyContext {
+                entry: "payroll-csv".to_owned(),
+            })
+        );
+        assert_eq!(
+            parse_governance_ui_command("scheme:governance-retract human-session-alice"),
+            Some(GovernanceUiCommand::RetractPremise {
+                subject: "human-session-alice".to_owned(),
+            })
         );
     }
 
@@ -954,7 +1243,7 @@ mod tests {
     fn host_controller_blocks_sandbox_on_estop_and_requires_verified_human_step_up_rearm() {
         let records = Arc::new(SharedProjectionRecords::new());
         let host = MyGoBridgeHost::new_default_trust(|_| Ok(()));
-        let ctrl = HigherOrderHostController::new(8, records);
+        let ctrl = GovernanceHostController::new(8, records);
 
         // Armed initially -> clean sandbox call admitted.
         ctrl.authorize_sandbox_effect("ops-bob", "/bin/echo")
@@ -1023,10 +1312,10 @@ mod tests {
             SessionId::new("sess-durable-test").unwrap(),
             AgentId::new("agent-durable-test").unwrap(),
         );
-        let key = DEFAULT_HIGHER_ORDER_CHECKPOINT_KEY;
+        let key = DEFAULT_GOVERNANCE_CHECKPOINT_KEY;
 
         let host1 = MyGoBridgeHost::new_default_trust(|_| Ok(()));
-        let ctrl1 = HigherOrderHostController::new(8, Arc::new(SharedProjectionRecords::new()));
+        let ctrl1 = GovernanceHostController::new(8, Arc::new(SharedProjectionRecords::new()));
         ctrl1
             .apply_operator_estop_durable(&host1, Some(&cas), Some(key), "ops-alice", "pre-crash")
             .await
@@ -1034,7 +1323,7 @@ mod tests {
 
         // Fresh post-restart host restores tripped latch & enqueues one-shot gate.
         let host2 = MyGoBridgeHost::new_default_trust(|_| Ok(()));
-        let ctrl2 = HigherOrderHostController::new(8, Arc::new(SharedProjectionRecords::new()));
+        let ctrl2 = GovernanceHostController::new(8, Arc::new(SharedProjectionRecords::new()));
         let (snap2, mode2) = ctrl2
             .restore_from_cas(&host2, &cas, key)
             .await
@@ -1050,7 +1339,7 @@ mod tests {
         cas.put_blob(key, raw).await.unwrap();
 
         let host3 = MyGoBridgeHost::new_default_trust(|_| Ok(()));
-        let ctrl3 = HigherOrderHostController::new(8, Arc::new(SharedProjectionRecords::new()));
+        let ctrl3 = GovernanceHostController::new(8, Arc::new(SharedProjectionRecords::new()));
         let (snap3, mode3) = ctrl3
             .restore_from_cas(&host3, &cas, key)
             .await

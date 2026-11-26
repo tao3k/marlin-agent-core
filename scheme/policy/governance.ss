@@ -122,7 +122,7 @@
         compose-governance-profiles
         evaluate-marlin-governance-profile
         ;; Layer 2: ASCENT Higher-Order Fixpoint, Stratified Taint & Incremental Retraction
-        solve-higher-order-transitive-closure
+        solve-ascent-transitive-closure
         solve-ascent-camel-taint-paths
         solve-ascent-delegation-and-scope-governance
         run-ascent-incremental-retraction-session
@@ -140,10 +140,10 @@
         synthesize-marlin-cedar-authority-snapshot
         make-marlin-cedar-effect-request
         ;; Layer 6: Zero-JSON Rooted Gambit Heap Vector Projection (Scheme -> Rust C-ABI)
-        marlin-higher-order-governance-project-vector
-        ;; Contract-validated POO Higher-Order Governance Bundle
-        HigherOrderGovernanceContract
-        HigherOrderGovernancePolicy)
+        marlin-governance-project-vector
+        ;; Contract-validated POO Governance Policy Bundle
+        GovernancePolicyContract
+        GovernancePolicy)
 
 ;; ===========================================================================
 ;; Shared canonical content-digest utility (SHA-256, `sha256:<64-hex>`)
@@ -212,7 +212,7 @@
                             (.ref assessment-val 'model-identity)
                             unresolved-val
                             ready?))))
-    (.o kind: 'marlin.higher-order-governance.assessment-receipt.v1
+    (.o kind: 'marlin.governance.assessment-receipt.v1
         assessment: assessment-val
         handoff-ready?: ready?
         unresolved-threats: unresolved-val
@@ -230,7 +230,7 @@
 ;;; positive ASCENT Datalog program and solves exact transitive closure over
 ;;; `domain-atoms` (e.g. arbitrary-depth OBO delegation chains, cross-scope
 ;;; data flows, or cross-tenant trust graphs).
-(def (solve-higher-order-transitive-closure domain-atoms edge-pairs
+(def (solve-ascent-transitive-closure domain-atoms edge-pairs
                                             input-budget: (input-budget 128)
                                             derived-budget: (derived-budget 1024)
                                             output-budget: (output-budget 2048))
@@ -268,9 +268,9 @@
       (let* ((solved (relational-solve (relational-admit program)))
              (rows (relational-query-name solved output-rel))
              (digest-val (sha256-digest
-                          (list 'marlin.ascent.higher-order-closure.v1
+                          (list 'marlin.ascent.transitive-closure.v1
                                 domain-atoms edge-pairs rows))))
-        (.o kind: 'marlin.ascent.higher-order-closure-receipt.v1
+        (.o kind: 'marlin.ascent.transitive-closure-receipt.v1
             closure-rows: rows
             output-relation: output-rel
             proof-digest: digest-val)))))
@@ -640,7 +640,7 @@
          (validity-val (agentic-ai-lab-token-validity issued-at not-before expiry revocation-epoch))
          (token-val (agentic-ai-lab-authorized-effect-token
                      token-id nonce-val root-val binding-val validity-val 'strict '(ascent temporal cedar)
-                     "marlin-higher-order-governance" "sig:poo-root")))
+                     "marlin-governance-policy" "sig:poo-root")))
     (.o kind: 'marlin.governed-effect-bundle.v1
         semantic-root: root-val
         binding: binding-val
@@ -854,7 +854,7 @@
 ;;; Evaluates the entire 5-layer Higher-Order Governance Plane from a single
 ;;; zero-JSON 15-slot rooted Gambit Scheme input vector and returns a canonical
 ;;; 14-slot rooted Scheme output vector consumed directly by Rust `marlin-gerbil-scheme`
-;;; and `marlin-agent-kernel::higher_order_bridge`:
+;;; and `marlin-agent-kernel::governance_admission`:
 ;;;
 ;;; Input vector (15 slots):
 ;;;   [0]  delegation_edges      : #(#(parent child) ...)
@@ -888,9 +888,9 @@
 ;;;   [11] blocked_tools         : #(tool-str ...)
 ;;;   [12] retracted_conclusions : #(derivation-id-str ...)
 ;;;   [13] cedar_policies        : #(#(policy-id-str cedar-source-str) ...)
-(def (marlin-higher-order-governance-project-vector req-vec)
+(def (marlin-governance-project-vector req-vec)
   (unless (and (vector? req-vec) (= (vector-length req-vec) 15))
-    (error "higher-order governance request must be a 15-slot rooted vector" req-vec))
+    (error "governance projection request must be a 15-slot rooted vector" req-vec))
   (let* ((del-edges (vec->pair-rows (vector-ref req-vec 0)))
          (rev-actors (vec->singleton-rows (vector-ref req-vec 1)))
          (taint-edges (vec->pair-rows (vector-ref req-vec 2)))
@@ -909,8 +909,8 @@
          ;; 1. Atomic POO Governance Profile assessment
          (base-profile
           (make-marlin-governance-profile
-           "marlin.profile.higher-order-vm" "1.0.0" "tao3k-security"
-           "tm.higher-order-vm"
+           "marlin.profile.governance-vm" "1.0.0" "tao3k-security"
+           "tm.governance-vm"
            (list (agentic-ai-lab-governance-threat
                   "marlin.breaker.latch" 'critical 'mitigated
                   (list (agentic-ai-lab-governance-precondition
@@ -971,8 +971,8 @@
          (retracted-conclusions (.ref tm-receipt 'affected-conclusions))
          ;; 6. Cedar Authority Snapshot synthesis (fail-closed if ANY layer rejects)
          (cedar-synth (synthesize-marlin-cedar-authority-snapshot
-                       "marlin.higher-order.vm-bridge"
-                       '("marlin.profile.higher-order-vm")
+                       "marlin.governance.vm-bridge"
+                       '("marlin.profile.governance-vm")
                        gov-receipt taint-receipt fix-receipt temporal-receipt
                        revocation-epoch: rev-epoch
                        policy-revision: pol-rev))
@@ -1017,12 +1017,12 @@
 
 (def GovernanceProc (.cc Type. '.element? procedure?))
 
-(def HigherOrderGovernanceContract
+(def GovernancePolicyContract
   (.cc ObjectContract.
        responsibilities: (.o make-profile: GovernanceProc
                              compose-profiles: GovernanceProc
                              evaluate-profile: GovernanceProc
-                             solve-higher-order-closure: GovernanceProc
+                             solve-ascent-closure: GovernanceProc
                              solve-camel-taint: GovernanceProc
                              solve-delegation-scope-fixpoint: GovernanceProc
                              run-incremental-retraction: GovernanceProc
@@ -1036,12 +1036,12 @@
                              make-cedar-effect-request: GovernanceProc
                              project-vector: GovernanceProc)))
 
-(def HigherOrderGovernancePolicy
-  (validate HigherOrderGovernanceContract
+(def GovernancePolicy
+  (validate GovernancePolicyContract
             (.o make-profile: make-marlin-governance-profile
                 compose-profiles: compose-governance-profiles
                 evaluate-profile: evaluate-marlin-governance-profile
-                solve-higher-order-closure: solve-higher-order-transitive-closure
+                solve-ascent-closure: solve-ascent-transitive-closure
                 solve-camel-taint: solve-ascent-camel-taint-paths
                 solve-delegation-scope-fixpoint: solve-ascent-delegation-and-scope-governance
                 run-incremental-retraction: run-ascent-incremental-retraction-session
@@ -1053,4 +1053,4 @@
                 synthesize-cedar-policies: synthesize-cedar-policies-from-ascent
                 synthesize-cedar-snapshot: synthesize-marlin-cedar-authority-snapshot
                 make-cedar-effect-request: make-marlin-cedar-effect-request
-                project-vector: marlin-higher-order-governance-project-vector)))
+                project-vector: marlin-governance-project-vector)))

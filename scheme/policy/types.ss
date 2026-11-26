@@ -19,4 +19,4 @@
                              compile-loop-graph: PolicyOperation
                              next-continuation: PolicyOperation
                              security-governance: PolicyOperationBundle
-                             higher-order-governance: PolicyOperationBundle)))
+                             governance: PolicyOperationBundle)))

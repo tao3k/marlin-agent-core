@@ -3,13 +3,13 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 //! Live Quint -> ITF -> Rust Model-Based Testing (MBT) refinement suite for
-//! tamper-evident durable `HigherOrderGovernanceAdmissionGate` checkpoints against
+//! tamper-evident durable `GovernanceAdmissionGate` checkpoints against
 //! `dev/quint/threat/MarlinBackendDurableGovernanceOverlay.qnt`.
 //!
 //! Proves all 7 composed countermodels (4 inherited `AgentToolCircuitBreaker` +
 //! 3 anti-restart-reset & tamper-fail-closed countermodels: `stepRestartClearsEStop`,
 //! `stepRestartRegressesEpoch`, `stepCorruptWalFailsOpen`) are deterministically
-//! refused by real Rust `HigherOrderGovernanceAdmissionGate` + `ExecutionCircuitBreaker`.
+//! refused by real Rust `GovernanceAdmissionGate` + `ExecutionCircuitBreaker`.
 
 use std::{
     collections::BTreeMap,
@@ -23,8 +23,8 @@ use std::{
 use marlin_agent_kernel::{
     BreakerActor, BreakerActorId, BreakerRejectionReason, BreakerTripReason, CedarPolicyId,
     DerivationId, ExecutionCircuitBreaker, GovernanceProofDigest, GovernedSubjectName,
-    HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION, HigherOrderBridgeError,
-    HigherOrderGovernanceAdmissionGate, HigherOrderGovernanceProofEnvelope, HigherOrderProofEpoch,
+    GOVERNANCE_ADMISSION_SCHEMA_VERSION, GovernanceAdmissionError,
+    GovernanceAdmissionGate, GovernanceProofEnvelope, GovernanceProofEpoch,
     SynthesizedCedarPolicy, ToolBudgetUnits, ToolExecutionLease, ToolExecutionLeaseId,
     ToolIfcContext,
 };
@@ -344,11 +344,11 @@ fn digest(ch: char) -> GovernanceProofDigest {
         .unwrap()
 }
 
-fn incident_envelope(epoch: u64) -> HigherOrderGovernanceProofEnvelope {
-    HigherOrderGovernanceProofEnvelope {
-        schema_version: HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION,
+fn incident_envelope(epoch: u64) -> GovernanceProofEnvelope {
+    GovernanceProofEnvelope {
+        schema_version: GOVERNANCE_ADMISSION_SCHEMA_VERSION,
         admitted: false,
-        revocation_epoch: HigherOrderProofEpoch::new(epoch).unwrap(),
+        revocation_epoch: GovernanceProofEpoch::new(epoch).unwrap(),
         policy_revision: epoch,
         assessment_digest: digest('a'),
         taint_proof_digest: digest('b'),
@@ -398,7 +398,7 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
         let mut breaker = Arc::new(
             ExecutionCircuitBreaker::new(ToolBudgetUnits::new(1)).with_single_lease_enforced(true),
         );
-        let mut gate = HigherOrderGovernanceAdmissionGate::new(Arc::clone(&breaker));
+        let mut gate = GovernanceAdmissionGate::new(Arc::clone(&breaker));
         let mut active_lease: Option<(DerivationId, ToolExecutionLease)> = None;
         let mut wal_bytes: Option<Vec<u8>> = None;
         let mut seq = 0u64;
@@ -430,7 +430,7 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                     .expect_err("must refuse commit while breaker tripped");
                 assert!(matches!(
                     err,
-                    HigherOrderBridgeError::ExecutionBreaker(
+                    GovernanceAdmissionError::ExecutionBreaker(
                         BreakerRejectionReason::BreakerTripped { .. }
                     )
                 ));
@@ -449,7 +449,7 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                     .expect_err("must refuse stale pre-trip lease");
                 assert!(matches!(
                     err,
-                    HigherOrderBridgeError::ExecutionBreaker(
+                    GovernanceAdmissionError::ExecutionBreaker(
                         BreakerRejectionReason::StaleLeaseEpoch { .. }
                     )
                 ));
@@ -479,7 +479,7 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                     .expect_err("must refuse budget overrun");
                 assert!(matches!(
                     err,
-                    HigherOrderBridgeError::ExecutionBreaker(
+                    GovernanceAdmissionError::ExecutionBreaker(
                         BreakerRejectionReason::BudgetExhausted { .. }
                     )
                 ));
@@ -493,7 +493,7 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                     ExecutionCircuitBreaker::new(ToolBudgetUnits::new(1))
                         .with_single_lease_enforced(true),
                 );
-                let fresh_g = HigherOrderGovernanceAdmissionGate::new(fresh_b);
+                let fresh_g = GovernanceAdmissionGate::new(fresh_b);
                 let restored = fresh_g.restore_durable_checkpoint_bytes(bytes).unwrap();
                 assert!(
                     restored.breaker.tripped,
@@ -519,7 +519,7 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                     ExecutionCircuitBreaker::new(ToolBudgetUnits::new(1))
                         .with_single_lease_enforced(true),
                 );
-                let fresh_g = HigherOrderGovernanceAdmissionGate::new(fresh_b);
+                let fresh_g = GovernanceAdmissionGate::new(fresh_b);
                 let restored = fresh_g.restore_durable_checkpoint_bytes(bytes).unwrap();
                 let expected_trip = i(prev, "walTripEpoch") as u64;
                 let expected_proof = i(prev, "walProofEpoch") as u64;
@@ -535,7 +535,7 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                 if expected_proof > 1 {
                     assert!(matches!(
                         fresh_g.synchronize_proof_envelope(&incident_envelope(1)),
-                        Err(HigherOrderBridgeError::StaleProofEpoch { .. })
+                        Err(GovernanceAdmissionError::StaleProofEpoch { .. })
                     ));
                 }
                 countermodels_refused += 1;
@@ -548,13 +548,13 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                     ExecutionCircuitBreaker::new(ToolBudgetUnits::new(1))
                         .with_single_lease_enforced(true),
                 );
-                let fresh_g = HigherOrderGovernanceAdmissionGate::new(fresh_b);
+                let fresh_g = GovernanceAdmissionGate::new(fresh_b);
                 let err = fresh_g
                     .restore_durable_checkpoint_bytes(bytes)
                     .expect_err("corrupt WAL must be rejected");
                 assert!(matches!(
                     err,
-                    HigherOrderBridgeError::CorruptDurableCheckpoint(_)
+                    GovernanceAdmissionError::CorruptDurableCheckpoint(_)
                 ));
                 assert!(
                     fresh_g.snapshot().unwrap().breaker.tripped,
@@ -619,12 +619,12 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                     ExecutionCircuitBreaker::new(ToolBudgetUnits::new(1))
                         .with_single_lease_enforced(true),
                 );
-                gate = HigherOrderGovernanceAdmissionGate::new(Arc::clone(&breaker));
+                gate = GovernanceAdmissionGate::new(Arc::clone(&breaker));
                 active_lease = None;
                 let bytes = wal_bytes.as_ref().unwrap();
                 assert!(matches!(
                     gate.restore_durable_checkpoint_bytes(bytes),
-                    Err(HigherOrderBridgeError::CorruptDurableCheckpoint(_))
+                    Err(GovernanceAdmissionError::CorruptDurableCheckpoint(_))
                 ));
                 assert!(gate.snapshot().unwrap().breaker.tripped);
             } else if b(prev, "liveFenced") && !b(next, "liveFenced") {

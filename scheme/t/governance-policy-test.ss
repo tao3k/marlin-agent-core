@@ -23,9 +23,9 @@
         (only-in :tao3k/agentic-ai-lab/modules/governance/policy/strict-mediation
                  agentic-ai-lab-strict-mediation-state)
         (only-in :marlin-agent-core/policy/config PolicyScope)
-        "../policy/higher-order-governance")
+        "../policy/governance")
 
-(export marlin-higher-order-governance-test)
+(export marlin-governance-policy-test)
 
 (def (mk-threat id sev phase mitigations: (mits '()))
   (agentic-ai-lab-governance-threat
@@ -33,8 +33,8 @@
    (list (agentic-ai-lab-governance-precondition (string-append id ".pre") #t "observed-in-model"))
    mitigations: mits))
 
-(def marlin-higher-order-governance-test
-  (test-suite "Marlin Higher-Order Governance (Atomic POO x ASCENT x Temporal Causality x Cedar)"
+(def marlin-governance-policy-test
+  (test-suite "Marlin Governance Policy (Atomic POO x ASCENT x Temporal Causality x Cedar)"
 
     ;; -----------------------------------------------------------------------
     ;; 1. Atomic POO Governance Profile Composition & Monotonic Threat Blocking
@@ -78,7 +78,7 @@
              (edges '((human-alice agent-1)
                       (agent-1 agent-2)
                       (agent-2 tool-shell)))
-             (res (solve-higher-order-transitive-closure domain edges))
+             (res (solve-ascent-transitive-closure domain edges))
              (rows (.ref res 'closure-rows)))
         ;; Multi-hop transitive reachability derived purely by higher-order fixpoint
         (check (and (member '(human-alice agent-2) rows) #t) => #t)
@@ -322,7 +322,7 @@
                #("human-session-alice")                 ;; [12] retracted_subjects
                2                                        ;; [13] revocation_epoch
                1))                                      ;; [14] policy_revision
-             (out-blocked (marlin-higher-order-governance-project-vector req-blocked))
+             (out-blocked (marlin-governance-project-vector req-blocked))
              (req-admitted
               (vector
                #(#(alice agent-sub))
@@ -336,7 +336,7 @@
                #()
                3
                1))
-             (out-admitted (marlin-higher-order-governance-project-vector req-admitted)))
+             (out-admitted (marlin-governance-project-vector req-admitted)))
         (check (vector-length out-blocked) => 14)
         (check (vector-ref out-blocked 0) => 1)
         (check (vector-ref out-blocked 1) => #f)
@@ -352,11 +352,11 @@
     ;; -----------------------------------------------------------------------
     ;; 10. Official Yuanxu PolicyScope Publication Check
     ;; -----------------------------------------------------------------------
-    (test-case "Marlin PolicyScope publishes both security-governance and higher-order-governance bundles"
-      (let* ((ho (.get PolicyScope higher-order-governance))
+    (test-case "Marlin PolicyScope publishes both security-governance and governance bundles"
+      (let* ((gov (.get PolicyScope governance))
              (sec (.get PolicyScope security-governance))
              (rank-fn (.get sec scope-rank))
-             (proj-fn (.get ho project-vector)))
+             (proj-fn (.get gov project-vector)))
         (check (procedure? proj-fn) => #t)
         (check (rank-fn 'private) => 0)
         (check (rank-fn 'external) => 4)))))

@@ -2,11 +2,11 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Authoritative Rust admission gate bridging Gerbil Scheme's Higher-Order Governance
-//! Plane (`scheme/policy/higher-order-governance.ss`) into `ExecutionCircuitBreaker`
+//! Authoritative Rust admission gate bridging Gerbil Scheme's Governance Authority
+//! Plane (`scheme/policy/governance.ss`) into `ExecutionCircuitBreaker`
 //! and `LoopProgramRuntimeSideEffectExecutor`.
 //!
-//! Zero JSON / text parsing: accepts typed `HigherOrderGovernanceProofEnvelope`
+//! Zero JSON / text parsing: accepts typed `GovernanceProofEnvelope`
 //! values decoded directly from rooted Gambit Scheme vectors by `marlin-gerbil-scheme`,
 //! verifies all cryptographic `sha256:` proof bindings and monotonic revocation epochs,
 //! enforces Bi-Temporal Truth Maintenance causal retraction blast-radius invalidation
@@ -26,16 +26,16 @@ use crate::execution_breaker::{
     ExecutionCircuitBreaker, ToolExecutionLease, ToolIfcContext,
 };
 
-pub const HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION: u32 = 1;
-pub const HIGHER_ORDER_DURABLE_CHECKPOINT_MAGIC: &[u8; 4] = b"MHG1";
-pub const HIGHER_ORDER_DURABLE_CHECKPOINT_VERSION: u32 = 1;
+pub const GOVERNANCE_ADMISSION_SCHEMA_VERSION: u32 = 1;
+pub const GOVERNANCE_DURABLE_CHECKPOINT_MAGIC: &[u8; 4] = b"MGV1";
+pub const GOVERNANCE_DURABLE_CHECKPOINT_VERSION: u32 = 1;
 
 /// Validated canonical SHA-256 content digest (`sha256:<64 lowercase hex>`).
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct GovernanceProofDigest(String);
 
 impl GovernanceProofDigest {
-    pub fn new(value: impl Into<String>) -> Result<Self, HigherOrderBridgeError> {
+    pub fn new(value: impl Into<String>) -> Result<Self, GovernanceAdmissionError> {
         let value = value.into();
         let valid = value.len() == 71
             && value.starts_with("sha256:")
@@ -43,7 +43,7 @@ impl GovernanceProofDigest {
                 .iter()
                 .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
         if !valid {
-            return Err(HigherOrderBridgeError::InvalidProofDigest(value));
+            return Err(GovernanceAdmissionError::InvalidProofDigest(value));
         }
         Ok(Self(value))
     }
@@ -59,10 +59,10 @@ macro_rules! ho_id {
         pub struct $name(String);
 
         impl $name {
-            pub fn new(value: impl Into<String>) -> Result<Self, HigherOrderBridgeError> {
+            pub fn new(value: impl Into<String>) -> Result<Self, GovernanceAdmissionError> {
                 let value = value.into();
                 if value.is_empty() || value.chars().take(257).count() > 256 {
-                    return Err(HigherOrderBridgeError::InvalidIdentifier($label));
+                    return Err(GovernanceAdmissionError::InvalidIdentifier($label));
                 }
                 Ok(Self(value))
             }
@@ -82,18 +82,18 @@ macro_rules! ho_id {
 
 ho_id!(DerivationId, "truth-maintenance derivation identity");
 ho_id!(CedarPolicyId, "synthesized Cedar policy identity");
-ho_id!(GovernedSubjectName, "higher-order governed actor or tool identity");
+ho_id!(GovernedSubjectName, "governed actor or tool identity");
 
 /// Monotonic proof revocation epoch (`>= 1`).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct HigherOrderProofEpoch(u64);
+pub struct GovernanceProofEpoch(u64);
 
-impl HigherOrderProofEpoch {
+impl GovernanceProofEpoch {
     pub const INITIAL: Self = Self(1);
 
-    pub fn new(value: u64) -> Result<Self, HigherOrderBridgeError> {
+    pub fn new(value: u64) -> Result<Self, GovernanceAdmissionError> {
         if value == 0 {
-            return Err(HigherOrderBridgeError::InvalidProofEpoch(value));
+            return Err(GovernanceAdmissionError::InvalidProofEpoch(value));
         }
         Ok(Self(value))
     }
@@ -112,10 +112,10 @@ pub struct SynthesizedCedarPolicy {
 
 /// Typed Rust projection of the 14-slot rooted Scheme governance proof vector.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HigherOrderGovernanceProofEnvelope {
+pub struct GovernanceProofEnvelope {
     pub schema_version: u32,
     pub admitted: bool,
-    pub revocation_epoch: HigherOrderProofEpoch,
+    pub revocation_epoch: GovernanceProofEpoch,
     pub policy_revision: u64,
     pub assessment_digest: GovernanceProofDigest,
     pub taint_proof_digest: GovernanceProofDigest,
@@ -131,9 +131,9 @@ pub struct HigherOrderGovernanceProofEnvelope {
 
 /// Typed admission receipt emitted when Rust synchronizes a Scheme proof envelope.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HigherOrderProofSyncReceipt {
+pub struct GovernanceProofSyncReceipt {
     pub admitted: bool,
-    pub revocation_epoch: HigherOrderProofEpoch,
+    pub revocation_epoch: GovernanceProofEpoch,
     pub invalidated_active_derivations: Vec<DerivationId>,
     pub breaker_auto_tripped: bool,
     pub fenced_actor_count: usize,
@@ -142,11 +142,11 @@ pub struct HigherOrderProofSyncReceipt {
 }
 
 /// Authoritative snapshot of the combined Rust `ExecutionCircuitBreaker` and
-/// Gerbil Scheme Higher-Order Governance proof state for control-plane projections.
+/// Gerbil Scheme Governance Authority proof state for control-plane projections.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HigherOrderGateSnapshot {
+pub struct GovernanceGateSnapshot {
     pub admitted: bool,
-    pub revocation_epoch: HigherOrderProofEpoch,
+    pub revocation_epoch: GovernanceProofEpoch,
     pub policy_revision: u64,
     pub breaker: ExecutionBreakerSnapshot,
     pub assessment_digest: Option<GovernanceProofDigest>,
@@ -162,14 +162,14 @@ pub struct HigherOrderGateSnapshot {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum HigherOrderBridgeError {
+pub enum GovernanceAdmissionError {
     InvalidIdentifier(&'static str),
     InvalidProofDigest(String),
     InvalidProofEpoch(u64),
     UnsupportedSchemaVersion(u32),
     StaleProofEpoch {
-        supplied: HigherOrderProofEpoch,
-        current_floor: HigherOrderProofEpoch,
+        supplied: GovernanceProofEpoch,
+        current_floor: GovernanceProofEpoch,
     },
     DerivationAlreadyRegistered(DerivationId),
     DerivationNotRegistered(DerivationId),
@@ -186,21 +186,21 @@ pub enum HigherOrderBridgeError {
     LockPoisoned,
 }
 
-impl fmt::Display for HigherOrderBridgeError {
+impl fmt::Display for GovernanceAdmissionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidIdentifier(label) => write!(f, "invalid identifier for {label}"),
             Self::InvalidProofDigest(d) => write!(f, "invalid sha256 proof digest: {d}"),
             Self::InvalidProofEpoch(e) => write!(f, "invalid proof epoch {e}"),
             Self::UnsupportedSchemaVersion(v) => {
-                write!(f, "unsupported higher-order governance schema version {v}")
+                write!(f, "unsupported governance admission schema version {v}")
             }
             Self::StaleProofEpoch {
                 supplied,
                 current_floor,
             } => write!(
                 f,
-                "stale higher-order proof epoch {} < floor {}",
+                "stale governance proof epoch {} < floor {}",
                 supplied.get(),
                 current_floor.get()
             ),
@@ -223,20 +223,20 @@ impl fmt::Display for HigherOrderBridgeError {
                 write!(f, "synthesized Cedar forbid {policy_id} denied {subject}")
             }
             Self::ProofEnvelopeRejected(reasons) => {
-                write!(f, "higher-order proof envelope rejected: {}", reasons.join(","))
+                write!(f, "governance proof envelope rejected: {}", reasons.join(","))
             }
             Self::CorruptDurableCheckpoint(detail) => {
                 write!(f, "corrupt durable governance checkpoint (fail-closed): {detail}")
             }
             Self::ExecutionBreaker(err) => write!(f, "execution breaker denied: {err}"),
-            Self::LockPoisoned => write!(f, "higher-order admission gate lock poisoned"),
+            Self::LockPoisoned => write!(f, "governance admission gate lock poisoned"),
         }
     }
 }
 
-impl Error for HigherOrderBridgeError {}
+impl Error for GovernanceAdmissionError {}
 
-impl From<BreakerRejectionReason> for HigherOrderBridgeError {
+impl From<BreakerRejectionReason> for GovernanceAdmissionError {
     fn from(value: BreakerRejectionReason) -> Self {
         Self::ExecutionBreaker(value)
     }
@@ -244,7 +244,7 @@ impl From<BreakerRejectionReason> for HigherOrderBridgeError {
 
 #[derive(Debug)]
 struct GateInner {
-    min_revocation_epoch: HigherOrderProofEpoch,
+    min_revocation_epoch: GovernanceProofEpoch,
     policy_revision: u64,
     last_admitted: bool,
     assessment_digest: Option<GovernanceProofDigest>,
@@ -260,21 +260,21 @@ struct GateInner {
     cedar_policies: Vec<SynthesizedCedarPolicy>,
 }
 
-/// Authoritative Rust admission gate synchronizing Scheme Higher-Order Governance
+/// Authoritative Rust admission gate synchronizing Scheme Governance Authority
 /// proofs (`POO × ASCENT × Bi-Temporal Truth Maintenance × Cedar`) directly into
 /// `ExecutionCircuitBreaker` and live causal derivation leases.
 #[derive(Clone, Debug)]
-pub struct HigherOrderGovernanceAdmissionGate {
+pub struct GovernanceAdmissionGate {
     breaker: Arc<ExecutionCircuitBreaker>,
     inner: Arc<Mutex<GateInner>>,
 }
 
-impl HigherOrderGovernanceAdmissionGate {
+impl GovernanceAdmissionGate {
     pub fn new(breaker: Arc<ExecutionCircuitBreaker>) -> Self {
         Self {
             breaker,
             inner: Arc::new(Mutex::new(GateInner {
-                min_revocation_epoch: HigherOrderProofEpoch::INITIAL,
+                min_revocation_epoch: GovernanceProofEpoch::INITIAL,
                 policy_revision: 0,
                 last_admitted: true,
                 assessment_digest: None,
@@ -296,31 +296,31 @@ impl HigherOrderGovernanceAdmissionGate {
         Arc::clone(&self.breaker)
     }
 
-    pub fn min_revocation_epoch(&self) -> Result<HigherOrderProofEpoch, HigherOrderBridgeError> {
+    pub fn min_revocation_epoch(&self) -> Result<GovernanceProofEpoch, GovernanceAdmissionError> {
         let guard = self
             .inner
             .lock()
-            .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+            .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
         Ok(guard.min_revocation_epoch)
     }
 
     /// Returns the next monotonic revocation epoch strictly greater than the current floor.
-    pub fn next_revocation_epoch(&self) -> Result<u64, HigherOrderBridgeError> {
+    pub fn next_revocation_epoch(&self) -> Result<u64, GovernanceAdmissionError> {
         let guard = self
             .inner
             .lock()
-            .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+            .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
         Ok(guard.min_revocation_epoch.get().saturating_add(1))
     }
 
     /// Captures an immutable snapshot of the combined Rust breaker and Scheme proof state.
-    pub fn snapshot(&self) -> Result<HigherOrderGateSnapshot, HigherOrderBridgeError> {
+    pub fn snapshot(&self) -> Result<GovernanceGateSnapshot, GovernanceAdmissionError> {
         let guard = self
             .inner
             .lock()
-            .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+            .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
         let breaker = self.breaker.snapshot()?;
-        Ok(HigherOrderGateSnapshot {
+        Ok(GovernanceGateSnapshot {
             admitted: guard.last_admitted && !breaker.tripped,
             revocation_epoch: guard.min_revocation_epoch,
             policy_revision: guard.policy_revision,
@@ -344,7 +344,7 @@ impl HigherOrderGovernanceAdmissionGate {
         &self,
         actor: &str,
         reason: &str,
-    ) -> Result<HigherOrderGateSnapshot, HigherOrderBridgeError> {
+    ) -> Result<GovernanceGateSnapshot, GovernanceAdmissionError> {
         let actor_clean = actor.trim();
         let actor_label = if actor_clean.is_empty() {
             "operator"
@@ -364,7 +364,7 @@ impl HigherOrderGovernanceAdmissionGate {
             let mut guard = self
                 .inner
                 .lock()
-                .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+                .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
             guard.last_admitted = false;
             guard.rejection_reasons.insert(0, formatted);
             if guard.rejection_reasons.len() > 16 {
@@ -377,18 +377,18 @@ impl HigherOrderGovernanceAdmissionGate {
     /// Re-arms a tripped `ExecutionCircuitBreaker` strictly for a verified human operator
     /// (enforcing human-only re-arm), advances the proof revocation floor monotonically,
     /// clears transient trip rejections, and preserves ASCENT/Cedar per-actor fences until
-    /// superseded by a fresh Scheme higher-order proof.
+    /// superseded by a fresh Scheme governance proof.
     pub fn rearm_by_verified_human(
         &self,
         actor: BreakerActor,
-    ) -> Result<(ExecutionBreakerRearmReceipt, HigherOrderGateSnapshot), HigherOrderBridgeError> {
+    ) -> Result<(ExecutionBreakerRearmReceipt, GovernanceGateSnapshot), GovernanceAdmissionError> {
         let receipt = self.breaker.rearm(&actor)?;
         {
             let mut guard = self
                 .inner
                 .lock()
-                .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
-            let next_epoch = HigherOrderProofEpoch::new(
+                .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
+            let next_epoch = GovernanceProofEpoch::new(
                 guard.min_revocation_epoch.get().saturating_add(1),
             )?;
             guard.min_revocation_epoch = next_epoch;
@@ -405,18 +405,18 @@ impl HigherOrderGovernanceAdmissionGate {
         &self,
         derivation_id: DerivationId,
         lease: ToolExecutionLease,
-    ) -> Result<(), HigherOrderBridgeError> {
+    ) -> Result<(), GovernanceAdmissionError> {
         let mut guard = self
             .inner
             .lock()
-            .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+            .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
         if guard.retracted_derivations.contains(&derivation_id) {
-            return Err(HigherOrderBridgeError::DerivationRetractedDenied(
+            return Err(GovernanceAdmissionError::DerivationRetractedDenied(
                 derivation_id,
             ));
         }
         if guard.active_derivations.contains_key(&derivation_id) {
-            return Err(HigherOrderBridgeError::DerivationAlreadyRegistered(
+            return Err(GovernanceAdmissionError::DerivationAlreadyRegistered(
                 derivation_id,
             ));
         }
@@ -424,7 +424,7 @@ impl HigherOrderGovernanceAdmissionGate {
         Ok(())
     }
 
-    /// Synchronizes a proof envelope produced by Scheme's Higher-Order Governance engine.
+    /// Synchronizes a proof envelope produced by Scheme's Governance Authority engine.
     ///
     /// Fail-closed invariants:
     /// 1. Rejects unsupported schema versions and stale `revocation_epoch` replays.
@@ -435,10 +435,10 @@ impl HigherOrderGovernanceAdmissionGate {
     /// 4. Installs ASCENT-derived `fenced_actors`, `blocked_tools`, and synthesized Cedar policies.
     pub fn synchronize_proof_envelope(
         &self,
-        envelope: &HigherOrderGovernanceProofEnvelope,
-    ) -> Result<HigherOrderProofSyncReceipt, HigherOrderBridgeError> {
-        if envelope.schema_version != HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION {
-            return Err(HigherOrderBridgeError::UnsupportedSchemaVersion(
+        envelope: &GovernanceProofEnvelope,
+    ) -> Result<GovernanceProofSyncReceipt, GovernanceAdmissionError> {
+        if envelope.schema_version != GOVERNANCE_ADMISSION_SCHEMA_VERSION {
+            return Err(GovernanceAdmissionError::UnsupportedSchemaVersion(
                 envelope.schema_version,
             ));
         }
@@ -446,10 +446,10 @@ impl HigherOrderGovernanceAdmissionGate {
         let mut guard = self
             .inner
             .lock()
-            .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+            .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
 
         if envelope.revocation_epoch < guard.min_revocation_epoch {
-            return Err(HigherOrderBridgeError::StaleProofEpoch {
+            return Err(GovernanceAdmissionError::StaleProofEpoch {
                 supplied: envelope.revocation_epoch,
                 current_floor: guard.min_revocation_epoch,
             });
@@ -489,16 +489,16 @@ impl HigherOrderGovernanceAdmissionGate {
                         .join(",")
                 )
             } else if !envelope.rejection_reasons.is_empty() {
-                format!("higher-order-denied:{}", envelope.rejection_reasons.join(","))
+                format!("governance-denied:{}", envelope.rejection_reasons.join(","))
             } else {
-                "higher-order-proof-not-admitted".to_owned()
+                "governance-proof-not-admitted".to_owned()
             };
             let reason = BreakerTripReason::new(reason_text)?;
             self.breaker.trip(reason)?;
             auto_tripped = true;
         }
 
-        Ok(HigherOrderProofSyncReceipt {
+        Ok(GovernanceProofSyncReceipt {
             admitted: envelope.admitted,
             revocation_epoch: envelope.revocation_epoch,
             invalidated_active_derivations: invalidated_active,
@@ -522,26 +522,26 @@ impl HigherOrderGovernanceAdmissionGate {
         actor: &GovernedSubjectName,
         tool: &GovernedSubjectName,
         ifc: &ToolIfcContext,
-    ) -> Result<ExecutionBreakerCommitReceipt, HigherOrderBridgeError> {
+    ) -> Result<ExecutionBreakerCommitReceipt, GovernanceAdmissionError> {
         let mut guard = self
             .inner
             .lock()
-            .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+            .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
 
         if guard.retracted_derivations.contains(derivation_id) {
-            return Err(HigherOrderBridgeError::DerivationRetractedDenied(
+            return Err(GovernanceAdmissionError::DerivationRetractedDenied(
                 derivation_id.clone(),
             ));
         }
 
         if guard.fenced_actors.contains(actor) {
-            return Err(HigherOrderBridgeError::AscentFencedActorDenied(
+            return Err(GovernanceAdmissionError::AscentFencedActorDenied(
                 actor.clone(),
             ));
         }
 
         if guard.blocked_tools.contains(tool) {
-            return Err(HigherOrderBridgeError::AscentBlockedToolDenied(
+            return Err(GovernanceAdmissionError::AscentBlockedToolDenied(
                 tool.clone(),
             ));
         }
@@ -552,13 +552,13 @@ impl HigherOrderGovernanceAdmissionGate {
         for policy in &guard.cedar_policies {
             if policy.source.trim_start().starts_with("forbid") {
                 if policy.source.contains(&actor_pattern) {
-                    return Err(HigherOrderBridgeError::CedarForbidDenied {
+                    return Err(GovernanceAdmissionError::CedarForbidDenied {
                         policy_id: policy.policy_id.clone(),
                         subject: actor.clone(),
                     });
                 }
                 if policy.source.contains(&tool_pattern) {
-                    return Err(HigherOrderBridgeError::CedarForbidDenied {
+                    return Err(GovernanceAdmissionError::CedarForbidDenied {
                         policy_id: policy.policy_id.clone(),
                         subject: tool.clone(),
                     });
@@ -567,7 +567,7 @@ impl HigherOrderGovernanceAdmissionGate {
         }
 
         let Some(lease) = guard.active_derivations.get(derivation_id).cloned() else {
-            return Err(HigherOrderBridgeError::DerivationNotRegistered(
+            return Err(GovernanceAdmissionError::DerivationNotRegistered(
                 derivation_id.clone(),
             ));
         };
@@ -587,28 +587,28 @@ impl HigherOrderGovernanceAdmissionGate {
         actor: &GovernedSubjectName,
         tool: &GovernedSubjectName,
         ifc: &ToolIfcContext,
-    ) -> Result<ExecutionBreakerCommitReceipt, HigherOrderBridgeError> {
+    ) -> Result<ExecutionBreakerCommitReceipt, GovernanceAdmissionError> {
         let guard = self
             .inner
             .lock()
-            .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+            .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
 
         if let Some(did) = derivation_id
             && guard.retracted_derivations.contains(did)
         {
-            return Err(HigherOrderBridgeError::DerivationRetractedDenied(
+            return Err(GovernanceAdmissionError::DerivationRetractedDenied(
                 did.clone(),
             ));
         }
 
         if guard.fenced_actors.contains(actor) {
-            return Err(HigherOrderBridgeError::AscentFencedActorDenied(
+            return Err(GovernanceAdmissionError::AscentFencedActorDenied(
                 actor.clone(),
             ));
         }
 
         if guard.blocked_tools.contains(tool) {
-            return Err(HigherOrderBridgeError::AscentBlockedToolDenied(
+            return Err(GovernanceAdmissionError::AscentBlockedToolDenied(
                 tool.clone(),
             ));
         }
@@ -618,13 +618,13 @@ impl HigherOrderGovernanceAdmissionGate {
         for policy in &guard.cedar_policies {
             if policy.source.trim_start().starts_with("forbid") {
                 if policy.source.contains(&actor_pattern) {
-                    return Err(HigherOrderBridgeError::CedarForbidDenied {
+                    return Err(GovernanceAdmissionError::CedarForbidDenied {
                         policy_id: policy.policy_id.clone(),
                         subject: actor.clone(),
                     });
                 }
                 if policy.source.contains(&tool_pattern) {
-                    return Err(HigherOrderBridgeError::CedarForbidDenied {
+                    return Err(GovernanceAdmissionError::CedarForbidDenied {
                         policy_id: policy.policy_id.clone(),
                         subject: tool.clone(),
                     });
@@ -651,17 +651,17 @@ impl HigherOrderGovernanceAdmissionGate {
     }
 
     /// Captures a complete, self-contained durable checkpoint of both the Rust
-    /// `ExecutionCircuitBreaker` and Scheme Higher-Order Governance gate state.
+    /// `ExecutionCircuitBreaker` and Scheme Governance Authority gate state.
     pub fn export_durable_checkpoint(
         &self,
-    ) -> Result<HigherOrderDurableCheckpoint, HigherOrderBridgeError> {
+    ) -> Result<GovernanceDurableCheckpoint, GovernanceAdmissionError> {
         let guard = self
             .inner
             .lock()
-            .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+            .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
         let breaker = self.breaker.snapshot()?;
-        Ok(HigherOrderDurableCheckpoint {
-            schema_version: HIGHER_ORDER_DURABLE_CHECKPOINT_VERSION,
+        Ok(GovernanceDurableCheckpoint {
+            schema_version: GOVERNANCE_DURABLE_CHECKPOINT_VERSION,
             last_admitted: guard.last_admitted,
             min_revocation_epoch: guard.min_revocation_epoch,
             policy_revision: guard.policy_revision,
@@ -682,9 +682,9 @@ impl HigherOrderGovernanceAdmissionGate {
         })
     }
 
-    /// Exports the durable checkpoint as canonical length-prefixed `MHG1` bytes
+    /// Exports the durable checkpoint as canonical length-prefixed `MGV1` bytes
     /// protected by a trailing 32-byte FIPS 180-4 SHA-256 integrity digest.
-    pub fn export_durable_checkpoint_bytes(&self) -> Result<Vec<u8>, HigherOrderBridgeError> {
+    pub fn export_durable_checkpoint_bytes(&self) -> Result<Vec<u8>, GovernanceAdmissionError> {
         Ok(self.export_durable_checkpoint()?.to_canonical_bytes())
     }
 
@@ -701,8 +701,8 @@ impl HigherOrderGovernanceAdmissionGate {
     pub fn restore_durable_checkpoint_bytes(
         &self,
         bytes: &[u8],
-    ) -> Result<HigherOrderGateSnapshot, HigherOrderBridgeError> {
-        let cp = match HigherOrderDurableCheckpoint::from_canonical_bytes(bytes) {
+    ) -> Result<GovernanceGateSnapshot, GovernanceAdmissionError> {
+        let cp = match GovernanceDurableCheckpoint::from_canonical_bytes(bytes) {
             Ok(cp) => cp,
             Err(err) => {
                 let _ = self.trip_corrupt_checkpoint_fail_closed(&err.to_string());
@@ -714,9 +714,9 @@ impl HigherOrderGovernanceAdmissionGate {
             let guard = self
                 .inner
                 .lock()
-                .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+                .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
             if cp.min_revocation_epoch < guard.min_revocation_epoch {
-                return Err(HigherOrderBridgeError::StaleProofEpoch {
+                return Err(GovernanceAdmissionError::StaleProofEpoch {
                     supplied: cp.min_revocation_epoch,
                     current_floor: guard.min_revocation_epoch,
                 });
@@ -734,7 +734,7 @@ impl HigherOrderGovernanceAdmissionGate {
             let mut guard = self
                 .inner
                 .lock()
-                .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+                .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
             guard.active_derivations.clear();
             guard.min_revocation_epoch = cp.min_revocation_epoch;
             guard.policy_revision = cp.policy_revision;
@@ -757,7 +757,7 @@ impl HigherOrderGovernanceAdmissionGate {
     fn trip_corrupt_checkpoint_fail_closed(
         &self,
         detail: &str,
-    ) -> Result<(), HigherOrderBridgeError> {
+    ) -> Result<(), GovernanceAdmissionError> {
         let reason_str = format!("corrupt-durable-governance-checkpoint:{detail}");
         let truncated: String = reason_str.chars().take(240).collect();
         let trip_reason = BreakerTripReason::new(truncated.clone())?;
@@ -765,7 +765,7 @@ impl HigherOrderGovernanceAdmissionGate {
         let mut guard = self
             .inner
             .lock()
-            .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+            .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
         guard.last_admitted = false;
         guard
             .rejection_reasons
@@ -777,13 +777,13 @@ impl HigherOrderGovernanceAdmissionGate {
     }
 }
 
-/// Durable tamper-evident checkpoint snapshot of `HigherOrderGovernanceAdmissionGate`
+/// Durable tamper-evident checkpoint snapshot of `GovernanceAdmissionGate`
 /// + `ExecutionCircuitBreaker` persisted to Turso CAS/WAL across OS restarts.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HigherOrderDurableCheckpoint {
+pub struct GovernanceDurableCheckpoint {
     pub schema_version: u32,
     pub last_admitted: bool,
-    pub min_revocation_epoch: HigherOrderProofEpoch,
+    pub min_revocation_epoch: GovernanceProofEpoch,
     pub policy_revision: u64,
     pub breaker_tripped: bool,
     pub breaker_trip_epoch: BreakerTripEpoch,
@@ -801,12 +801,12 @@ pub struct HigherOrderDurableCheckpoint {
     pub cedar_policies: Vec<SynthesizedCedarPolicy>,
 }
 
-impl HigherOrderDurableCheckpoint {
-    /// Serializes into canonical `MHG1` length-prefixed binary bytes followed by a
+impl GovernanceDurableCheckpoint {
+    /// Serializes into canonical `MGV1` length-prefixed binary bytes followed by a
     /// 32-byte FIPS 180-4 SHA-256 integrity digest over all preceding bytes.
     pub fn to_canonical_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(512);
-        buf.extend_from_slice(HIGHER_ORDER_DURABLE_CHECKPOINT_MAGIC);
+        buf.extend_from_slice(GOVERNANCE_DURABLE_CHECKPOINT_MAGIC);
         put_u32(&mut buf, self.schema_version);
         buf.push(u8::from(self.last_admitted));
         put_u64(&mut buf, self.min_revocation_epoch.get());
@@ -878,52 +878,52 @@ impl HigherOrderDurableCheckpoint {
 
     /// Validates magic, schema version, exact SHA-256 integrity tag, exact EOF, and
     /// every domain newtype invariant.
-    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, HigherOrderBridgeError> {
+    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, GovernanceAdmissionError> {
         if bytes.len() < 4 + 4 + 32 {
-            return Err(HigherOrderBridgeError::CorruptDurableCheckpoint(
+            return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(
                 "checkpoint truncated below minimum envelope size".to_owned(),
             ));
         }
         let (body, tag) = bytes.split_at(bytes.len() - 32);
         let expected_tag = sha256_bytes(body);
         if tag != expected_tag {
-            return Err(HigherOrderBridgeError::CorruptDurableCheckpoint(
+            return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(
                 "SHA-256 integrity verification mismatch".to_owned(),
             ));
         }
 
         let mut cur = ByteCursor::new(body);
         let magic = cur.read_exact(4)?;
-        if magic != HIGHER_ORDER_DURABLE_CHECKPOINT_MAGIC {
-            return Err(HigherOrderBridgeError::CorruptDurableCheckpoint(
+        if magic != GOVERNANCE_DURABLE_CHECKPOINT_MAGIC {
+            return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(
                 "invalid checkpoint magic header".to_owned(),
             ));
         }
         let schema_version = cur.read_u32()?;
-        if schema_version != HIGHER_ORDER_DURABLE_CHECKPOINT_VERSION {
-            return Err(HigherOrderBridgeError::CorruptDurableCheckpoint(format!(
+        if schema_version != GOVERNANCE_DURABLE_CHECKPOINT_VERSION {
+            return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(format!(
                 "unsupported durable checkpoint version {schema_version}"
             )));
         }
         let last_admitted = cur.read_bool()?;
-        let min_revocation_epoch = HigherOrderProofEpoch::new(cur.read_u64()?)
-            .map_err(|e| HigherOrderBridgeError::CorruptDurableCheckpoint(e.to_string()))?;
+        let min_revocation_epoch = GovernanceProofEpoch::new(cur.read_u64()?)
+            .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string()))?;
         let policy_revision = cur.read_u64()?;
         let breaker_tripped = cur.read_bool()?;
         let breaker_trip_epoch = BreakerTripEpoch::new(cur.read_u64()?)
-            .map_err(|e| HigherOrderBridgeError::CorruptDurableCheckpoint(e.to_string()))?;
+            .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string()))?;
         let breaker_budget_used = cur.read_u32()?;
         let breaker_last_trip_reason = match cur.read_opt_str()? {
             Some(s) => Some(
                 BreakerTripReason::new(s)
-                    .map_err(|e| HigherOrderBridgeError::CorruptDurableCheckpoint(e.to_string()))?,
+                    .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string()))?,
             ),
             None => None,
         };
-        let read_opt_digest = |c: &mut ByteCursor<'_>| -> Result<Option<GovernanceProofDigest>, HigherOrderBridgeError> {
+        let read_opt_digest = |c: &mut ByteCursor<'_>| -> Result<Option<GovernanceProofDigest>, GovernanceAdmissionError> {
             match c.read_opt_str()? {
                 Some(s) => Ok(Some(GovernanceProofDigest::new(s).map_err(|e| {
-                    HigherOrderBridgeError::CorruptDurableCheckpoint(e.to_string())
+                    GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string())
                 })?)),
                 None => Ok(None),
             }
@@ -940,7 +940,7 @@ impl HigherOrderDurableCheckpoint {
         for s in raw_fenced {
             fenced_actors.push(
                 GovernedSubjectName::new(s)
-                    .map_err(|e| HigherOrderBridgeError::CorruptDurableCheckpoint(e.to_string()))?,
+                    .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string()))?,
             );
         }
         let raw_blocked = cur.read_str_vec(1024)?;
@@ -948,7 +948,7 @@ impl HigherOrderDurableCheckpoint {
         for s in raw_blocked {
             blocked_tools.push(
                 GovernedSubjectName::new(s)
-                    .map_err(|e| HigherOrderBridgeError::CorruptDurableCheckpoint(e.to_string()))?,
+                    .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string()))?,
             );
         }
         let raw_retracted = cur.read_str_vec(1024)?;
@@ -956,19 +956,19 @@ impl HigherOrderDurableCheckpoint {
         for s in raw_retracted {
             retracted_conclusions.push(
                 DerivationId::new(s)
-                    .map_err(|e| HigherOrderBridgeError::CorruptDurableCheckpoint(e.to_string()))?,
+                    .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string()))?,
             );
         }
         let cedar_count = cur.read_u32()? as usize;
         if cedar_count > 1024 {
-            return Err(HigherOrderBridgeError::CorruptDurableCheckpoint(format!(
+            return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(format!(
                 "excessive synthesized cedar policy count {cedar_count}"
             )));
         }
         let mut cedar_policies = Vec::with_capacity(cedar_count);
         for _ in 0..cedar_count {
             let pid = CedarPolicyId::new(cur.read_str()?)
-                .map_err(|e| HigherOrderBridgeError::CorruptDurableCheckpoint(e.to_string()))?;
+                .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string()))?;
             let src = cur.read_str()?;
             cedar_policies.push(SynthesizedCedarPolicy {
                 policy_id: pid,
@@ -976,7 +976,7 @@ impl HigherOrderDurableCheckpoint {
             });
         }
         if !cur.is_eof() {
-            return Err(HigherOrderBridgeError::CorruptDurableCheckpoint(
+            return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(
                 "unexpected trailing bytes in durable checkpoint".to_owned(),
             ));
         }
@@ -1052,12 +1052,12 @@ impl<'a> ByteCursor<'a> {
         self.pos == self.data.len()
     }
 
-    fn read_exact(&mut self, n: usize) -> Result<&'a [u8], HigherOrderBridgeError> {
+    fn read_exact(&mut self, n: usize) -> Result<&'a [u8], GovernanceAdmissionError> {
         let end = self.pos.checked_add(n).ok_or_else(|| {
-            HigherOrderBridgeError::CorruptDurableCheckpoint("integer overflow in cursor".to_owned())
+            GovernanceAdmissionError::CorruptDurableCheckpoint("integer overflow in cursor".to_owned())
         })?;
         if end > self.data.len() {
-            return Err(HigherOrderBridgeError::CorruptDurableCheckpoint(
+            return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(
                 "unexpected EOF in durable checkpoint".to_owned(),
             ));
         }
@@ -1066,42 +1066,42 @@ impl<'a> ByteCursor<'a> {
         Ok(slice)
     }
 
-    fn read_bool(&mut self) -> Result<bool, HigherOrderBridgeError> {
+    fn read_bool(&mut self) -> Result<bool, GovernanceAdmissionError> {
         match self.read_exact(1)?[0] {
             0 => Ok(false),
             1 => Ok(true),
-            other => Err(HigherOrderBridgeError::CorruptDurableCheckpoint(format!(
+            other => Err(GovernanceAdmissionError::CorruptDurableCheckpoint(format!(
                 "invalid bool tag {other}"
             ))),
         }
     }
 
-    fn read_u32(&mut self) -> Result<u32, HigherOrderBridgeError> {
+    fn read_u32(&mut self) -> Result<u32, GovernanceAdmissionError> {
         let b = self.read_exact(4)?;
         Ok(u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
     }
 
-    fn read_u64(&mut self) -> Result<u64, HigherOrderBridgeError> {
+    fn read_u64(&mut self) -> Result<u64, GovernanceAdmissionError> {
         let b = self.read_exact(8)?;
         Ok(u64::from_be_bytes([
             b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
         ]))
     }
 
-    fn read_str(&mut self) -> Result<String, HigherOrderBridgeError> {
+    fn read_str(&mut self) -> Result<String, GovernanceAdmissionError> {
         let len = self.read_u32()? as usize;
         if len > 65_536 {
-            return Err(HigherOrderBridgeError::CorruptDurableCheckpoint(format!(
+            return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(format!(
                 "excessive string length {len}"
             )));
         }
         let bytes = self.read_exact(len)?;
         std::str::from_utf8(bytes)
             .map(str::to_owned)
-            .map_err(|e| HigherOrderBridgeError::CorruptDurableCheckpoint(format!("invalid utf8: {e}")))
+            .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(format!("invalid utf8: {e}")))
     }
 
-    fn read_opt_str(&mut self) -> Result<Option<String>, HigherOrderBridgeError> {
+    fn read_opt_str(&mut self) -> Result<Option<String>, GovernanceAdmissionError> {
         if self.read_bool()? {
             Ok(Some(self.read_str()?))
         } else {
@@ -1109,10 +1109,10 @@ impl<'a> ByteCursor<'a> {
         }
     }
 
-    fn read_str_vec(&mut self, max_items: usize) -> Result<Vec<String>, HigherOrderBridgeError> {
+    fn read_str_vec(&mut self, max_items: usize) -> Result<Vec<String>, GovernanceAdmissionError> {
         let count = self.read_u32()? as usize;
         if count > max_items {
-            return Err(HigherOrderBridgeError::CorruptDurableCheckpoint(format!(
+            return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(format!(
                 "excessive vector count {count} > {max_items}"
             )));
         }
@@ -1124,7 +1124,7 @@ impl<'a> ByteCursor<'a> {
     }
 }
 
-/// Zero-dependency FIPS 180-4 SHA-256 used to seal canonical `MHG1` durable checkpoints.
+/// Zero-dependency FIPS 180-4 SHA-256 used to seal canonical `MGV1` durable checkpoints.
 fn sha256_bytes(input: &[u8]) -> [u8; 32] {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
@@ -1238,14 +1238,14 @@ mod durable_checkpoint_tests {
     #[test]
     fn durable_checkpoint_roundtrips_and_tampered_bytes_fail_closed() {
         let b1 = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(8)));
-        let g1 = HigherOrderGovernanceAdmissionGate::new(b1);
+        let g1 = GovernanceAdmissionGate::new(b1);
         let d = |ch: char| {
             GovernanceProofDigest::new(format!("sha256:{}", std::iter::repeat_n(ch, 64).collect::<String>())).unwrap()
         };
-        let env = HigherOrderGovernanceProofEnvelope {
-            schema_version: HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION,
+        let env = GovernanceProofEnvelope {
+            schema_version: GOVERNANCE_ADMISSION_SCHEMA_VERSION,
             admitted: false,
-            revocation_epoch: HigherOrderProofEpoch::new(4).unwrap(),
+            revocation_epoch: GovernanceProofEpoch::new(4).unwrap(),
             policy_revision: 7,
             assessment_digest: d('a'),
             taint_proof_digest: d('b'),
@@ -1267,7 +1267,7 @@ mod durable_checkpoint_tests {
 
         // Fresh post-restart gate restores tripped latch, epochs, fences, retractions, Cedar rules!
         let b2 = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(8)));
-        let g2 = HigherOrderGovernanceAdmissionGate::new(b2);
+        let g2 = GovernanceAdmissionGate::new(b2);
         let restored = g2.restore_durable_checkpoint_bytes(&bytes).unwrap();
         assert!(restored.breaker.tripped);
         assert_eq!(restored.revocation_epoch.get(), 4);
@@ -1280,11 +1280,11 @@ mod durable_checkpoint_tests {
         let mut tampered = bytes.clone();
         tampered[10] ^= 0x01;
         let b3 = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(8)));
-        let g3 = HigherOrderGovernanceAdmissionGate::new(b3);
+        let g3 = GovernanceAdmissionGate::new(b3);
         let err = g3
             .restore_durable_checkpoint_bytes(&tampered)
             .expect_err("bit-flipped checkpoint must be rejected");
-        assert!(matches!(err, HigherOrderBridgeError::CorruptDurableCheckpoint(_)));
+        assert!(matches!(err, GovernanceAdmissionError::CorruptDurableCheckpoint(_)));
         let snap3 = g3.snapshot().unwrap();
         assert!(
             snap3.breaker.tripped && !snap3.admitted,

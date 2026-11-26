@@ -10,7 +10,7 @@ use marlin_agent_runtime::{RuntimeContext, observability};
 use tracing::Instrument;
 
 use crate::{
-    DerivationId, ExecutionCircuitBreaker, GovernedSubjectName, HigherOrderGovernanceAdmissionGate,
+    DerivationId, ExecutionCircuitBreaker, GovernedSubjectName, GovernanceAdmissionGate,
     LoopProgramExecutionReceipt, LoopProgramRuntimeHandoffExecutionReceipt, ToolIfcContext,
     spawn_loop_program_tool_process,
 };
@@ -25,8 +25,8 @@ use super::{
 };
 
 #[derive(Clone)]
-struct HigherOrderSideEffectBinding {
-    gate: Arc<HigherOrderGovernanceAdmissionGate>,
+struct GovernanceSideEffectBinding {
+    gate: Arc<GovernanceAdmissionGate>,
     actor: GovernedSubjectName,
     derivation_id: Option<DerivationId>,
 }
@@ -38,7 +38,7 @@ pub struct LoopProgramRuntimeSideEffectExecutor {
     file_write_resolver: Arc<dyn LoopProgramFileWriteResolver>,
     file_sandbox: LoopProgramFileSandbox,
     execution_breaker: Option<Arc<ExecutionCircuitBreaker>>,
-    higher_order_gate: Option<HigherOrderSideEffectBinding>,
+    governance_gate: Option<GovernanceSideEffectBinding>,
     ifc_context: ToolIfcContext,
     started_at_ms: u64,
     observed_at_ms: u64,
@@ -54,7 +54,7 @@ impl LoopProgramRuntimeSideEffectExecutor {
             file_write_resolver: Arc::new(StaticLoopProgramFileWriteResolver::default()),
             file_sandbox: LoopProgramFileSandbox::deny_all(),
             execution_breaker: None,
-            higher_order_gate: None,
+            governance_gate: None,
             ifc_context: ToolIfcContext::clean_trusted(),
             started_at_ms: 0,
             observed_at_ms: 0,
@@ -69,17 +69,17 @@ impl LoopProgramRuntimeSideEffectExecutor {
         self
     }
 
-    /// Attaches a live Scheme-synchronized `HigherOrderGovernanceAdmissionGate` so every
+    /// Attaches a live Scheme-synchronized `GovernanceAdmissionGate` so every
     /// OS process spawn and disk file write enforces ASCENT transitive fencing, Bi-Temporal
     /// Truth Maintenance causal retraction, synthesized Cedar `forbid` rules, and the
     /// underlying `ExecutionCircuitBreaker`.
-    pub fn with_higher_order_gate(
+    pub fn with_governance_gate(
         mut self,
-        gate: Arc<HigherOrderGovernanceAdmissionGate>,
+        gate: Arc<GovernanceAdmissionGate>,
         actor: GovernedSubjectName,
         derivation_id: Option<DerivationId>,
     ) -> Self {
-        self.higher_order_gate = Some(HigherOrderSideEffectBinding {
+        self.governance_gate = Some(GovernanceSideEffectBinding {
             gate,
             actor,
             derivation_id,
@@ -132,7 +132,7 @@ impl LoopProgramRuntimeSideEffectExecutor {
             }
 
             if let Some(request) = tool_process_request {
-                let blocked_diag = if let Some(binding) = &self.higher_order_gate {
+                let blocked_diag = if let Some(binding) = &self.governance_gate {
                     let tool_name = GovernedSubjectName::new(format!(
                         "tool_process:{}",
                         projection.command.command_kind
@@ -148,7 +148,7 @@ impl LoopProgramRuntimeSideEffectExecutor {
                         )
                         .err()
                         .map(|rejection| {
-                            format!("loop_program.tool_process.higher_order_blocked:{rejection}")
+                            format!("loop_program.tool_process.governance_blocked:{rejection}")
                         })
                 } else if let Some(breaker) = &self.execution_breaker {
                     breaker
@@ -192,7 +192,7 @@ impl LoopProgramRuntimeSideEffectExecutor {
             }
 
             if let Some(request) = file_write_request {
-                let blocked_diag = if let Some(binding) = &self.higher_order_gate {
+                let blocked_diag = if let Some(binding) = &self.governance_gate {
                     let tool_name = GovernedSubjectName::new(format!(
                         "file_write:{}",
                         request.relative_path.display()
@@ -208,7 +208,7 @@ impl LoopProgramRuntimeSideEffectExecutor {
                         )
                         .err()
                         .map(|rejection| {
-                            format!("loop_program.file_write.higher_order_blocked:{rejection}")
+                            format!("loop_program.file_write.governance_blocked:{rejection}")
                         })
                 } else if let Some(breaker) = &self.execution_breaker {
                     breaker
