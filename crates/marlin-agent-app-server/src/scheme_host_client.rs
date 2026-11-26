@@ -279,6 +279,78 @@ impl HostStatusSnapshot {
     }
 }
 
+/// Typed incremental runtime fact-graph mutations accepted by `marlin-scheme-host` /
+/// `marlin-scheme-host-aot` (`scheme:governance-*` declarative commands).
+///
+/// Security invariant: re-arm is deliberately excluded; step-up re-arm is strictly
+/// routed through `ApprovalGateService::submit_graph_human_decision`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GovernanceFactAction {
+    EvalClean,
+    EvalIncident,
+    Delegate {
+        parent: String,
+        child: String,
+    },
+    Revoke {
+        actor: String,
+    },
+    TaintEdge {
+        src: String,
+        dst: String,
+        role: Option<String>,
+    },
+    Sanitize {
+        node: String,
+    },
+    ContextFlow {
+        entry: String,
+        src_scope: String,
+        target: String,
+        dst_scope: String,
+    },
+    Declassify {
+        entry: String,
+    },
+    Retract {
+        subject: String,
+    },
+}
+
+impl GovernanceFactAction {
+    /// Projects this typed action into the `(action_sym, arg)` wire pair expected by
+    /// `MarlinSchemeHostClient::dispatch_scheme_command`.
+    pub fn to_wire_command(&self) -> (&'static str, Option<String>) {
+        match self {
+            Self::EvalClean => ("governance-eval-clean", None),
+            Self::EvalIncident => ("governance-eval-incident", None),
+            Self::Delegate { parent, child } => {
+                ("governance-delegate", Some(format!("{parent} {child}")))
+            }
+            Self::Revoke { actor } => ("governance-revoke", Some(actor.clone())),
+            Self::TaintEdge { src, dst, role } => {
+                let arg = match role.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
+                    Some(r) => format!("{src} {dst} {r}"),
+                    None => format!("{src} {dst}"),
+                };
+                ("governance-taint-edge", Some(arg))
+            }
+            Self::Sanitize { node } => ("governance-sanitize", Some(node.clone())),
+            Self::ContextFlow {
+                entry,
+                src_scope,
+                target,
+                dst_scope,
+            } => (
+                "governance-context-flow",
+                Some(format!("{entry} {src_scope} {target} {dst_scope}")),
+            ),
+            Self::Declassify { entry } => ("governance-declassify", Some(entry.clone())),
+            Self::Retract { subject } => ("governance-retract", Some(subject.clone())),
+        }
+    }
+}
+
 /// Thin Bearer-authenticated HTTP/2 client for a live `marlin-scheme-host` daemon.
 #[derive(Clone, Debug)]
 pub struct MarlinSchemeHostClient {
@@ -393,6 +465,17 @@ impl MarlinSchemeHostClient {
             }))
             .await?
             .into_inner())
+    }
+
+    /// Dispatches a typed incremental governance fact-graph mutation via `UiWorkbenchService`.
+    pub async fn dispatch_governance_fact(
+        &self,
+        session_id: impl Into<String>,
+        action: &GovernanceFactAction,
+    ) -> Result<DispatchUiEventResponse, Status> {
+        let (action_sym, arg) = action.to_wire_command();
+        self.dispatch_scheme_command(session_id, action_sym, arg.as_deref())
+            .await
     }
 
     /// Queries raw read-only `GraphRecordView` records from `ProjectionQueryService`
@@ -677,5 +760,87 @@ mod tests {
         assert!(raw.contains("\"fenced_actors\":[\"agent-rogue\"]"));
         assert!(raw.contains("\"rearm_gate_id\":\"gov-rearm-epoch-1\""));
         assert!(raw.contains("\"gates\":[]"));
+    }
+
+    #[test]
+    fn governance_fact_action_formats_all_wire_commands() {
+        assert_eq!(
+            GovernanceFactAction::EvalClean.to_wire_command(),
+            ("governance-eval-clean", None)
+        );
+        assert_eq!(
+            GovernanceFactAction::EvalIncident.to_wire_command(),
+            ("governance-eval-incident", None)
+        );
+        assert_eq!(
+            GovernanceFactAction::Delegate {
+                parent: "ops-root".to_owned(),
+                child: "agent-lead".to_owned(),
+            }
+            .to_wire_command(),
+            (
+                "governance-delegate",
+                Some("ops-root agent-lead".to_owned())
+            )
+        );
+        assert_eq!(
+            GovernanceFactAction::Revoke {
+                actor: "ops-root".to_owned(),
+            }
+            .to_wire_command(),
+            ("governance-revoke", Some("ops-root".to_owned()))
+        );
+        assert_eq!(
+            GovernanceFactAction::TaintEdge {
+                src: "in".to_owned(),
+                dst: "pipe".to_owned(),
+                role: Some("source".to_owned()),
+            }
+            .to_wire_command(),
+            ("governance-taint-edge", Some("in pipe source".to_owned()))
+        );
+        assert_eq!(
+            GovernanceFactAction::TaintEdge {
+                src: "a".to_owned(),
+                dst: "b".to_owned(),
+                role: None,
+            }
+            .to_wire_command(),
+            ("governance-taint-edge", Some("a b".to_owned()))
+        );
+        assert_eq!(
+            GovernanceFactAction::Sanitize {
+                node: "pipe".to_owned(),
+            }
+            .to_wire_command(),
+            ("governance-sanitize", Some("pipe".to_owned()))
+        );
+        assert_eq!(
+            GovernanceFactAction::ContextFlow {
+                entry: "e1".to_owned(),
+                src_scope: "secret".to_owned(),
+                target: "pub".to_owned(),
+                dst_scope: "public".to_owned(),
+            }
+            .to_wire_command(),
+            (
+                "governance-context-flow",
+                Some("e1 secret pub public".to_owned())
+            )
+        );
+        assert_eq!(
+            GovernanceFactAction::Declassify {
+                entry: "e1".to_owned(),
+            }
+            .to_wire_command(),
+            ("governance-declassify", Some("e1".to_owned()))
+        );
+        assert_eq!(
+            GovernanceFactAction::Retract {
+                subject: "claim-1".to_owned(),
+            }
+            .to_wire_command(),
+            ("governance-retract", Some("claim-1".to_owned()))
+        );
     }
 }

@@ -1007,3 +1007,251 @@ async fn linked_aot_higher_order_governance_estop_rearm_and_survives_os_restart(
 
     stop_host(child2).await;
 }
+
+#[tokio::test]
+async fn linked_aot_live_governance_fact_steering_taint_sanitize_and_mgf1_transitive_revocation() {
+    let explicit_ctl = std::env::var_os("MARLIN_SCHEME_CTL_BIN").map(std::path::PathBuf::from);
+    let require_ctl = explicit_ctl.is_some()
+        || std::env::var("CI")
+            .ok()
+            .is_some_and(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes"));
+    let ctl_bin = explicit_ctl
+        .or_else(|| {
+            std::path::Path::new(env!("CARGO_BIN_EXE_marlin-scheme-host-aot"))
+                .parent()
+                .map(|dir| dir.join("marlin-scheme-ctl"))
+        })
+        .filter(|p| p.is_file());
+    let Some(ctl_bin) = ctl_bin else {
+        assert!(
+            !require_ctl,
+            "strict Linked-AOT MGF1 CTL E2E enabled (CI or MARLIN_SCHEME_CTL_BIN set), but marlin-scheme-ctl binary was not found"
+        );
+        return;
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("scheme-host-aot-mgf1.db");
+    let bearer_token = "marlin-aot-mgf1-secret";
+
+    let spawn_clean_aot = || {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_marlin-scheme-host-aot"));
+        cmd.env("MARLIN_SCHEME_DIR", "/nonexistent-aot-must-not-read")
+            .env("MARLIN_BRIDGE_ADDR", "127.0.0.1:0")
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .env("MARLIN_BRIDGE_TURSO_PATH", &db_path)
+            .env("MARLIN_SCHEME_GOVERNANCE_MODE", "clean")
+            .env("MARLIN_SCHEME_BREAKER_BUDGET", "32")
+            .env_remove("MARLIN_SCHEME_FLEET_CHECKPOINT_KEY")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true);
+        cmd
+    };
+
+    // -------------------------------------------------------------------------
+    // Boot #1: Clean baseline -> delegate chain -> taint-edge blocks -> sanitize clears!
+    // -------------------------------------------------------------------------
+    let mut child1 = spawn_clean_aot().spawn().expect("spawn mgf1 boot1");
+    let mut lines1 = BufReader::new(child1.stdout.take().unwrap()).lines();
+    let mut boot1 = None;
+    let addr1 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), lines1.next_line())
+            .await
+            .expect("linked-aot mgf1 boot1 MUST become READY within 15s")
+            .unwrap()
+            .expect("aot mgf1 boot1 exited early");
+        if line.starts_with("GOVERNANCE_HOST_BOOT ") {
+            boot1 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    let boot1_line = boot1.expect("expected GOVERNANCE_HOST_BOOT on mgf1 boot1");
+    assert!(
+        boot1_line.contains("mode=clean") && boot1_line.contains("admitted=true"),
+        "unexpected mgf1 boot1 line: {boot1_line}"
+    );
+    let ep1 = format!("http://{addr1}");
+
+    let gov0 = run_ctl_json(&ctl_bin, &ep1, bearer_token, &["governance"]).await;
+    assert_eq!(gov0["admitted"], true);
+    assert_eq!(
+        gov0["fenced_actors"].as_array().map(Vec::len),
+        Some(0),
+        "clean baseline must have zero fenced actors: {gov0}"
+    );
+
+    // 1. Build 2-hop delegation chain `ops-root -> agent-lead -> scheme-sandbox-worker`
+    //    and persist it inside the tamper-evident MGF1 fact-graph checkpoint!
+    let del1 = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &["gov", "delegate", "ops-root", "agent-lead"],
+    )
+    .await;
+    assert_eq!(del1["admitted"], true);
+    let del2 = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &["gov", "delegate", "agent-lead", "scheme-sandbox-worker"],
+    )
+    .await;
+    assert_eq!(del2["admitted"], true);
+    let _ = poll_ctl_governance(&ctl_bin, &ep1, bearer_token, "delegates-applied", |g| {
+        g["admitted"] == true && g["policy_revision"].as_u64().unwrap_or(0) >= 3
+    })
+    .await;
+
+    // 2. Inject live CaMeL taint path `untrusted-in(source) -> raw-pipe -> exec-sink(sink)`:
+    //    Scheme ASCENT taint fixpoint MUST immediately deny (`admitted=false`, non-empty
+    //    `rejection_reasons`) and latch the execution circuit breaker (`breaker_tripped=true`).
+    let _ = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &["gov", "taint-edge", "untrusted-in", "raw-pipe", "source"],
+    )
+    .await;
+    let _ = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &["gov", "taint-edge", "raw-pipe", "exec-sink", "sink"],
+    )
+    .await;
+    let gov_tainted = poll_ctl_governance(&ctl_bin, &ep1, bearer_token, "taint-denied", |g| {
+        g["admitted"] == false
+            && g["breaker_tripped"] == true
+            && g["rejection_reasons"]
+                .as_array()
+                .is_some_and(|arr| !arr.is_empty())
+            && !g["rearm_gate_id"].as_str().unwrap_or("").is_empty()
+    })
+    .await;
+    assert_eq!(gov_tainted["admitted"], false);
+
+    // 3. Neutralize the taint path via `gov sanitize raw-pipe`:
+    //    - Scheme ASCENT clears `rejection_reasons` to `[]`;
+    //    - Fail-closed breaker latch MUST remain `tripped=true` until verified human MFA Step-Up!
+    let _ = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &["gov", "sanitize", "raw-pipe"],
+    )
+    .await;
+    let gov_sanitized = poll_ctl_governance(&ctl_bin, &ep1, bearer_token, "taint-sanitized", |g| {
+        g["last_event_note"] == "registered CaMeL sanitizer raw-pipe"
+            && g["rejection_reasons"].as_array().is_some_and(Vec::is_empty)
+    })
+    .await;
+    assert_eq!(
+        gov_sanitized["breaker_tripped"], true,
+        "sanitizing a taint node must NOT silently bypass a tripped breaker latch"
+    );
+    let rearm_gate = gov_sanitized["rearm_gate_id"]
+        .as_str()
+        .expect("rearm_gate_id after sanitize")
+        .to_owned();
+    let rearm_resp = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &[
+            "approve",
+            &rearm_gate,
+            "stepup-verified:actor=alice:acr=urn:ietf:params:oauth:acr:mfa",
+        ],
+    )
+    .await;
+    assert_eq!(rearm_resp["claimed"], true);
+    let gov_rearmed = poll_ctl_governance(&ctl_bin, &ep1, bearer_token, "sanitized-rearmed", |g| {
+        g["breaker_tripped"] == false && g["admitted"] == true
+    })
+    .await;
+    assert_eq!(gov_rearmed["admitted"], true);
+
+    stop_host(child1).await;
+
+    // -------------------------------------------------------------------------
+    // Boot #2: Fresh OS process restores MGF1 delegation chain from Turso CAS!
+    // Revoking ONLY `ops-root` MUST transitively fence `agent-lead` & `scheme-sandbox-worker`!
+    // -------------------------------------------------------------------------
+    let t2 = Instant::now();
+    let mut child2 = spawn_clean_aot().spawn().expect("spawn mgf1 boot2");
+    let mut lines2 = BufReader::new(child2.stdout.take().unwrap()).lines();
+    let mut boot2 = None;
+    let addr2 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), lines2.next_line())
+            .await
+            .expect("linked-aot mgf1 boot2 MUST become READY within 15s")
+            .unwrap()
+            .expect("aot mgf1 boot2 exited early");
+        if line.starts_with("GOVERNANCE_HOST_BOOT ") {
+            boot2 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    let mgf1_boot2_ms = t2.elapsed().as_millis();
+    let boot2_budget_ms: u128 = std::env::var("MARLIN_AOT_BOOT2_BUDGET_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u128>().ok())
+        .filter(|ms| *ms > 0)
+        .unwrap_or(2_500);
+    eprintln!(
+        "LINKED_AOT_MGF1_BOOT2_MS={mgf1_boot2_ms} LINKED_AOT_BOOT2_BUDGET_MS={boot2_budget_ms}"
+    );
+    assert!(
+        mgf1_boot2_ms <= boot2_budget_ms,
+        "Linked-AOT MGF1 warm restart regressed: {mgf1_boot2_ms}ms > {boot2_budget_ms}ms"
+    );
+    let boot2_line = boot2.expect("expected GOVERNANCE_HOST_BOOT on mgf1 boot2");
+    assert!(
+        boot2_line.contains("mode=restored") && boot2_line.contains("admitted=true"),
+        "unexpected mgf1 boot2 line: {boot2_line}"
+    );
+    let ep2 = format!("http://{addr2}");
+
+    // 4. Send ONLY `gov revoke ops-root` (ZERO delegate edges sent on Boot #2!).
+    let rev_resp = run_ctl_json(&ctl_bin, &ep2, bearer_token, &["gov", "revoke", "ops-root"]).await;
+    assert_eq!(rev_resp["admitted"], true);
+
+    let gov_revoked = poll_ctl_governance(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        "mgf1-transitive-revocation",
+        |g| {
+            g["fenced_actors"].as_array().is_some_and(|arr| {
+                arr.iter().any(|v| v == "ops-root")
+                    && arr.iter().any(|v| v == "agent-lead")
+                    && arr.iter().any(|v| v == "scheme-sandbox-worker")
+            })
+        },
+    )
+    .await;
+    assert!(
+        gov_revoked["cedar_policies"].as_array().is_some_and(|arr| {
+            arr.iter()
+                .any(|p| p["policy_id"] == "marlin.ascent.forbid.fenced.ops-root")
+                && arr
+                    .iter()
+                    .any(|p| p["policy_id"] == "marlin.ascent.forbid.fenced.agent-lead")
+                && arr
+                    .iter()
+                    .any(|p| p["policy_id"] == "marlin.ascent.forbid.fenced.scheme-sandbox-worker")
+        }),
+        "transitive revocation must synthesize exact Cedar forbid policies for all 3 fenced actors: {gov_revoked}"
+    );
+    eprintln!("LINKED_AOT_MGF1_STEERING_E2E=VERIFIED");
+
+    stop_host(child2).await;
+}

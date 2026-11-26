@@ -13,6 +13,7 @@
 //!                                                  Poll until host is reachable and authenticated (fails fast on auth denial)
 //!   status                                         Fetch unified live tabs + audit + governance + gates snapshot
 //!   governance                                     Show live Scheme Governance Authority snapshot (breaker/ASCENT/Cedar/proofs)
+//!   gov <subaction> [args...]                      Apply live incremental governance fact mutation (eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract)
 //!   estop [actor:reason]                           Trigger live operator E-Stop via UiWorkbenchService (`governance-estop`)
 //!   records [--project ID] [--kind PREFIX]         Query read-only ProjectionQueryService records (SecretVisibility::Denied)
 //!   open-workbench [session-id]                    Open live UiWorkbenchService session snapshot
@@ -35,7 +36,8 @@ use std::{
 use marlin_agent_app_server::{
     GrpcCode, MarlinSchemeHostClient,
     scheme_host_client::{
-        format_facets_sorted, graph_record_to_json, json_escape, workbench_tab_kind_label,
+        GovernanceFactAction, format_facets_sorted, graph_record_to_json, json_escape,
+        workbench_tab_kind_label,
     },
     wire::marlin::{common::v1::TargetKind, gate::v1::GraphHumanDecision},
 };
@@ -121,7 +123,7 @@ async fn run() -> Result<(), String> {
 
     if opts.help {
         println!(
-            "Usage: marlin-scheme-ctl [--json] --endpoint <url> [--token <tok>] <wait-ready|status|governance|estop|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch>"
+            "Usage: marlin-scheme-ctl [--json] --endpoint <url> [--token <tok>] <wait-ready|status|governance|gov|estop|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch>"
         );
         return Ok(());
     }
@@ -131,7 +133,7 @@ async fn run() -> Result<(), String> {
     })?;
     let rest = opts.rest;
     let cmd = rest.first().map(String::as_str).ok_or_else(|| {
-        "missing subcommand (wait-ready|status|governance|estop|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch)"
+        "missing subcommand (wait-ready|status|governance|gov|estop|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch)"
             .to_owned()
     })?;
 
@@ -250,6 +252,30 @@ async fn run() -> Result<(), String> {
                     ),
                     None => println!("GOVERNANCE none"),
                 }
+            }
+        }
+        "gov" => {
+            let action = parse_gov_fact_action(&rest[1..])?;
+            let (wire_sym, wire_arg) = action.to_wire_command();
+            let resp = client
+                .dispatch_governance_fact("marlin-scheme-ctl", &action)
+                .await
+                .map_err(|s| format!("dispatch_governance_fact({wire_sym}) failed: {s}"))?;
+            if opts.json {
+                println!(
+                    "{{\"admitted\":{},\"action\":{},\"arg\":{}}}",
+                    resp.admitted,
+                    json_escape(wire_sym),
+                    wire_arg
+                        .as_deref()
+                        .map_or_else(|| "null".to_owned(), json_escape)
+                );
+            } else {
+                println!(
+                    "GOV admitted={} action={wire_sym} arg={}",
+                    resp.admitted,
+                    wire_arg.as_deref().unwrap_or("")
+                );
             }
         }
         "estop" => {
@@ -680,6 +706,57 @@ fn parse_wait_ready_flags(args: &[String]) -> Result<WaitReadyFlags, String> {
     })
 }
 
+fn parse_gov_fact_action(args: &[String]) -> Result<GovernanceFactAction, String> {
+    let sub = args.first().map(String::as_str).ok_or_else(|| {
+        "usage: gov <eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract> [args...]"
+            .to_owned()
+    })?;
+    match sub {
+        "eval-clean" if args.len() == 1 => Ok(GovernanceFactAction::EvalClean),
+        "eval-incident" if args.len() == 1 => Ok(GovernanceFactAction::EvalIncident),
+        "delegate" if args.len() == 3 => Ok(GovernanceFactAction::Delegate {
+            parent: args[1].clone(),
+            child: args[2].clone(),
+        }),
+        "revoke" if args.len() == 2 => Ok(GovernanceFactAction::Revoke {
+            actor: args[1].clone(),
+        }),
+        "taint-edge" if args.len() == 3 || args.len() == 4 => {
+            let role = args.get(3).cloned();
+            if let Some(r) = role.as_deref()
+                && !matches!(r, "source" | "sink" | "both")
+            {
+                return Err(format!(
+                    "invalid taint-edge role `{r}` (expected source|sink|both)"
+                ));
+            }
+            Ok(GovernanceFactAction::TaintEdge {
+                src: args[1].clone(),
+                dst: args[2].clone(),
+                role,
+            })
+        }
+        "sanitize" if args.len() == 2 => Ok(GovernanceFactAction::Sanitize {
+            node: args[1].clone(),
+        }),
+        "context-flow" if args.len() == 5 => Ok(GovernanceFactAction::ContextFlow {
+            entry: args[1].clone(),
+            src_scope: args[2].clone(),
+            target: args[3].clone(),
+            dst_scope: args[4].clone(),
+        }),
+        "declassify" if args.len() == 2 => Ok(GovernanceFactAction::Declassify {
+            entry: args[1].clone(),
+        }),
+        "retract" if args.len() == 2 => Ok(GovernanceFactAction::Retract {
+            subject: args[1].clone(),
+        }),
+        other => Err(format!(
+            "invalid gov subaction `{other}` or wrong arity (expected eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract)"
+        )),
+    }
+}
+
 fn parse_records_flags(args: &[String]) -> Result<RecordsFlags, String> {
     let mut project = None;
     let mut kind_prefix = None;
@@ -837,5 +914,38 @@ mod tests {
         assert_eq!(rec.kind_prefix.as_deref(), Some("scheme.fleet."));
         assert!(parse_records_flags(&["--kind".to_owned()]).is_err());
         assert!(parse_records_flags(&["--bad".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn parse_gov_fact_action_validates_all_variants_and_rejects_rearm() {
+        let s = |vals: &[&str]| vals.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            parse_gov_fact_action(&s(&["eval-clean"])).unwrap(),
+            GovernanceFactAction::EvalClean
+        );
+        assert_eq!(
+            parse_gov_fact_action(&s(&["delegate", "ops-root", "agent-lead"])).unwrap(),
+            GovernanceFactAction::Delegate {
+                parent: "ops-root".to_owned(),
+                child: "agent-lead".to_owned(),
+            }
+        );
+        assert_eq!(
+            parse_gov_fact_action(&s(&["taint-edge", "in", "pipe", "source"])).unwrap(),
+            GovernanceFactAction::TaintEdge {
+                src: "in".to_owned(),
+                dst: "pipe".to_owned(),
+                role: Some("source".to_owned()),
+            }
+        );
+        assert_eq!(
+            parse_gov_fact_action(&s(&["sanitize", "pipe"])).unwrap(),
+            GovernanceFactAction::Sanitize {
+                node: "pipe".to_owned(),
+            }
+        );
+        assert!(parse_gov_fact_action(&s(&["rearm", "alice"])).is_err());
+        assert!(parse_gov_fact_action(&s(&["taint-edge", "a", "b", "bogus"])).is_err());
+        assert!(parse_gov_fact_action(&s(&["delegate", "only-one"])).is_err());
     }
 }
