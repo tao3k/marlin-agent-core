@@ -16,7 +16,7 @@
 use std::collections::BTreeMap;
 
 use crate::governance_admission::{
-    CedarPolicyId, GovernedSubjectName, GovernanceAdmissionError, SynthesizedCedarPolicy,
+    CedarPolicyId, GovernanceAdmissionError, GovernedSubjectName, SynthesizedCedarPolicy,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -222,8 +222,12 @@ pub fn infer_actor_roles(actor: &str) -> Vec<CedarEntityRef> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CedarEvaluationDecision {
-    Allow { matching_permits: Vec<CedarPolicyId> },
-    Deny { matching_forbids: Vec<CedarPolicyId> },
+    Allow {
+        matching_permits: Vec<CedarPolicyId>,
+    },
+    Deny {
+        matching_forbids: Vec<CedarPolicyId>,
+    },
     ImplicitDeny,
 }
 
@@ -262,12 +266,12 @@ pub fn compile_cedar_policy(
     policy: &SynthesizedCedarPolicy,
 ) -> Result<CompiledCedarPolicy, GovernanceAdmissionError> {
     let mut parser = CedarParser::new(&policy.source);
-    parser
-        .parse_policy(&policy.policy_id)
-        .map_err(|detail| GovernanceAdmissionError::InvalidCedarPolicy {
+    parser.parse_policy(&policy.policy_id).map_err(|detail| {
+        GovernanceAdmissionError::InvalidCedarPolicy {
             policy_id: policy.policy_id.clone(),
             detail,
-        })
+        }
+    })
 }
 
 struct CedarParser<'a> {
@@ -415,7 +419,9 @@ impl<'a> CedarParser<'a> {
     fn parse_scope_clause(&mut self, expected_var: &str) -> Result<CedarScopeMatcher, String> {
         let var = self.read_ident()?;
         if var != expected_var {
-            return Err(format!("expected scope variable `{expected_var}`, found `{var}`"));
+            return Err(format!(
+                "expected scope variable `{expected_var}`, found `{var}`"
+            ));
         }
         if self.consume_literal("==") {
             return Ok(CedarScopeMatcher::Eq(self.read_entity_ref()?));
@@ -579,10 +585,7 @@ mod tests {
             action: CedarEntityRef::action("rearm_breaker"),
             resource: CedarEntityRef::resource("workspace"),
             resource_groups: Vec::new(),
-            context: BTreeMap::from([(
-                "step_up_fresh".to_owned(),
-                CedarContextValue::Bool(true),
-            )]),
+            context: BTreeMap::from([("step_up_fresh".to_owned(), CedarContextValue::Bool(true))]),
         };
         assert_eq!(
             evaluate_compiled_cedar_policies(&policies, &agent_req),
@@ -600,10 +603,7 @@ mod tests {
             action: CedarEntityRef::action("rearm_breaker"),
             resource: CedarEntityRef::resource("workspace"),
             resource_groups: Vec::new(),
-            context: BTreeMap::from([(
-                "step_up_fresh".to_owned(),
-                CedarContextValue::Bool(false),
-            )]),
+            context: BTreeMap::from([("step_up_fresh".to_owned(), CedarContextValue::Bool(false))]),
         };
         assert_eq!(
             evaluate_compiled_cedar_policies(&policies, &human_stale),
@@ -685,8 +685,7 @@ mod tests {
             evaluate_compiled_cedar_policies(&policies, &req),
             CedarEvaluationDecision::Deny {
                 matching_forbids: vec![
-                    CedarPolicyId::new("marlin.forbid.external-scope-unless-declassified")
-                        .unwrap()
+                    CedarPolicyId::new("marlin.forbid.external-scope-unless-declassified").unwrap()
                 ],
             }
         );
@@ -795,9 +794,7 @@ mod tests {
                 }
                 _ => {
                     let len = (next_u64() as usize) % 96;
-                    mutated = (0..len)
-                        .map(|_| (0x20 + (next_u64() % 95)) as u8)
-                        .collect();
+                    mutated = (0..len).map(|_| (0x20 + (next_u64() % 95)) as u8).collect();
                 }
             }
             if let Ok(src) = String::from_utf8(mutated) {

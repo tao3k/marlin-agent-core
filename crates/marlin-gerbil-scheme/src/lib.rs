@@ -10,11 +10,11 @@ mod aot_runtime;
 mod atomic_effect_abi;
 mod brief_to_draft;
 mod deck_runtime_policy;
-mod graph_engine;
-mod graph_loop_continuation;
-mod governance_policy_abi;
 #[cfg(feature = "app-server-host")]
 pub mod governance_host;
+mod governance_policy_abi;
+mod graph_engine;
+mod graph_loop_continuation;
 mod loop_case_driver;
 mod policy_pack_projection;
 mod runtime;
@@ -104,6 +104,12 @@ pub use deck_runtime_policy::{
     gerbil_deck_runtime_poo_policy_projection_type_manifest,
     gerbil_deck_runtime_resolved_loop_policy_pack_projection_request,
 };
+pub use governance_policy_abi::{
+    GovernanceDerivationSpec, GovernancePolicyAbiError, GovernancePolicyVectorProjection,
+    GovernancePolicyVectorRequest, MARLIN_GOVERNANCE_ADMISSION_SCHEMA_VERSION,
+    MARLIN_GOVERNANCE_PROJECT_SYMBOL, decode_governance_policy_vector,
+    encode_governance_policy_request,
+};
 pub use graph_engine::{
     GraphEngineDispatchProjection, GraphEngineGovernedContextProjection, GraphEngineLinkedBridge,
     GraphEngineLinkedExports, GraphEngineOracleHandle, GraphEngineOracleServer,
@@ -135,12 +141,6 @@ pub use graph_loop_continuation::{
     gerbil_loop_graph_continuation_type_manifest,
     project_gerbil_loop_graph_continuation_abi_action,
     project_gerbil_loop_graph_continuation_action,
-};
-pub use governance_policy_abi::{
-    GovernanceDerivationSpec, GovernancePolicyAbiError, GovernancePolicyVectorProjection,
-    GovernancePolicyVectorRequest, MARLIN_GOVERNANCE_PROJECT_SYMBOL,
-    MARLIN_GOVERNANCE_ADMISSION_SCHEMA_VERSION, decode_governance_policy_vector,
-    encode_governance_policy_request,
 };
 pub use loop_case_driver::{
     GERBIL_LOOP_CASE_DRIVER_INTENT_CASE_RUNTIME_OWNER,

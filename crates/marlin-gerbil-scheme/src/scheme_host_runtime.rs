@@ -34,23 +34,22 @@ use std::{
 };
 
 use crate::{
-    AtomicEffectAbiError, FleetAuditCapsuleProjection, GraphEngineLinkedBridge,
-    GraphEngineLinkedExports, GovernancePolicyVectorProjection,
-    GovernancePolicyVectorRequest, SchemeAtomicEffect, SchemeAtomicReceipt,
-    SchemeFleetDispatchStep, SchemeFleetLinkedDriver, SchemeFleetLinkedExports,
-    SchemeFleetQuiescentSummary, decode_governance_policy_vector,
+    AtomicEffectAbiError, FleetAuditCapsuleProjection, GovernancePolicyVectorProjection,
+    GovernancePolicyVectorRequest, GraphEngineLinkedBridge, GraphEngineLinkedExports,
+    SchemeAtomicEffect, SchemeAtomicReceipt, SchemeFleetDispatchStep, SchemeFleetLinkedDriver,
+    SchemeFleetLinkedExports, SchemeFleetQuiescentSummary, decode_governance_policy_vector,
     encode_governance_policy_request, encode_scheme_atomic_receipt_vector,
-    graph_engine_oracle_channel,
     governance_host::{
         DEFAULT_GOVERNANCE_CHECKPOINT_KEY, GovernanceHostController, GovernanceUiCommand,
         SharedProjectionRecords, default_clean_governance_request,
         default_incident_governance_request, parse_governance_ui_command,
     },
+    graph_engine_oracle_channel,
 };
 #[cfg(not(feature = "external-program"))]
 use crate::{
-    GraphEngineRootedOracle, MARLIN_GOVERNANCE_PROJECT_SYMBOL,
-    SchemeFleetSessionDriver, gerbil_package_root,
+    GraphEngineRootedOracle, MARLIN_GOVERNANCE_PROJECT_SYMBOL, SchemeFleetSessionDriver,
+    gerbil_package_root,
 };
 use gerbil_scheme::{CollectionKind, GerbilRuntime};
 #[cfg(not(feature = "external-program"))]
@@ -1667,54 +1666,43 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                         {
                             (|| -> Result<GovernancePolicyVectorProjection, String> {
                                 if cached_governance_proc.is_none() {
-                                    let dir = dynamic_scheme_dir
-                                        .as_deref()
-                                        .ok_or_else(|| "dynamic scheme dir unavailable".to_owned())?;
+                                    let dir = dynamic_scheme_dir.as_deref().ok_or_else(|| {
+                                        "dynamic scheme dir unavailable".to_owned()
+                                    })?;
                                     let mod_sym = runtime
                                         .intern_identifier(
                                             IdentifierKind::Symbol,
                                             ":marlin-agent-core/policy/governance",
                                         )
-                                        .map_err(|e| {
-                                            format!("intern governance module: {e}")
-                                        })?;
+                                        .map_err(|e| format!("intern governance module: {e}"))?;
                                     let proc_sym = runtime
                                         .intern_identifier(
                                             IdentifierKind::Symbol,
                                             MARLIN_GOVERNANCE_PROJECT_SYMBOL,
                                         )
-                                        .map_err(|e| {
-                                            format!("intern governance export: {e}")
-                                        })?;
+                                        .map_err(|e| format!("intern governance export: {e}"))?;
                                     let resolved = runtime
                                         .resolve_package_export(dir, &mod_sym, &proc_sym)
-                                        .map_err(|e| {
-                                            format!("resolve governance export: {e}")
-                                        })?;
+                                        .map_err(|e| format!("resolve governance export: {e}"))?;
                                     cached_governance_proc = Some(resolved);
                                 }
-                                let proc = cached_governance_proc.as_ref().ok_or_else(|| {
-                                    "governance proc missing".to_owned()
-                                })?;
+                                let proc = cached_governance_proc
+                                    .as_ref()
+                                    .ok_or_else(|| "governance proc missing".to_owned())?;
                                 let in_vec = encode_governance_policy_request(runtime, &req)
-                                    .map_err(|e| {
-                                        format!("encode governance request: {e}")
-                                    })?;
+                                    .map_err(|e| format!("encode governance request: {e}"))?;
                                 let out_vec = runtime
                                     .call_rooted(proc, &in_vec)
                                     .map_err(|e| format!("call governance proc: {e}"))?;
-                                decode_governance_policy_vector(out_vec).map_err(|e| {
-                                    format!("decode governance vector: {e}")
-                                })
+                                decode_governance_policy_vector(out_vec)
+                                    .map_err(|e| format!("decode governance vector: {e}"))
                             })()
                         }
                         #[cfg(feature = "external-program")]
                         {
                             let _ = req;
-                            Err(
-                                "governance linked export missing in external-program mode"
-                                    .to_owned(),
-                            )
+                            Err("governance linked export missing in external-program mode"
+                                .to_owned())
                         }
                     };
                     let _ = reply.send(outcome);

@@ -19,9 +19,9 @@ use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, BreakerActor, BreakerActorId, CedarContextValue,
     CedarEntityRef, CedarEvaluationDecision, CedarEvaluationRequest, CedarPolicyId, DerivationId,
     ExecutionCircuitBreaker, GenericLoopMachineReceipt, GenericLoopMachineStepIndex,
-    GovernanceProofDigest, GovernedSubjectName, GovernanceAdmissionError,
-    GovernanceAdmissionGate, GovernanceProofEnvelope, GovernanceProofEpoch,
-    LoopProgramFileSandbox, LoopProgramFileWriteSideEffectStatus, LoopProgramFileWriteTemplate,
+    GovernanceAdmissionError, GovernanceAdmissionGate, GovernanceProofDigest,
+    GovernanceProofEnvelope, GovernanceProofEpoch, GovernedSubjectName, LoopProgramFileSandbox,
+    LoopProgramFileWriteSideEffectStatus, LoopProgramFileWriteTemplate,
     LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffPlan, LoopProgramRuntimeOwner,
     LoopProgramRuntimeSideEffectExecutor, LoopProgramRuntimeSideEffectStatus,
     LoopProgramToolProcessCommandTemplate, LoopProgramToolProcessProgram,
@@ -39,9 +39,7 @@ use marlin_gerbil_scheme::{
     encode_governance_policy_request, gerbil_package_root,
 };
 
-fn into_kernel_envelope(
-    proj: &GovernancePolicyVectorProjection,
-) -> GovernanceProofEnvelope {
+fn into_kernel_envelope(proj: &GovernancePolicyVectorProjection) -> GovernanceProofEnvelope {
     GovernanceProofEnvelope {
         schema_version: proj.schema_version,
         admitted: proj.admitted,
@@ -116,10 +114,7 @@ async fn live_gerbil_vm_governance_policy_drives_rust_breaker_and_blocks_real_os
         )
         .unwrap();
     let proc_sym = runtime
-        .intern_identifier(
-            IdentifierKind::Symbol,
-            MARLIN_GOVERNANCE_PROJECT_SYMBOL,
-        )
+        .intern_identifier(IdentifierKind::Symbol, MARLIN_GOVERNANCE_PROJECT_SYMBOL)
         .unwrap();
     let scheme_project = runtime
         .resolve_package_export(scheme_dir_str, &module_sym, &proc_sym)
@@ -152,10 +147,16 @@ async fn live_gerbil_vm_governance_policy_drives_rust_breaker_and_blocks_real_os
     let d_tool = DerivationId::new("D-TOOL-EXEC").unwrap();
     let d_pub = DerivationId::new("D-PUBLIC-DOC").unwrap();
     let lease_tool = breaker
-        .acquire_lease(ToolExecutionLeaseId::new("lease-tool-1").unwrap(), "os-shell")
+        .acquire_lease(
+            ToolExecutionLeaseId::new("lease-tool-1").unwrap(),
+            "os-shell",
+        )
         .unwrap();
     let lease_pub = breaker
-        .acquire_lease(ToolExecutionLeaseId::new("lease-pub-1").unwrap(), "doc-read")
+        .acquire_lease(
+            ToolExecutionLeaseId::new("lease-pub-1").unwrap(),
+            "doc-read",
+        )
         .unwrap();
     gate.register_derived_lease(d_tool.clone(), lease_tool)
         .unwrap();
@@ -207,14 +208,20 @@ async fn live_gerbil_vm_governance_policy_drives_rust_breaker_and_blocks_real_os
     let sync_attack = gate.synchronize_proof_envelope(&env_attack).unwrap();
     assert!(!sync_attack.admitted);
     assert!(sync_attack.breaker_auto_tripped);
-    assert_eq!(sync_attack.invalidated_active_derivations, vec![d_tool.clone()]);
+    assert_eq!(
+        sync_attack.invalidated_active_derivations,
+        vec![d_tool.clone()]
+    );
     assert!(gate.is_derivation_retracted(&d_tool));
     assert!(!gate.is_derivation_retracted(&d_pub));
     assert!(breaker.snapshot().unwrap().tripped);
 
     // Physical OS side-effect cutoff: `/bin/sh` MUST NOT run!
     let blocked_receipt = executor.execute(&tokio_rt.context(), &handoff).await;
-    assert_eq!(blocked_receipt.status, LoopProgramRuntimeSideEffectStatus::Failed);
+    assert_eq!(
+        blocked_receipt.status,
+        LoopProgramRuntimeSideEffectStatus::Failed
+    );
     assert!(
         !sentinel.exists(),
         "live Scheme ASCENT taint + Truth Maintenance retraction MUST physically block OS process spawn"
@@ -270,7 +277,10 @@ async fn live_gerbil_vm_governance_policy_drives_rust_breaker_and_blocks_real_os
 
     let d_fresh = DerivationId::new("D-FRESH-EXEC").unwrap();
     let fresh_lease = breaker
-        .acquire_lease(ToolExecutionLeaseId::new("lease-fresh-1").unwrap(), "os-shell")
+        .acquire_lease(
+            ToolExecutionLeaseId::new("lease-fresh-1").unwrap(),
+            "os-shell",
+        )
         .unwrap();
     gate.register_derived_lease(d_fresh.clone(), fresh_lease)
         .unwrap();
@@ -308,7 +318,10 @@ async fn live_gerbil_vm_governance_policy_drives_rust_breaker_and_blocks_real_os
         Some(d_fresh.clone()),
     );
     let fenced_os_receipt = fenced_executor.execute(&tokio_rt.context(), &handoff).await;
-    assert_eq!(fenced_os_receipt.status, LoopProgramRuntimeSideEffectStatus::Failed);
+    assert_eq!(
+        fenced_os_receipt.status,
+        LoopProgramRuntimeSideEffectStatus::Failed
+    );
     assert!(
         fenced_os_receipt.tool_processes[0]
             .diagnostic
@@ -322,14 +335,17 @@ async fn live_gerbil_vm_governance_policy_drives_rust_breaker_and_blocks_real_os
     );
 
     // 2. Invoked as clean `ops-bob` -> physically executes `/bin/sh` cleanly!
-    let clean_executor = executor.with_governance_gate(
-        Arc::clone(&gate_arc),
-        clean_actor.clone(),
-        Some(d_fresh),
-    );
+    let clean_executor =
+        executor.with_governance_gate(Arc::clone(&gate_arc), clean_actor.clone(), Some(d_fresh));
     let ok_receipt = clean_executor.execute(&tokio_rt.context(), &handoff).await;
-    assert_eq!(ok_receipt.status, LoopProgramRuntimeSideEffectStatus::Completed);
-    assert!(sentinel.exists(), "real OS process should succeed after verified recovery");
+    assert_eq!(
+        ok_receipt.status,
+        LoopProgramRuntimeSideEffectStatus::Completed
+    );
+    assert!(
+        sentinel.exists(),
+        "real OS process should succeed after verified recovery"
+    );
 
     // -------------------------------------------------------------------------
     // Scenario 3: Live Gambit VM synthesizes resource-scoped Cedar exfiltration
@@ -424,14 +440,13 @@ async fn live_gerbil_vm_governance_policy_drives_rust_breaker_and_blocks_real_os
 
     let make_write_executor = |target_file: &str, body: &[u8]| {
         let empty_proc_resolver = StaticLoopProgramToolProcessResolver::default();
-        let file_resolver = StaticLoopProgramFileWriteResolver::new(vec![
-            LoopProgramFileWriteTemplate::new(
+        let file_resolver =
+            StaticLoopProgramFileWriteResolver::new(vec![LoopProgramFileWriteTemplate::new(
                 "agent-flow.tool-intent",
                 ["loop-program.dispatch-tools"],
                 target_file,
                 body.to_vec(),
-            ),
-        ]);
+            )]);
         LoopProgramRuntimeSideEffectExecutor::new(empty_proc_resolver)
             .with_file_write_resolver(file_resolver)
             .with_file_sandbox(sandbox.clone())

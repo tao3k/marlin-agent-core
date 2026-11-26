@@ -30,8 +30,8 @@ use marlin_agent_app_server::{
 use marlin_agent_kernel::{
     BreakerActor, BreakerActorId, CedarContextValue, CedarEntityRef, CedarEvaluationDecision,
     CedarEvaluationRequest, CedarPolicyId, DerivationId, ExecutionCircuitBreaker,
-    GovernanceProofDigest, GovernedSubjectName, GovernanceAdmissionError, GovernanceGateSnapshot,
-    GovernanceAdmissionGate, GovernanceProofEnvelope, GovernanceProofEpoch,
+    GovernanceAdmissionError, GovernanceAdmissionGate, GovernanceGateSnapshot,
+    GovernanceProofDigest, GovernanceProofEnvelope, GovernanceProofEpoch, GovernedSubjectName,
     SynthesizedCedarPolicy, ToolBudgetUnits, ToolIfcContext, governance_sha256_bytes,
     infer_actor_roles,
 };
@@ -72,7 +72,10 @@ impl SharedProjectionRecords {
 
     pub fn upsert_and_publish(&self, host: &MyGoBridgeHost, record: GraphRecordView) {
         let all = {
-            let mut guard = self.records.lock().expect("projection records mutex poisoned");
+            let mut guard = self
+                .records
+                .lock()
+                .expect("projection records mutex poisoned");
             guard.insert(record.record_id.clone(), record);
             guard.values().cloned().collect::<Vec<_>>()
         };
@@ -211,11 +214,9 @@ pub fn parse_governance_ui_command(raw: &str) -> Option<GovernanceUiCommand> {
                 mark_sink: matches!(role, "sink" | "both"),
             })
         }
-        "governance-sanitize" if parts.len() == 1 => {
-            Some(GovernanceUiCommand::AddTaintSanitizer {
-                node: parts[0].to_owned(),
-            })
-        }
+        "governance-sanitize" if parts.len() == 1 => Some(GovernanceUiCommand::AddTaintSanitizer {
+            node: parts[0].to_owned(),
+        }),
         "governance-register-derivation" if parts.len() >= 3 && parts.len() <= 4 => {
             let subject_premises = parse_csv_tokens(parts[2]);
             if subject_premises.is_empty() {
@@ -371,7 +372,9 @@ impl GovernanceFactStore {
         }
         let version = cur.read_u32()?;
         if version != 1 && version != GOVERNANCE_FACT_STORE_VERSION {
-            return Err(format!("unsupported fact-graph checkpoint version {version}"));
+            return Err(format!(
+                "unsupported fact-graph checkpoint version {version}"
+            ));
         }
         let delegation_edges = cur.read_pair_set(4096)?;
         let revoked_actors = cur.read_str_set(4096)?;
@@ -520,7 +523,9 @@ impl<'a> FactCursor<'a> {
     fn read_str_vec(&mut self, max_items: usize) -> Result<Vec<String>, String> {
         let count = self.read_u32()? as usize;
         if count > max_items {
-            return Err(format!("excessive fact-graph vec count {count} > {max_items}"));
+            return Err(format!(
+                "excessive fact-graph vec count {count} > {max_items}"
+            ));
         }
         let mut out = Vec::with_capacity(count);
         for _ in 0..count {
@@ -532,7 +537,9 @@ impl<'a> FactCursor<'a> {
     fn read_str_set(&mut self, max_items: usize) -> Result<BTreeSet<String>, String> {
         let count = self.read_u32()? as usize;
         if count > max_items {
-            return Err(format!("excessive fact-graph set count {count} > {max_items}"));
+            return Err(format!(
+                "excessive fact-graph set count {count} > {max_items}"
+            ));
         }
         let mut out = BTreeSet::new();
         for _ in 0..count {
@@ -544,7 +551,9 @@ impl<'a> FactCursor<'a> {
     fn read_pair_set(&mut self, max_items: usize) -> Result<BTreeSet<(String, String)>, String> {
         let count = self.read_u32()? as usize;
         if count > max_items {
-            return Err(format!("excessive fact-graph pair count {count} > {max_items}"));
+            return Err(format!(
+                "excessive fact-graph pair count {count} > {max_items}"
+            ));
         }
         let mut out = BTreeSet::new();
         for _ in 0..count {
@@ -558,7 +567,9 @@ impl<'a> FactCursor<'a> {
     fn read_str_map(&mut self, max_items: usize) -> Result<BTreeMap<String, String>, String> {
         let count = self.read_u32()? as usize;
         if count > max_items {
-            return Err(format!("excessive fact-graph map count {count} > {max_items}"));
+            return Err(format!(
+                "excessive fact-graph map count {count} > {max_items}"
+            ));
         }
         let mut out = BTreeMap::new();
         for _ in 0..count {
@@ -904,13 +915,12 @@ impl GovernanceHostController {
                 );
                 (
                     format!("governance_register_derivation:{derivation_id}"),
-                    format!(
-                        "registered bi-temporal derivation {derivation_id} ({policy_id})"
-                    ),
+                    format!("registered bi-temporal derivation {derivation_id} ({policy_id})"),
                 )
             }
-            GovernanceUiCommand::OperatorEStop { .. }
-            | GovernanceUiCommand::CheckCedar { .. } => return Ok(None),
+            GovernanceUiCommand::OperatorEStop { .. } | GovernanceUiCommand::CheckCedar { .. } => {
+                return Ok(None);
+            }
         };
         let req = meta.facts.to_vector_request(epoch, rev);
         Ok(Some((req, node_id, note)))
@@ -1021,7 +1031,8 @@ impl GovernanceHostController {
             "cedar probe #{}: ({actor}, {action}, {resource}, step_up={step_up_fresh}) -> {decision}",
             result.seq
         );
-        let _ = self.publish_snapshot(host, &format!("governance_cedar_probe:{decision}"), &note)?;
+        let _ =
+            self.publish_snapshot(host, &format!("governance_cedar_probe:{decision}"), &note)?;
         Ok(result)
     }
 
@@ -1427,7 +1438,12 @@ impl GovernanceHostController {
         true
     }
 
-    fn ensure_rearm_gate_enqueued(&self, host: &MyGoBridgeHost, trip_epoch: u64, prompt_note: &str) {
+    fn ensure_rearm_gate_enqueued(
+        &self,
+        host: &MyGoBridgeHost,
+        trip_epoch: u64,
+        prompt_note: &str,
+    ) {
         let existing = {
             let meta = self.meta.lock().expect("host governance meta poisoned");
             meta.active_rearm_gate_id.clone()
@@ -2024,7 +2040,11 @@ mod tests {
             .expect("checkpoint present");
         assert_eq!(mode2, "restored");
         assert!(snap2.breaker.tripped);
-        assert!(ctrl2.authorize_sandbox_effect("ops-bob", "/bin/echo").is_err());
+        assert!(
+            ctrl2
+                .authorize_sandbox_effect("ops-bob", "/bin/echo")
+                .is_err()
+        );
 
         // Tamper with stored CAS bytes -> fresh host MUST boot fail-closed (`corrupt_fail_closed`)!
         let mut raw = cas.get_blob(key).await.unwrap().unwrap();
@@ -2042,7 +2062,9 @@ mod tests {
         assert!(snap3.breaker.tripped);
         assert!(!snap3.admitted);
         assert!(
-            ctrl3.authorize_sandbox_effect("ops-bob", "/bin/echo").is_err(),
+            ctrl3
+                .authorize_sandbox_effect("ops-bob", "/bin/echo")
+                .is_err(),
             "corrupted durable checkpoint MUST physically block sandbox execution"
         );
     }
@@ -2111,9 +2133,9 @@ mod tests {
             req.delegation_edges
         );
         assert!(
-            req.derivation_specs
-                .iter()
-                .any(|d| d.derivation_id == "D-TOKEN" && d.subject_premises == vec!["token-cert-v1"]),
+            req.derivation_specs.iter().any(
+                |d| d.derivation_id == "D-TOKEN" && d.subject_premises == vec!["token-cert-v1"]
+            ),
             "restored MGF1 v2 fact store must preserve pre-restart dynamic derivations: {:?}",
             req.derivation_specs
         );
@@ -2134,7 +2156,11 @@ mod tests {
             .unwrap();
         assert_eq!(mode3, "corrupt_fail_closed");
         assert!(snap3.breaker.tripped && !snap3.admitted);
-        assert!(ctrl3.authorize_sandbox_effect("ops-bob", "/bin/echo").is_err());
+        assert!(
+            ctrl3
+                .authorize_sandbox_effect("ops-bob", "/bin/echo")
+                .is_err()
+        );
     }
 
     #[test]

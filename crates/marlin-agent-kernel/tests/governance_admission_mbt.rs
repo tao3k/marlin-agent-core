@@ -21,11 +21,10 @@ use std::{
 
 use marlin_agent_kernel::{
     BreakerActor, BreakerActorId, BreakerRejectionReason, BreakerTripReason, CedarPolicyId,
-    DerivationId, ExecutionCircuitBreaker, GovernanceProofDigest, GovernedSubjectName,
-    GOVERNANCE_ADMISSION_SCHEMA_VERSION, GovernanceAdmissionError,
-    GovernanceAdmissionGate, GovernanceProofEnvelope, GovernanceProofEpoch,
-    SynthesizedCedarPolicy, ToolBudgetUnits, ToolExecutionLease, ToolExecutionLeaseId,
-    ToolIfcContext,
+    DerivationId, ExecutionCircuitBreaker, GOVERNANCE_ADMISSION_SCHEMA_VERSION,
+    GovernanceAdmissionError, GovernanceAdmissionGate, GovernanceProofDigest,
+    GovernanceProofEnvelope, GovernanceProofEpoch, GovernedSubjectName, SynthesizedCedarPolicy,
+    ToolBudgetUnits, ToolExecutionLease, ToolExecutionLeaseId, ToolIfcContext,
 };
 
 static QUINT_MBT_LOCK: Mutex<()> = Mutex::new(());
@@ -338,8 +337,11 @@ fn generate_itf_traces(
 }
 
 fn digest(ch: char) -> GovernanceProofDigest {
-    GovernanceProofDigest::new(format!("sha256:{}", std::iter::repeat_n(ch, 64).collect::<String>()))
-        .unwrap()
+    GovernanceProofDigest::new(format!(
+        "sha256:{}",
+        std::iter::repeat_n(ch, 64).collect::<String>()
+    ))
+    .unwrap()
 }
 
 fn envelope(admitted: bool, epoch: u64, retracted: Vec<DerivationId>) -> GovernanceProofEnvelope {
@@ -523,7 +525,8 @@ fn mbt_causal_retraction_overlay_refines_governance_admission_gate() {
                 let lid = ToolExecutionLeaseId::new(format!("hl-{seq}")).unwrap();
                 let did = DerivationId::new(format!("D-EXEC-{seq}")).unwrap();
                 let lease = breaker.acquire_lease(lid, "derived-tool").unwrap();
-                gate.register_derived_lease(did.clone(), lease.clone()).unwrap();
+                gate.register_derived_lease(did.clone(), lease.clone())
+                    .unwrap();
                 active_lease = Some((did, lease));
             } else if !prev_tripped && next_tripped {
                 breaker.trip(reason.clone()).unwrap();

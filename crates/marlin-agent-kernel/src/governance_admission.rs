@@ -219,25 +219,44 @@ impl fmt::Display for GovernanceAdmissionError {
                 write!(f, "causal derivation lease not registered: {id}")
             }
             Self::DerivationRetractedDenied(id) => {
-                write!(f, "causal derivation invalidated by bi-temporal truth maintenance: {id}")
+                write!(
+                    f,
+                    "causal derivation invalidated by bi-temporal truth maintenance: {id}"
+                )
             }
             Self::AscentFencedActorDenied(actor) => {
-                write!(f, "actor transitively fenced by ASCENT delegation fixpoint: {actor}")
+                write!(
+                    f,
+                    "actor transitively fenced by ASCENT delegation fixpoint: {actor}"
+                )
             }
             Self::AscentBlockedToolDenied(tool) => {
-                write!(f, "tool blocked by ASCENT execution breaker fixpoint: {tool}")
+                write!(
+                    f,
+                    "tool blocked by ASCENT execution breaker fixpoint: {tool}"
+                )
             }
             Self::CedarForbidDenied { policy_id, subject } => {
                 write!(f, "synthesized Cedar forbid {policy_id} denied {subject}")
             }
             Self::InvalidCedarPolicy { policy_id, detail } => {
-                write!(f, "invalid synthesized Cedar policy {policy_id} (fail-closed): {detail}")
+                write!(
+                    f,
+                    "invalid synthesized Cedar policy {policy_id} (fail-closed): {detail}"
+                )
             }
             Self::ProofEnvelopeRejected(reasons) => {
-                write!(f, "governance proof envelope rejected: {}", reasons.join(","))
+                write!(
+                    f,
+                    "governance proof envelope rejected: {}",
+                    reasons.join(",")
+                )
             }
             Self::CorruptDurableCheckpoint(detail) => {
-                write!(f, "corrupt durable governance checkpoint (fail-closed): {detail}")
+                write!(
+                    f,
+                    "corrupt durable governance checkpoint (fail-closed): {detail}"
+                )
             }
             Self::ExecutionBreaker(err) => write!(f, "execution breaker denied: {err}"),
             Self::LockPoisoned => write!(f, "governance admission gate lock poisoned"),
@@ -428,16 +447,16 @@ impl GovernanceAdmissionGate {
     pub fn rearm_by_verified_human(
         &self,
         actor: BreakerActor,
-    ) -> Result<(ExecutionBreakerRearmReceipt, GovernanceGateSnapshot), GovernanceAdmissionError> {
+    ) -> Result<(ExecutionBreakerRearmReceipt, GovernanceGateSnapshot), GovernanceAdmissionError>
+    {
         let receipt = self.breaker.rearm(&actor)?;
         {
             let mut guard = self
                 .inner
                 .lock()
                 .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
-            let next_epoch = GovernanceProofEpoch::new(
-                guard.min_revocation_epoch.get().saturating_add(1),
-            )?;
+            let next_epoch =
+                GovernanceProofEpoch::new(guard.min_revocation_epoch.get().saturating_add(1))?;
             guard.min_revocation_epoch = next_epoch;
             guard.last_admitted = true;
             guard.rejection_reasons.clear();
@@ -1021,14 +1040,17 @@ impl GovernanceDurableCheckpoint {
         let breaker_trip_epoch = BreakerTripEpoch::new(cur.read_u64()?)
             .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string()))?;
         let breaker_budget_used = cur.read_u32()?;
-        let breaker_last_trip_reason = match cur.read_opt_str()? {
-            Some(s) => Some(
-                BreakerTripReason::new(s)
-                    .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string()))?,
-            ),
-            None => None,
-        };
-        let read_opt_digest = |c: &mut ByteCursor<'_>| -> Result<Option<GovernanceProofDigest>, GovernanceAdmissionError> {
+        let breaker_last_trip_reason =
+            match cur.read_opt_str()? {
+                Some(s) => Some(BreakerTripReason::new(s).map_err(|e| {
+                    GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string())
+                })?),
+                None => None,
+            };
+        let read_opt_digest = |c: &mut ByteCursor<'_>| -> Result<
+            Option<GovernanceProofDigest>,
+            GovernanceAdmissionError,
+        > {
             match c.read_opt_str()? {
                 Some(s) => Ok(Some(GovernanceProofDigest::new(s).map_err(|e| {
                     GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string())
@@ -1047,24 +1069,27 @@ impl GovernanceDurableCheckpoint {
         let mut fenced_actors = Vec::with_capacity(raw_fenced.len());
         for s in raw_fenced {
             fenced_actors.push(
-                GovernedSubjectName::new(s)
-                    .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string()))?,
+                GovernedSubjectName::new(s).map_err(|e| {
+                    GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string())
+                })?,
             );
         }
         let raw_blocked = cur.read_str_vec(1024)?;
         let mut blocked_tools = Vec::with_capacity(raw_blocked.len());
         for s in raw_blocked {
             blocked_tools.push(
-                GovernedSubjectName::new(s)
-                    .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string()))?,
+                GovernedSubjectName::new(s).map_err(|e| {
+                    GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string())
+                })?,
             );
         }
         let raw_retracted = cur.read_str_vec(1024)?;
         let mut retracted_conclusions = Vec::with_capacity(raw_retracted.len());
         for s in raw_retracted {
             retracted_conclusions.push(
-                DerivationId::new(s)
-                    .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string()))?,
+                DerivationId::new(s).map_err(|e| {
+                    GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string())
+                })?,
             );
         }
         let cedar_count = cur.read_u32()? as usize;
@@ -1162,7 +1187,9 @@ impl<'a> ByteCursor<'a> {
 
     fn read_exact(&mut self, n: usize) -> Result<&'a [u8], GovernanceAdmissionError> {
         let end = self.pos.checked_add(n).ok_or_else(|| {
-            GovernanceAdmissionError::CorruptDurableCheckpoint("integer overflow in cursor".to_owned())
+            GovernanceAdmissionError::CorruptDurableCheckpoint(
+                "integer overflow in cursor".to_owned(),
+            )
         })?;
         if end > self.data.len() {
             return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(
@@ -1204,9 +1231,9 @@ impl<'a> ByteCursor<'a> {
             )));
         }
         let bytes = self.read_exact(len)?;
-        std::str::from_utf8(bytes)
-            .map(str::to_owned)
-            .map_err(|e| GovernanceAdmissionError::CorruptDurableCheckpoint(format!("invalid utf8: {e}")))
+        std::str::from_utf8(bytes).map(str::to_owned).map_err(|e| {
+            GovernanceAdmissionError::CorruptDurableCheckpoint(format!("invalid utf8: {e}"))
+        })
     }
 
     fn read_opt_str(&mut self) -> Result<Option<String>, GovernanceAdmissionError> {
@@ -1354,7 +1381,11 @@ mod durable_checkpoint_tests {
         let b1 = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(8)));
         let g1 = GovernanceAdmissionGate::new(b1);
         let d = |ch: char| {
-            GovernanceProofDigest::new(format!("sha256:{}", std::iter::repeat_n(ch, 64).collect::<String>())).unwrap()
+            GovernanceProofDigest::new(format!(
+                "sha256:{}",
+                std::iter::repeat_n(ch, 64).collect::<String>()
+            ))
+            .unwrap()
         };
         let env = GovernanceProofEnvelope {
             schema_version: GOVERNANCE_ADMISSION_SCHEMA_VERSION,
@@ -1398,7 +1429,10 @@ mod durable_checkpoint_tests {
         let err = g3
             .restore_durable_checkpoint_bytes(&tampered)
             .expect_err("bit-flipped checkpoint must be rejected");
-        assert!(matches!(err, GovernanceAdmissionError::CorruptDurableCheckpoint(_)));
+        assert!(matches!(
+            err,
+            GovernanceAdmissionError::CorruptDurableCheckpoint(_)
+        ));
         let snap3 = g3.snapshot().unwrap();
         assert!(
             snap3.breaker.tripped && !snap3.admitted,
@@ -1516,10 +1550,7 @@ mod durable_checkpoint_tests {
             action: CedarEntityRef::action("rearm_breaker"),
             resource: CedarEntityRef::resource("workspace"),
             resource_groups: Vec::new(),
-            context: BTreeMap::from([(
-                "step_up_fresh".to_owned(),
-                CedarContextValue::Bool(true),
-            )]),
+            context: BTreeMap::from([("step_up_fresh".to_owned(), CedarContextValue::Bool(true))]),
         };
         assert!(matches!(
             gate.evaluate_cedar_request(&human_req).unwrap(),
@@ -1532,8 +1563,11 @@ mod durable_checkpoint_tests {
         let breaker = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(8)));
         let gate = GovernanceAdmissionGate::new(Arc::clone(&breaker));
         let digest = |ch: char| {
-            GovernanceProofDigest::new(format!("sha256:{}", std::iter::repeat_n(ch, 64).collect::<String>()))
-                .unwrap()
+            GovernanceProofDigest::new(format!(
+                "sha256:{}",
+                std::iter::repeat_n(ch, 64).collect::<String>()
+            ))
+            .unwrap()
         };
         let env = GovernanceProofEnvelope {
             schema_version: GOVERNANCE_ADMISSION_SCHEMA_VERSION,

@@ -23,10 +23,10 @@ use std::{
 use marlin_agent_kernel::{
     BreakerActor, BreakerActorId, BreakerRejectionReason, BreakerTripReason, CedarContextValue,
     CedarEntityRef, CedarEvaluationDecision, CedarEvaluationRequest, CedarPolicyId, DerivationId,
-    ExecutionCircuitBreaker, GovernanceProofDigest, GovernedSubjectName,
-    GOVERNANCE_ADMISSION_SCHEMA_VERSION, GovernanceAdmissionError, GovernanceAdmissionGate,
-    GovernanceProofEnvelope, GovernanceProofEpoch, SynthesizedCedarPolicy, ToolBudgetUnits,
-    ToolExecutionLease, ToolExecutionLeaseId, ToolIfcContext,
+    ExecutionCircuitBreaker, GOVERNANCE_ADMISSION_SCHEMA_VERSION, GovernanceAdmissionError,
+    GovernanceAdmissionGate, GovernanceProofDigest, GovernanceProofEnvelope, GovernanceProofEpoch,
+    GovernedSubjectName, SynthesizedCedarPolicy, ToolBudgetUnits, ToolExecutionLease,
+    ToolExecutionLeaseId, ToolIfcContext,
 };
 
 static DURABLE_QUINT_LOCK: Mutex<()> = Mutex::new(());
@@ -340,8 +340,11 @@ fn generate_itf_traces(
 }
 
 fn digest(ch: char) -> GovernanceProofDigest {
-    GovernanceProofDigest::new(format!("sha256:{}", std::iter::repeat_n(ch, 64).collect::<String>()))
-        .unwrap()
+    GovernanceProofDigest::new(format!(
+        "sha256:{}",
+        std::iter::repeat_n(ch, 64).collect::<String>()
+    ))
+    .unwrap()
 }
 
 fn incident_envelope(epoch: u64) -> GovernanceProofEnvelope {
@@ -443,8 +446,8 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                 b(next, "corruptFactGraphOpened") && !b(prev, "corruptFactGraphOpened");
             let cedar_forbid_bypassed =
                 b(next, "cedarForbidBypassed") && !b(prev, "cedarForbidBypassed");
-            let retracted_deriv_committed = b(next, "retractedDerivationCommitted")
-                && !b(prev, "retractedDerivationCommitted");
+            let retracted_deriv_committed =
+                b(next, "retractedDerivationCommitted") && !b(prev, "retractedDerivationCommitted");
             let scope_unless_bypassed =
                 b(next, "scopeUnlessBypassed") && !b(prev, "scopeUnlessBypassed");
             let missing_context_bypassed =
@@ -733,14 +736,19 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                 gate.synchronize_proof_envelope(&incident_envelope(next_proof as u64))
                     .unwrap_or_else(|e| panic!("incident sync failed in {trace_name}: {e}"));
                 wal_bytes = Some(gate.export_durable_checkpoint_bytes().unwrap());
-            } else if next_wal && (!prev_wal || i(next, "walTripEpoch") != i(prev, "walTripEpoch") || b(next, "walTripped") != b(prev, "walTripped")) {
+            } else if next_wal
+                && (!prev_wal
+                    || i(next, "walTripEpoch") != i(prev, "walTripEpoch")
+                    || b(next, "walTripped") != b(prev, "walTripped"))
+            {
                 wal_bytes = Some(gate.export_durable_checkpoint_bytes().unwrap());
             } else if !prev_lease && next_lease {
                 seq += 1;
                 let lid = ToolExecutionLeaseId::new(format!("dl-{seq}")).unwrap();
                 let did = DerivationId::new(format!("D-DUR-{seq}")).unwrap();
                 let lease = breaker.acquire_lease(lid, "derived-tool").unwrap();
-                gate.register_derived_lease(did.clone(), lease.clone()).unwrap();
+                gate.register_derived_lease(did.clone(), lease.clone())
+                    .unwrap();
                 active_lease = Some((did, lease));
             } else if !prev_tripped && next_tripped && !next_corrupt {
                 breaker.trip(reason.clone()).unwrap();

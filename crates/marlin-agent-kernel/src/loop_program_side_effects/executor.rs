@@ -10,7 +10,7 @@ use marlin_agent_runtime::{RuntimeContext, observability};
 use tracing::Instrument;
 
 use crate::{
-    DerivationId, ExecutionCircuitBreaker, GovernedSubjectName, GovernanceAdmissionGate,
+    DerivationId, ExecutionCircuitBreaker, GovernanceAdmissionGate, GovernedSubjectName,
     LoopProgramExecutionReceipt, LoopProgramRuntimeHandoffExecutionReceipt, ToolIfcContext,
     spawn_loop_program_tool_process,
 };
@@ -138,10 +138,9 @@ impl LoopProgramRuntimeSideEffectExecutor {
                         projection.command.command_kind
                     ))
                     .unwrap_or_else(|_| GovernedSubjectName::new("tool_process").unwrap());
-                    let resource_name = GovernedSubjectName::new(
-                        projection.command.command_kind.as_str(),
-                    )
-                    .unwrap_or_else(|_| GovernedSubjectName::new("workspace").unwrap());
+                    let resource_name =
+                        GovernedSubjectName::new(projection.command.command_kind.as_str())
+                            .unwrap_or_else(|_| GovernedSubjectName::new("workspace").unwrap());
                     binding
                         .gate
                         .authorize_side_effect_on_resource(

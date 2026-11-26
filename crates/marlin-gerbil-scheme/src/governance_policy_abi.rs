@@ -16,8 +16,7 @@ use gerbil_scheme::{
 };
 
 pub const MARLIN_GOVERNANCE_ADMISSION_SCHEMA_VERSION: u32 = 1;
-pub const MARLIN_GOVERNANCE_PROJECT_SYMBOL: &str =
-    "marlin-governance-project-vector";
+pub const MARLIN_GOVERNANCE_PROJECT_SYMBOL: &str = "marlin-governance-project-vector";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GovernancePolicyAbiError(pub String);
@@ -286,9 +285,7 @@ pub fn decode_governance_policy_vector(
 ) -> Result<GovernancePolicyVectorProjection, GovernancePolicyAbiError> {
     let vec = object
         .into_collection(CollectionKind::Vector)
-        .map_err(|e| {
-            GovernancePolicyAbiError(format!("expected 14-slot rooted vector: {e}"))
-        })?;
+        .map_err(|e| GovernancePolicyAbiError(format!("expected 14-slot rooted vector: {e}")))?;
     if vec.len() != 14 {
         return Err(GovernancePolicyAbiError(format!(
             "expected 14-slot governance vector, got {}",

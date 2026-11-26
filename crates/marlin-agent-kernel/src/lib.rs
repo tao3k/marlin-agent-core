@@ -8,9 +8,9 @@ mod adapters;
 mod controller;
 mod driver;
 pub mod execution_breaker;
-pub mod governance_plane;
 pub mod governance_admission;
 pub mod governance_cedar;
+pub mod governance_plane;
 mod loop_machine;
 mod loop_program_controller;
 mod loop_program_execution;
@@ -36,6 +36,18 @@ pub use execution_breaker::{
     ExecutionBreakerTripReceipt, ExecutionCircuitBreaker, ToolBudgetUnits, ToolExecutionLease,
     ToolExecutionLeaseId, ToolIfcContext,
 };
+pub use governance_admission::{
+    CedarPolicyId, DerivationId, GOVERNANCE_ADMISSION_SCHEMA_VERSION,
+    GOVERNANCE_DURABLE_CHECKPOINT_VERSION, GovernanceAdmissionError, GovernanceAdmissionGate,
+    GovernanceDurableCheckpoint, GovernanceGateSnapshot, GovernanceProofDigest,
+    GovernanceProofEnvelope, GovernanceProofEpoch, GovernanceProofSyncReceipt, GovernedSubjectName,
+    SynthesizedCedarPolicy, governance_sha256_bytes,
+};
+pub use governance_cedar::{
+    CedarContextValue, CedarEffect, CedarEntityRef, CedarEvaluationDecision,
+    CedarEvaluationRequest, CedarScopeMatcher, CedarWhenCondition, CompiledCedarPolicy,
+    compile_cedar_policy, evaluate_compiled_cedar_policies, infer_actor_roles,
+};
 pub use governance_plane::{
     AuthorityEpoch, BackendSecurityGovernanceCoordinator, ChatroomGateStatus,
     ChatroomIngressGovernor, ChatroomIngressReceipt, DelegatedAgentAuthzLedger,
@@ -44,19 +56,6 @@ pub use governance_plane::{
     GovernanceGateId, GovernancePlaneRejection, GovernancePrincipal, GovernanceProposalId,
     GovernanceTenantId, MultiTenantIsolationFence, PrivilegedHumanReceipt, SodProposalRecord,
     TenantExecutionTicket, TenantExecutionTicketId, TenantOutboxEntry, TenantOutboxEntryId,
-};
-pub use governance_admission::{
-    CedarPolicyId, DerivationId, GovernanceProofDigest, GovernedSubjectName,
-    GOVERNANCE_DURABLE_CHECKPOINT_VERSION, GOVERNANCE_ADMISSION_SCHEMA_VERSION,
-    GovernanceAdmissionError, GovernanceDurableCheckpoint, GovernanceGateSnapshot,
-    GovernanceAdmissionGate, GovernanceProofEnvelope,
-    GovernanceProofEpoch, GovernanceProofSyncReceipt, SynthesizedCedarPolicy,
-    governance_sha256_bytes,
-};
-pub use governance_cedar::{
-    CedarContextValue, CedarEffect, CedarEntityRef, CedarEvaluationDecision,
-    CedarEvaluationRequest, CedarScopeMatcher, CedarWhenCondition, CompiledCedarPolicy,
-    compile_cedar_policy, evaluate_compiled_cedar_policies, infer_actor_roles,
 };
 pub use loop_machine::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,
