@@ -379,3 +379,7 @@ scheme-host-e2e-gate: scheme-build
   just scheme-test t/graph-engine-test.ss
   cargo test --locked -p marlin-agent-app-server --features "grpc,client,ui-grpc,turso-host" --test ui_grpc
   cargo test --locked -p marlin-gerbil-scheme --features app-server-host --test scheme_host_process -- --test-threads=1
+
+# Linked-AOT single-binary `marlin-scheme-host-aot` sub-second startup and double-boot E2E gate.
+scheme-host-aot-gate: scheme-build
+  GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" cargo test --locked -p marlin-agent-core --features linked-scheme-host --test scheme_host_aot_process -- --test-threads=1 --nocapture

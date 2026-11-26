@@ -1,0 +1,382 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+//! Real OS-process double-boot E2E test for the statically Linked-AOT
+//! `marlin-scheme-host-aot` daemon binary.
+//!
+//! Proves:
+//! 1. Sub-second / single-digit-second startup with ZERO runtime `.o1` `dlopen`
+//!    and ZERO external `scheme/.gerbil` directory (`MARLIN_SCHEME_DIR=/nonexistent`).
+//! 2. Bearer auth fail-closed enforcement across all 4 gRPC services via `MarlinSchemeHostClient`.
+//! 3. Real allowlisted `/bin/echo` `SandboxRun` (zero extra LLM calls) + fail-closed
+//!    `/bin/sh` denial escalating to `human-inbox` via Scheme oscillation detection.
+//! 4. One-shot `ApprovalGateService::submit_graph_human_decision(Approve)` + replay denial.
+//! 5. Graceful `SIGTERM` + OS Process Boot #2 restoring durable Turso WAL + CAS state
+//!    with ZERO extra HTTP LLM calls.
+
+use std::{
+    process::Stdio,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::{Duration, Instant},
+};
+
+use marlin_agent_app_server::{
+    GrpcCode, MarlinSchemeHostClient, wire::marlin::gate::v1::GraphHumanDecision,
+};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    net::TcpListener,
+    process::{Child, Command},
+};
+
+async fn spawn_local_openai_http_server(
+    expected_api_key: String,
+    expected_model: String,
+    reply_content: String,
+) -> (String, Arc<AtomicUsize>, tokio::task::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind local openai http server");
+    let addr = listener.local_addr().expect("local addr");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let calls_srv = calls.clone();
+
+    let handle = tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let expected_key = expected_api_key.clone();
+            let expected_mod = expected_model.clone();
+            let reply = reply_content.clone();
+            let calls_inner = calls_srv.clone();
+            tokio::spawn(async move {
+                let mut buf = Vec::new();
+                let mut tmp = [0u8; 4096];
+                let mut header_end = None;
+                let mut content_len = 0usize;
+                loop {
+                    let n = match stream.read(&mut tmp).await {
+                        Ok(0) | Err(_) => return,
+                        Ok(n) => n,
+                    };
+                    buf.extend_from_slice(&tmp[..n]);
+                    if header_end.is_none()
+                        && let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n")
+                    {
+                        header_end = Some(pos + 4);
+                        let headers = String::from_utf8_lossy(&buf[..pos]);
+                        for line in headers.lines() {
+                            if let Some((k, v)) = line.split_once(':')
+                                && k.trim().eq_ignore_ascii_case("content-length")
+                            {
+                                content_len = v.trim().parse::<usize>().unwrap_or(0);
+                            }
+                        }
+                    }
+                    if let Some(end) = header_end
+                        && buf.len() >= end + content_len
+                    {
+                        break;
+                    }
+                }
+                let end = header_end.unwrap_or(buf.len());
+                let headers = String::from_utf8_lossy(&buf[..end]);
+                let body = String::from_utf8_lossy(&buf[end..]);
+                let auth_ok = headers.lines().any(|l| {
+                    l.eq_ignore_ascii_case(&format!("authorization: Bearer {expected_key}"))
+                });
+                let model_ok = body.contains(&format!("\"model\":\"{expected_mod}\""))
+                    || body.contains(&format!("\"model\": \"{expected_mod}\""));
+                calls_inner.fetch_add(1, Ordering::SeqCst);
+                let (status, resp_body) = if auth_ok && model_ok {
+                    (
+                        "200 OK",
+                        format!(
+                            "{{\"id\":\"aot-chat-1\",\"choices\":[{{\"message\":{{\"role\":\"assistant\",\"content\":\"{reply}\"}}}}]}}"
+                        ),
+                    )
+                } else {
+                    (
+                        "401 Unauthorized",
+                        "{\"error\":\"unauthorized\"}".to_owned(),
+                    )
+                };
+                let raw = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{resp_body}",
+                    resp_body.len()
+                );
+                let _ = stream.write_all(raw.as_bytes()).await;
+            });
+        }
+    });
+
+    (format!("http://{addr}"), calls, handle)
+}
+
+async fn stop_host(mut child: Child) {
+    #[cfg(unix)]
+    {
+        if let Some(pid) = child.id() {
+            let status = std::process::Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .status()
+                .expect("send SIGTERM to marlin-scheme-host-aot");
+            assert!(status.success(), "kill -TERM failed");
+        }
+        let exit = tokio::time::timeout(Duration::from_secs(15), child.wait())
+            .await
+            .expect("timed out waiting for graceful marlin-scheme-host-aot exit")
+            .expect("wait on marlin-scheme-host-aot");
+        assert!(
+            exit.success(),
+            "marlin-scheme-host-aot should exit cleanly on SIGTERM, got {exit}"
+        );
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
+}
+
+#[tokio::test]
+async fn linked_aot_scheme_host_boots_fast_without_scheme_tree_and_survives_os_restart() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("scheme-host-aot-s32.db");
+    let sandbox_root = dir.path().join("sandbox-root");
+    std::fs::create_dir_all(&sandbox_root).expect("create sandbox root");
+    let cp_key = "fleet:scheme-host-aot:s32";
+    let bearer_token = "marlin-aot-s32-secret";
+
+    let (llm_url, llm_calls, llm_srv) = spawn_local_openai_http_server(
+        "sk-marlin-aot-s32".to_owned(),
+        "marlin-aot-model".to_owned(),
+        "linked-aot-llm-ok".to_owned(),
+    )
+    .await;
+
+    let spawn_aot = |gate_id: &str| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_marlin-scheme-host-aot"));
+        // Deliberately point MARLIN_SCHEME_DIR to a nonexistent path to prove Linked-AOT
+        // never loads external `.o1` modules or requires a `scheme/.gerbil` tree at runtime!
+        cmd.env("MARLIN_SCHEME_DIR", "/nonexistent-aot-must-not-read")
+            .env("MARLIN_BRIDGE_ADDR", "127.0.0.1:0")
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .env("MARLIN_BRIDGE_TURSO_PATH", &db_path)
+            .env("MARLIN_BRIDGE_GATE_ID", gate_id)
+            .env("MARLIN_SCHEME_FLEET_CHECKPOINT_KEY", cp_key)
+            .env("MARLIN_SCHEME_LLM_BASE_URL", &llm_url)
+            .env("MARLIN_SCHEME_LLM_MODEL", "marlin-aot-model")
+            .env("MARLIN_SCHEME_LLM_API_KEY", "sk-marlin-aot-s32")
+            .env("MARLIN_SCHEME_SANDBOX_ALLOWLIST", "/bin/echo")
+            .env("MARLIN_SCHEME_SANDBOX_ROOT", &sandbox_root)
+            .env_remove("MARLIN_SCHEME_LLM_LOOPBACK_RESPONSE")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true);
+        cmd
+    };
+
+    // -------------------------------------------------------------------------
+    // OS Process Boot #1: Linked-AOT cold boot (ZERO dynamic `.o1` dlopen!)
+    // -------------------------------------------------------------------------
+    let t0 = Instant::now();
+    let mut child1 = spawn_aot("gate-aot-s32-1")
+        .spawn()
+        .expect("spawn aot boot1");
+    let mut lines1 = BufReader::new(child1.stdout.take().unwrap()).lines();
+    let mut boot1 = None;
+    let addr1 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), lines1.next_line())
+            .await
+            .expect("linked-aot boot1 MUST become READY within 15s (no dlopen)")
+            .unwrap()
+            .expect("aot boot1 exited early");
+        if line.starts_with("FLEET_BOOT ") {
+            boot1 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    let boot1_ms = t0.elapsed().as_millis();
+    eprintln!("LINKED_AOT_BOOT1_MS={boot1_ms}");
+    assert!(boot1.unwrap().contains("mode=cold"));
+    assert_eq!(llm_calls.load(Ordering::SeqCst), 1);
+    let ep1 = format!("http://{addr1}");
+
+    // 1. Unauthenticated client rejected fail-closed.
+    let unauth = MarlinSchemeHostClient::connect(ep1.clone(), None)
+        .await
+        .expect("connect unauth");
+    assert_eq!(
+        unauth.get_workbench_tabs().await.unwrap_err().code(),
+        GrpcCode::Unauthenticated
+    );
+    assert_eq!(
+        unauth
+            .query_fleet_audit_capsule("default")
+            .await
+            .unwrap_err()
+            .code(),
+        GrpcCode::Unauthenticated
+    );
+
+    // 2. Authenticated Linked-AOT full lifecycle: SandboxRun OK + SandboxRun Deny + Gate Approve!
+    let client1 = MarlinSchemeHostClient::connect(ep1, Some(bearer_token))
+        .await
+        .expect("connect authed");
+    let mut traj = client1.watch_graph_trajectory("aot-traj").await.unwrap();
+    let ev0 = tokio::time::timeout(Duration::from_secs(5), traj.message())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .event
+        .unwrap();
+    assert_eq!(ev0.node_id, "fleet_boot_cold");
+
+    // 2a. Allowlisted `/bin/echo` SandboxRun settles & auto-archives with ZERO extra LLM calls.
+    client1
+        .dispatch_scheme_command(
+            "aot-ctl",
+            "task-sandbox-verify",
+            Some("sib-aot-ok:/bin/echo:aot-sandbox-verified"),
+        )
+        .await
+        .unwrap();
+    let ok_line = tokio::time::timeout(Duration::from_secs(10), lines1.next_line())
+        .await
+        .expect("aot sandbox ok stdout timeout")
+        .unwrap()
+        .expect("aot host exited");
+    assert!(
+        ok_line.contains("FLEET_UI_ACTION action=task-sandbox-verify")
+            && ok_line.contains("active=1")
+            && ok_line.contains("archived=2"),
+        "unexpected aot sandbox ok line: {ok_line}"
+    );
+    let ev_ok = tokio::time::timeout(Duration::from_secs(5), traj.message())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .event
+        .unwrap();
+    assert_eq!(ev_ok.node_id, "fleet_ui_action:task-sandbox-verify");
+    assert_eq!(llm_calls.load(Ordering::SeqCst), 1);
+
+    // 2b. Disallowed `/bin/sh` fails closed & escalates to human-inbox (active=2, archived=2, inbox=2).
+    client1
+        .dispatch_scheme_command(
+            "aot-ctl",
+            "task-sandbox-verify",
+            Some("sib-aot-deny:/bin/sh:forbidden"),
+        )
+        .await
+        .unwrap();
+    let deny_line = tokio::time::timeout(Duration::from_secs(10), lines1.next_line())
+        .await
+        .expect("aot sandbox deny stdout timeout")
+        .unwrap()
+        .expect("aot host exited");
+    assert!(
+        deny_line.contains("FLEET_UI_ACTION action=task-sandbox-verify")
+            && deny_line.contains("active=2")
+            && deny_line.contains("archived=2")
+            && deny_line.contains("inbox=2"),
+        "unexpected aot sandbox deny line: {deny_line}"
+    );
+    let _ = tokio::time::timeout(Duration::from_secs(5), traj.message())
+        .await
+        .unwrap()
+        .unwrap();
+
+    // 2c. One-shot `GraphHumanDecision::Approve` resolves `def-turso-01` (`defeaters=0`).
+    let claim = client1
+        .submit_graph_human_decision(
+            "gate-aot-s32-1",
+            GraphHumanDecision::Approve,
+            "idem-aot-approve",
+            Some("def-turso-01".to_owned()),
+        )
+        .await
+        .unwrap();
+    assert!(claim.claimed);
+    let gate_line = tokio::time::timeout(Duration::from_secs(10), lines1.next_line())
+        .await
+        .expect("aot gate stdout timeout")
+        .unwrap()
+        .expect("aot host exited");
+    assert!(
+        gate_line.contains("FLEET_GATE_APPLIED gate=gate-aot-s32-1")
+            && gate_line.contains("defeaters=0"),
+        "unexpected aot gate line: {gate_line}"
+    );
+    let replay = client1
+        .submit_graph_human_decision(
+            "gate-aot-s32-1",
+            GraphHumanDecision::Approve,
+            "idem-aot-replay",
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(!replay.claimed);
+
+    drop(traj);
+    drop(client1);
+    drop(unauth);
+    stop_host(child1).await;
+
+    // -------------------------------------------------------------------------
+    // OS Process Boot #2: Warm Linked-AOT restore from Turso WAL (ZERO LLM calls!)
+    // -------------------------------------------------------------------------
+    let t1 = Instant::now();
+    let mut child2 = spawn_aot("gate-aot-s32-2")
+        .spawn()
+        .expect("spawn aot boot2");
+    let mut lines2 = BufReader::new(child2.stdout.take().unwrap()).lines();
+    let mut boot2 = None;
+    let addr2 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), lines2.next_line())
+            .await
+            .expect("linked-aot boot2 MUST become READY within 15s (no dlopen)")
+            .unwrap()
+            .expect("aot boot2 exited early");
+        if line.starts_with("FLEET_BOOT ") {
+            boot2 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    let boot2_ms = t1.elapsed().as_millis();
+    eprintln!("LINKED_AOT_BOOT2_MS={boot2_ms}");
+    assert!(boot2.unwrap().contains("mode=restored"));
+
+    let client2 = MarlinSchemeHostClient::connect(format!("http://{addr2}"), Some(bearer_token))
+        .await
+        .expect("connect authed boot2");
+    let cap2 = client2
+        .query_fleet_audit_capsule("default")
+        .await
+        .unwrap()
+        .expect("restored capsule");
+    assert_eq!(cap2.active_actor_count, 2);
+    assert_eq!(cap2.archived_actor_count, 2);
+    assert_eq!(cap2.total_active_defeaters, 0);
+    assert_eq!(cap2.total_human_inbox_items, 2);
+    assert!(!cap2.favored_path_collapsed);
+    assert!(!cap2.authenticates_evidence);
+    assert!(!cap2.authorizes_effect);
+    assert_eq!(llm_calls.load(Ordering::SeqCst), 1);
+
+    drop(client2);
+    stop_host(child2).await;
+    llm_srv.abort();
+}

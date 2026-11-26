@@ -12,6 +12,13 @@ repository.workspace = true
 
 [features]
 brief-to-draft-vm-test = ["dep:gerbil-scheme-sys", "marlin-gerbil-scheme/external-program"]
+linked-scheme-host = [
+    "dep:gerbil-scheme-sys",
+    "dep:marlin-agent-app-server",
+    "marlin-agent-app-server/turso-host",
+    "marlin-gerbil-scheme/external-program",
+    "marlin-gerbil-scheme/app-server-host",
+]
 app-server = ["dep:marlin-agent-app-server", "marlin-agent-app-server/grpc"]
 actor-runtime = ["dep:marlin-deck-runtime", "marlin-deck-runtime/actor-runtime"]
 search-engine = ["dep:marlin-agent-search-engine"]
@@ -57,3 +64,13 @@ path = "tests/integration/brief_to_draft_offline.rs"
 name = "brief_to_draft_vm"
 path = "tests/integration/brief_to_draft_vm.rs"
 required-features = ["brief-to-draft-vm-test"]
+
+[[bin]]
+name = "marlin-scheme-host-aot"
+path = "src/bin/marlin_scheme_host_aot.rs"
+required-features = ["linked-scheme-host"]
+
+[[test]]
+name = "scheme_host_aot_process"
+path = "tests/integration/scheme_host_aot_process.rs"
+required-features = ["linked-scheme-host"]

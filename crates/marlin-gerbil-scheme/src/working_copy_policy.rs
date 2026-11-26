@@ -9,13 +9,14 @@ use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
     RootedSchemeObject, SchemeScalar,
 };
+#[cfg(not(feature = "external-program"))]
+use marlin_agent_gitops::working_copy::WorkingCopyIsolationOperationKind;
 use marlin_agent_gitops::working_copy::{
-    WorkingCopyBaseRef, WorkingCopyCreateRequest, WorkingCopyHandle,
-    WorkingCopyIsolationOperationKind, WorkingCopyIsolationProvider, WorkingCopyIsolationRequest,
-    WorkingCopyListOptions, WorkingCopyListRequest, WorkingCopyPullRequestCheckoutRequest,
-    WorkingCopyPullRequestNumber, WorkingCopyRemovalMode, WorkingCopyRemoveRequest,
-    WorkingCopyRepositoryDiscoveryPath, WorkingCopySwitchMode, WorkingCopySwitchRequest,
-    WorkspaceProjectGitHubRepository, WorkspaceProjectId,
+    WorkingCopyBaseRef, WorkingCopyCreateRequest, WorkingCopyHandle, WorkingCopyIsolationProvider,
+    WorkingCopyIsolationRequest, WorkingCopyListOptions, WorkingCopyListRequest,
+    WorkingCopyPullRequestCheckoutRequest, WorkingCopyPullRequestNumber, WorkingCopyRemovalMode,
+    WorkingCopyRemoveRequest, WorkingCopyRepositoryDiscoveryPath, WorkingCopySwitchMode,
+    WorkingCopySwitchRequest, WorkspaceProjectGitHubRepository, WorkspaceProjectId,
 };
 
 /// Select a provider on the existing Gerbil owner, then keep the Rust request typed.

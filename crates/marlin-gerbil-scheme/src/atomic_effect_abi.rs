@@ -863,6 +863,61 @@ impl<'vm> SchemeFleetLinkedDriver<'vm> {
         })?;
         decode_fleet_audit_capsule_vector(out)
     }
+
+    /// Requests a pure Scheme `CasPut` checkpoint effect for the current Fleet state.
+    pub fn checkpoint(
+        &mut self,
+        cas_key: &str,
+    ) -> Result<SchemeAtomicEffect, AtomicEffectAbiError> {
+        let step = self.dispatch("task-fleet-checkpoint", None, Some(cas_key), &[], false)?;
+        step.effects
+            .into_iter()
+            .next()
+            .ok_or_else(|| AtomicEffectAbiError("checkpoint produced no CasPut effect".to_owned()))
+    }
+
+    /// Pumps the live linked-AOT Scheme Fleet controller through Rust-executed atomic effect
+    /// batches until Scheme emits zero further effects (quiescent fixed-point) or `max_rounds`
+    /// is exhausted.
+    pub fn pump_until_quiescent<F>(
+        &mut self,
+        initial_receipts: &[SchemeAtomicReceipt],
+        auto_archive: bool,
+        max_rounds: usize,
+        mut execute_batch: F,
+    ) -> Result<SchemeFleetQuiescentSummary, AtomicEffectAbiError>
+    where
+        F: FnMut(Vec<SchemeAtomicEffect>) -> Result<Vec<SchemeAtomicReceipt>, AtomicEffectAbiError>,
+    {
+        if max_rounds == 0 {
+            return Err(AtomicEffectAbiError(
+                "max_rounds must be >= 1 for pump_until_quiescent".to_owned(),
+            ));
+        }
+        let mut pending_receipts: Vec<SchemeAtomicReceipt> = initial_receipts.to_vec();
+        let mut total_effects_executed = 0usize;
+        for round in 1..=max_rounds {
+            let step = self.dispatch(
+                "task-fleet-step",
+                None,
+                None,
+                &pending_receipts,
+                auto_archive,
+            )?;
+            if step.effects.is_empty() {
+                return Ok(SchemeFleetQuiescentSummary {
+                    rounds: round,
+                    total_effects_executed,
+                    final_step: step,
+                });
+            }
+            total_effects_executed += step.effects.len();
+            pending_receipts = execute_batch(step.effects)?;
+        }
+        Err(AtomicEffectAbiError(format!(
+            "fleet pump exceeded max_rounds ({max_rounds}) without reaching quiescence"
+        )))
+    }
 }
 
 #[cfg(test)]

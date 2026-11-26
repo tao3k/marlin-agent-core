@@ -17,6 +17,7 @@
                  marlin-graph-engine-project-workbench-tabs-vector
                  marlin-graph-engine-project-governed-context-vector
                  marlin-graph-engine-step-driver-vector
+                 marlin-graph-engine-make-demo-fleet-vector
                  marlin-graph-engine-step-fleet-vector
                  marlin-graph-engine-fleet-checkpoint-vector
                  marlin-graph-engine-fleet-restore-vector)
@@ -33,6 +34,8 @@
         EnableMarlinGraphEngineSqliteTurso)
 
 (.def GraphEngineMarlinOperations
+  program-entry: 'marlin-agent-core/graph-engine/entry
+  program-runtime-imports: '()
   project-workbench-ui: marlin-graph-engine-project-workbench-ui
   dispatch->continuation: marlin-graph-engine-dispatch->continuation
   assemble-governed-context: marlin-graph-engine-assemble-governed-context
@@ -41,6 +44,7 @@
   project-workbench-tabs-vector: marlin-graph-engine-project-workbench-tabs-vector
   project-governed-context-vector: marlin-graph-engine-project-governed-context-vector
   step-driver-vector: marlin-graph-engine-step-driver-vector
+  make-demo-fleet-vector: marlin-graph-engine-make-demo-fleet-vector
   step-fleet-vector: marlin-graph-engine-step-fleet-vector
   fleet-checkpoint-vector: marlin-graph-engine-fleet-checkpoint-vector
   fleet-restore-vector: marlin-graph-engine-fleet-restore-vector

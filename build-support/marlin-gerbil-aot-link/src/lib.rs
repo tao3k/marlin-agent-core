@@ -8,6 +8,7 @@ mod archive;
 mod brief_to_draft;
 mod deck_actor;
 mod discovery;
+mod graph_engine;
 mod header;
 mod script;
 mod toolchain;
@@ -19,6 +20,7 @@ pub use archive::{
 };
 pub use brief_to_draft::emit_brief_to_draft_link_directives;
 pub use deck_actor::emit_deck_actor_link_directives;
+pub use graph_engine::emit_graph_engine_link_directives;
 pub use header::{CHeaderGenerationReceipt, write_c_header};
 pub use script::{emit_agent_policy_routing_abi_link_directives, rustc_wrapper_is_clippy};
 pub use toolchain::{CCompilerTool, discover_c_compiler};

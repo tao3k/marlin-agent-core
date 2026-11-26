@@ -15,10 +15,15 @@ mod graph_loop_continuation;
 mod loop_case_driver;
 mod policy_pack_projection;
 mod runtime;
+#[cfg(feature = "app-server-host")]
+pub mod scheme_host_runtime;
 #[doc(hidden)]
 pub mod scheme_type_fixtures;
 mod scheme_types;
 mod working_copy_policy;
+
+#[cfg(feature = "external-program")]
+pub use gerbil_scheme::{GerbilRuntime, LinkedGerbilProgram};
 
 pub use agent_policy_routing::{
     GERBIL_AGENT_POLICY_ROUTING_ABI_PROJECTION_ABI_ID,

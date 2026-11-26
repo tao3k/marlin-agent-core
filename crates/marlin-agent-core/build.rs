@@ -6,4 +6,7 @@ fn main() {
     if cfg!(feature = "brief-to-draft-vm-test") {
         marlin_gerbil_aot_link::emit_brief_to_draft_link_directives();
     }
+    if cfg!(feature = "linked-scheme-host") {
+        marlin_gerbil_aot_link::emit_graph_engine_link_directives();
+    }
 }
