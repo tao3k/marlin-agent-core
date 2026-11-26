@@ -235,21 +235,32 @@ async fn run() -> Result<(), String> {
                 );
             } else {
                 match maybe {
-                    Some(gov) => println!(
-                        "GOVERNANCE admitted={} tripped={} trip_epoch={} rev_epoch={} policy_rev={} budget={}/{} rearm_gate={}",
-                        gov.admitted,
-                        gov.breaker_tripped,
-                        gov.breaker_trip_epoch,
-                        gov.revocation_epoch,
-                        gov.policy_revision,
-                        gov.breaker_budget_used,
-                        gov.breaker_budget_limit,
-                        if gov.rearm_gate_id.is_empty() {
-                            "none"
-                        } else {
-                            gov.rearm_gate_id.as_str()
+                    Some(gov) => {
+                        println!(
+                            "GOVERNANCE admitted={} tripped={} trip_epoch={} rev_epoch={} policy_rev={} budget={}/{} rearm_gate={}",
+                            gov.admitted,
+                            gov.breaker_tripped,
+                            gov.breaker_trip_epoch,
+                            gov.revocation_epoch,
+                            gov.policy_revision,
+                            gov.breaker_budget_used,
+                            gov.breaker_budget_limit,
+                            if gov.rearm_gate_id.is_empty() {
+                                "none"
+                            } else {
+                                gov.rearm_gate_id.as_str()
+                            }
+                        );
+                        if gov.fenced_actors_json != "[]" {
+                            println!("FENCED {}", gov.fenced_actors_json);
                         }
-                    ),
+                        if gov.retracted_conclusions_json != "[]" {
+                            println!("RETRACTED {}", gov.retracted_conclusions_json);
+                        }
+                        if let Some(probe) = &gov.last_cedar_probe_json {
+                            println!("CEDAR_PROBE {probe}");
+                        }
+                    }
                     None => println!("GOVERNANCE none"),
                 }
             }

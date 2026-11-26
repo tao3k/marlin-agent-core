@@ -1530,6 +1530,54 @@ async fn linked_aot_bitemporal_derivation_dag_and_context_declassification_survi
         })
         .await;
     assert_eq!(gov_flow_denied["admitted"], false);
+    assert!(
+        gov_flow_denied["cedar_policies"]
+            .as_array()
+            .is_some_and(|arr| {
+                arr.iter().any(|p| {
+                    p["policy_id"] == "marlin.ascent.forbid.scope.external-unless-declassified"
+                })
+            }),
+        "private->external flow must synthesize external-scope unless-declassified Cedar policy: {gov_flow_denied}"
+    );
+
+    // 2b. Live compiled-Cedar probe BEFORE declassification: even verified human `alice`
+    //     with fresh MFA step-up MUST be denied on `webhook-out` (`Marlin::Scope::"external"`).
+    let scope_deny_cmd = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &[
+            "gov",
+            "check-cedar",
+            "alice",
+            "rearm_breaker",
+            "webhook-out",
+            "true",
+        ],
+    )
+    .await;
+    assert_eq!(scope_deny_cmd["admitted"], true);
+    let gov_scope_deny = poll_ctl_governance(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        "cedar-scope-deny-before-declassify",
+        |g| {
+            g["last_cedar_probe"]["resource"] == "webhook-out"
+                && g["last_cedar_probe"]["decision"] == "deny"
+        },
+    )
+    .await;
+    assert!(
+        gov_scope_deny["last_cedar_probe"]["matched_policy_ids"]
+            .as_array()
+            .is_some_and(|arr| {
+                arr.iter()
+                    .any(|id| id == "marlin.ascent.forbid.scope.external-unless-declassified")
+            }),
+        "compiled-Cedar scope probe must cite external-unless-declassified forbid policy: {gov_scope_deny}"
+    );
 
     // 3. Declassify `payroll-csv`: clears ASCENT rejection_reasons while preserving the
     //    fail-closed breaker latch until verified human MFA Step-Up approves the re-arm gate.
@@ -1571,6 +1619,44 @@ async fn linked_aot_bitemporal_derivation_dag_and_context_declassification_survi
         g["breaker_tripped"] == false && g["admitted"] == true
     })
     .await;
+
+    // 3b. Live compiled-Cedar probe AFTER declassification: `alice` with fresh MFA step-up
+    //     is now allowed on `webhook-out` via `marlin.permit.verified-human-governance`.
+    let scope_allow_cmd = run_ctl_json(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        &[
+            "gov",
+            "check-cedar",
+            "alice",
+            "rearm_breaker",
+            "webhook-out",
+            "true",
+        ],
+    )
+    .await;
+    assert_eq!(scope_allow_cmd["admitted"], true);
+    let gov_scope_allow = poll_ctl_governance(
+        &ctl_bin,
+        &ep1,
+        bearer_token,
+        "cedar-scope-allow-after-declassify",
+        |g| {
+            g["last_cedar_probe"]["resource"] == "webhook-out"
+                && g["last_cedar_probe"]["decision"] == "allow"
+        },
+    )
+    .await;
+    assert!(
+        gov_scope_allow["last_cedar_probe"]["matched_policy_ids"]
+            .as_array()
+            .is_some_and(|arr| {
+                arr.iter()
+                    .any(|id| id == "marlin.permit.verified-human-governance")
+            }),
+        "compiled-Cedar probe after declassification must allow via verified-human policy: {gov_scope_allow}"
+    );
 
     stop_host(child1).await;
 
