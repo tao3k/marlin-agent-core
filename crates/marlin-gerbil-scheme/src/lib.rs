@@ -13,6 +13,8 @@ mod deck_runtime_policy;
 mod graph_engine;
 mod graph_loop_continuation;
 mod higher_order_governance_abi;
+#[cfg(feature = "app-server-host")]
+pub mod higher_order_host;
 mod loop_case_driver;
 mod policy_pack_projection;
 mod runtime;

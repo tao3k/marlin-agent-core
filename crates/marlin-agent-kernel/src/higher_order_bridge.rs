@@ -21,8 +21,9 @@ use std::{
 };
 
 use crate::execution_breaker::{
-    BreakerRejectionReason, BreakerTripReason, ExecutionBreakerCommitReceipt,
-    ExecutionCircuitBreaker, ToolExecutionLease, ToolIfcContext,
+    BreakerActor, BreakerRejectionReason, BreakerTripReason, ExecutionBreakerCommitReceipt,
+    ExecutionBreakerRearmReceipt, ExecutionBreakerSnapshot, ExecutionCircuitBreaker,
+    ToolExecutionLease, ToolIfcContext,
 };
 
 pub const HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION: u32 = 1;
@@ -138,6 +139,26 @@ pub struct HigherOrderProofSyncReceipt {
     pub synthesized_cedar_count: usize,
 }
 
+/// Authoritative snapshot of the combined Rust `ExecutionCircuitBreaker` and
+/// Gerbil Scheme Higher-Order Governance proof state for control-plane projections.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HigherOrderGateSnapshot {
+    pub admitted: bool,
+    pub revocation_epoch: HigherOrderProofEpoch,
+    pub policy_revision: u64,
+    pub breaker: ExecutionBreakerSnapshot,
+    pub assessment_digest: Option<GovernanceProofDigest>,
+    pub taint_proof_digest: Option<GovernanceProofDigest>,
+    pub fixpoint_proof_digest: Option<GovernanceProofDigest>,
+    pub temporal_proof_digest: Option<GovernanceProofDigest>,
+    pub invalidation_digest: Option<GovernanceProofDigest>,
+    pub rejection_reasons: Vec<String>,
+    pub fenced_actors: Vec<GovernedSubjectName>,
+    pub blocked_tools: Vec<GovernedSubjectName>,
+    pub retracted_conclusions: Vec<DerivationId>,
+    pub cedar_policies: Vec<SynthesizedCedarPolicy>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HigherOrderBridgeError {
     InvalidIdentifier(&'static str),
@@ -218,7 +239,14 @@ impl From<BreakerRejectionReason> for HigherOrderBridgeError {
 #[derive(Debug)]
 struct GateInner {
     min_revocation_epoch: HigherOrderProofEpoch,
+    policy_revision: u64,
     last_admitted: bool,
+    assessment_digest: Option<GovernanceProofDigest>,
+    taint_proof_digest: Option<GovernanceProofDigest>,
+    fixpoint_proof_digest: Option<GovernanceProofDigest>,
+    temporal_proof_digest: Option<GovernanceProofDigest>,
+    invalidation_digest: Option<GovernanceProofDigest>,
+    rejection_reasons: Vec<String>,
     active_derivations: BTreeMap<DerivationId, ToolExecutionLease>,
     retracted_derivations: BTreeSet<DerivationId>,
     fenced_actors: BTreeSet<GovernedSubjectName>,
@@ -241,7 +269,14 @@ impl HigherOrderGovernanceAdmissionGate {
             breaker,
             inner: Arc::new(Mutex::new(GateInner {
                 min_revocation_epoch: HigherOrderProofEpoch::INITIAL,
-                last_admitted: false,
+                policy_revision: 0,
+                last_admitted: true,
+                assessment_digest: None,
+                taint_proof_digest: None,
+                fixpoint_proof_digest: None,
+                temporal_proof_digest: None,
+                invalidation_digest: None,
+                rejection_reasons: Vec::new(),
                 active_derivations: BTreeMap::new(),
                 retracted_derivations: BTreeSet::new(),
                 fenced_actors: BTreeSet::new(),
@@ -261,6 +296,101 @@ impl HigherOrderGovernanceAdmissionGate {
             .lock()
             .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
         Ok(guard.min_revocation_epoch)
+    }
+
+    /// Returns the next monotonic revocation epoch strictly greater than the current floor.
+    pub fn next_revocation_epoch(&self) -> Result<u64, HigherOrderBridgeError> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+        Ok(guard.min_revocation_epoch.get().saturating_add(1))
+    }
+
+    /// Captures an immutable snapshot of the combined Rust breaker and Scheme proof state.
+    pub fn snapshot(&self) -> Result<HigherOrderGateSnapshot, HigherOrderBridgeError> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+        let breaker = self.breaker.snapshot()?;
+        Ok(HigherOrderGateSnapshot {
+            admitted: guard.last_admitted && !breaker.tripped,
+            revocation_epoch: guard.min_revocation_epoch,
+            policy_revision: guard.policy_revision,
+            breaker,
+            assessment_digest: guard.assessment_digest.clone(),
+            taint_proof_digest: guard.taint_proof_digest.clone(),
+            fixpoint_proof_digest: guard.fixpoint_proof_digest.clone(),
+            temporal_proof_digest: guard.temporal_proof_digest.clone(),
+            invalidation_digest: guard.invalidation_digest.clone(),
+            rejection_reasons: guard.rejection_reasons.clone(),
+            fenced_actors: guard.fenced_actors.iter().cloned().collect(),
+            blocked_tools: guard.blocked_tools.iter().cloned().collect(),
+            retracted_conclusions: guard.retracted_derivations.iter().cloned().collect(),
+            cedar_policies: guard.cedar_policies.clone(),
+        })
+    }
+
+    /// Trips the underlying `ExecutionCircuitBreaker` fail-closed on behalf of a human
+    /// operator E-Stop action and records the reason on the gate snapshot.
+    pub fn trip_operator_estop(
+        &self,
+        actor: &str,
+        reason: &str,
+    ) -> Result<HigherOrderGateSnapshot, HigherOrderBridgeError> {
+        let actor_clean = actor.trim();
+        let actor_label = if actor_clean.is_empty() {
+            "operator"
+        } else {
+            actor_clean
+        };
+        let reason_clean = reason.trim();
+        let reason_label = if reason_clean.is_empty() {
+            "operator-emergency-stop"
+        } else {
+            reason_clean
+        };
+        let formatted = format!("operator-estop:{actor_label}:{reason_label}");
+        let trip_reason = BreakerTripReason::new(formatted.clone())?;
+        self.breaker.trip(trip_reason)?;
+        {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+            guard.last_admitted = false;
+            guard.rejection_reasons.insert(0, formatted);
+            if guard.rejection_reasons.len() > 16 {
+                guard.rejection_reasons.truncate(16);
+            }
+        }
+        self.snapshot()
+    }
+
+    /// Re-arms a tripped `ExecutionCircuitBreaker` strictly for a verified human operator
+    /// (enforcing human-only re-arm), advances the proof revocation floor monotonically,
+    /// clears transient trip rejections, and preserves ASCENT/Cedar per-actor fences until
+    /// superseded by a fresh Scheme higher-order proof.
+    pub fn rearm_by_verified_human(
+        &self,
+        actor: BreakerActor,
+    ) -> Result<(ExecutionBreakerRearmReceipt, HigherOrderGateSnapshot), HigherOrderBridgeError> {
+        let receipt = self.breaker.rearm(&actor)?;
+        {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| HigherOrderBridgeError::LockPoisoned)?;
+            let next_epoch = HigherOrderProofEpoch::new(
+                guard.min_revocation_epoch.get().saturating_add(1),
+            )?;
+            guard.min_revocation_epoch = next_epoch;
+            guard.last_admitted = true;
+            guard.rejection_reasons.clear();
+            guard.retracted_derivations.clear();
+        }
+        Ok((receipt, self.snapshot()?))
     }
 
     /// Registers a live in-flight `ToolExecutionLease` tagged with its causal `DerivationId`
@@ -319,7 +449,14 @@ impl HigherOrderGovernanceAdmissionGate {
             });
         }
         guard.min_revocation_epoch = envelope.revocation_epoch;
+        guard.policy_revision = envelope.policy_revision;
         guard.last_admitted = envelope.admitted;
+        guard.assessment_digest = Some(envelope.assessment_digest.clone());
+        guard.taint_proof_digest = Some(envelope.taint_proof_digest.clone());
+        guard.fixpoint_proof_digest = Some(envelope.fixpoint_proof_digest.clone());
+        guard.temporal_proof_digest = Some(envelope.temporal_proof_digest.clone());
+        guard.invalidation_digest = Some(envelope.invalidation_digest.clone());
+        guard.rejection_reasons = envelope.rejection_reasons.clone();
 
         guard.fenced_actors = envelope.fenced_actors.iter().cloned().collect();
         guard.blocked_tools = envelope.blocked_tools.iter().cloned().collect();

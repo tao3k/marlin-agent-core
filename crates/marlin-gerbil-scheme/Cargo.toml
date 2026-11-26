@@ -15,10 +15,16 @@ publish = false
 
 [features]
 external-program = ["gerbil-scheme/external-program"]
-app-server-host = ["dep:marlin-agent-app-server", "dep:marlin-agent-storage", "dep:tokio"]
+app-server-host = [
+    "dep:marlin-agent-app-server",
+    "dep:marlin-agent-kernel",
+    "dep:marlin-agent-storage",
+    "dep:tokio",
+]
 
 [dependencies]
 marlin-agent-app-server = { workspace = true, features = ["turso-host"], optional = true }
+marlin-agent-kernel = { workspace = true, optional = true }
 marlin-agent-storage = { workspace = true, features = ["turso"], optional = true }
 tokio = { workspace = true, optional = true }
 marlin-agent-harness-types.workspace = true

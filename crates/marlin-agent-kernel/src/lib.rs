@@ -46,7 +46,7 @@ pub use governance_plane::{
 };
 pub use higher_order_bridge::{
     CedarPolicyId, DerivationId, GovernanceProofDigest, GovernedSubjectName,
-    HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION, HigherOrderBridgeError,
+    HIGHER_ORDER_GOVERNANCE_SCHEMA_VERSION, HigherOrderBridgeError, HigherOrderGateSnapshot,
     HigherOrderGovernanceAdmissionGate, HigherOrderGovernanceProofEnvelope,
     HigherOrderProofEpoch, HigherOrderProofSyncReceipt, SynthesizedCedarPolicy,
 };
