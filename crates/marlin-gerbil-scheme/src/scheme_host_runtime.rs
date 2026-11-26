@@ -1482,6 +1482,20 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                                         )
                                         .await;
                                 }
+                                GovernanceUiCommand::CheckCedar {
+                                    actor,
+                                    action,
+                                    resource,
+                                    step_up_fresh,
+                                } => {
+                                    let _ = gov_for_ui.evaluate_cedar_probe(
+                                        &host_for_ui,
+                                        &actor,
+                                        &action,
+                                        &resource,
+                                        step_up_fresh,
+                                    );
+                                }
                                 dynamic_cmd => {
                                     if let Ok(Some((req, node_id, note))) =
                                         gov_for_ui.mutate_facts_and_build_request(&dynamic_cmd)

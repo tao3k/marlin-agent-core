@@ -28,10 +28,12 @@ use marlin_agent_app_server::{
     },
 };
 use marlin_agent_kernel::{
-    BreakerActor, BreakerActorId, CedarPolicyId, DerivationId, ExecutionCircuitBreaker,
+    BreakerActor, BreakerActorId, CedarContextValue, CedarEntityRef, CedarEvaluationDecision,
+    CedarEvaluationRequest, CedarPolicyId, DerivationId, ExecutionCircuitBreaker,
     GovernanceProofDigest, GovernedSubjectName, GovernanceAdmissionError, GovernanceGateSnapshot,
     GovernanceAdmissionGate, GovernanceProofEnvelope, GovernanceProofEpoch,
     SynthesizedCedarPolicy, ToolBudgetUnits, ToolIfcContext, governance_sha256_bytes,
+    infer_actor_roles,
 };
 use marlin_agent_storage::AgentStorage;
 
@@ -124,6 +126,24 @@ pub enum GovernanceUiCommand {
         subject_premises: Vec<String>,
         parent_derivations: Vec<String>,
     },
+    CheckCedar {
+        actor: String,
+        action: String,
+        resource: String,
+        step_up_fresh: bool,
+    },
+}
+
+/// Authoritative decision result emitted by live compiled-Cedar policy probes.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct CedarProbeResult {
+    pub seq: u64,
+    pub actor: String,
+    pub action: String,
+    pub resource: String,
+    pub step_up_fresh: bool,
+    pub decision: String,
+    pub matched_policy_ids: Vec<String>,
 }
 
 fn parse_csv_tokens(raw: &str) -> Vec<String> {
@@ -210,6 +230,18 @@ pub fn parse_governance_ui_command(raw: &str) -> Option<GovernanceUiCommand> {
                 policy_id: parts[1].to_owned(),
                 subject_premises,
                 parent_derivations,
+            })
+        }
+        "governance-check-cedar" if parts.len() >= 3 && parts.len() <= 4 => {
+            let step_up_fresh = parts
+                .get(3)
+                .map(|s| s.eq_ignore_ascii_case("true") || *s == "1" || *s == "stepup=true")
+                .unwrap_or(false);
+            Some(GovernanceUiCommand::CheckCedar {
+                actor: parts[0].to_owned(),
+                action: parts[1].to_owned(),
+                resource: parts[2].to_owned(),
+                step_up_fresh,
             })
         }
         _ => None,
@@ -689,6 +721,8 @@ struct HostGovernanceMeta {
     active_rearm_gate_id: Option<String>,
     rearm_gate_seq: u64,
     policy_revision_seq: u64,
+    cedar_probe_seq: u64,
+    last_cedar_probe: Option<CedarProbeResult>,
     last_event_note: String,
     facts: GovernanceFactStore,
 }
@@ -714,6 +748,8 @@ impl GovernanceHostController {
                 active_rearm_gate_id: None,
                 rearm_gate_seq: 0,
                 policy_revision_seq: 1,
+                cedar_probe_seq: 0,
+                last_cedar_probe: None,
                 last_event_note: "initialized".to_owned(),
                 facts: GovernanceFactStore::default(),
             }),
@@ -855,7 +891,8 @@ impl GovernanceHostController {
                     ),
                 )
             }
-            GovernanceUiCommand::OperatorEStop { .. } => return Ok(None),
+            GovernanceUiCommand::OperatorEStop { .. }
+            | GovernanceUiCommand::CheckCedar { .. } => return Ok(None),
         };
         let req = meta.facts.to_vector_request(epoch, rev);
         Ok(Some((req, node_id, note)))
@@ -874,6 +911,78 @@ impl GovernanceHostController {
             meta.policy_revision_seq
         };
         Ok((epoch, rev))
+    }
+
+    /// Evaluates a live compiled-Cedar authorization probe directly against the
+    /// synchronized `GovernanceAdmissionGate` policies (`forbid`-overrides-`permit`),
+    /// records the structured decision on the host, and publishes it over gRPC.
+    pub fn evaluate_cedar_probe(
+        &self,
+        host: &MyGoBridgeHost,
+        actor: &str,
+        action: &str,
+        resource: &str,
+        step_up_fresh: bool,
+    ) -> Result<CedarProbeResult, String> {
+        let mut principal_roles = infer_actor_roles(actor);
+        if principal_roles.is_empty() && step_up_fresh {
+            principal_roles.push(CedarEntityRef::role("VerifiedHuman"));
+        }
+        let mut context = BTreeMap::new();
+        context.insert(
+            "step_up_fresh".to_owned(),
+            CedarContextValue::Bool(step_up_fresh),
+        );
+        let req = CedarEvaluationRequest {
+            principal: CedarEntityRef::actor(actor),
+            principal_roles,
+            action: CedarEntityRef::action(action),
+            resource: CedarEntityRef::resource(resource),
+            resource_groups: Vec::new(),
+            context,
+        };
+        let eval = self
+            .gate
+            .evaluate_cedar_request(&req)
+            .map_err(|e| format!("evaluate compiled Cedar probe: {e}"))?;
+        let (decision, matched_policy_ids) = match eval {
+            CedarEvaluationDecision::Allow { matching_permits } => (
+                "allow".to_owned(),
+                matching_permits
+                    .into_iter()
+                    .map(|p| p.as_str().to_owned())
+                    .collect(),
+            ),
+            CedarEvaluationDecision::Deny { matching_forbids } => (
+                "deny".to_owned(),
+                matching_forbids
+                    .into_iter()
+                    .map(|p| p.as_str().to_owned())
+                    .collect(),
+            ),
+            CedarEvaluationDecision::ImplicitDeny => ("implicit_deny".to_owned(), Vec::new()),
+        };
+        let result = {
+            let mut meta = self.meta.lock().expect("host governance meta poisoned");
+            meta.cedar_probe_seq = meta.cedar_probe_seq.saturating_add(1);
+            let probe = CedarProbeResult {
+                seq: meta.cedar_probe_seq,
+                actor: actor.to_owned(),
+                action: action.to_owned(),
+                resource: resource.to_owned(),
+                step_up_fresh,
+                decision: decision.clone(),
+                matched_policy_ids: matched_policy_ids.clone(),
+            };
+            meta.last_cedar_probe = Some(probe.clone());
+            probe
+        };
+        let note = format!(
+            "cedar probe #{}: ({actor}, {action}, {resource}, step_up={step_up_fresh}) -> {decision}",
+            result.seq
+        );
+        let _ = self.publish_snapshot(host, &format!("governance_cedar_probe:{decision}"), &note)?;
+        Ok(result)
     }
 
     /// Gates a real OS `SandboxRun` atomic effect through `GovernanceAdmissionGate`.
@@ -1327,16 +1436,23 @@ impl GovernanceHostController {
             .gate
             .snapshot()
             .map_err(|e| format!("snapshot governance gate: {e}"))?;
-        let (rearm_gate_id, facts_snapshot) = {
+        let (rearm_gate_id, facts_snapshot, last_probe) = {
             let mut meta = self.meta.lock().expect("host governance meta poisoned");
             meta.last_event_note = note.to_owned();
             (
                 meta.active_rearm_gate_id.clone().unwrap_or_default(),
                 meta.facts.clone(),
+                meta.last_cedar_probe.clone(),
             )
         };
 
-        let facets = encode_snapshot_facets(&snap, &facts_snapshot, &rearm_gate_id, note);
+        let facets = encode_snapshot_facets(
+            &snap,
+            &facts_snapshot,
+            last_probe.as_ref(),
+            &rearm_gate_id,
+            note,
+        );
         let record = GraphRecordView {
             record_id: GOVERNANCE_AUTHORITY_RECORD_ID.to_owned(),
             surface: GraphVisibleSurface::Evidence as i32,
@@ -1380,6 +1496,7 @@ impl GovernanceHostController {
 fn encode_snapshot_facets(
     snap: &GovernanceGateSnapshot,
     facts: &GovernanceFactStore,
+    last_probe: Option<&CedarProbeResult>,
     rearm_gate_id: &str,
     note: &str,
 ) -> HashMap<String, String> {
@@ -1392,6 +1509,11 @@ fn encode_snapshot_facets(
     struct DelegationWireEntry<'a> {
         parent: &'a str,
         child: &'a str,
+    }
+    #[derive(serde::Serialize)]
+    struct TaintEdgeWireEntry<'a> {
+        src: &'a str,
+        dst: &'a str,
     }
     #[derive(serde::Serialize)]
     struct ContextFlowWireEntry<'a> {
@@ -1478,6 +1600,18 @@ fn encode_snapshot_facets(
             parent_derivations: &d.parent_derivations,
         })
         .collect();
+    let fact_taint_edges: Vec<TaintEdgeWireEntry<'_>> = facts
+        .taint_edges
+        .iter()
+        .map(|(src, dst)| TaintEdgeWireEntry {
+            src: src.as_str(),
+            dst: dst.as_str(),
+        })
+        .collect();
+    let fact_taint_sources: Vec<&str> = facts.taint_sources.iter().map(String::as_str).collect();
+    let fact_taint_sinks: Vec<&str> = facts.taint_sinks.iter().map(String::as_str).collect();
+    let fact_taint_sanitizers: Vec<&str> =
+        facts.taint_sanitizers.iter().map(String::as_str).collect();
 
     let mut facets = HashMap::new();
     facets.insert("admitted".to_owned(), snap.admitted.to_string());
@@ -1589,6 +1723,28 @@ fn encode_snapshot_facets(
         "fact_derivations_json".to_owned(),
         serde_json::to_string(&fact_derivations).unwrap_or_else(|_| "[]".to_owned()),
     );
+    facets.insert(
+        "fact_taint_edges_json".to_owned(),
+        serde_json::to_string(&fact_taint_edges).unwrap_or_else(|_| "[]".to_owned()),
+    );
+    facets.insert(
+        "fact_taint_sources_json".to_owned(),
+        serde_json::to_string(&fact_taint_sources).unwrap_or_else(|_| "[]".to_owned()),
+    );
+    facets.insert(
+        "fact_taint_sinks_json".to_owned(),
+        serde_json::to_string(&fact_taint_sinks).unwrap_or_else(|_| "[]".to_owned()),
+    );
+    facets.insert(
+        "fact_taint_sanitizers_json".to_owned(),
+        serde_json::to_string(&fact_taint_sanitizers).unwrap_or_else(|_| "[]".to_owned()),
+    );
+    facets.insert(
+        "last_cedar_probe_json".to_owned(),
+        last_probe
+            .and_then(|p| serde_json::to_string(p).ok())
+            .unwrap_or_default(),
+    );
     facets.insert("last_event_note".to_owned(), note.to_owned());
     facets
 }
@@ -1685,6 +1841,17 @@ mod tests {
                 policy_id: "pol.cert".to_owned(),
                 subject_premises: vec!["token-cert-v1".to_owned()],
                 parent_derivations: Vec::new(),
+            })
+        );
+        assert_eq!(
+            parse_governance_ui_command(
+                "scheme:governance-check-cedar agent-worker rearm_breaker workspace true"
+            ),
+            Some(GovernanceUiCommand::CheckCedar {
+                actor: "agent-worker".to_owned(),
+                action: "rearm_breaker".to_owned(),
+                resource: "workspace".to_owned(),
+                step_up_fresh: true,
             })
         );
     }
@@ -1922,5 +2089,75 @@ mod tests {
         assert_eq!(mode3, "corrupt_fail_closed");
         assert!(snap3.breaker.tripped && !snap3.admitted);
         assert!(ctrl3.authorize_sandbox_effect("ops-bob", "/bin/echo").is_err());
+    }
+
+    #[test]
+    fn host_controller_evaluates_live_cedar_probes_with_forbid_override() {
+        let host = MyGoBridgeHost::new_default_trust(|_| Ok(()));
+        let ctrl = GovernanceHostController::new(8, Arc::new(SharedProjectionRecords::new()));
+        let d = |ch: char| format!("sha256:{}", std::iter::repeat_n(ch, 64).collect::<String>());
+        let proj = GovernancePolicyVectorProjection {
+            schema_version: 1,
+            admitted: true,
+            revocation_epoch: 2,
+            policy_revision: 1,
+            assessment_digest: d('a'),
+            taint_proof_digest: d('b'),
+            fixpoint_proof_digest: d('c'),
+            temporal_proof_digest: d('d'),
+            invalidation_digest: d('e'),
+            rejection_reasons: Vec::new(),
+            fenced_actors: Vec::new(),
+            blocked_tools: Vec::new(),
+            retracted_conclusions: Vec::new(),
+            cedar_policies: vec![
+                (
+                    "marlin.forbid.agent-privileged-governance".to_owned(),
+                    "forbid (principal in Marlin::Role::\"Agent\", action in [Marlin::Action::\"rearm_breaker\"], resource);".to_owned(),
+                ),
+                (
+                    "marlin.permit.verified-human-governance".to_owned(),
+                    "permit (principal in Marlin::Role::\"VerifiedHuman\", action in [Marlin::Action::\"rearm_breaker\"], resource) when { context.step_up_fresh == true };".to_owned(),
+                ),
+                (
+                    "marlin.ascent.forbid.exfil.secret.ext-webhook".to_owned(),
+                    "forbid (principal, action, resource == Marlin::Resource::\"ext-webhook\");".to_owned(),
+                ),
+            ],
+        };
+        ctrl.apply_scheme_projection(&host, &proj, "probe-seed", "seed cedar")
+            .unwrap();
+
+        let p1 = ctrl
+            .evaluate_cedar_probe(&host, "agent-worker", "rearm_breaker", "workspace", true)
+            .unwrap();
+        assert_eq!(p1.decision, "deny");
+        assert_eq!(
+            p1.matched_policy_ids,
+            vec!["marlin.forbid.agent-privileged-governance".to_owned()]
+        );
+
+        let p2 = ctrl
+            .evaluate_cedar_probe(&host, "ops-alice", "rearm_breaker", "workspace", true)
+            .unwrap();
+        assert_eq!(p2.decision, "allow");
+        assert_eq!(
+            p2.matched_policy_ids,
+            vec!["marlin.permit.verified-human-governance".to_owned()]
+        );
+
+        let p3 = ctrl
+            .evaluate_cedar_probe(&host, "ops-alice", "rearm_breaker", "workspace", false)
+            .unwrap();
+        assert_eq!(p3.decision, "implicit_deny");
+
+        let p4 = ctrl
+            .evaluate_cedar_probe(&host, "ops-alice", "rearm_breaker", "ext-webhook", true)
+            .unwrap();
+        assert_eq!(p4.decision, "deny");
+        assert_eq!(
+            p4.matched_policy_ids,
+            vec!["marlin.ascent.forbid.exfil.secret.ext-webhook".to_owned()]
+        );
     }
 }

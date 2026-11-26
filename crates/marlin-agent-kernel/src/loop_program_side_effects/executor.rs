@@ -138,12 +138,17 @@ impl LoopProgramRuntimeSideEffectExecutor {
                         projection.command.command_kind
                     ))
                     .unwrap_or_else(|_| GovernedSubjectName::new("tool_process").unwrap());
+                    let resource_name = GovernedSubjectName::new(
+                        projection.command.command_kind.as_str(),
+                    )
+                    .unwrap_or_else(|_| GovernedSubjectName::new("workspace").unwrap());
                     binding
                         .gate
-                        .authorize_side_effect(
+                        .authorize_side_effect_on_resource(
                             binding.derivation_id.as_ref(),
                             &binding.actor,
                             &tool_name,
+                            &resource_name,
                             &self.ifc_context,
                         )
                         .err()
@@ -193,17 +198,18 @@ impl LoopProgramRuntimeSideEffectExecutor {
 
             if let Some(request) = file_write_request {
                 let blocked_diag = if let Some(binding) = &self.governance_gate {
-                    let tool_name = GovernedSubjectName::new(format!(
-                        "file_write:{}",
-                        request.relative_path.display()
-                    ))
-                    .unwrap_or_else(|_| GovernedSubjectName::new("file_write").unwrap());
+                    let rel_display = request.relative_path.display().to_string();
+                    let tool_name = GovernedSubjectName::new(format!("file_write:{rel_display}"))
+                        .unwrap_or_else(|_| GovernedSubjectName::new("file_write").unwrap());
+                    let resource_name = GovernedSubjectName::new(rel_display)
+                        .unwrap_or_else(|_| GovernedSubjectName::new("workspace").unwrap());
                     binding
                         .gate
-                        .authorize_side_effect(
+                        .authorize_side_effect_on_resource(
                             binding.derivation_id.as_ref(),
                             &binding.actor,
                             &tool_name,
+                            &resource_name,
                             &self.ifc_context,
                         )
                         .err()
