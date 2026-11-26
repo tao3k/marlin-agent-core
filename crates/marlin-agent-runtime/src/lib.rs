@@ -36,7 +36,7 @@ pub use effect_pump::{
     AtomicEffect, AtomicEffectExecutor, AtomicEffectReceipt, CasGetEffectPayload,
     CasHitReceiptPayload, CasPutEffectPayload, EffectErrorReceiptPayload, LlmCompleteEffectPayload,
     LlmCompletedReceiptPayload, SandboxExitedReceiptPayload, SandboxRunEffectPayload,
-    run_atomic_effect_batch,
+    run_atomic_effect_batch, sha256_prefixed_hex,
 };
 pub use graph_loop::{
     AgentFlowLoopStepRequest, GraphLoopRegistryRevision, GraphLoopRunCancelReceipt,

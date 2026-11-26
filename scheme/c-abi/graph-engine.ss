@@ -14,7 +14,10 @@
         marlin-graph-engine-workbench-tabs-vector
         marlin-graph-engine-governed-context-vector-abi
         marlin-graph-engine-step-driver-vector-abi
-        marlin-graph-engine-step-fleet-vector-abi)
+        marlin-graph-engine-step-fleet-vector-abi
+        marlin-graph-engine-fleet-controller-open-vector-abi
+        marlin-graph-engine-fleet-controller-dispatch-vector-abi
+        marlin-graph-engine-fleet-controller-audit-capsule-vector-abi)
 
 (def (marlin-graph-engine-dispatch-vector input)
   ((.get GraphEngine core exports project-dispatch-vector) input))
@@ -33,6 +36,15 @@
 
 (def (marlin-graph-engine-step-fleet-vector-abi input)
   ((.get GraphEngine core exports step-fleet-vector) input))
+
+(def (marlin-graph-engine-fleet-controller-open-vector-abi input)
+  ((.get GraphEngine core exports fleet-workbench-controller-open-vector) input))
+
+(def (marlin-graph-engine-fleet-controller-dispatch-vector-abi input)
+  ((.get GraphEngine core exports fleet-workbench-controller-dispatch-vector) input))
+
+(def (marlin-graph-engine-fleet-controller-audit-capsule-vector-abi input)
+  ((.get GraphEngine core exports fleet-workbench-controller-audit-capsule-vector) input))
 
 (begin-foreign
   (c-define (graph-engine-dispatch-vector root) (int64) int64
@@ -58,4 +70,16 @@
   (c-define (graph-engine-step-fleet-vector root) (int64) int64
     "marlin_graph_engine_step_fleet_vector" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root
-      marlin-agent-core/c-abi/graph-engine#marlin-graph-engine-step-fleet-vector-abi)))
+      marlin-agent-core/c-abi/graph-engine#marlin-graph-engine-step-fleet-vector-abi))
+  (c-define (graph-engine-fleet-controller-open-vector root) (int64) int64
+    "marlin_graph_engine_fleet_controller_open_vector" "extern"
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root
+      marlin-agent-core/c-abi/graph-engine#marlin-graph-engine-fleet-controller-open-vector-abi))
+  (c-define (graph-engine-fleet-controller-dispatch-vector root) (int64) int64
+    "marlin_graph_engine_fleet_controller_dispatch_vector" "extern"
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root
+      marlin-agent-core/c-abi/graph-engine#marlin-graph-engine-fleet-controller-dispatch-vector-abi))
+  (c-define (graph-engine-fleet-controller-audit-capsule-vector root) (int64) int64
+    "marlin_graph_engine_fleet_controller_audit_capsule_vector" "extern"
+    (marlin-agent-core/c-abi/roots#marlin-rooted-call root
+      marlin-agent-core/c-abi/graph-engine#marlin-graph-engine-fleet-controller-audit-capsule-vector-abi)))

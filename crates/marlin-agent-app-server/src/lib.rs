@@ -13,6 +13,13 @@ mod session;
 #[cfg(feature = "grpc")]
 pub use session::{SessionBinding, SessionOpen};
 #[cfg(feature = "grpc")]
+pub mod atomic_effect_substrate;
+#[cfg(feature = "grpc")]
+pub use atomic_effect_substrate::{
+    AtomicSandboxRunner, BoundedTokioSandboxRunner, CompositeAtomicEffectExecutor,
+    DenySandboxRunner,
+};
+#[cfg(feature = "grpc")]
 pub mod task_actors;
 #[cfg(feature = "grpc")]
 pub use task_actors::{

@@ -9,11 +9,24 @@
 //! Two-Zone prompt assembly) live exclusively in Scheme (`poo-flow`). Rust executes
 //! only the four primitive I/O effects below in parallel and returns raw receipts.
 
+use std::fmt::Write as _;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use marlin_agent_protocol::ModelGatewayRequest;
+use ring::digest::{SHA256, digest};
+
+/// Computes a deterministic `sha256:<64-lowercase-hex>` content digest for raw CAS payloads/keys.
+pub fn sha256_prefixed_hex(bytes: &[u8]) -> String {
+    let hash = digest(&SHA256, bytes);
+    let mut out = String::with_capacity("sha256:".len() + hash.as_ref().len() * 2);
+    out.push_str("sha256:");
+    for byte in hash.as_ref() {
+        let _ = write!(&mut out, "{byte:02x}");
+    }
+    out
+}
 
 /// Payload for `AtomicEffect::LlmComplete`.
 #[derive(Clone, Debug, PartialEq)]
