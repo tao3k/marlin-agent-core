@@ -8,6 +8,7 @@ mod adapters;
 mod controller;
 mod driver;
 pub mod execution_breaker;
+pub mod governance_plane;
 mod loop_machine;
 mod loop_program_controller;
 mod loop_program_execution;
@@ -32,6 +33,15 @@ pub use execution_breaker::{
     ExecutionBreakerCommitReceipt, ExecutionBreakerRearmReceipt, ExecutionBreakerSnapshot,
     ExecutionBreakerTripReceipt, ExecutionCircuitBreaker, ToolBudgetUnits, ToolExecutionLease,
     ToolExecutionLeaseId, ToolIfcContext,
+};
+pub use governance_plane::{
+    AuthorityEpoch, BackendSecurityGovernanceCoordinator, ChatroomGateStatus,
+    ChatroomIngressGovernor, ChatroomIngressReceipt, DelegatedAgentAuthzLedger,
+    DelegatedAgentTicket, DelegatedExecutionReceipt, DelegationScopeLevel, DelegationTicketId,
+    DualControlSodLedger, ExternalIngressRequest, GovernanceActorId, GovernanceChannelId,
+    GovernanceGateId, GovernancePlaneRejection, GovernancePrincipal, GovernanceProposalId,
+    GovernanceTenantId, MultiTenantIsolationFence, PrivilegedHumanReceipt, SodProposalRecord,
+    TenantExecutionTicket, TenantExecutionTicketId, TenantOutboxEntry, TenantOutboxEntryId,
 };
 pub use loop_machine::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,

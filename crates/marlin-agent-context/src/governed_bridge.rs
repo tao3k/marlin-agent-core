@@ -18,6 +18,10 @@ use crate::governance::{
     OrgGovernanceError, OrgGovernanceLedger, SubtreeCommitProposal, SubtreeCommitReceipt,
     SubtreeSemanticVerifier,
 };
+use crate::shared_scope::{
+    ContextAccessHandle, ContextEntryId, ContextPrincipal, GovernedPromptBundleReceipt,
+    SharedContextGovernanceLedger, SharedContextScope,
+};
 
 /// Fail-closed rejection when mediating a governed Org commit or Two-Zone prompt
 /// against a Session-free `TaskActor`'s governance envelope.
@@ -218,4 +222,69 @@ pub fn assemble_two_zone_gateway_messages(
     messages.extend(history.iter().cloned());
     messages.push(user_gateway_message(envelope.dynamic_tail.clone()));
     Ok(messages)
+}
+
+/// Receipt produced when assembling Two-Zone KV-Prefix gateway messages under
+/// 5-Scope Shared Context Governance anti-exfiltration filtering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScopedTwoZoneGatewayMessagesReceipt {
+    pub messages: Vec<ModelGatewayMessage>,
+    pub bundle_receipt: GovernedPromptBundleReceipt,
+}
+
+/// Unifies 5-Scope Shared Context Governance (`SharedContextGovernanceLedger`) with
+/// Two-Zone KV-Prefix prompt assembly (`assemble_two_zone_gateway_messages`):
+/// - Automatically redacts any candidate entry that belongs to another tenant, has a revoked
+///   channel handle epoch, or carries a narrower scope (e.g. `Private` / `DirectMessage`)
+///   than `target_scope` so narrow secrets can never exfiltrate into broader shared prompts.
+/// - Appends ONLY admitted shared context content into Zone-2 dynamic tail (preserving Zone-1
+///   KV-Prefix immutability and cache hits) and surfaces multi-party taint provenance.
+pub fn assemble_scoped_two_zone_gateway_messages(
+    envelope: &TwoZonePromptEnvelope,
+    admitted: &AdmittedGovernedContext,
+    history: &[ModelGatewayMessage],
+    shared_ledger: &SharedContextGovernanceLedger,
+    actor: &ContextPrincipal,
+    target_scope: SharedContextScope,
+    candidate_entry_ids: &[ContextEntryId],
+    channel_handle: Option<&ContextAccessHandle>,
+) -> Result<ScopedTwoZoneGatewayMessagesReceipt, GovernedContextBridgeError> {
+    let bundle_receipt = shared_ledger.assemble_prompt_bundle(
+        actor,
+        target_scope,
+        candidate_entry_ids,
+        channel_handle,
+    );
+
+    let mut scoped_tail = envelope.dynamic_tail.clone();
+    if !bundle_receipt.included_entry_ids.is_empty() {
+        scoped_tail.push_str(&format!(
+            "\n\n[shared-context scope={:?} tainted={} included={} redacted={}]",
+            bundle_receipt.target_scope,
+            bundle_receipt.tainted,
+            bundle_receipt.included_entry_ids.len(),
+            bundle_receipt.redacted_entry_ids.len()
+        ));
+        for id in &bundle_receipt.included_entry_ids {
+            if let Ok(read_receipt) = shared_ledger.read_entry(actor, id, channel_handle) {
+                scoped_tail.push_str(&format!(
+                    "\n- [{}] {}",
+                    read_receipt.entry_id.as_str(),
+                    read_receipt.content
+                ));
+            }
+        }
+    }
+
+    let scoped_envelope = TwoZonePromptEnvelope {
+        frozen_prefix: envelope.frozen_prefix.clone(),
+        kv_prefix_digest: envelope.kv_prefix_digest.clone(),
+        disclosure_depth: envelope.disclosure_depth,
+        dynamic_tail: scoped_tail,
+    };
+    let messages = assemble_two_zone_gateway_messages(&scoped_envelope, admitted, history)?;
+    Ok(ScopedTwoZoneGatewayMessagesReceipt {
+        messages,
+        bundle_receipt,
+    })
 }

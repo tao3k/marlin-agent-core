@@ -25,7 +25,11 @@
         evaluate-shared-context-tool-gate
         evaluate-prompt-scope-flow
         evaluate-execution-breaker-commit
-        evaluate-execution-breaker-rearm)
+        evaluate-execution-breaker-rearm
+        evaluate-delegated-obo-authz
+        evaluate-multi-tenant-fence
+        evaluate-chatroom-ingress
+        evaluate-governance-sod)
 
 ;; ---------------------------------------------------------------------------
 ;; 1. 5-Scope Shared Context Governance (pure lattice & decision evaluators)
@@ -187,7 +191,131 @@
                              detail: (+ (.get breaker-state trip-epoch) 1)))))
 
 ;; ---------------------------------------------------------------------------
-;; 3. Contract-validated POO Security Governance Bundle
+;; 3. OBO Delegated Agent Authz, Multi-Tenant Fence, Chatroom Ingress, & SoD
+;; ---------------------------------------------------------------------------
+
+;; RFC 8693 OBO delegation + RFC 9470 step-up verification floor evaluator.
+(def (evaluate-delegated-obo-authz session request)
+  (let ((action (.get request action)))
+    (cond
+      ((not (.get session signed-in?))
+       (make-security-decision #f 'human-session-signed-out))
+      ((eq? action 'delegate)
+       (if (> (.get request requested-scope) (.get session human-scope-level))
+         (make-security-decision #f 'scope-amplification-denied
+                                 detail: (cons (.get request requested-scope)
+                                               (.get session human-scope-level)))
+         (make-security-decision #t 'allowed-obo-delegation
+                                 detail: (.get session auth-epoch))))
+      ((eq? action 'execute-delegated)
+       (if (not (= (.get request ticket-epoch) (.get session auth-epoch)))
+         (make-security-decision #f 'zombie-delegation-denied
+                                 detail: (cons (.get request ticket-epoch)
+                                               (.get session auth-epoch)))
+         (make-security-decision #t 'allowed-delegated-execution)))
+      ((eq? action 'approve-human-gate)
+       (if (.get request is-agent?)
+         (make-security-decision #f 'agent-impersonation-denied detail: 'approve-human-gate)
+         (make-security-decision #t 'allowed-human-gate-approval)))
+      ((eq? action 'execute-privileged-human)
+       (cond
+         ((.get request is-agent?)
+          (make-security-decision #f 'agent-impersonation-denied detail: 'execute-privileged-human))
+         ((or (not (.get session email-verified?))
+              (not (.get session step-up-fresh?)))
+          (make-security-decision #f 'step-up-verification-required))
+         (else
+          (make-security-decision #t 'allowed-privileged-step-up))))
+      (else
+       (make-security-decision #f 'unknown-obo-action detail: action)))))
+
+;; Multi-tenant isolation & tenant-pinned offline outbox fence evaluator.
+(def (evaluate-multi-tenant-fence tenant-state request)
+  (let ((action (.get request action)))
+    (cond
+      ((eq? action 'enforce-ticket)
+       (cond
+         ((not (equal? (.get request ticket-tenant) (.get request target-tenant)))
+          (make-security-decision #f 'cross-tenant-deputy-denied))
+         ((.get tenant-state revoked?)
+          (make-security-decision #f 'revoked-tenant-ticket-denied))
+         ((not (= (.get request ticket-epoch) (.get tenant-state epoch)))
+          (make-security-decision #f 'revoked-tenant-ticket-denied
+                                  detail: (cons (.get request ticket-epoch)
+                                                (.get tenant-state epoch))))
+         (else
+          (make-security-decision #t 'allowed-tenant-execution))))
+      ((eq? action 'flush-outbox)
+       (cond
+         ((not (equal? (.get request outbox-tenant) (.get request active-tenant)))
+          (make-security-decision #f 'cross-tenant-outbox-flush-denied))
+         ((.get tenant-state revoked?)
+          (make-security-decision #f 'tenant-revoked))
+         (else
+          (make-security-decision #t 'allowed-outbox-flush))))
+      (else
+       (make-security-decision #f 'unknown-tenant-action detail: action)))))
+
+;; Multi-party chatroom ingress, channel affinity, one-shot gate, and taint gate evaluator.
+(def (evaluate-chatroom-ingress room-state request)
+  (let ((action (.get request action)))
+    (cond
+      ((eq? action 'ingest-external)
+       (cond
+         ((or (not (.get request origin-verified?))
+              (.get request claims-gate-receipt?))
+          (make-security-decision #f 'forged-external-ingress-denied))
+         ((not (equal? (.get request target-channel) (.get request thread-root-channel)))
+          (make-security-decision #f 'cross-channel-injection-denied))
+         (else
+          (make-security-decision #t 'allowed-tainted-ingress))))
+      ((eq? action 'resolve-gate)
+       (cond
+         ((.get request is-agent?)
+          (make-security-decision #f 'agent-impersonation-denied detail: 'resolve-gate))
+         ((not (eq? (.get room-state gate-status) 'pending))
+          (make-security-decision #f 'gate-replay-denied detail: (.get room-state gate-status)))
+         (else
+          (make-security-decision #t 'allowed-human-gate-resolution))))
+      ((eq? action 'unblock-matter)
+       (if (.get request is-agent?)
+         (make-security-decision #f 'agent-self-unblock-denied)
+         (make-security-decision #t 'allowed-human-unblock)))
+      ((eq? action 'invoke-tool)
+       (if (and (.get room-state tainted?)
+                (not (eq? (.get room-state gate-status) 'approved)))
+         (make-security-decision #f 'tainted-chatroom-tool-bypass-denied)
+         (make-security-decision #t 'allowed-chatroom-tool)))
+      (else
+       (make-security-decision #f 'unknown-chatroom-action detail: action)))))
+
+;; Dual-control Separation of Duties (SoD) & veto precedence evaluator.
+(def (evaluate-governance-sod proposal request)
+  (let ((action (.get request action)))
+    (cond
+      ((eq? action 'approve)
+       (cond
+         ((.get proposal vetoed?)
+          (make-security-decision #f 'vetoed-proposal-denied))
+         ((equal? (.get proposal proposer) (.get request actor-id))
+          (make-security-decision #f 'sod-self-approval-denied))
+         (else
+          (make-security-decision #t 'allowed-sod-approval))))
+      ((eq? action 'execute)
+       (cond
+         ((.get proposal vetoed?)
+          (make-security-decision #f 'vetoed-proposal-denied))
+         ((not (.get proposal approver))
+          (make-security-decision #f 'proposal-not-approved))
+         ((equal? (.get proposal proposer) (.get proposal approver))
+          (make-security-decision #f 'sod-self-approval-denied))
+         (else
+          (make-security-decision #t 'allowed-sod-execution))))
+      (else
+       (make-security-decision #f 'unknown-sod-action detail: action)))))
+
+;; ---------------------------------------------------------------------------
+;; 4. Contract-validated POO Security Governance Bundle
 ;; ---------------------------------------------------------------------------
 
 (def SecurityPolicyOperation (.cc Type. '.element? procedure?))
@@ -200,7 +328,11 @@
                              evaluate-prompt-flow: SecurityPolicyOperation
                              evaluate-channel-tool-gate: SecurityPolicyOperation
                              evaluate-breaker-commit: SecurityPolicyOperation
-                             evaluate-breaker-rearm: SecurityPolicyOperation)))
+                             evaluate-breaker-rearm: SecurityPolicyOperation
+                             evaluate-obo-authz: SecurityPolicyOperation
+                             evaluate-multi-tenant: SecurityPolicyOperation
+                             evaluate-chatroom: SecurityPolicyOperation
+                             evaluate-sod: SecurityPolicyOperation)))
 
 (def SecurityGovernancePolicy
   (validate SecurityGovernanceContract
@@ -210,4 +342,8 @@
                 evaluate-prompt-flow: evaluate-prompt-scope-flow
                 evaluate-channel-tool-gate: evaluate-shared-context-tool-gate
                 evaluate-breaker-commit: evaluate-execution-breaker-commit
-                evaluate-breaker-rearm: evaluate-execution-breaker-rearm)))
+                evaluate-breaker-rearm: evaluate-execution-breaker-rearm
+                evaluate-obo-authz: evaluate-delegated-obo-authz
+                evaluate-multi-tenant: evaluate-multi-tenant-fence
+                evaluate-chatroom: evaluate-chatroom-ingress
+                evaluate-sod: evaluate-governance-sod)))

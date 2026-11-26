@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use marlin_agent_context::ContextTaskId;
 use marlin_agent_context::governance::{
@@ -12,8 +12,13 @@ use marlin_agent_context::governance::{
     OrgGovernanceLedger, RegionLeaseReceipt, SubtreeCommitProposal, SubtreeSemanticVerifier,
 };
 use marlin_agent_context::governed_bridge::{
-    GovernedContextBridgeError, TwoZonePromptEnvelope, assemble_two_zone_gateway_messages,
-    commit_governed_org_subtree, compute_kv_prefix_digest,
+    GovernedContextBridgeError, TwoZonePromptEnvelope, assemble_scoped_two_zone_gateway_messages,
+    assemble_two_zone_gateway_messages, commit_governed_org_subtree, compute_kv_prefix_digest,
+};
+use marlin_agent_context::shared_scope::{
+    ContextChannelId, ContextEntryId, ContextHandleId, ContextPrincipal, ContextPrincipalId,
+    ContextSensitivity, ContextTenantId, SharedContextEntry, SharedContextGovernanceLedger,
+    SharedContextScope,
 };
 use marlin_agent_graph::{
     DetourMode, DetourNodeId, DetourState, DisclosureDepth, FencingEpoch, GovernedContextCapsule,
@@ -215,4 +220,69 @@ fn org_governance_ledger_and_governed_context_capsule_enforce_detour_and_two_zon
             admitted: DisclosureDepth::L3,
         })
     );
+
+    // 4. Scoped Two-Zone KV-Prefix assembly redacts Private/DM entries and surfaces taint!
+    let tenant = ContextTenantId::new("tenant-lab").unwrap();
+    let alice_id = ContextPrincipalId::new("alice").unwrap();
+    let channel_id = ContextChannelId::new("ch-bridge").unwrap();
+    let alice = ContextPrincipal::Human {
+        id: alice_id.clone(),
+        tenant_id: tenant.clone(),
+    };
+    let priv_id = ContextEntryId::new("priv-secret").unwrap();
+    let chan_id = ContextEntryId::new("chan-note").unwrap();
+
+    let mut shared_ledger = SharedContextGovernanceLedger::new();
+    shared_ledger.create_channel(tenant.clone(), channel_id.clone(), [alice_id.clone()]);
+    shared_ledger
+        .register_entry(SharedContextEntry {
+            entry_id: priv_id.clone(),
+            tenant_id: tenant.clone(),
+            owner_id: alice_id.clone(),
+            channel_id: Some(channel_id.clone()),
+            dm_participants: BTreeSet::new(),
+            scope: SharedContextScope::Private,
+            sensitivity: ContextSensitivity::Confidential,
+            declassified: false,
+            tainted: false,
+            content: "TOP-SECRET-KEY-MATERIAL".to_owned(),
+        })
+        .unwrap();
+    shared_ledger
+        .register_entry(SharedContextEntry {
+            entry_id: chan_id.clone(),
+            tenant_id: tenant.clone(),
+            owner_id: alice_id.clone(),
+            channel_id: Some(channel_id.clone()),
+            dm_participants: BTreeSet::new(),
+            scope: SharedContextScope::Channel,
+            sensitivity: ContextSensitivity::Internal,
+            declassified: true,
+            tainted: false,
+            content: "shared-channel-brief".to_owned(),
+        })
+        .unwrap();
+    shared_ledger.poison_channel_context(&channel_id).unwrap();
+    let handle = shared_ledger
+        .mint_channel_handle(&alice, &channel_id, ContextHandleId::new("h-bridge-1").unwrap())
+        .unwrap();
+
+    let scoped = assemble_scoped_two_zone_gateway_messages(
+        &env_ok,
+        &admitted,
+        &[],
+        &shared_ledger,
+        &alice,
+        SharedContextScope::Channel,
+        &[priv_id.clone(), chan_id.clone()],
+        Some(&handle),
+    )
+    .unwrap();
+    assert_eq!(scoped.bundle_receipt.included_entry_ids, vec![chan_id]);
+    assert_eq!(scoped.bundle_receipt.redacted_entry_ids, vec![priv_id]);
+    assert!(scoped.bundle_receipt.tainted);
+    assert!(scoped.messages[1].content.contains("shared-channel-brief"));
+    assert!(!scoped.messages[1].content.contains("TOP-SECRET-KEY-MATERIAL"));
+    // Zone-1 KV-Prefix System message remains completely immutable!
+    assert_eq!(scoped.messages[0], messages[0]);
 }
