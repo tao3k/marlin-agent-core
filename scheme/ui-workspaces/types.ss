@@ -44,5 +44,6 @@
                workspace-buffers: [(Fun (List String) <- Object)]
                all-workspace-buffers: [(Fun (List String) <- Object)]
                isolate-buffer-candidates: [(Fun (List String) <- Object (List String) Bool)]
-               project-state: [(Fun VectorContract <- Object)])
+               project-state: [(Fun VectorContract <- Object)]
+               project-popup-rules: [(Fun VectorContract <- Object)])
        identity: 'marlin/ui-workspaces))

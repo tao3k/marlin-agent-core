@@ -26,4 +26,5 @@
     workspace-buffers: marlin-ws-buffers
     all-workspace-buffers: marlin-ws-all-buffers
     isolate-buffer-candidates: marlin-ws-isolate-candidates
-    project-state: marlin-ws-project-state))
+    project-state: marlin-ws-project-state
+    project-popup-rules: marlin-ws-project-popup-rules))

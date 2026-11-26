@@ -21,7 +21,8 @@
         marlin-ws-buffers
         marlin-ws-all-buffers
         marlin-ws-isolate-candidates
-        marlin-ws-project-state)
+        marlin-ws-project-state
+        marlin-ws-project-popup-rules)
 
 (def (clamp-ratio size)
   (cond
@@ -284,3 +285,19 @@
             ws-vecs
             popup-vec
             (length (.get state popup-rules)))))
+
+;;; Project all registered declarative PopupRules into a typed Scheme vector
+;;; of #(popup-rule matcher side size select? quit ttl modeline?) tuples for
+;;; native Rust ABI admission (zero text/JSON serialization inside Scheme).
+(def (marlin-ws-project-popup-rules state)
+  (list->vector
+    (map (lambda (r)
+           (vector 'popup-rule
+                   (.get r matcher)
+                   (.get r side)
+                   (.get r size)
+                   (.get r select?)
+                   (.get r quit)
+                   (.get r ttl)
+                   (.get r modeline?)))
+         (.get state popup-rules))))
