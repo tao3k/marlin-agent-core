@@ -20,6 +20,8 @@ pub use atomic_effect_substrate::{
     CompositeAtomicEffectExecutor, DenySandboxRunner, StorageCasStore,
 };
 #[cfg(feature = "grpc")]
+pub use marlin_agent_stream::{OpenAiCompatibleHttpClient, OpenAiHttpConfig};
+#[cfg(feature = "grpc")]
 pub mod task_actors;
 #[cfg(feature = "grpc")]
 pub use task_actors::{

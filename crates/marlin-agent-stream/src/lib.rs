@@ -8,6 +8,7 @@ mod chunk_gate;
 mod event;
 mod gateway;
 mod model_probe;
+mod openai_http;
 mod request;
 mod streaming;
 
@@ -29,5 +30,6 @@ pub use model_probe::{
     ModelNoWriteProbeRequest, ModelNoWriteProbeSchemaId, ModelNoWriteProbeStatus,
     run_model_no_write_probe,
 };
+pub use openai_http::{OpenAiCompatibleHttpClient, OpenAiHttpConfig};
 pub use request::ModelStreamRequest;
 pub use streaming::{ModelGatewayEventStream, ModelStreamOutputLimit, ModelStreamingGateway};

@@ -36,6 +36,10 @@ use marlin_agent_app_server::{
             GateKind, GraphHumanDecision, SubmitGraphHumanDecisionRequest,
             approval_gate_service_client::ApprovalGateServiceClient,
         },
+        projection::v1::{
+            QueryProjectGraphRequest, SecretVisibility, WatchGraphTrajectoryRequest,
+            projection_query_service_client::ProjectionQueryServiceClient,
+        },
         ui::v1::{
             DispatchUiEventRequest, OpenWorkbenchRequest, dispatch_ui_event_request,
             ui_workbench_service_client::UiWorkbenchServiceClient,
@@ -699,6 +703,99 @@ async fn marlin_scheme_host_real_http_openai_llm_and_dispatch_ui_event_survive_o
         WorkbenchTabKindProto::ReadOnlyPeek as i32
     );
 
+    let mut proj = ProjectionQueryServiceClient::connect(ep1.clone())
+        .await
+        .unwrap();
+    // Security negative control: UI clients cannot elevate SecretVisibility::Allowed!
+    assert!(
+        proj.query_project_graph(QueryProjectGraphRequest {
+            project_id: "default".to_owned(),
+            session_id: None,
+            surfaces: Vec::new(),
+            secret_visibility: SecretVisibility::Allowed as i32,
+            query: String::new(),
+            page: None,
+        })
+        .await
+        .is_err()
+    );
+    // Live read-only non-authorizing FleetAuditCapsule projection on cold boot!
+    let cold_graph = proj
+        .query_project_graph(QueryProjectGraphRequest {
+            project_id: "default".to_owned(),
+            session_id: None,
+            surfaces: Vec::new(),
+            secret_visibility: SecretVisibility::Denied as i32,
+            query: String::new(),
+            page: None,
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(cold_graph.records.len(), 1);
+    let cold_rec = &cold_graph.records[0];
+    assert_eq!(cold_rec.kind, "scheme.fleet.audit_capsule");
+    assert_eq!(
+        cold_rec
+            .facets
+            .get("active_actor_count")
+            .map(String::as_str),
+        Some("1")
+    );
+    assert_eq!(
+        cold_rec
+            .facets
+            .get("archived_actor_count")
+            .map(String::as_str),
+        Some("1")
+    );
+    assert_eq!(
+        cold_rec
+            .facets
+            .get("total_active_defeaters")
+            .map(String::as_str),
+        Some("1")
+    );
+    assert_eq!(
+        cold_rec
+            .facets
+            .get("favored_path_collapsed")
+            .map(String::as_str),
+        Some("false")
+    );
+    assert_eq!(
+        cold_rec
+            .facets
+            .get("authenticates_evidence")
+            .map(String::as_str),
+        Some("false")
+    );
+    assert_eq!(
+        cold_rec.facets.get("authorizes_effect").map(String::as_str),
+        Some("false")
+    );
+
+    let mut traj_client = ProjectionQueryServiceClient::connect(ep1.clone())
+        .await
+        .unwrap();
+    let mut traj_stream = traj_client
+        .watch_graph_trajectory(WatchGraphTrajectoryRequest {
+            session_id: "s29-traj".to_owned(),
+            run_id: None,
+            after_event_id: None,
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let boot_traj = tokio::time::timeout(Duration::from_secs(5), traj_stream.message())
+        .await
+        .expect("initial trajectory timeout")
+        .unwrap()
+        .expect("initial boot trajectory event")
+        .event
+        .unwrap();
+    assert_eq!(boot_traj.node_id, "fleet_boot_cold");
+
     let mut ui = UiWorkbenchServiceClient::connect(ep1.clone())
         .await
         .unwrap();
@@ -804,6 +901,67 @@ async fn marlin_scheme_host_real_http_openai_llm_and_dispatch_ui_event_survive_o
         "WatchWorkbenchTabs must live-push fleet-host-sib as ActiveTask after task-reopen"
     );
 
+    // Live WatchGraphTrajectory must stream the `task-reopen` Scheme Fleet transition!
+    let mut saw_reopen_traj = false;
+    for _ in 0..8 {
+        if let Some(msg) = tokio::time::timeout(Duration::from_secs(5), traj_stream.message())
+            .await
+            .expect("trajectory reopen timeout")
+            .unwrap()
+            && let Some(ev) = msg.event
+            && ev.node_id == "fleet_ui_action:task-reopen"
+            && ev.metadata.get("active_actor_count").map(String::as_str) == Some("2")
+            && ev.metadata.get("authorizes_effect").map(String::as_str) == Some("false")
+        {
+            saw_reopen_traj = true;
+            break;
+        }
+    }
+    assert!(
+        saw_reopen_traj,
+        "WatchGraphTrajectory must stream live fleet_ui_action:task-reopen event"
+    );
+
+    // QueryProjectGraph must immediately reflect the reopened sibling (active=2, archived=0, L3)!
+    let live_graph = proj
+        .query_project_graph(QueryProjectGraphRequest {
+            project_id: "default".to_owned(),
+            session_id: None,
+            surfaces: Vec::new(),
+            secret_visibility: SecretVisibility::Denied as i32,
+            query: String::new(),
+            page: None,
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let live_rec = &live_graph.records[0];
+    assert_eq!(
+        live_rec
+            .facets
+            .get("active_actor_count")
+            .map(String::as_str),
+        Some("2")
+    );
+    assert_eq!(
+        live_rec
+            .facets
+            .get("archived_actor_count")
+            .map(String::as_str),
+        Some("0")
+    );
+    assert_eq!(
+        live_rec.facets.get("disclosure_level").map(String::as_str),
+        Some("L3")
+    );
+    assert_eq!(
+        live_rec.facets.get("authorizes_effect").map(String::as_str),
+        Some("false")
+    );
+
+    drop(traj_stream);
+    drop(traj_client);
+    drop(proj);
     drop(tab_stream);
     drop(watch_client);
     drop(ui);
@@ -811,7 +969,8 @@ async fn marlin_scheme_host_real_http_openai_llm_and_dispatch_ui_event_survive_o
 
     // -------------------------------------------------------------------------
     // OS Process Boot #2: Brand-new OS Process restores `active=2 archived=0`
-    // from disk Turso CAS with ZERO extra HTTP LLM calls!
+    // from disk Turso CAS with ZERO extra HTTP LLM calls and exposes the restored
+    // FleetAuditCapsule via live HTTP/2 ProjectionQueryService!
     // -------------------------------------------------------------------------
     let (child2, ep2, boot2, _lines2) = spawn_scheme_host_with_http_llm(
         "gate-http-s28-2",
@@ -835,7 +994,7 @@ async fn marlin_scheme_host_real_http_openai_llm_and_dispatch_ui_event_survive_o
         "warm CAS restore must invoke ZERO additional HTTP LLM completions"
     );
 
-    let mut v2 = V1AppServerClient::connect(ep2).await.unwrap();
+    let mut v2 = V1AppServerClient::connect(ep2.clone()).await.unwrap();
     let tabs2 = v2
         .get_workbench_tabs(GetWorkbenchTabsRequest {})
         .await
@@ -849,6 +1008,35 @@ async fn marlin_scheme_host_real_http_openai_llm_and_dispatch_ui_event_survive_o
         t.id == "fleet-host-sib" && t.kind == WorkbenchTabKindProto::ActiveTask as i32
     }));
 
+    let mut proj2 = ProjectionQueryServiceClient::connect(ep2).await.unwrap();
+    let restored_graph = proj2
+        .query_project_graph(QueryProjectGraphRequest {
+            project_id: "default".to_owned(),
+            session_id: None,
+            surfaces: Vec::new(),
+            secret_visibility: SecretVisibility::Denied as i32,
+            query: String::new(),
+            page: None,
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let r2 = &restored_graph.records[0];
+    assert_eq!(r2.kind, "scheme.fleet.audit_capsule");
+    assert_eq!(
+        r2.facets.get("active_actor_count").map(String::as_str),
+        Some("2")
+    );
+    assert_eq!(
+        r2.facets.get("archived_actor_count").map(String::as_str),
+        Some("0")
+    );
+    assert_eq!(
+        r2.facets.get("authorizes_effect").map(String::as_str),
+        Some("false")
+    );
+
+    drop(proj2);
     drop(v2);
     stop_scheme_host(child2).await;
     llm_srv.abort();

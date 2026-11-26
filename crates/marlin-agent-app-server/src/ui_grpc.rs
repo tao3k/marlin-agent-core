@@ -174,6 +174,7 @@ pub struct MyGoBridgeHost {
     gate_tx: broadcast::Sender<PendingGate>,
     graph_gate_tx: broadcast::Sender<ClaimedGraphHumanDecision>,
     ui_cmd_tx: broadcast::Sender<DispatchedUiCommand>,
+    trajectory_tx: broadcast::Sender<GraphTrajectoryEvent>,
     panel_tx: broadcast::Sender<ScopedPanelEvent>,
     device_inv_tx: broadcast::Sender<DeviceInvocationRequest>,
     task_actors: crate::TaskActorControlPlane,
@@ -198,6 +199,8 @@ struct BridgeState {
     device_results: BTreeMap<String, DeviceInvocationResult>,
     capture_keys: BTreeSet<String>,
     artifacts: BTreeMap<String, Vec<u8>>,
+    graph_projection_records: Vec<GraphRecordView>,
+    graph_trajectory_history: Vec<GraphTrajectoryEvent>,
 }
 
 impl MyGoBridgeHost {
@@ -244,6 +247,7 @@ impl MyGoBridgeHost {
         let (gate_tx, _) = broadcast::channel(64);
         let (graph_gate_tx, _) = broadcast::channel(64);
         let (ui_cmd_tx, _) = broadcast::channel(64);
+        let (trajectory_tx, _) = broadcast::channel(128);
         let (panel_tx, _) = broadcast::channel(128);
         let (device_inv_tx, _) = broadcast::channel(64);
         let overlay_map: BTreeMap<i32, SchemeOverlayProjection> = overlays
@@ -268,6 +272,8 @@ impl MyGoBridgeHost {
             device_results: BTreeMap::new(),
             capture_keys: BTreeSet::new(),
             artifacts: BTreeMap::new(),
+            graph_projection_records: Vec::new(),
+            graph_trajectory_history: Vec::new(),
         };
         Ok(Self {
             authorize: Arc::new(authorize),
@@ -276,11 +282,32 @@ impl MyGoBridgeHost {
             gate_tx,
             graph_gate_tx,
             ui_cmd_tx,
+            trajectory_tx,
             panel_tx,
             device_inv_tx,
             task_actors: crate::TaskActorControlPlane::new(),
             atomic_executor: None,
         })
+    }
+
+    /// Replaces the read-only non-authorizing `GraphRecordView` records served by
+    /// `ProjectionQueryService::query_project_graph` (e.g. live Scheme `FleetAuditCapsule`).
+    pub fn set_graph_projection_records(&self, records: Vec<GraphRecordView>) {
+        let mut st = self.state.lock().expect("bridge mutex poisoned");
+        st.graph_projection_records = records;
+    }
+
+    /// Appends and broadcasts a read-only `GraphTrajectoryEvent` to all live
+    /// `ProjectionQueryService::watch_graph_trajectory` subscribers.
+    pub fn publish_graph_trajectory_event(&self, event: GraphTrajectoryEvent) {
+        {
+            let mut st = self.state.lock().expect("bridge mutex poisoned");
+            if st.graph_trajectory_history.len() >= 256 {
+                st.graph_trajectory_history.remove(0);
+            }
+            st.graph_trajectory_history.push(event.clone());
+        }
+        let _ = self.trajectory_tx.send(event);
     }
 
     /// Subscribe to claimed one-shot `GraphHumanGate` decision notifications.
@@ -1709,22 +1736,31 @@ impl ProjectionQueryService for MyGoBridgeHost {
                 "secret visibility cannot be elevated by UI clients",
             ));
         }
+        let records = {
+            let st = self.state.lock().expect("bridge mutex poisoned");
+            if !st.graph_projection_records.is_empty() {
+                st.graph_projection_records.clone()
+            } else {
+                vec![GraphRecordView {
+                    record_id: "rec-1".to_owned(),
+                    surface: GraphVisibleSurface::Workspace as i32,
+                    kind: "org.task".to_owned(),
+                    title: "Marlin MyGo Bridge Ready".to_owned(),
+                    summary: format!("project={}", req.project_id),
+                    source_path: Some("README.org".to_owned()),
+                    start_line: Some(1),
+                    end_line: Some(10),
+                    facets: HashMap::new(),
+                }]
+            }
+        };
+        let returned_items = records.len() as u32;
         Ok(Response::new(QueryProjectGraphResponse {
-            records: vec![GraphRecordView {
-                record_id: "rec-1".to_owned(),
-                surface: GraphVisibleSurface::Workspace as i32,
-                kind: "org.task".to_owned(),
-                title: "Marlin MyGo Bridge Ready".to_owned(),
-                summary: format!("project={}", req.project_id),
-                source_path: Some("README.org".to_owned()),
-                start_line: Some(1),
-                end_line: Some(10),
-                facets: HashMap::new(),
-            }],
+            records,
             page_info: Some(CursorPageInfo {
                 next_cursor: None,
                 has_more: false,
-                returned_items: 1,
+                returned_items,
             }),
         }))
     }
@@ -1773,18 +1809,34 @@ impl ProjectionQueryService for MyGoBridgeHost {
         request: Request<WatchGraphTrajectoryRequest>,
     ) -> Result<Response<Self::WatchGraphTrajectoryStream>, Status> {
         self.check_auth(&request)?;
-        let stream = async_stream::try_stream! {
-            yield WatchGraphTrajectoryResponse {
-                event: Some(GraphTrajectoryEvent {
-                    event_id: "ev-1".to_owned(),
-                    run_id: "run-01".to_owned(),
-                    node_id: "plan_org_context".to_owned(),
-                    node_kind: "planner".to_owned(),
-                    status: "completed".to_owned(),
-                    node_receipt: None,
-                    metadata: HashMap::new(),
-                }),
+        let history = {
+            let st = self.state.lock().expect("bridge mutex poisoned");
+            st.graph_trajectory_history.clone()
+        };
+        if history.is_empty() {
+            let stream = async_stream::try_stream! {
+                yield WatchGraphTrajectoryResponse {
+                    event: Some(GraphTrajectoryEvent {
+                        event_id: "ev-1".to_owned(),
+                        run_id: "run-01".to_owned(),
+                        node_id: "plan_org_context".to_owned(),
+                        node_kind: "planner".to_owned(),
+                        status: "completed".to_owned(),
+                        node_receipt: None,
+                        metadata: HashMap::new(),
+                    }),
+                };
             };
+            return Ok(Response::new(Box::pin(stream)));
+        }
+        let mut rx = self.trajectory_tx.subscribe();
+        let stream = async_stream::try_stream! {
+            for ev in history {
+                yield WatchGraphTrajectoryResponse { event: Some(ev) };
+            }
+            while let Ok(ev) = rx.recv().await {
+                yield WatchGraphTrajectoryResponse { event: Some(ev) };
+            }
         };
         Ok(Response::new(Box::pin(stream)))
     }

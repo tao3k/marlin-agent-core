@@ -21,10 +21,15 @@
 //! cleanly on `SIGINT` / `SIGTERM`.
 
 use std::{
+    collections::HashMap,
     env,
     io::{self, Write},
     path::PathBuf,
-    sync::{Arc, mpsc},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
     time::Duration,
 };
 
@@ -32,17 +37,19 @@ use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierKind, PackageResolutionProgress, RootedSchemeObject,
 };
 use marlin_agent_app_server::{
-    AllowlistSandboxRunner, AppServer, RegisterTaskActorRequest, StorageCasStore,
-    TaskActorControlPlane, TaskActorPersistenceHandle,
+    AllowlistSandboxRunner, AppServer, OpenAiCompatibleHttpClient, OpenAiHttpConfig,
+    RegisterTaskActorRequest, StorageCasStore, TaskActorControlPlane, TaskActorPersistenceHandle,
     ui_grpc::MyGoBridgeHost,
-    wire::marlin::gate::v1::{GateKind, GraphHumanDecision, PendingGate},
+    wire::marlin::{
+        gate::v1::{GateKind, GraphHumanDecision, PendingGate},
+        projection::v1::{GraphRecordView, GraphTrajectoryEvent, GraphVisibleSurface},
+    },
 };
 use marlin_agent_graph::{
     DetourMode, DisclosureDepth, DispatchRequestId, ExecutionReceiptStatus, FencingEpoch,
     GovernedContextCapsule, GraphDispatchOperation, GraphSubstrateTarget, KvPrefixDigest,
     MarlinDispatchEnvelope, MarlinExecutionReceipt, TaskActorId, TaskActorScopeMode,
 };
-use marlin_agent_protocol::{ModelGatewayMessageRole, ModelGatewayRequest};
 use marlin_agent_storage::{
     AgentId, ArtifactPointerKey, ProjectId, SessionId, TursoAgentStorage, TursoAgentStorageConfig,
     TursoBatchTransactionMode, TursoOptimizationProfile,
@@ -52,7 +59,6 @@ use marlin_gerbil_scheme::{
     SchemeAtomicReceipt, SchemeFleetDispatchStep, SchemeFleetSessionDriver,
     encode_scheme_atomic_receipt_vector, gerbil_package_root, graph_engine_oracle_channel,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[cfg(unix)]
 struct ShutdownWatcher {
@@ -267,217 +273,106 @@ fn bootstrap_scheme_fleet<'vm>(
     }
 }
 
-const MAX_HTTP_LLM_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+static TRAJECTORY_EVENT_SEQ: AtomicU64 = AtomicU64::new(1);
 
-/// Thin, zero-orchestration HTTP/1.1 client for OpenAI-compatible `/v1/chat/completions`
-/// endpoints configured via `MARLIN_SCHEME_LLM_BASE_URL`.
-#[derive(Clone, Debug)]
-struct HttpOpenAiLlmClient {
-    host_port: String,
-    host_header: String,
-    request_path: String,
-    model_override: Option<String>,
-    api_key: Option<String>,
-    timeout: Duration,
-}
-
-impl HttpOpenAiLlmClient {
-    fn from_env() -> Result<Option<Self>, String> {
-        let Ok(raw_url) = env::var("MARLIN_SCHEME_LLM_BASE_URL") else {
-            return Ok(None);
-        };
-        let trimmed = raw_url.trim();
-        if trimmed.is_empty() {
-            return Ok(None);
-        }
-        let rest = trimmed.strip_prefix("http://").ok_or_else(|| {
-            format!("MARLIN_SCHEME_LLM_BASE_URL must use http:// scheme, got {trimmed}")
-        })?;
-        let (authority, base_path) = match rest.find('/') {
-            Some(idx) => (&rest[..idx], &rest[idx..]),
-            None => (rest, ""),
-        };
-        if authority.is_empty() {
-            return Err("MARLIN_SCHEME_LLM_BASE_URL missing host authority".to_owned());
-        }
-        let host_port = if authority.contains(':') {
-            authority.to_owned()
-        } else {
-            format!("{authority}:80")
-        };
-        let clean_base = base_path.trim_end_matches('/');
-        let request_path = if clean_base.ends_with("/chat/completions") {
-            clean_base.to_owned()
-        } else if clean_base.ends_with("/v1") {
-            format!("{clean_base}/chat/completions")
-        } else if clean_base.is_empty() {
-            "/v1/chat/completions".to_owned()
-        } else {
-            format!("{clean_base}/v1/chat/completions")
-        };
-        let model_override = env::var("MARLIN_SCHEME_LLM_MODEL")
-            .ok()
-            .map(|s| s.trim().to_owned())
-            .filter(|s| !s.is_empty());
-        let api_key = env::var("MARLIN_SCHEME_LLM_API_KEY")
-            .ok()
-            .map(|s| s.trim().to_owned())
-            .filter(|s| !s.is_empty());
-        let timeout_ms = env::var("MARLIN_SCHEME_LLM_TIMEOUT_MS")
-            .ok()
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .filter(|ms| *ms > 0)
-            .unwrap_or(15_000);
-        Ok(Some(Self {
-            host_port,
-            host_header: authority.to_owned(),
-            request_path,
-            model_override,
-            api_key,
-            timeout: Duration::from_millis(timeout_ms),
-        }))
-    }
-
-    async fn complete(&self, request: &ModelGatewayRequest) -> Result<String, String> {
-        let model = self
-            .model_override
-            .as_deref()
-            .unwrap_or_else(|| request.endpoint().model.as_str());
-        let messages: Vec<serde_json::Value> = request
-            .messages()
-            .iter()
-            .map(|msg| {
-                let role = match msg.role {
-                    ModelGatewayMessageRole::System => "system",
-                    ModelGatewayMessageRole::Developer => "developer",
-                    ModelGatewayMessageRole::User => "user",
-                    ModelGatewayMessageRole::Assistant => "assistant",
-                    ModelGatewayMessageRole::Tool => "tool",
-                };
-                serde_json::json!({
-                    "role": role,
-                    "content": msg.content,
-                })
-            })
-            .collect();
-        let body = serde_json::to_vec(&serde_json::json!({
-            "model": model,
-            "messages": messages,
-            "stream": false,
-        }))
-        .map_err(|err| format!("serialize openai chat completion request: {err}"))?;
-
-        let mut req_buf = format!(
-            "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
-            self.request_path,
-            self.host_header,
-            body.len()
-        );
-        if let Some(key) = &self.api_key {
-            req_buf.push_str(&format!("Authorization: Bearer {key}\r\n"));
-        }
-        req_buf.push_str("\r\n");
-
-        let fut = async {
-            let mut stream = tokio::net::TcpStream::connect(&self.host_port)
-                .await
-                .map_err(|err| format!("connect llm endpoint {}: {err}", self.host_port))?;
-            stream
-                .write_all(req_buf.as_bytes())
-                .await
-                .map_err(|err| format!("write llm http headers: {err}"))?;
-            stream
-                .write_all(&body)
-                .await
-                .map_err(|err| format!("write llm http body: {err}"))?;
-            stream
-                .flush()
-                .await
-                .map_err(|err| format!("flush llm http request: {err}"))?;
-
-            let mut raw = Vec::new();
-            let mut limited = stream.take((MAX_HTTP_LLM_RESPONSE_BYTES + 1) as u64);
-            limited
-                .read_to_end(&mut raw)
-                .await
-                .map_err(|err| format!("read llm http response: {err}"))?;
-            if raw.len() > MAX_HTTP_LLM_RESPONSE_BYTES {
-                return Err("llm http response exceeded 4 MiB safety limit".to_owned());
-            }
-            parse_openai_http_response(&raw)
-        };
-        tokio::time::timeout(self.timeout, fut).await.map_err(|_| {
-            format!(
-                "llm http request timed out after {}ms",
-                self.timeout.as_millis()
-            )
-        })?
-    }
-}
-
-fn decode_chunked_body(raw: &[u8]) -> Result<Vec<u8>, String> {
-    let mut out = Vec::new();
-    let mut pos = 0usize;
-    while pos < raw.len() {
-        let Some(rel_crlf) = raw[pos..].windows(2).position(|w| w == b"\r\n") else {
-            return Err("malformed chunked http response: missing size CRLF".to_owned());
-        };
-        let size_line = std::str::from_utf8(&raw[pos..pos + rel_crlf])
-            .map_err(|_| "invalid utf-8 chunk size".to_owned())?;
-        let hex = size_line.split(';').next().unwrap_or("").trim();
-        let size =
-            usize::from_str_radix(hex, 16).map_err(|_| format!("invalid chunk size hex: {hex}"))?;
-        pos += rel_crlf + 2;
-        if size == 0 {
-            break;
-        }
-        if pos + size + 2 > raw.len() {
-            return Err("truncated chunked http response body".to_owned());
-        }
-        out.extend_from_slice(&raw[pos..pos + size]);
-        pos += size + 2;
-    }
-    Ok(out)
-}
-
-fn parse_openai_http_response(raw: &[u8]) -> Result<String, String> {
-    let Some(header_end) = raw.windows(4).position(|w| w == b"\r\n\r\n") else {
-        return Err("malformed http response: missing header separator".to_owned());
+fn parse_openai_http_client_from_env() -> Result<Option<Arc<OpenAiCompatibleHttpClient>>, String> {
+    let Ok(raw_url) = env::var("MARLIN_SCHEME_LLM_BASE_URL") else {
+        return Ok(None);
     };
-    let header_str = std::str::from_utf8(&raw[..header_end])
-        .map_err(|_| "non-utf8 http response headers".to_owned())?;
-    let mut lines = header_str.lines();
-    let status_line = lines
-        .next()
-        .ok_or_else(|| "empty http response status line".to_owned())?;
-    let status_code = status_line
-        .split_whitespace()
-        .nth(1)
-        .and_then(|s| s.parse::<u16>().ok())
-        .ok_or_else(|| format!("invalid http status line: {status_line}"))?;
-    let is_chunked = lines.any(|line| {
-        let lower = line.to_ascii_lowercase();
-        lower.starts_with("transfer-encoding:") && lower.contains("chunked")
+    let trimmed = raw_url.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let model_override = env::var("MARLIN_SCHEME_LLM_MODEL")
+        .ok()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
+    let api_key = env::var("MARLIN_SCHEME_LLM_API_KEY")
+        .ok()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
+    let timeout_ms = env::var("MARLIN_SCHEME_LLM_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|ms| *ms > 0)
+        .unwrap_or(15_000);
+    let client = OpenAiCompatibleHttpClient::new(OpenAiHttpConfig {
+        base_url: trimmed.to_owned(),
+        model_override,
+        api_key,
+        timeout: Duration::from_millis(timeout_ms),
+    })?;
+    Ok(Some(Arc::new(client)))
+}
+
+fn publish_fleet_audit_projection(
+    host: &MyGoBridgeHost,
+    node_id: &str,
+    node_kind: &str,
+    disclosure_level: &str,
+    capsule: &FleetAuditCapsuleProjection,
+) {
+    let mut facets = HashMap::new();
+    facets.insert(
+        "active_actor_count".to_owned(),
+        capsule.active_actor_count.to_string(),
+    );
+    facets.insert(
+        "archived_actor_count".to_owned(),
+        capsule.archived_actor_count.to_string(),
+    );
+    facets.insert("peek_count".to_owned(), capsule.peek_count.to_string());
+    facets.insert(
+        "total_active_defeaters".to_owned(),
+        capsule.total_active_defeaters.to_string(),
+    );
+    facets.insert(
+        "total_human_inbox_items".to_owned(),
+        capsule.total_human_inbox_items.to_string(),
+    );
+    facets.insert("disclosure_level".to_owned(), disclosure_level.to_owned());
+    facets.insert(
+        "favored_path_collapsed".to_owned(),
+        capsule.favored_path_collapsed.to_string(),
+    );
+    facets.insert(
+        "authenticates_evidence".to_owned(),
+        capsule.authenticates_evidence.to_string(),
+    );
+    facets.insert(
+        "authorizes_effect".to_owned(),
+        capsule.authorizes_effect.to_string(),
+    );
+
+    let record = GraphRecordView {
+        record_id: "scheme:fleet:audit-capsule".to_owned(),
+        surface: GraphVisibleSurface::Workspace as i32,
+        kind: "scheme.fleet.audit_capsule".to_owned(),
+        title: "Scheme Fleet Non-Authorizing Audit Capsule".to_owned(),
+        summary: format!(
+            "active={} archived={} defeaters={} inbox={} disclosure={disclosure_level}",
+            capsule.active_actor_count,
+            capsule.archived_actor_count,
+            capsule.total_active_defeaters,
+            capsule.total_human_inbox_items
+        ),
+        source_path: Some("scheme/graph-engine/fleet-controller.ss".to_owned()),
+        start_line: None,
+        end_line: None,
+        facets: facets.clone(),
+    };
+    host.set_graph_projection_records(vec![record]);
+
+    let seq = TRAJECTORY_EVENT_SEQ.fetch_add(1, Ordering::Relaxed);
+    host.publish_graph_trajectory_event(GraphTrajectoryEvent {
+        event_id: format!("scheme-ev-{seq}"),
+        run_id: "scheme-fleet-live".to_owned(),
+        node_id: node_id.to_owned(),
+        node_kind: node_kind.to_owned(),
+        status: "completed".to_owned(),
+        node_receipt: None,
+        metadata: facets,
     });
-    let raw_body = &raw[header_end + 4..];
-    let body_bytes = if is_chunked {
-        decode_chunked_body(raw_body)?
-    } else {
-        raw_body.to_vec()
-    };
-    if !(200..300).contains(&status_code) {
-        let preview = String::from_utf8_lossy(&body_bytes);
-        return Err(format!("llm http status {status_code}: {preview}"));
-    }
-    let json: serde_json::Value = serde_json::from_slice(&body_bytes)
-        .map_err(|err| format!("parse llm json response: {err}"))?;
-    json.get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c0| c0.get("message"))
-        .and_then(|m| m.get("content"))
-        .and_then(|v| v.as_str())
-        .map(str::to_owned)
-        .ok_or_else(|| "llm json response missing choices[0].message.content".to_owned())
 }
 
 /// Strictly allowlists declarative UI commands that may be routed to Scheme
@@ -531,7 +426,7 @@ fn parse_disclosure_depth(raw: &str) -> DisclosureDepth {
 async fn run_one_atomic_effect(
     cas: Option<Arc<StorageCasStore<TursoAgentStorage>>>,
     sandbox: Option<Arc<AllowlistSandboxRunner>>,
-    http_llm: Option<Arc<HttpOpenAiLlmClient>>,
+    http_llm: Option<Arc<OpenAiCompatibleHttpClient>>,
     loopback_llm_response: Option<Arc<str>>,
     effect: SchemeAtomicEffect,
 ) -> SchemeAtomicReceipt {
@@ -587,7 +482,7 @@ async fn run_one_atomic_effect(
         },
         SchemeAtomicEffect::LlmComplete { effect_id, request } => {
             if let Some(client) = http_llm {
-                match client.complete(&request).await {
+                match client.complete_text(&request).await {
                     Ok(content) => SchemeAtomicReceipt::LlmCompleted { effect_id, content },
                     Err(message) => SchemeAtomicReceipt::EffectError { effect_id, message },
                 }
@@ -822,7 +717,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty())
         .map(Arc::from);
-    let http_llm_client = HttpOpenAiLlmClient::from_env()?.map(Arc::new);
+    let http_llm_client = parse_openai_http_client_from_env()?;
     let sandbox_runner = parse_sandbox_runner_from_env();
     let scheme_dir = env::var("MARLIN_SCHEME_DIR")
         .ok()
@@ -969,6 +864,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             });
 
+            let mut initial_fleet_report: Option<FleetBootReport> = None;
             if let Some(cp_key) = fleet_checkpoint_key_srv.clone() {
                 let (boot_tx, boot_rx) = mpsc::sync_channel(1);
                 fleet_tx
@@ -993,6 +889,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 io::stdout()
                     .flush()
                     .map_err(|err| format!("flush fleet boot line: {err}"))?;
+                initial_fleet_report = Some(report);
             }
 
             let app_auth = expected_header.clone();
@@ -1001,6 +898,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 MyGoBridgeHost::check_bearer_header(meta, bridge_auth.as_deref())
             })
             .with_task_actors(task_actors.clone());
+
+            if let Some(report) = &initial_fleet_report {
+                let boot_disc = if report.mode == "restored" {
+                    "L3"
+                } else {
+                    "L1"
+                };
+                publish_fleet_audit_projection(
+                    &host,
+                    &format!("fleet_boot_{}", report.mode),
+                    "scheme_fleet_boot",
+                    boot_disc,
+                    &report.capsule,
+                );
+            }
 
             if let Some(gate_id) = seed_gate_id {
                 host.enqueue_pending_gate(PendingGate {
@@ -1018,12 +930,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
             }
 
+            let (watcher_stop_tx, _) = tokio::sync::broadcast::channel::<()>(4);
+
             let gate_watcher = if fleet_checkpoint_key_srv.is_some() {
                 let mut gate_rx = host.subscribe_claimed_graph_decisions();
+                let mut stop_rx = watcher_stop_tx.subscribe();
                 let fleet_tx_gate = fleet_tx.clone();
                 let actors_for_gate = task_actors.clone();
+                let host_for_gate = host.clone();
                 Some(tokio::spawn(async move {
-                    while let Ok(ev) = gate_rx.recv().await {
+                    loop {
+                        let ev = tokio::select! {
+                            _ = stop_rx.recv() => break,
+                            res = gate_rx.recv() => match res {
+                                Ok(ev) => ev,
+                                Err(_) => break,
+                            }
+                        };
                         if ev.decision == GraphHumanDecision::Approve as i32 {
                             let (reply_tx, reply_rx) = mpsc::sync_channel(1);
                             let gate_id = ev.gate_id.clone();
@@ -1042,6 +965,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     &gate_id,
                                     &capsule,
                                 );
+                                publish_fleet_audit_projection(
+                                    &host_for_gate,
+                                    &format!("fleet_human_gate:{gate_id}"),
+                                    "scheme_human_gate_approved",
+                                    "L3",
+                                    &capsule,
+                                );
                             }
                         }
                     }
@@ -1052,10 +982,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let ui_cmd_watcher = if fleet_checkpoint_key_srv.is_some() {
                 let mut ui_cmd_rx = host.subscribe_dispatched_ui_commands();
+                let mut stop_rx = watcher_stop_tx.subscribe();
                 let fleet_tx_ui = fleet_tx.clone();
                 let actors_for_ui = task_actors.clone();
+                let host_for_ui = host.clone();
                 Some(tokio::spawn(async move {
-                    while let Ok(ev) = ui_cmd_rx.recv().await {
+                    loop {
+                        let ev = tokio::select! {
+                            _ = stop_rx.recv() => break,
+                            res = ui_cmd_rx.recv() => match res {
+                                Ok(ev) => ev,
+                                Err(_) => break,
+                            }
+                        };
                         if let Some((action_sym, arg)) = parse_scheme_ui_command(&ev.command) {
                             let (reply_tx, reply_rx) = mpsc::sync_channel(1);
                             let arg_clone = arg.clone();
@@ -1074,6 +1013,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     action_sym,
                                     arg_clone.as_deref(),
                                     &step,
+                                    &capsule,
+                                );
+                                publish_fleet_audit_projection(
+                                    &host_for_ui,
+                                    &format!("fleet_ui_action:{action_sym}"),
+                                    "scheme_ui_action",
+                                    &step.disclosure_level,
                                     &capsule,
                                 );
                             }
@@ -1131,6 +1077,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
+            let _ = watcher_stop_tx.send(());
             if let Some(watcher) = gate_watcher {
                 let _ = tokio::time::timeout(Duration::from_secs(2), watcher).await;
             }
