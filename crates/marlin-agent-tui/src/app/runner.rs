@@ -551,6 +551,9 @@ pub(super) fn run(
                     {
                         let helm_cfg = super::super::linked_ui::helm_index_config(&scheme_runtime)
                             .unwrap_or_default();
+                        let _ = super::super::linked_ui::sync_asp_provider_descriptors_from_env(
+                            &scheme_runtime,
+                        );
                         app.search_dsl_catalog =
                             super::super::linked_ui::search_dsl_completions(&scheme_runtime, "")
                                 .unwrap_or_default();

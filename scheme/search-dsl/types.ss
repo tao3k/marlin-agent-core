@@ -27,5 +27,6 @@
                tool-description: [(Fun String <-)]
                parse-selector: [(Fun SearchDslAny <- String)]
                conformance-pack: [(Fun SearchDslAny <- SearchDslAny)]
-               all-conformance-packs: [(Fun SearchDslAny <-)])
+               all-conformance-packs: [(Fun SearchDslAny <-)]
+               language-json-schema: [(Fun SearchDslAny <- SearchDslAny)])
        identity: 'marlin/search-dsl))

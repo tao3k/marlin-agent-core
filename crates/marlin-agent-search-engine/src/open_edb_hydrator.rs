@@ -26,6 +26,7 @@ use gerbil_scheme::{CollectionKind, GerbilRuntime, RootedSchemeObject};
 use marlin_context_org_model::OrgNodeKind;
 
 use crate::SearchPlanProjectionError;
+use crate::asp_http_client::{AspForwardingEndpoint, hydrate_workspace_pending_via_asp_http};
 use crate::edb_bridge::{decode_string, decode_usize, make_string, make_vector, native};
 use crate::org_port::parse_live_org_nodes;
 
@@ -64,6 +65,7 @@ pub struct WorkspaceOpenEdbHydrationReceipt {
     pub restored_entities: usize,
     pub org_files_hydrated: usize,
     pub scheme_files_hydrated: usize,
+    pub asp_http_files_hydrated: usize,
     pub total_ingested_entities: usize,
     pub total_ingested_edges: usize,
     pub cache_saved: bool,
@@ -267,8 +269,49 @@ fn ingest_extracted_scheme_batch(
     Ok(())
 }
 
-/// Restore matching BLAKE3-verified Open EDB cache entries and hydrate any
-/// unhydrated `.org` files via Marlin's zero-regex Org AST parser.
+fn hydrate_pending_org_files(
+    index: &mut WorkspaceSearchIndex,
+    cache_path: &Path,
+    receipt: &mut WorkspaceOpenEdbHydrationReceipt,
+) {
+    let pending_org = index.live_files_needing_open_edb(&["org"], 512);
+    if pending_org.is_empty() {
+        return;
+    }
+    let batch = extract_org_open_edb_batch(&pending_org);
+    if batch.entities.is_empty() {
+        return;
+    }
+    let ing = index.ingest_open_edb_facts(batch);
+    receipt.org_files_hydrated = ing.updated_files;
+    receipt.total_ingested_entities += ing.ingested_entities;
+    receipt.total_ingested_edges += ing.ingested_edges;
+    receipt.cache_saved = index.save_open_edb_cache(cache_path).is_ok();
+}
+
+fn hydrate_pending_via_configured_asp_http(
+    index: &mut WorkspaceSearchIndex,
+    cache_path: &Path,
+    receipt: &mut WorkspaceOpenEdbHydrationReceipt,
+) {
+    let Some(endpoint) = AspForwardingEndpoint::from_env() else {
+        return;
+    };
+    let Ok(asp_receipt) = hydrate_workspace_pending_via_asp_http(&endpoint, index, cache_path)
+    else {
+        return;
+    };
+    receipt.asp_http_files_hydrated = asp_receipt.http_inspected_files;
+    receipt.total_ingested_entities += asp_receipt.http_ingested_entities;
+    if asp_receipt.cache_saved {
+        receipt.cache_saved = true;
+    }
+}
+
+/// Restore matching BLAKE3-verified Open EDB cache entries, hydrate any
+/// unhydrated `.org` files via Marlin's zero-regex Org AST parser, and when
+/// `MARLIN_ASP_FORWARDING_URL` is configured, hydrate pending native-compiler
+/// source files through ASP's HTTP forwarding gateway.
 pub fn hydrate_workspace_open_edb_org_and_cache(
     index: &mut WorkspaceSearchIndex,
     cache_path: &Path,
@@ -280,18 +323,8 @@ pub fn hydrate_workspace_open_edb_org_and_cache(
         receipt.restored_files = restored.restored_files;
         receipt.restored_entities = restored.restored_entities;
     }
-
-    let pending_org = index.live_files_needing_open_edb(&["org"], 512);
-    if !pending_org.is_empty() {
-        let batch = extract_org_open_edb_batch(&pending_org);
-        if !batch.entities.is_empty() {
-            let ing = index.ingest_open_edb_facts(batch);
-            receipt.org_files_hydrated = ing.updated_files;
-            receipt.total_ingested_entities += ing.ingested_entities;
-            receipt.total_ingested_edges += ing.ingested_edges;
-            receipt.cache_saved = index.save_open_edb_cache(cache_path).is_ok();
-        }
-    }
+    hydrate_pending_org_files(index, cache_path, &mut receipt);
+    hydrate_pending_via_configured_asp_http(index, cache_path, &mut receipt);
     receipt
 }
 

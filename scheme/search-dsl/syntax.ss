@@ -112,7 +112,7 @@
            ((rel-name id f name line)
             <-- (entity id f lang-str kind-str lang-kind-pat name line)) ...)))
      (relation-meta => append
-       (list (list 'rel-name lang-str kind-str 'lang-kind-pat doc-str) ...))
+       (list (list 'rel-name lang-str 'kind-str 'lang-kind-pat doc-str) ...))
      (language-contracts => append
        (list
          (list (car '(lang-sym ...))
@@ -144,7 +144,7 @@
            ((rel-name id f name line)
             <-- (entity id f lang-str kind-str lang-kind-pat name line)) ...)))
      (relation-meta => append
-       (list (list 'rel-name lang-str kind-str 'lang-kind-pat doc-str) ...)))))
+       (list (list 'rel-name lang-str 'kind-str 'lang-kind-pat doc-str) ...)))))
 
 ;;; Compile-time `defsyntax` projecting `WorkspaceSearchToolSpecValue` from
 ;;; real `:gerbil-ascent` forms, Open EDB relations, and the POO registry.

@@ -245,10 +245,10 @@
     ("interface_declaration"  "trait"    "TypeScript interface declaration")
     ("type_alias_declaration" "type"     "TypeScript type alias declaration"))
   (relations
-    (ts_fn        "typescript" "function"  _ "TypeScript function declaration")
-    (ts_class     "typescript" "class"     _ "TypeScript class declaration")
-    (ts_interface "typescript" "interface" _ "TypeScript interface declaration")
-    (ts_type      "typescript" "type"      _ "TypeScript type/enum declaration"))
+    (ts_fn        "typescript" "function" _                       "TypeScript function declaration")
+    (ts_class     "typescript" _          "class_declaration"     "TypeScript class declaration")
+    (ts_interface "typescript" _          "interface_declaration" "TypeScript interface declaration")
+    (ts_type      "typescript" "type"     _                       "TypeScript type/enum declaration"))
   (conformance-probes
     ("ts-valid-interface-and-fn"
      "src/math.ts"
@@ -274,8 +274,8 @@
     ("import"             "import"   "Python import statement")
     ("import_from"        "import"   "Python from-import statement"))
   (relations
-    (py_fn    "python" "function" _ "Python function definition")
-    (py_class "python" "class"    _ "Python class definition"))
+    (py_fn    "python" "function" _           "Python function definition")
+    (py_class "python" _          "class_def" "Python class definition"))
   (conformance-probes
     ("python-valid-class-and-fn"
      "src/math_ops.py"

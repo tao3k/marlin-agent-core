@@ -29,6 +29,7 @@ unsafe extern "C" {
     fn marlin_search_dsl_eval_edb(root: i64) -> i64;
     fn marlin_search_dsl_extract_facts(root: i64) -> i64;
     fn marlin_search_dsl_completions(root: i64) -> i64;
+    fn marlin_search_dsl_register_provider_descriptor(root: i64) -> i64;
     fn marlin_tooling_project(root: i64) -> i64;
     fn marlin_envrc_plan(root: i64) -> i64;
     fn marlin_worktree_context_prepare(root: i64) -> i64;
@@ -170,6 +171,36 @@ pub(crate) fn search_dsl_completions(
     }
 }
 
+pub(crate) fn sync_asp_provider_descriptors_from_env(runtime: &GerbilRuntime) -> usize {
+    let Some(endpoint) = marlin_agent_search_engine::AspForwardingEndpoint::from_env() else {
+        return 0;
+    };
+    // SAFETY: `marlin_search_dsl_register_provider_descriptor` belongs to the linked Marlin TUI programme.
+    unsafe {
+        marlin_agent_search_engine::sync_linked_asp_provider_descriptors(
+            runtime,
+            marlin_search_dsl_register_provider_descriptor,
+            &endpoint,
+        )
+    }
+    .unwrap_or(0)
+}
+
+#[cfg(test)]
+pub(crate) fn register_dynamic_language_descriptor(
+    runtime: &GerbilRuntime,
+    request: &marlin_agent_search_engine::DynamicLanguageDescriptorRequest<'_>,
+) -> Result<usize, marlin_agent_search_engine::SearchPlanProjectionError> {
+    // SAFETY: `marlin_search_dsl_register_provider_descriptor` belongs to the linked Marlin TUI programme.
+    unsafe {
+        marlin_agent_search_engine::register_linked_dynamic_language_descriptor(
+            runtime,
+            marlin_search_dsl_register_provider_descriptor,
+            request,
+        )
+    }
+}
+
 pub(crate) fn execute_search_dsl_structured(
     runtime: &GerbilRuntime,
     index: &marlin_agent_search_engine::WorkspaceSearchIndex,
@@ -184,6 +215,7 @@ pub(crate) fn execute_search_dsl_structured(
         eval_edb: marlin_search_dsl_eval_edb,
         extract_facts: marlin_search_dsl_extract_facts,
         completions: marlin_search_dsl_completions,
+        register_provider_descriptor: marlin_search_dsl_register_provider_descriptor,
     };
     let request = marlin_agent_search_engine::SearchDslExecutionRequest {
         index,

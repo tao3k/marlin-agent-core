@@ -3119,6 +3119,8 @@ dependencies = [
  "marlin-agent-storage",
  "marlin-context-org-model",
  "proptest",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

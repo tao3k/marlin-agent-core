@@ -160,6 +160,7 @@ pub struct SearchDslLinkedExports {
     pub eval_edb: unsafe extern "C" fn(i64) -> i64,
     pub extract_facts: unsafe extern "C" fn(i64) -> i64,
     pub completions: unsafe extern "C" fn(i64) -> i64,
+    pub register_provider_descriptor: unsafe extern "C" fn(i64) -> i64,
 }
 
 /// Host-supplied runner executing a native `:gerbil-ascent` query against a

@@ -156,4 +156,36 @@ fn linked_scheme_workbench_renders_through_the_native_boundary() {
         .unwrap();
     assert_eq!(host.view().model_label, "provider/next");
     assert_eq!(host.view().session_label, "next-session");
+
+    // Verify AOT-linked dynamic POO provider descriptor registration over zero-JSON C-ABI.
+    let zig_lang = marlin_agent_search_engine::AspLanguageId::new("zig").unwrap();
+    let desc_req = marlin_agent_search_engine::DynamicLanguageDescriptorRequest {
+        scheme_dir: "",
+        language_id: &zig_lang,
+        provider_language_id: &zig_lang,
+        extensions: &[".zig".to_owned()],
+        kind_mappings: &[marlin_agent_search_engine::ForwardedKindMapping {
+            native_language_kind: marlin_agent_search_engine::NativeAstKindName::new("comptime_fn")
+                .unwrap(),
+            general_kind: marlin_agent_search_engine::GeneralOntologyKindName::new("function")
+                .unwrap(),
+            description: "Zig compile-time generic function".to_owned(),
+        }],
+        special_specs: &[marlin_agent_search_engine::DynamicSpecialRelationSpec {
+            relation_name: "zig_comptime_fn".to_owned(),
+            kind_pattern: None,
+            language_kind_pattern: Some(
+                marlin_agent_search_engine::NativeAstKindName::new("comptime_fn").unwrap(),
+            ),
+            description: "Zig compile-time generic function".to_owned(),
+        }],
+    };
+    let total_rels = super::register_dynamic_language_descriptor(&runtime, &desc_req).unwrap();
+    assert!(total_rels > 20);
+    let zig_completions =
+        super::search_dsl_completions(&runtime, "(ascent-fragment ((a n) <-- (zig_").unwrap();
+    assert!(
+        zig_completions.iter().any(|c| c.form == "zig_comptime_fn"),
+        "AOT linked-ui completions must advertise dynamically registered zig_comptime_fn"
+    );
 }

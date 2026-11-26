@@ -121,6 +121,25 @@ fn resolve_package_search_dsl_exports<'a>(
     Ok((compile_fn, eval_fn))
 }
 
+#[cfg(not(feature = "linked-ui"))]
+fn execute_with_bound_package_exports(
+    runtime: &GerbilRuntime,
+    compile_fn: &RootedSchemeObject<'_>,
+    eval_fn: &RootedSchemeObject<'_>,
+    request: &SearchDslExecutionRequest<'_>,
+) -> Result<SearchDslStructuredResult, SearchPlanProjectionError> {
+    let query_obj = make_string(runtime, request.query)?;
+    let prefilter_obj = native(runtime.call_rooted(compile_fn, &query_obj))?;
+    let owned_prefilter = decode_edb_prefilter(prefilter_obj)?;
+    let snapshot = request
+        .index
+        .project_prefiltered_edb(&owned_prefilter.as_prefilter());
+    let edb_obj = encode_edb_snapshot(runtime, &snapshot)?;
+    let eval_input = make_vector(runtime, &[query_obj, edb_obj])?;
+    let result_obj = native(runtime.call_rooted(eval_fn, &eval_input))?;
+    decode_rooted_search_dsl_result(result_obj, &snapshot, request.output_limit)
+}
+
 /// Execute a native `:gerbil-ascent` query by resolving `:marlin-agent-core/c-abi/search-dsl`
 /// and returning a structured [`SearchDslStructuredResult`].
 #[cfg(not(feature = "linked-ui"))]
@@ -130,16 +149,7 @@ pub fn execute_package_search_dsl_structured(
     request: &SearchDslExecutionRequest<'_>,
 ) -> Result<SearchDslStructuredResult, SearchPlanProjectionError> {
     let (compile_fn, eval_fn) = resolve_package_search_dsl_exports(runtime, scheme_dir)?;
-    let query_obj = make_string(runtime, request.query)?;
-    let prefilter_obj = native(runtime.call_rooted(&compile_fn, &query_obj))?;
-    let owned_prefilter = decode_edb_prefilter(prefilter_obj)?;
-    let snapshot = request
-        .index
-        .project_prefiltered_edb(&owned_prefilter.as_prefilter());
-    let edb_obj = encode_edb_snapshot(runtime, &snapshot)?;
-    let eval_input = make_vector(runtime, &[query_obj, edb_obj])?;
-    let result_obj = native(runtime.call_rooted(&eval_fn, &eval_input))?;
-    decode_rooted_search_dsl_result(result_obj, &snapshot, request.output_limit)
+    execute_with_bound_package_exports(runtime, &compile_fn, &eval_fn, request)
 }
 
 /// Execute a native `:gerbil-ascent` query by resolving
@@ -221,21 +231,20 @@ fn package_search_dsl_worker() -> &'static std::sync::mpsc::Sender<PackageDslJob
             .name("marlin-search-dsl-vm".to_owned())
             .spawn(move || {
                 let runtime = GerbilRuntime::initialize();
+                let mut cached_exports: Option<(
+                    String,
+                    RootedSchemeObject<'_>,
+                    RootedSchemeObject<'_>,
+                )> = None;
+                let mut synced_asp_endpoint: Option<String> = None;
                 while let Ok(job) = rx.recv() {
                     let outcome = match &runtime {
-                        Ok(rt) => match job.index.read() {
-                            Ok(guard) => {
-                                let req = SearchDslExecutionRequest {
-                                    index: &guard,
-                                    query: &job.query,
-                                    output_limit: job.output_limit,
-                                };
-                                execute_package_search_dsl_structured(rt, &job.scheme_dir, &req)
-                            }
-                            Err(_) => Err(SearchPlanProjectionError::Invalid(
-                                "search index lock poisoned",
-                            )),
-                        },
+                        Ok(rt) => run_worker_dsl_job(
+                            rt,
+                            &job,
+                            &mut cached_exports,
+                            &mut synced_asp_endpoint,
+                        ),
                         Err(err) => Err(SearchPlanProjectionError::Native(err.to_string())),
                     };
                     let _ = job.reply.send(outcome);
@@ -244,6 +253,48 @@ fn package_search_dsl_worker() -> &'static std::sync::mpsc::Sender<PackageDslJob
             .expect("spawn marlin-search-dsl-vm thread");
         tx
     })
+}
+
+#[cfg(not(feature = "linked-ui"))]
+fn run_worker_dsl_job<'a>(
+    rt: &'a GerbilRuntime,
+    job: &PackageDslJob,
+    cached_exports: &mut Option<(String, RootedSchemeObject<'a>, RootedSchemeObject<'a>)>,
+    synced_asp_endpoint: &mut Option<String>,
+) -> Result<SearchDslStructuredResult, SearchPlanProjectionError> {
+    let needs_resolve = cached_exports
+        .as_ref()
+        .is_none_or(|(dir, _, _)| dir != &job.scheme_dir);
+    if needs_resolve {
+        let (compile_fn, eval_fn) = resolve_package_search_dsl_exports(rt, &job.scheme_dir)?;
+        *cached_exports = Some((job.scheme_dir.clone(), compile_fn, eval_fn));
+    }
+    if let Some(endpoint) = crate::asp_http_client::AspForwardingEndpoint::from_env()
+        && synced_asp_endpoint.as_deref() != Some(endpoint.as_str())
+        && crate::asp_http_client::sync_package_asp_provider_descriptors(
+            rt,
+            &job.scheme_dir,
+            &endpoint,
+        )
+        .is_ok()
+    {
+        *synced_asp_endpoint = Some(endpoint.as_str().to_owned());
+    }
+    let Some((_, compile_fn, eval_fn)) = cached_exports.as_ref() else {
+        return Err(SearchPlanProjectionError::Invalid(
+            "search DSL exports unavailable",
+        ));
+    };
+    let guard = job
+        .index
+        .read()
+        .map_err(|_| SearchPlanProjectionError::Invalid("search index lock poisoned"))?;
+    let req = SearchDslExecutionRequest {
+        index: &guard,
+        query: &job.query,
+        output_limit: job.output_limit,
+    };
+    execute_with_bound_package_exports(rt, compile_fn, eval_fn, &req)
 }
 
 #[cfg(not(feature = "linked-ui"))]

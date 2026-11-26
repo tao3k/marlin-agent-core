@@ -16,12 +16,33 @@
 //! 3. **Marlin unified storage** (`marlin-agent-storage::AgentStorage`)
 //!    wired via [`MarlinAgentStorageSearchPort`] implementing [`SearchEngineStoragePort`].
 
+mod asp_http_client;
 mod edb_bridge;
 mod engine;
 mod open_edb_hydrator;
 mod org_port;
 mod projection;
 mod storage_port;
+
+pub use asp_http_client::{
+    ASP_FORWARDING_URL_ENV, AspForwardingEndpoint, AspHttpHydrationReceipt,
+    AspHttpHydrationRequest, AspLanguageId, AspProviderId, DynamicLanguageDescriptorRequest,
+    DynamicProviderCapabilities, DynamicProviderDslPackRegistration,
+    DynamicProviderRegistrationAck, DynamicProviderRegistrationManifest,
+    DynamicProviderRegistrationRequest, DynamicProviderSyntaxSurface, DynamicProviderTransport,
+    DynamicSpecialRelationSpec, ForwardedDslPack, ForwardedKindMapping, ForwardedProviderCatalog,
+    ForwardedProviderEnvelope, ForwardedProviderManifest, GeneralOntologyKindName,
+    HttpEndpointPath, NativeAstKindName, ProviderRegistrationMode, ProviderRegistrationStatus,
+    ProviderTransportProtocol, TargetedJsonSchemaDocument, fetch_asp_provider_catalog,
+    hydrate_workspace_pending_via_asp_http, register_dynamic_provider_on_asp,
+    register_linked_dynamic_language_descriptor, shutdown_asp_gateway,
+    sync_linked_asp_provider_descriptors,
+};
+#[cfg(not(feature = "linked-ui"))]
+pub use asp_http_client::{
+    hydrate_workspace_from_asp_http, register_package_dynamic_language_descriptor,
+    sync_package_asp_provider_descriptors,
+};
 
 pub use agent_semantic_search::{
     ConvergedLineMatch, ConvergedSearchExecutionError, ConvergedSearchExecutionReport,

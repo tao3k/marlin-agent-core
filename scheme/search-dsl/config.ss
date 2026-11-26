@@ -24,4 +24,5 @@
     tool-description: (lambda () (search-dsl-tool-description SearchLanguageRegistryValue))
     parse-selector: parse-search-dsl-selector
     conformance-pack: (lambda (lang) (project-language-conformance-pack lang SearchLanguageRegistryValue))
-    all-conformance-packs: (lambda () (project-all-conformance-packs SearchLanguageRegistryValue))))
+    all-conformance-packs: (lambda () (project-all-conformance-packs SearchLanguageRegistryValue))
+    language-json-schema: (lambda (lang) (project-language-json-schema lang SearchLanguageRegistryValue))))

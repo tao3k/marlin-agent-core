@@ -23,11 +23,14 @@ futures-executor.workspace = true
 gerbil-scheme.workspace = true
 marlin-agent-storage.workspace = true
 marlin-context-org-model.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 asp-rust.workspace = true
 criterion.workspace = true
+marlin-agent-runtime.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
@@ -40,6 +43,10 @@ path = "tests/unit_test.rs"
 name = "turso_persistence"
 path = "tests/integration/turso_persistence.rs"
 required-features = ["turso"]
+
+[[test]]
+name = "asp_http_e2e"
+path = "tests/integration/asp_http_e2e.rs"
 
 [[bench]]
 name = "search_engine_bridge"

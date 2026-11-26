@@ -27,7 +27,7 @@
 ;;;      failing closed on legacy `@sym:`, `#.(...)`, and host callbacks.
 ;;;   5. Live Introspection of composed `:gerbil-ascent` Relations ->
 ;;;      Helm interactive TAB completion table & `workspace_search` Tool Schema.
-(import (only-in :clan/poo/object .get .ref)
+(import (only-in :clan/poo/object .get .o .ref seal-object!)
         (only-in :std/string/misc string-contains string-trim)
         (only-in :gerbil-ascent/rules/closed-source ascent-closed-dsl-parts)
         (only-in :gerbil-ascent/program/api
@@ -62,7 +62,9 @@
         search-dsl-tool-summary
         parse-search-dsl-selector
         project-language-conformance-pack
-        project-all-conformance-packs)
+        project-all-conformance-packs
+        project-language-json-schema
+        extend-search-language-registry)
 
 (def +default-max-files+ 128)
 (def +default-choice-state-budget+ 1024)
@@ -359,13 +361,49 @@
       (cdr form))
     (unless (pair? choice-names)
       (error "relational-choice-program requires at least one (choice ...) declaration"))
-    ;; Bind universal 7-col `entity` & 5-col `edge` Open EDB + POO derived helper relations.
+    ;; Bind universal 7-col `entity` & 5-col `edge` Open EDB + 8 General Language
+    ;; Ontology relations + all POO per-language Special relations.
     (let* ((edb-rels
              (list
                (relational-with-role (relational-source 'file 3 (normalize-choice-rows (edb-table-ref edb 'file))) 'input)
                (relational-with-role (relational-source 'entity 7 (normalize-choice-rows (edb-table-ref edb 'entity))) 'input)
                (relational-with-role (relational-source 'edge 5 (normalize-choice-rows (edb-table-ref edb 'edge))) 'input)
                (relational-with-role (relational-source 'attr 3 (normalize-choice-rows (edb-table-ref edb 'attr))) 'input)))
+           (general-ontology-specs
+             '((callable     . ("function" "method"))
+               (type_decl    . ("struct" "class" "enum" "trait" "interface" "type"))
+               (module_decl  . ("module"))
+               (import_decl  . ("import"))
+               (binding_decl . ("binding" "constant"))
+               (macro_decl   . ("macro"))
+               (comment_node . ("doc"))
+               (test_decl    . ("test"))))
+           (general-helper-rels
+             (map (lambda (spec)
+                    (relational-with-role (relational-source (car spec) 5 '()) 'derived))
+                  general-ontology-specs))
+           (general-helper-rules
+             (apply append
+               (map (lambda (spec)
+                      (let ((rel-name (car spec)))
+                        (map (lambda (kind-str)
+                               (let ((head (gerbil-ascent-atom rel-name
+                                             (list (gerbil-ascent-variable '?id)
+                                                   (gerbil-ascent-variable '?f)
+                                                   (gerbil-ascent-variable '?lang)
+                                                   (gerbil-ascent-variable '?name)
+                                                   (gerbil-ascent-variable '?line))))
+                                     (body (list (gerbil-ascent-atom 'entity
+                                                   (list (gerbil-ascent-variable '?id)
+                                                         (gerbil-ascent-variable '?f)
+                                                         (gerbil-ascent-variable '?lang)
+                                                         (gerbil-ascent-literal (string->symbol kind-str))
+                                                         (gerbil-ascent-wildcard)
+                                                         (gerbil-ascent-variable '?name)
+                                                         (gerbil-ascent-variable '?line))))))
+                                 (relational-rule/reader-origin (list head) body (make-choice-rule-origin body))))
+                             (cdr spec))))
+                    general-ontology-specs)))
            (poo-helper-entries
              (filter (lambda (m)
                        (and (not (string=? (cadr m) "edb"))
@@ -379,7 +417,10 @@
              (map (lambda (m)
                     (let* ((rel-name (car m))
                            (lang-sym (string->symbol (cadr m)))
-                           (kind-sym (string->symbol (caddr m)))
+                           (kind-pat (caddr m))
+                           (kind-term (if (string? kind-pat)
+                                        (gerbil-ascent-literal (string->symbol kind-pat))
+                                        (gerbil-ascent-wildcard)))
                            (lang-kind-pat (cadddr m))
                            (lk-term (if (string? lang-kind-pat)
                                       (gerbil-ascent-literal (string->symbol lang-kind-pat))
@@ -393,7 +434,7 @@
                                          (list (gerbil-ascent-variable '?id)
                                                (gerbil-ascent-variable '?f)
                                                (gerbil-ascent-literal lang-sym)
-                                               (gerbil-ascent-literal kind-sym)
+                                               kind-term
                                                lk-term
                                                (gerbil-ascent-variable '?name)
                                                (gerbil-ascent-variable '?line))))))
@@ -401,8 +442,8 @@
                   poo-helper-entries))
            (base-program
              (gerbil-ascent-program
-               (append edb-rels poo-helper-rels choice-rels extra-rels)
-               (append poo-helper-rules plain-rules)
+               (append edb-rels general-helper-rels poo-helper-rels choice-rels extra-rels)
+               (append general-helper-rules poo-helper-rules plain-rules)
                input-limit derived-limit output-limit
                (append +edb-relation-names+ choice-names)))
            (choice-program
@@ -553,3 +594,128 @@
 ;;; Project ALL native provider language contracts from `SearchLanguageRegistryValue`.
 (def (project-all-conformance-packs (registry SearchLanguageRegistryValue))
   (map contract-entry->conformance-pack (.get registry language-contracts)))
+
+(def (unique-strings items)
+  (let loop ((rest items) (acc '()))
+    (cond
+      ((null? rest) (reverse acc))
+      ((member (car rest) acc) (loop (cdr rest) acc))
+      (else (loop (cdr rest) (cons (car rest) acc))))))
+
+;;; Project ONE language's POO `defasp-language` contract into a Yuanxu-compatible
+;;; JSON Schema alist (consumed directly by `:tao3k/yuanxu/modules/json-schema`
+;;; `compile-schema` / `schema-contract` or exported to JSON Schema Draft 2020-12).
+;;; General JSON data stays language-agnostic; this targeted schema enforces the
+;;; language's exact native `languageKind` & `kind` surface dynamically!
+(def (project-language-json-schema lang-key (registry SearchLanguageRegistryValue))
+  (let* ((needle (if (symbol? lang-key) (symbol->string lang-key) lang-key))
+         (contracts (.get registry language-contracts))
+         (matched
+           (find (lambda (entry)
+                   (or (string=? (symbol->string (list-ref entry 0)) needle)
+                       (string=? (list-ref entry 1) needle)))
+                 contracts)))
+    (unless matched
+      (error "unknown ASP language contract in SearchLanguageRegistry" lang-key))
+    (let* ((provider-lang (list-ref matched 1))
+           (kind-map (list-ref matched 4))
+           (native-kinds (unique-strings (map car kind-map)))
+           (general-kinds (unique-strings (map cadr kind-map))))
+      `((type . "object")
+        (additionalProperties . #f)
+        (required . ("languageId" "kind" "languageKind" "name" "line"))
+        (properties
+         . ((languageId   . ((type . "string") (const . ,provider-lang)))
+            (kind         . ((type . "string") (enum . ,general-kinds)))
+            (languageKind . ((type . "string") (enum . ,native-kinds)))
+            (name         . ((type . "string") (minLength . 1)))
+            (line         . ((type . "integer") (minimum . 1)))))))))
+
+;;; ============================================================================
+;;; 5. Pure Dynamic Language Extension from ASP HTTP-Forwarded Descriptors
+;;; ============================================================================
+
+(def (append-unique-by-key existing incoming key-fn)
+  (let ((incoming-keys (map key-fn incoming)))
+    (append (filter (lambda (item) (not (member (key-fn item) incoming-keys))) existing)
+            incoming)))
+
+;;; Pure functional POO registry extension: given `base-registry` and a rooted
+;;; C-ABI provider descriptor 5-vector forwarded from ASP over HTTP:
+;;;   #(lang-str provider-lang-str extensions-vec kind-map-vec special-specs-vec)
+;;; where:
+;;;   - `extensions-vec`   = #(".zig" ...)
+;;;   - `kind-map-vec`     = #(#(native-kind general-kind doc) ...)
+;;;   - `special-specs-vec`= #(#(rel-name-str kind-pat-or-#f lang-kind-pat-or-#f doc-str) ...)
+;;; synthesizes REAL zero-eval `:gerbil-ascent` relations & Horn rules and
+;;; returns a new sealed POO registry without recompiling Marlin or ASP.
+(def (extend-search-language-registry base-registry desc-vec)
+  (unless (and (vector? desc-vec) (= (vector-length desc-vec) 5))
+    (error "extend-search-language-registry requires #(lang provider-lang extensions kind-map special-specs)"))
+  (let* ((lang-str (vector-ref desc-vec 0))
+         (lang-sym (string->symbol lang-str))
+         (provider-lang (vector-ref desc-vec 1))
+         (extensions (vector->list (vector-ref desc-vec 2)))
+         (kind-map (map vector->list (vector->list (vector-ref desc-vec 3))))
+         (special-specs (map vector->list (vector->list (vector-ref desc-vec 4))))
+         (dyn-fragments
+           (if (null? special-specs)
+             '()
+             (ascent-closed-dsl-parts
+               (list
+                 `(ascent-fragment
+                    (relation entity
+                      ((id string?) (file_id integer?) (lang string?)
+                       (kind string?) (language_kind string?)
+                       (name string?) (line integer?)))
+                    ,@(map (lambda (spec)
+                             `(relation ,(string->symbol (car spec))
+                                ((id string?) (file_id integer?) (name string?) (line integer?))))
+                           special-specs)
+                    ,@(map (lambda (spec)
+                             (let ((rel-sym (string->symbol (car spec)))
+                                   (kind-pat (if (and (string? (cadr spec))
+                                                      (> (string-length (cadr spec)) 0))
+                                               (cadr spec)
+                                               '_))
+                                   (lk-pat (if (and (string? (caddr spec))
+                                                    (> (string-length (caddr spec)) 0))
+                                             (caddr spec)
+                                             '_)))
+                               `((,rel-sym id f name line)
+                                 <-- (entity id f ,lang-str ,kind-pat ,lk-pat name line))))
+                           special-specs))))))
+         (dyn-meta
+           (map (lambda (spec)
+                  (let* ((rel-sym (string->symbol (car spec)))
+                         (kind-pat (if (string? (cadr spec)) (cadr spec) '_))
+                         (lk-pat (if (string? (caddr spec)) (caddr spec) '_))
+                         (doc (list-ref spec 3)))
+                    (list rel-sym lang-str kind-pat lk-pat doc)))
+                special-specs))
+         (dyn-contract
+           (list lang-sym
+                 provider-lang
+                 extensions
+                 '()
+                 kind-map
+                 (map (lambda (spec) (string->symbol (car spec))) special-specs)
+                 '()))
+         (next-langs (if (memq lang-sym (.get base-registry languages))
+                       (.get base-registry languages)
+                       (append (.get base-registry languages) (list lang-sym))))
+         (next-frags (append (.get base-registry ascent-fragments) dyn-fragments))
+         (next-meta (append-unique-by-key
+                      (.get base-registry relation-meta)
+                      dyn-meta
+                      car))
+         (next-contracts (append-unique-by-key
+                           (.get base-registry language-contracts)
+                           (list dyn-contract)
+                           (lambda (c) (symbol->string (car c))))))
+    (seal-object!
+      (.o languages: next-langs
+          ascent-fragments: next-frags
+          relation-meta: next-meta
+          language-contracts: next-contracts
+          syntax-forms: (.get base-registry syntax-forms)))))

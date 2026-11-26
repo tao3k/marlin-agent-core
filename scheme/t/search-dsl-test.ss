@@ -15,6 +15,8 @@
                  relational-choice-program)
         (only-in :marlin-agent-core/search-dsl/extract
                  extract-open-edb-facts-batch)
+        (only-in :marlin-agent-core/search-dsl/objects
+                 SearchLanguageRegistryValue)
         (only-in :marlin-agent-core/search-dsl/funcs
                  read-ascent-search-form
                  repair-ascent-search-form
@@ -24,7 +26,9 @@
                  search-dsl-completions
                  parse-search-dsl-selector
                  project-language-conformance-pack
-                 project-all-conformance-packs))
+                 project-all-conformance-packs
+                 project-language-json-schema
+                 extend-search-language-registry))
 (export search-dsl-test)
 
 ;;; Sample Open EDB matching ASP `schemas/semantic-open-edb.v1.schema.json`:
@@ -338,4 +342,141 @@
         (check (hash-key? rust-pack "pairs") => #f)
         (check (hash-key? julia-pack "comments") => #f)
         (check (>= (length (hash-ref julia-pack "kindMappings")) 5) => #t)
-        (check (>= (length (hash-ref gerbil-pack "probes")) 2) => #t)))))
+        (check (>= (length (hash-ref gerbil-pack "probes")) 2) => #t)))
+
+    (test-case "Unified 5-language General + Special search works identically in :gerbil-ascent and Dusa choice mode"
+      (let* ((five-lang-edb
+               '((file . ((1 "rust"       "src/lib.rs")
+                          (2 "python"     "src/math_ops.py")
+                          (3 "typescript" "src/math.ts")
+                          (4 "julia"      "src/math.jl")
+                          (5 "scheme"     "src/sample.ss")))
+                 (entity . (("r1" 1 "rust"       "function" "fn_item"               "add_rs"     5)
+                            ("r2" 1 "rust"       "item"     "impl_item"             "WidgetImpl" 10)
+                            ("p1" 2 "python"     "function" "function_def"          "add_py"     4)
+                            ("p2" 2 "python"     "struct"   "class_def"             "PyBox"      1)
+                            ("t1" 3 "typescript" "function" "function_declaration"  "add_ts"     6)
+                            ("t2" 3 "typescript" "struct"   "class_declaration"     "TsBox"      1)
+                            ("t3" 3 "typescript" "trait"    "interface_declaration" "TsPoint"    3)
+                            ("j1" 4 "julia"      "function" "function"              "add_jl"     6)
+                            ("j2" 4 "julia"      "trait"    "abstract"              "AbstractOp" 1)
+                            ("s1" 5 "scheme"     "function" "def"                   "add_scm"    2)
+                            ("s2" 5 "scheme"     "item"     "poo_def"               "Sample."    8)))
+                 (edge . ())
+                 (attr . ())))
+             (all-callables
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment
+                    (relation answer ((lang string?) (name string?)))
+                    ((answer lang name) <-- (callable _ _ lang name _)))"
+                 five-lang-edb))
+             (all-types
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment
+                    (relation answer ((lang string?) (name string?)))
+                    ((answer lang name) <-- (type_decl _ _ lang name _)))"
+                 five-lang-edb))
+             (py-cls
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment
+                    (relation answer ((name string?)))
+                    ((answer name) <-- (py_class _ _ name _)))"
+                 five-lang-edb))
+             (ts-cls
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment
+                    (relation answer ((name string?)))
+                    ((answer name) <-- (ts_class _ _ name _)))"
+                 five-lang-edb))
+             (ts-iface
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment
+                    (relation answer ((name string?)))
+                    ((answer name) <-- (ts_interface _ _ name _)))"
+                 five-lang-edb))
+             (jl-abs
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment
+                    (relation answer ((name string?)))
+                    ((answer name) <-- (julia_abstract _ _ name _)))"
+                 five-lang-edb))
+             (dusa-general-and-special
+               (evaluate-search-dsl-over-edb
+                 "(relational-choice-program
+                    (choice priority (id p))
+                    (rule (closed (priority ?id) ((value 'high) (value 'normal)))
+                          (callable ?id ?_ ?_ ?_ ?_))
+                    (rule (closed (priority ?id) ((value 'high)))
+                          (ts_interface ?id ?_ (value 'TsPoint) ?_))
+                    (limits 4096 4096 4096))"
+                 five-lang-edb)))
+        ;; General `callable` hits all 5 languages in one query!
+        (check (length (vector-ref all-callables 3)) => 5)
+        ;; General `type_decl` hits Python class_def (struct), TS class/interface (struct/trait), Julia abstract (trait)
+        (check (length (vector-ref all-types 3)) => 4)
+        ;; Special POO relations hit exact native `language_kind` even when `kind` is normalized!
+        (check (vector-ref py-cls 3) => '(("PyBox")))
+        (check (vector-ref ts-cls 3) => '(("TsBox")))
+        (check (vector-ref ts-iface 3) => '(("TsPoint")))
+        (check (vector-ref jl-abs 3) => '(("AbstractOp")))
+        ;; Dusa choice program binds BOTH General Ontology (`callable`) and Special (`ts_interface`)!
+        (check (vector-ref dusa-general-and-special 1) => 'choice)
+        (check (pair? (vector-ref dusa-general-and-special 3)) => #t)))
+
+    (test-case "defasp-language projects Yuanxu-compatible targeted JSON Schemas for all 5 languages"
+      (let* ((rust-schema (project-language-json-schema 'rust))
+             (props (cdr (assq 'properties rust-schema)))
+             (lk-enum (cdr (assq 'enum (cdr (assq 'languageKind props)))))
+             (lang-const (cdr (assq 'const (cdr (assq 'languageId props)))))
+             (julia-schema (project-language-json-schema 'julia))
+             (jl-lk (cdr (assq 'enum (cdr (assq 'languageKind (cdr (assq 'properties julia-schema))))))))
+        (check (cdr (assq 'type rust-schema)) => "object")
+        (check (cdr (assq 'additionalProperties rust-schema)) => #f)
+        (check lang-const => "rust")
+        (check (and (member "fn_item" lk-enum)
+                    (member "impl_item" lk-enum)
+                    (member "macro_rules" lk-enum)
+                    #t)
+               => #t)
+        (check (and (member "abstract" jl-lk)
+                    (member "macro" jl-lk)
+                    #t)
+               => #t)))
+
+    (test-case "extend-search-language-registry adds dynamic language Special relations & 5-col General repair"
+      (let* ((zig-desc
+               #("zig"
+                 "zig"
+                 #(".zig")
+                 #(#("comptime_fn" "function" "Zig compile-time generic function")
+                   #("struct_decl" "struct" "Zig struct declaration"))
+                 #(#("zig_comptime_fn" #f "comptime_fn" "Zig compile-time generic function")
+                   #("zig_struct_decl" #f "struct_decl" "Zig struct declaration"))))
+             (next-reg (extend-search-language-registry SearchLanguageRegistryValue zig-desc))
+             (zig-edb '((file . ((1 "zig" "src/main.zig")))
+                        (entity . (("z1" 1 "zig" "function" "comptime_fn" "buildMatrix" 1)))
+                        (edge . ())
+                        (attr . ())))
+             (special-res
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment ((answer name) <-- (zig_comptime_fn _ _ name _)))"
+                 zig-edb
+                 next-reg))
+             ;; Shorthand omitting `(relation answer ...)` verifies 5-column General Ontology repair!
+             (general-shorthand-res
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment ((answer name) <-- (callable _ _ \"zig\" name _)))"
+                 zig-edb
+                 next-reg))
+             (comps (search-dsl-completions "(ascent-fragment ((a n) <-- (zig_" next-reg))
+             (zig-schema (project-language-json-schema 'zig next-reg))
+             (zig-lk (cdr (assq 'enum (cdr (assq 'languageKind (cdr (assq 'properties zig-schema))))))))
+        (check (vector-ref special-res 3) => '(("buildMatrix")))
+        (check (vector-ref general-shorthand-res 3) => '(("buildMatrix")))
+        (check (and (member "comptime_fn" zig-lk) (member "struct_decl" zig-lk) #t) => #t)
+        (check (let loop ((i 0))
+                 (cond
+                   ((>= i (vector-length comps)) #f)
+                   ((string=? (vector-ref (vector-ref comps i) 0) "zig_comptime_fn") #t)
+                   (else (loop (+ i 1)))))
+               => #t)))))

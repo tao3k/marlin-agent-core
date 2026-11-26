@@ -258,8 +258,12 @@
       (lambda (meta)
         (let ((rel-name (car meta))
               (lang (cadr meta)))
-          (unless (string=? lang "edb")
-            (hash-put! table rel-name '(string? integer? string? integer?)))))
+          (cond
+            ((string=? lang "edb") #f)
+            ((string=? lang "general")
+             (hash-put! table rel-name '(string? integer? string? string? integer?)))
+            (else
+             (hash-put! table rel-name '(string? integer? string? integer?))))))
       (.get registry relation-meta))
     table))
 
