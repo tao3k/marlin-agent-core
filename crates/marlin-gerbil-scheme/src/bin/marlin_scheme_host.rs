@@ -113,6 +113,10 @@ enum FleetVmCommand {
         note: Option<String>,
         reply: mpsc::SyncSender<Result<FleetAuditCapsuleProjection, String>>,
     },
+    HumanGateRejected {
+        gate_id: String,
+        reply: mpsc::SyncSender<Result<FleetAuditCapsuleProjection, String>>,
+    },
     UiAction {
         action_sym: String,
         arg: Option<String>,
@@ -409,6 +413,7 @@ fn parse_scheme_ui_command(raw: &str) -> Option<(&'static str, Option<String>)> 
         "task-peek" => "task-peek",
         "task-reopen" => "task-reopen",
         "task-fleet-step" => "task-fleet-step",
+        "task-sandbox-verify" => "task-sandbox-verify",
         _ => return None,
     };
     Some((action, arg))
@@ -473,11 +478,18 @@ async fn run_one_atomic_effect(
                     stdout,
                     stderr,
                 },
-                Err(message) => SchemeAtomicReceipt::EffectError { effect_id, message },
+                Err(message) => SchemeAtomicReceipt::SandboxExited {
+                    effect_id,
+                    exit_code: 126,
+                    stdout: Vec::new(),
+                    stderr: format!("sandbox-denied: {message}").into_bytes(),
+                },
             },
-            None => SchemeAtomicReceipt::EffectError {
+            None => SchemeAtomicReceipt::SandboxExited {
                 effect_id,
-                message: "sandbox runner denied: no authorized sandbox policy mounted".to_owned(),
+                exit_code: 126,
+                stdout: Vec::new(),
+                stderr: b"sandbox-denied: no authorized sandbox policy mounted".to_vec(),
             },
         },
         SchemeAtomicEffect::LlmComplete { effect_id, request } => {
@@ -973,6 +985,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     &capsule,
                                 );
                             }
+                        } else if ev.decision == GraphHumanDecision::Reject as i32 {
+                            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+                            let gate_id = ev.gate_id.clone();
+                            if fleet_tx_gate
+                                .send(FleetVmCommand::HumanGateRejected {
+                                    gate_id: ev.gate_id,
+                                    reply: reply_tx,
+                                })
+                                .is_ok()
+                                && let Ok(Ok(Ok(capsule))) =
+                                    tokio::task::spawn_blocking(move || reply_rx.recv()).await
+                            {
+                                publish_fleet_audit_projection(
+                                    &host_for_gate,
+                                    &format!("fleet_human_gate_rejected:{gate_id}"),
+                                    "scheme_human_gate_rejected",
+                                    "L3",
+                                    &capsule,
+                                );
+                            }
                         }
                     }
                 }))
@@ -1172,6 +1204,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             })()
                         }
                         _ => Err("fleet driver not initialized for human gate".to_owned()),
+                    };
+                    let _ = reply.send(outcome);
+                }
+                FleetVmCommand::HumanGateRejected { gate_id, reply } => {
+                    let outcome = match active_fleet_driver.as_mut() {
+                        Some(driver) => (|| -> Result<FleetAuditCapsuleProjection, String> {
+                            // Rejection never resolves defeaters or authorizes effects.
+                            let capsule = driver
+                                .audit_capsule()
+                                .map_err(|err| format!("audit rejected-gate fleet: {err}"))?;
+                            assert_non_authorizing_capsule(&capsule)?;
+                            println!(
+                                "FLEET_GATE_REJECTED gate={gate_id} active={} archived={} defeaters={} inbox={}",
+                                capsule.active_actor_count,
+                                capsule.archived_actor_count,
+                                capsule.total_active_defeaters,
+                                capsule.total_human_inbox_items
+                            );
+                            let _ = io::stdout().flush();
+                            Ok(capsule)
+                        })(),
+                        None => Err("fleet driver not initialized for rejected gate".to_owned()),
                     };
                     let _ = reply.send(outcome);
                 }

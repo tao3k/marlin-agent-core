@@ -1509,5 +1509,54 @@ async fn marlin_scheme_ctl_binary_round_trips_bearer_auth_tabs_gates_and_dispatc
         "unexpected audit output: {audit_stdout}"
     );
 
+    // 6. Real-time streaming `watch-tabs --count 2`: start CLI stream process, register a
+    //    live TaskActor on marlin-mygo-host, and confirm the CLI receives both tab snapshots.
+    let mut watch_child = Command::new(ctl_bin)
+        .env("MARLIN_BRIDGE_ENDPOINT", &endpoint)
+        .env("MARLIN_BRIDGE_TOKEN", "test-token")
+        .args(["watch-tabs", "--count", "2", "--timeout-ms", "8000"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn marlin-scheme-ctl watch-tabs");
+    let watch_stdout = watch_child.stdout.take().expect("watch-tabs stdout");
+    let mut watch_lines = BufReader::new(watch_stdout).lines();
+
+    let first_frame = tokio::time::timeout(Duration::from_secs(5), watch_lines.next_line())
+        .await
+        .expect("watch-tabs first frame timeout")
+        .expect("watch-tabs first frame io")
+        .expect("watch-tabs exited before first frame");
+    assert!(
+        first_frame.contains("WATCH_TABS seq=1") && first_frame.contains("index"),
+        "unexpected first watch-tabs frame: {first_frame}"
+    );
+
+    let mut v1 = V1AppServerClient::connect(endpoint).await.unwrap();
+    v1.register_task_actor(auth_req(V1RegisterTaskActorRequest {
+        task_id: "task-ctl-stream-1".to_owned(),
+        title: "CLI Watch Stream Actor".to_owned(),
+        scope_mode: TaskActorScopeModeProto::Project as i32,
+    }))
+    .await
+    .unwrap();
+
+    let second_frame = tokio::time::timeout(Duration::from_secs(5), watch_lines.next_line())
+        .await
+        .expect("watch-tabs second frame timeout")
+        .expect("watch-tabs second frame io")
+        .expect("watch-tabs exited before second frame");
+    assert!(
+        second_frame.contains("WATCH_TABS seq=2") && second_frame.contains("task-ctl-stream-1"),
+        "unexpected second watch-tabs frame: {second_frame}"
+    );
+    let watch_exit = tokio::time::timeout(Duration::from_secs(5), watch_child.wait())
+        .await
+        .expect("watch-tabs exit timeout")
+        .expect("wait watch-tabs");
+    assert!(watch_exit.success(), "watch-tabs exited with {watch_exit}");
+
+    drop(v1);
     stop_mygo_host_process(child).await;
 }

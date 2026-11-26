@@ -13,6 +13,8 @@
         (only-in :std/list/list find)
         (rename-in (only-in :tao3k/agentic-ai-lab/modules/graph-engine/interface
                             GraphEngine
+                            make-capability-envelope
+                            make-deterministic-task-node
                             make-obligation
                             make-obligation-graph)
                    (GraphEngine LabGraphEngine))
@@ -212,6 +214,61 @@
       ((task-fleet-step)
        (let ((step ((lab-fn 'step-graph-fleet) fleet receipts auto-archive?: auto-archive?)))
          (reproject (.ref step 'fleet) disc (.ref step 'effects))))
+
+      ((task-sandbox-verify)
+       (let-values (((sib-id rest)
+                     (split-colon (if (non-empty-str? arg) arg "sandbox-sib:/bin/echo:sandbox-ok")
+                                  "sandbox-sib")))
+         (let-values (((prog cmd-arg) (split-colon rest "/bin/echo")))
+           (let* ((drivers (.ref fleet 'active-drivers))
+                  (parent-st (or (and target
+                                      (find (lambda (d) (equal? (.ref (.ref d 'actor) 'task-id) target))
+                                            drivers))
+                                 (and (pair? drivers) (car drivers))))
+                  (cut (if parent-st (.ref (.ref parent-st 'obligation-graph) 'cut) 1))
+                  (kv-digest (if parent-st
+                               (opt-ref (.ref parent-st 'governed-context) 'kv-prefix-digest "sha256:sandbox-kv")
+                               "sha256:sandbox-kv"))
+                  (env (make-capability-envelope
+                        (string-append "env-" sib-id)
+                        allowed-caps: '(context-read)
+                        denied-caps: '(host-egress)
+                        egress-allowed?: #f))
+                  (sib-apex (string-append "ob-" sib-id))
+                  (sib-ev (string-append "ev-" sib-id))
+                  (det (.o (:: @ (make-deterministic-task-node
+                                  (string-append "det-" sib-id) sib-apex sib-ev
+                                  'funflow-sandbox "sandbox-in"
+                                  effect-class: 'fenced-effect
+                                  read-footprint: '("sandbox.ss")
+                                  write-footprint: '()))
+                           (program := prog)
+                           (args := (if (non-empty-str? cmd-arg) (list cmd-arg) '()))))
+                  (sib-g (make-obligation-graph
+                          (string-append "g-" sib-id)
+                          cut: cut
+                          obligations: (list (make-obligation sib-apex
+                                                              title: (string-append "Sandbox Verify " sib-id)
+                                                              required-evidence-ids: (list sib-ev)))
+                          evidence: '()
+                          det-tasks: (list det)))
+                  (sib-tr ((lab-fn 'make-context-trunk)
+                           (string-append "tr-" sib-id) sib-apex sib-g env
+                           shared-context-cut: cut kv-prefix-digest: kv-digest))
+                  (sib-actor ((lab-fn 'make-task-actor)
+                              sib-id sib-tr '("scope-main")
+                              title: (string-append "Sandbox Verify " sib-id)))
+                  (sib-ctx (.o (context-cut := cut)
+                               (kv-prefix-digest := kv-digest)
+                               (disclosure-depth := 'L3)
+                               (has-active-defeater? := #f)
+                               (sandbox-admitted? := #t)
+                               (cedar-handoff-valid? := #t)))
+                  (sib-st ((lab-fn 'make-unified-driver-state) sib-actor sib-g sib-ctx))
+                  (fleet1 (.o (:: @ fleet)
+                              (active-drivers := (append drivers (list sib-st)))))
+                  (step ((lab-fn 'step-graph-fleet) fleet1 '() auto-archive?: auto-archive?)))
+             (reproject (.ref step 'fleet) disc (.ref step 'effects))))))
 
       ((task-fleet-checkpoint)
        (let ((cp-eff ((lab-fn 'plan-fleet-cas-checkpoint)

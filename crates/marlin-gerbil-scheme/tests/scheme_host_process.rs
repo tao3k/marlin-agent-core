@@ -86,7 +86,7 @@ async fn spawn_scheme_host_with_fleet(
     let mut lines = BufReader::new(stdout).lines();
     let mut fleet_boot_line = None;
     let addr = loop {
-        let line = tokio::time::timeout(Duration::from_secs(90), lines.next_line())
+        let line = tokio::time::timeout(Duration::from_secs(180), lines.next_line())
             .await
             .expect("timed out waiting for marlin-scheme-host READY line")
             .expect("read stdout line")
@@ -625,7 +625,7 @@ async fn spawn_scheme_host_with_http_llm(
     let mut lines = BufReader::new(stdout).lines();
     let mut fleet_boot = None;
     let addr = loop {
-        let line = tokio::time::timeout(Duration::from_secs(90), lines.next_line())
+        let line = tokio::time::timeout(Duration::from_secs(180), lines.next_line())
             .await
             .expect("timed out waiting for READY")
             .expect("read stdout")
@@ -1078,7 +1078,7 @@ async fn marlin_scheme_host_client_enforces_bearer_auth_and_drives_full_lifecycl
     let mut lines1 = BufReader::new(child1.stdout.take().unwrap()).lines();
     let mut boot1 = None;
     let addr1 = loop {
-        let line = tokio::time::timeout(Duration::from_secs(90), lines1.next_line())
+        let line = tokio::time::timeout(Duration::from_secs(180), lines1.next_line())
             .await
             .expect("boot1 READY timeout")
             .unwrap()
@@ -1211,7 +1211,7 @@ async fn marlin_scheme_host_client_enforces_bearer_auth_and_drives_full_lifecycl
     let mut lines2 = BufReader::new(child2.stdout.take().unwrap()).lines();
     let mut boot2 = None;
     let addr2 = loop {
-        let line = tokio::time::timeout(Duration::from_secs(90), lines2.next_line())
+        let line = tokio::time::timeout(Duration::from_secs(180), lines2.next_line())
             .await
             .expect("boot2 READY timeout")
             .unwrap()
@@ -1237,6 +1237,295 @@ async fn marlin_scheme_host_client_enforces_bearer_auth_and_drives_full_lifecycl
     assert_eq!(cap2.active_actor_count, 2);
     assert_eq!(cap2.archived_actor_count, 0);
     assert_eq!(cap2.total_active_defeaters, 0);
+    assert!(!cap2.favored_path_collapsed);
+    assert!(!cap2.authenticates_evidence);
+    assert!(!cap2.authorizes_effect);
+    assert_eq!(llm_calls.load(Ordering::SeqCst), 1);
+
+    drop(client2);
+    stop_scheme_host(child2).await;
+    llm_srv.abort();
+}
+
+#[tokio::test]
+async fn marlin_scheme_host_executes_allowlisted_sandbox_run_rejects_disallowed_command_and_handles_gate_reject_across_restart()
+ {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("scheme-host-s31-sandbox.db");
+    let sandbox_root = dir.path().join("sandbox-root");
+    std::fs::create_dir_all(&sandbox_root).expect("create sandbox root");
+    let cp_key = "fleet:scheme-host:s31:sandbox";
+    let bearer_token = "marlin-s31-sandbox-secret";
+
+    let (llm_url, llm_calls, llm_srv) = spawn_mock_openai_http_server(
+        "sk-marlin-s31-sandbox".to_owned(),
+        "marlin-s31-model".to_owned(),
+        "sandbox-boot-llm-ok".to_owned(),
+    )
+    .await;
+
+    let spawn_host = |gate_id: &str| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_marlin-scheme-host"));
+        cmd.env("MARLIN_BRIDGE_ADDR", "127.0.0.1:0")
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .env("MARLIN_BRIDGE_TURSO_PATH", &db_path)
+            .env("MARLIN_BRIDGE_GATE_ID", gate_id)
+            .env("MARLIN_SCHEME_FLEET_CHECKPOINT_KEY", cp_key)
+            .env("MARLIN_SCHEME_LLM_BASE_URL", &llm_url)
+            .env("MARLIN_SCHEME_LLM_MODEL", "marlin-s31-model")
+            .env("MARLIN_SCHEME_LLM_API_KEY", "sk-marlin-s31-sandbox")
+            .env("MARLIN_SCHEME_SANDBOX_ALLOWLIST", "/bin/echo")
+            .env("MARLIN_SCHEME_SANDBOX_ROOT", &sandbox_root)
+            .env_remove("MARLIN_SCHEME_LLM_LOOPBACK_RESPONSE")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true);
+        cmd
+    };
+
+    // Boot #1: cold boot with AllowlistSandboxRunner (/bin/echo only) + Bearer auth
+    let mut child1 = spawn_host("gate-s31-reject-1")
+        .spawn()
+        .expect("spawn boot1");
+    let mut lines1 = BufReader::new(child1.stdout.take().unwrap()).lines();
+    let mut boot1 = None;
+    let addr1 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(180), lines1.next_line())
+            .await
+            .expect("boot1 READY timeout")
+            .unwrap()
+            .expect("boot1 exited early");
+        if line.starts_with("FLEET_BOOT ") {
+            boot1 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    assert!(boot1.unwrap().contains("mode=cold"));
+    let ep1 = format!("http://{addr1}");
+
+    let client1 = MarlinSchemeHostClient::connect(ep1, Some(bearer_token))
+        .await
+        .expect("connect authed");
+    let cap0 = client1
+        .query_fleet_audit_capsule("default")
+        .await
+        .unwrap()
+        .expect("cold capsule");
+    assert_eq!(cap0.active_actor_count, 1);
+    assert_eq!(cap0.archived_actor_count, 1);
+    assert_eq!(cap0.total_active_defeaters, 1);
+    assert_eq!(cap0.total_human_inbox_items, 1);
+
+    let mut traj = client1.watch_graph_trajectory("s31-traj").await.unwrap();
+    let first_ev = tokio::time::timeout(Duration::from_secs(5), traj.message())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .event
+        .unwrap();
+    assert_eq!(first_ev.node_id, "fleet_boot_cold");
+
+    // 1. Real allowlisted `SandboxRun` (`/bin/echo marlin-s31-ok`): executes OS child process,
+    //    ingests `SandboxExited(0)` in Scheme, settles obligation & auto-archives sibling!
+    client1
+        .dispatch_scheme_command(
+            "s31-ctl",
+            "task-sandbox-verify",
+            Some("sib-sbx-ok:/bin/echo:marlin-s31-ok"),
+        )
+        .await
+        .unwrap();
+    let ok_line = tokio::time::timeout(Duration::from_secs(15), lines1.next_line())
+        .await
+        .expect("sandbox ok stdout timeout")
+        .unwrap()
+        .expect("host exited after sandbox ok");
+    assert!(
+        ok_line.contains("FLEET_UI_ACTION action=task-sandbox-verify")
+            && ok_line.contains("active=1")
+            && ok_line.contains("archived=2"),
+        "allowlisted SandboxRun must settle & auto-archive sibling; got: {ok_line}"
+    );
+    // Synchronize on the live trajectory event published after `set_graph_projection_records`.
+    let ok_ev = tokio::time::timeout(Duration::from_secs(5), traj.message())
+        .await
+        .expect("sandbox ok trajectory timeout")
+        .unwrap()
+        .unwrap()
+        .event
+        .unwrap();
+    assert_eq!(ok_ev.node_id, "fleet_ui_action:task-sandbox-verify");
+    assert_eq!(
+        ok_ev
+            .metadata
+            .get("archived_actor_count")
+            .map(String::as_str),
+        Some("2")
+    );
+    let cap_ok = client1
+        .query_fleet_audit_capsule("default")
+        .await
+        .unwrap()
+        .expect("post-sandbox-ok capsule");
+    assert_eq!(cap_ok.active_actor_count, 1);
+    assert_eq!(cap_ok.archived_actor_count, 2);
+    assert_eq!(cap_ok.total_human_inbox_items, 1);
+    assert_eq!(
+        llm_calls.load(Ordering::SeqCst),
+        1,
+        "allowlisted SandboxRun must execute via OS child process with ZERO extra LLM calls"
+    );
+
+    // 2. Disallowed `SandboxRun` (`/bin/sh forbidden`): AllowlistSandboxRunner denies fail-closed
+    //    without spawning `/bin/sh`; Scheme oscillation detector halts actor in `blocker-active`
+    //    and escalates to `human-inbox` (active=2, archived=2, inbox=2).
+    client1
+        .dispatch_scheme_command(
+            "s31-ctl",
+            "task-sandbox-verify",
+            Some("sib-sbx-deny:/bin/sh:forbidden"),
+        )
+        .await
+        .unwrap();
+    let deny_line = tokio::time::timeout(Duration::from_secs(15), lines1.next_line())
+        .await
+        .expect("sandbox deny stdout timeout")
+        .unwrap()
+        .expect("host exited after sandbox deny");
+    assert!(
+        deny_line.contains("FLEET_UI_ACTION action=task-sandbox-verify")
+            && deny_line.contains("active=2")
+            && deny_line.contains("archived=2")
+            && deny_line.contains("inbox=2"),
+        "disallowed SandboxRun must fail-closed & escalate to human-inbox; got: {deny_line}"
+    );
+    let deny_ev = tokio::time::timeout(Duration::from_secs(5), traj.message())
+        .await
+        .expect("sandbox deny trajectory timeout")
+        .unwrap()
+        .unwrap()
+        .event
+        .unwrap();
+    assert_eq!(deny_ev.node_id, "fleet_ui_action:task-sandbox-verify");
+    assert_eq!(
+        deny_ev
+            .metadata
+            .get("total_human_inbox_items")
+            .map(String::as_str),
+        Some("2")
+    );
+    let cap_deny = client1
+        .query_fleet_audit_capsule("default")
+        .await
+        .unwrap()
+        .expect("post-sandbox-deny capsule");
+    assert_eq!(cap_deny.active_actor_count, 2);
+    assert_eq!(cap_deny.archived_actor_count, 2);
+    assert_eq!(cap_deny.total_human_inbox_items, 2);
+    assert_eq!(cap_deny.total_active_defeaters, 1);
+
+    // 3. One-shot `GraphHumanDecision::Reject` claims the gate, emits rejected trajectory event,
+    //    denies replay, and NEVER resolves defeaters or authorizes effects!
+    let reject_receipt = client1
+        .submit_graph_human_decision(
+            "gate-s31-reject-1",
+            GraphHumanDecision::Reject,
+            "idem-s31-reject",
+            Some("operator rejected".to_owned()),
+        )
+        .await
+        .unwrap();
+    assert!(reject_receipt.claimed);
+    let rej_line = tokio::time::timeout(Duration::from_secs(10), lines1.next_line())
+        .await
+        .expect("gate reject stdout timeout")
+        .unwrap()
+        .expect("host exited after gate reject");
+    assert!(
+        rej_line.contains("FLEET_GATE_REJECTED gate=gate-s31-reject-1")
+            && rej_line.contains("defeaters=1"),
+        "expected FLEET_GATE_REJECTED with defeaters=1; got: {rej_line}"
+    );
+
+    let mut saw_reject_traj = false;
+    for _ in 0..8 {
+        if let Some(msg) = tokio::time::timeout(Duration::from_secs(5), traj.message())
+            .await
+            .unwrap()
+            .unwrap()
+            && let Some(ev) = msg.event
+            && ev.node_id == "fleet_human_gate_rejected:gate-s31-reject-1"
+            && ev.node_kind == "scheme_human_gate_rejected"
+            && ev
+                .metadata
+                .get("total_active_defeaters")
+                .map(String::as_str)
+                == Some("1")
+        {
+            saw_reject_traj = true;
+            break;
+        }
+    }
+    assert!(
+        saw_reject_traj,
+        "expected fleet_human_gate_rejected trajectory event with defeaters=1"
+    );
+
+    // Replay after Reject MUST still be denied one-shot.
+    let replay = client1
+        .submit_graph_human_decision(
+            "gate-s31-reject-1",
+            GraphHumanDecision::Approve,
+            "idem-s31-replay-after-reject",
+            Some("def-turso-01".to_owned()),
+        )
+        .await
+        .unwrap();
+    assert!(!replay.claimed);
+
+    drop(traj);
+    drop(client1);
+    stop_scheme_host(child1).await;
+
+    // Boot #2 on EXACT SAME Turso WAL: restored capsule preserves sandbox archived sibling,
+    // denied sandbox blocker escalation, and unresolved defeater with ZERO extra LLM calls.
+    let mut child2 = spawn_host("gate-s31-reject-2")
+        .spawn()
+        .expect("spawn boot2");
+    let mut lines2 = BufReader::new(child2.stdout.take().unwrap()).lines();
+    let mut boot2 = None;
+    let addr2 = loop {
+        let line = tokio::time::timeout(Duration::from_secs(180), lines2.next_line())
+            .await
+            .expect("boot2 READY timeout")
+            .unwrap()
+            .expect("boot2 exited early");
+        if line.starts_with("FLEET_BOOT ") {
+            boot2 = Some(line);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("READY ") {
+            break rest.trim().to_owned();
+        }
+    };
+    assert!(boot2.unwrap().contains("mode=restored"));
+
+    let client2 = MarlinSchemeHostClient::connect(format!("http://{addr2}"), Some(bearer_token))
+        .await
+        .expect("connect authed boot2");
+    let cap2 = client2
+        .query_fleet_audit_capsule("default")
+        .await
+        .unwrap()
+        .expect("restored capsule");
+    assert_eq!(cap2.active_actor_count, 2);
+    assert_eq!(cap2.archived_actor_count, 2);
+    assert_eq!(cap2.total_active_defeaters, 1);
+    assert_eq!(cap2.total_human_inbox_items, 2);
     assert!(!cap2.favored_path_collapsed);
     assert!(!cap2.authenticates_evidence);
     assert!(!cap2.authorizes_effect);

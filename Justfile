@@ -373,3 +373,9 @@ agent-policy-routing-abi-bench:
 
 # Local P0-P4 gate for AgentGraph native policy-routing and Gerbil module-system closure.
 agent-graph-abi-routing-gate: scheme-package-gate agent-policy-routing-abi-gate agent-policy-routing-abi-bench-build agent-policy-routing-abi-performance-gate
+
+# Real OS-process E2E gate for live embedded Scheme host (`marlin-scheme-host`) and operator CLI (`marlin-scheme-ctl`).
+scheme-host-e2e-gate: scheme-build
+  just scheme-test t/graph-engine-test.ss
+  cargo test --locked -p marlin-agent-app-server --features "grpc,client,ui-grpc,turso-host" --test ui_grpc
+  cargo test --locked -p marlin-gerbil-scheme --features app-server-host --test scheme_host_process -- --test-threads=1
