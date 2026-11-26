@@ -928,17 +928,39 @@ impl GovernanceHostController {
         if principal_roles.is_empty() && step_up_fresh {
             principal_roles.push(CedarEntityRef::role("VerifiedHuman"));
         }
+        let (resource_groups, declassified_resource, tainted_resource) = {
+            let meta = self.meta.lock().expect("host governance meta poisoned");
+            let mut groups = Vec::new();
+            if let Some(scope) = meta.facts.target_scopes.get(resource) {
+                groups.push(CedarEntityRef::scope(scope.clone()));
+            }
+            let declassified = meta.facts.declassified_entries.contains(resource)
+                || meta.facts.context_flows.iter().any(|(entry, target)| {
+                    target == resource && meta.facts.declassified_entries.contains(entry)
+                });
+            let tainted = meta.facts.taint_sinks.contains(resource)
+                && !meta.facts.taint_sanitizers.contains(resource);
+            (groups, declassified, tainted)
+        };
         let mut context = BTreeMap::new();
         context.insert(
             "step_up_fresh".to_owned(),
             CedarContextValue::Bool(step_up_fresh),
+        );
+        context.insert(
+            "declassified".to_owned(),
+            CedarContextValue::Bool(declassified_resource),
+        );
+        context.insert(
+            "tainted".to_owned(),
+            CedarContextValue::Bool(tainted_resource),
         );
         let req = CedarEvaluationRequest {
             principal: CedarEntityRef::actor(actor),
             principal_roles,
             action: CedarEntityRef::action(action),
             resource: CedarEntityRef::resource(resource),
-            resource_groups: Vec::new(),
+            resource_groups,
             context,
         };
         let eval = self
@@ -2123,9 +2145,23 @@ mod tests {
                     "marlin.ascent.forbid.exfil.secret.ext-webhook".to_owned(),
                     "forbid (principal, action, resource == Marlin::Resource::\"ext-webhook\");".to_owned(),
                 ),
+                (
+                    "marlin.forbid.external-scope-unless-declassified".to_owned(),
+                    "forbid (principal, action, resource in Marlin::Scope::\"external\") unless { context.declassified == true };".to_owned(),
+                ),
             ],
         };
         ctrl.apply_scheme_projection(&host, &proj, "probe-seed", "seed cedar")
+            .unwrap();
+
+        // Register a live 5-scope context flow into `ext-partner` (scope = external):
+        let _ = ctrl
+            .mutate_facts_and_build_request(&GovernanceUiCommand::ContextFlow {
+                entry: "partner-doc".to_owned(),
+                src_scope: "private".to_owned(),
+                target: "ext-partner".to_owned(),
+                dst_scope: "external".to_owned(),
+            })
             .unwrap();
 
         let p1 = ctrl
@@ -2158,6 +2194,31 @@ mod tests {
         assert_eq!(
             p4.matched_policy_ids,
             vec!["marlin.ascent.forbid.exfil.secret.ext-webhook".to_owned()]
+        );
+
+        // Scope-based `forbid ... resource in Marlin::Scope::"external" unless { context.declassified == true }`
+        // blocks `ext-partner` BEFORE declassification, then allows AFTER `DeclassifyContext("partner-doc")`!
+        let p5 = ctrl
+            .evaluate_cedar_probe(&host, "ops-alice", "rearm_breaker", "ext-partner", true)
+            .unwrap();
+        assert_eq!(p5.decision, "deny");
+        assert_eq!(
+            p5.matched_policy_ids,
+            vec!["marlin.forbid.external-scope-unless-declassified".to_owned()]
+        );
+
+        let _ = ctrl
+            .mutate_facts_and_build_request(&GovernanceUiCommand::DeclassifyContext {
+                entry: "partner-doc".to_owned(),
+            })
+            .unwrap();
+        let p6 = ctrl
+            .evaluate_cedar_probe(&host, "ops-alice", "rearm_breaker", "ext-partner", true)
+            .unwrap();
+        assert_eq!(p6.decision, "allow");
+        assert_eq!(
+            p6.matched_policy_ids,
+            vec!["marlin.permit.verified-human-governance".to_owned()]
         );
     }
 }

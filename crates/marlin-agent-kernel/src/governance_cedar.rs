@@ -7,8 +7,9 @@
 //!
 //! Enforces true Cedar authorization semantics:
 //! - Structured parsing of `permit` / `forbid` scopes (`principal`, `action`, `resource`)
-//!   with `==`, `in`, set membership `in [...]`, and `when { context.<k> == <v> (&& ...)* }`.
-//! - Fail-closed rejection on malformed policy syntax (no substring heuristics).
+//!   with `==`, `in`, set membership `in [...]`, and `when { ... }` / `unless { ... }`
+//!   condition blocks supporting `==`, `!=`, bare boolean `context.<k>`, and `!context.<k>`.
+//! - Fail-closed rejection on malformed policy syntax or missing context keys in conditions.
 //! - Deterministic Cedar precedence: **any matching `forbid` overrides every `permit`**;
 //!   otherwise a matching `permit` yields `Allow`, and no match yields `ImplicitDeny`.
 
@@ -53,6 +54,10 @@ impl CedarEntityRef {
     pub fn resource(id: impl Into<String>) -> Self {
         Self::new("Marlin::Resource", id)
     }
+
+    pub fn scope(id: impl Into<String>) -> Self {
+        Self::new("Marlin::Scope", id)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -82,10 +87,42 @@ pub enum CedarContextValue {
     Str(String),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CedarConditionOp {
+    Eq,
+    NotEq,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CedarWhenCondition {
     pub key: String,
+    pub op: CedarConditionOp,
     pub expected: CedarContextValue,
+}
+
+impl CedarWhenCondition {
+    /// Evaluates one condition predicate against `context`.
+    /// Missing context keys return `None` so both `when` and `unless` fail closed.
+    fn eval(&self, context: &BTreeMap<String, CedarContextValue>) -> Option<bool> {
+        let actual = context.get(&self.key)?;
+        Some(match self.op {
+            CedarConditionOp::Eq => actual == &self.expected,
+            CedarConditionOp::NotEq => actual != &self.expected,
+        })
+    }
+}
+
+fn eval_condition_block(
+    conditions: &[CedarWhenCondition],
+    context: &BTreeMap<String, CedarContextValue>,
+) -> Option<bool> {
+    let mut all_true = true;
+    for cond in conditions {
+        if !cond.eval(context)? {
+            all_true = false;
+        }
+    }
+    Some(all_true)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -96,6 +133,7 @@ pub struct CompiledCedarPolicy {
     pub action: CedarScopeMatcher,
     pub resource: CedarScopeMatcher,
     pub when_clauses: Vec<CedarWhenCondition>,
+    pub unless_clauses: Vec<Vec<CedarWhenCondition>>,
 }
 
 impl CompiledCedarPolicy {
@@ -109,9 +147,17 @@ impl CompiledCedarPolicy {
         if !self.resource.matches(&req.resource, &req.resource_groups) {
             return false;
         }
-        self.when_clauses
-            .iter()
-            .all(|clause| req.context.get(&clause.key) == Some(&clause.expected))
+        if !self.when_clauses.is_empty()
+            && eval_condition_block(&self.when_clauses, &req.context) != Some(true)
+        {
+            return false;
+        }
+        for block in &self.unless_clauses {
+            if eval_condition_block(block, &req.context) != Some(false) {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -148,6 +194,13 @@ impl CedarEvaluationRequest {
             resource_groups: Vec::new(),
             context,
         }
+    }
+    pub fn with_resource_scope(mut self, scope: impl Into<String>) -> Self {
+        let group = CedarEntityRef::scope(scope);
+        if !self.resource_groups.contains(&group) {
+            self.resource_groups.push(group);
+        }
+        self
     }
 }
 
@@ -394,10 +447,11 @@ impl<'a> CedarParser<'a> {
         Ok(CedarScopeMatcher::Any)
     }
 
-    fn parse_when_clause(&mut self) -> Result<Vec<CedarWhenCondition>, String> {
+    fn parse_condition_block(&mut self) -> Result<Vec<CedarWhenCondition>, String> {
         self.expect_literal("{")?;
         let mut conditions = Vec::new();
         loop {
+            let negated = self.consume_literal("!");
             let root = self.read_ident()?;
             if root != "context" {
                 return Err(format!(
@@ -406,28 +460,37 @@ impl<'a> CedarParser<'a> {
             }
             self.expect_literal(".")?;
             let key = self.read_ident()?.to_owned();
-            self.expect_literal("==")?;
-            self.skip_ws();
-            let expected = if self.bytes.get(self.pos) == Some(&b'"') {
-                CedarContextValue::Str(self.read_quoted_string()?)
+            let (op, expected) = if negated {
+                (CedarConditionOp::Eq, CedarContextValue::Bool(false))
+            } else if self.consume_literal("==") {
+                (CedarConditionOp::Eq, self.read_context_literal()?)
+            } else if self.consume_literal("!=") {
+                (CedarConditionOp::NotEq, self.read_context_literal()?)
             } else {
-                match self.read_ident()? {
-                    "true" => CedarContextValue::Bool(true),
-                    "false" => CedarContextValue::Bool(false),
-                    other => {
-                        return Err(format!(
-                            "unsupported Cedar literal `{other}` in when clause"
-                        ));
-                    }
-                }
+                (CedarConditionOp::Eq, CedarContextValue::Bool(true))
             };
-            conditions.push(CedarWhenCondition { key, expected });
+            conditions.push(CedarWhenCondition { key, op, expected });
             if !self.consume_literal("&&") {
                 break;
             }
         }
         self.expect_literal("}")?;
         Ok(conditions)
+    }
+
+    fn read_context_literal(&mut self) -> Result<CedarContextValue, String> {
+        self.skip_ws();
+        if self.bytes.get(self.pos) == Some(&b'"') {
+            Ok(CedarContextValue::Str(self.read_quoted_string()?))
+        } else {
+            match self.read_ident()? {
+                "true" => Ok(CedarContextValue::Bool(true)),
+                "false" => Ok(CedarContextValue::Bool(false)),
+                other => Err(format!(
+                    "unsupported Cedar literal `{other}` in condition block"
+                )),
+            }
+        }
     }
 
     fn parse_policy(&mut self, policy_id: &CedarPolicyId) -> Result<CompiledCedarPolicy, String> {
@@ -445,9 +508,19 @@ impl<'a> CedarParser<'a> {
         self.expect_literal(")")?;
 
         let mut when_clauses = Vec::new();
-        while self.peek_ident() == Some("when") {
-            let _ = self.read_ident()?;
-            when_clauses.extend(self.parse_when_clause()?);
+        let mut unless_clauses = Vec::new();
+        loop {
+            match self.peek_ident() {
+                Some("when") => {
+                    let _ = self.read_ident()?;
+                    when_clauses.extend(self.parse_condition_block()?);
+                }
+                Some("unless") => {
+                    let _ = self.read_ident()?;
+                    unless_clauses.push(self.parse_condition_block()?);
+                }
+                _ => break,
+            }
         }
         self.expect_literal(";")?;
         self.skip_ws();
@@ -461,6 +534,7 @@ impl<'a> CedarParser<'a> {
             action,
             resource,
             when_clauses,
+            unless_clauses,
         })
     }
 }
@@ -577,6 +651,85 @@ mod tests {
     }
 
     #[test]
+    fn supports_unless_not_equal_boolean_predicates_and_scope_groups_fail_closed() {
+        let policies = vec![
+            mk_policy(
+                "marlin.permit.ops-export",
+                "permit (principal in Marlin::Role::\"VerifiedHuman\", action == Marlin::Action::\"export\", resource) when { context.step_up_fresh && !context.tainted && context.channel_scope != \"untrusted\" };",
+            ),
+            mk_policy(
+                "marlin.forbid.external-scope-unless-declassified",
+                "forbid (principal, action, resource in Marlin::Scope::\"external\") unless { context.declassified == true };",
+            ),
+        ];
+
+        let mut req = CedarEvaluationRequest {
+            principal: CedarEntityRef::actor("ops-alice"),
+            principal_roles: vec![CedarEntityRef::role("VerifiedHuman")],
+            action: CedarEntityRef::action("export"),
+            resource: CedarEntityRef::resource("ext-webhook"),
+            resource_groups: vec![CedarEntityRef::scope("external")],
+            context: BTreeMap::from([
+                ("step_up_fresh".to_owned(), CedarContextValue::Bool(true)),
+                ("tainted".to_owned(), CedarContextValue::Bool(false)),
+                ("declassified".to_owned(), CedarContextValue::Bool(false)),
+                (
+                    "channel_scope".to_owned(),
+                    CedarContextValue::Str("workspace".to_owned()),
+                ),
+            ]),
+        };
+
+        // 1. Not declassified on external scope -> forbid overrides permit!
+        assert_eq!(
+            evaluate_compiled_cedar_policies(&policies, &req),
+            CedarEvaluationDecision::Deny {
+                matching_forbids: vec![
+                    CedarPolicyId::new("marlin.forbid.external-scope-unless-declassified")
+                        .unwrap()
+                ],
+            }
+        );
+
+        // 2. Declassified == true -> unless suppresses forbid -> permit allows!
+        req.context
+            .insert("declassified".to_owned(), CedarContextValue::Bool(true));
+        assert_eq!(
+            evaluate_compiled_cedar_policies(&policies, &req),
+            CedarEvaluationDecision::Allow {
+                matching_permits: vec![CedarPolicyId::new("marlin.permit.ops-export").unwrap()],
+            }
+        );
+
+        // 3. Tainted == true violates `!context.tainted` -> ImplicitDeny!
+        req.context
+            .insert("tainted".to_owned(), CedarContextValue::Bool(true));
+        assert_eq!(
+            evaluate_compiled_cedar_policies(&policies, &req),
+            CedarEvaluationDecision::ImplicitDeny
+        );
+
+        // 4. Untrusted channel violates `!= "untrusted"` -> ImplicitDeny!
+        req.context
+            .insert("tainted".to_owned(), CedarContextValue::Bool(false));
+        req.context.insert(
+            "channel_scope".to_owned(),
+            CedarContextValue::Str("untrusted".to_owned()),
+        );
+        assert_eq!(
+            evaluate_compiled_cedar_policies(&policies, &req),
+            CedarEvaluationDecision::ImplicitDeny
+        );
+
+        // 5. Missing context key fails closed (neither `!=` nor `unless` silently matches!).
+        req.context.remove("channel_scope");
+        assert_eq!(
+            evaluate_compiled_cedar_policies(&policies, &req),
+            CedarEvaluationDecision::ImplicitDeny
+        );
+    }
+
+    #[test]
     fn malformed_cedar_policy_fails_closed() {
         for bad in [
             "allow (principal, action, resource);",
@@ -584,6 +737,8 @@ mod tests {
             "forbid (principal == Marlin::Actor::\"a\", action, resource)",
             "forbid (principal == Marlin::Actor::\"a\", action, resource); trailing",
             "forbid (principal == Marlin::Actor::\"\", action, resource);",
+            "forbid (principal, action, resource) unless {};",
+            "permit (principal, action, resource) when { context.a === true };",
         ] {
             let err = compile_cedar_policy(&SynthesizedCedarPolicy {
                 policy_id: CedarPolicyId::new("bad.pol").unwrap(),
