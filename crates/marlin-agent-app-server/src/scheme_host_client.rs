@@ -411,6 +411,68 @@ impl GovernanceFactAction {
     }
 }
 
+/// Typed fleet / task steering commands routed through `UiWorkbenchService::DispatchUiEvent`
+/// (`scheme:task-*` namespace). Covers all 15 Scheme fleet steering actions while refusing
+/// privileged human approval or breaker re-arm commands.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FleetTaskAction {
+    /// Progressive Disclosure depth L0–L3 (`level` clamped/validated to `0..=3`).
+    Drill {
+        level: u8,
+    },
+    ProposeBranch {
+        label: Option<String>,
+    },
+    DetourBlocker {
+        note: Option<String>,
+    },
+    DetourSidequest {
+        note: Option<String>,
+    },
+    DetourExitReturn,
+    DetourExitAbsorb,
+    DetourExitAbort,
+    DetourExitSibling,
+    Peek {
+        actor_id: Option<String>,
+    },
+    Reopen {
+        actor_id: Option<String>,
+    },
+    FleetStep,
+    SandboxVerify,
+}
+
+impl FleetTaskAction {
+    /// Projects this typed fleet task command into the `(action_sym, arg)` wire pair expected
+    /// by `MarlinSchemeHostClient::dispatch_scheme_command`.
+    pub fn to_wire_command(&self) -> (&'static str, Option<String>) {
+        let trim_opt = |opt: &Option<String>| {
+            opt.as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+        };
+        match self {
+            Self::Drill { level: 0 } => ("task-drill-l0", None),
+            Self::Drill { level: 1 } => ("task-drill-l1", None),
+            Self::Drill { level: 2 } => ("task-drill-l2", None),
+            Self::Drill { .. } => ("task-drill-l3", None),
+            Self::ProposeBranch { label } => ("task-propose-branch", trim_opt(label)),
+            Self::DetourBlocker { note } => ("task-detour-blocker", trim_opt(note)),
+            Self::DetourSidequest { note } => ("task-detour-sidequest", trim_opt(note)),
+            Self::DetourExitReturn => ("task-detour-exit-return", None),
+            Self::DetourExitAbsorb => ("task-detour-exit-absorb", None),
+            Self::DetourExitAbort => ("task-detour-exit-abort", None),
+            Self::DetourExitSibling => ("task-detour-exit-sibling", None),
+            Self::Peek { actor_id } => ("task-peek", trim_opt(actor_id)),
+            Self::Reopen { actor_id } => ("task-reopen", trim_opt(actor_id)),
+            Self::FleetStep => ("task-fleet-step", None),
+            Self::SandboxVerify => ("task-sandbox-verify", None),
+        }
+    }
+}
+
 fn parse_bearer_header(
     bearer_token: Option<&str>,
 ) -> Result<Option<MetadataValue<tonic::metadata::Ascii>>, String> {
@@ -539,6 +601,17 @@ impl MarlinSchemeHostClient {
         &self,
         session_id: impl Into<String>,
         action: &GovernanceFactAction,
+    ) -> Result<DispatchUiEventResponse, Status> {
+        let (action_sym, arg) = action.to_wire_command();
+        self.dispatch_scheme_command(session_id, action_sym, arg.as_deref())
+            .await
+    }
+
+    /// Dispatches a typed Scheme fleet/task steering action (`scheme:task-*`) via `UiWorkbenchService`.
+    pub async fn dispatch_fleet_task(
+        &self,
+        session_id: impl Into<String>,
+        action: &FleetTaskAction,
     ) -> Result<DispatchUiEventResponse, Status> {
         let (action_sym, arg) = action.to_wire_command();
         self.dispatch_scheme_command(session_id, action_sym, arg.as_deref())
@@ -998,5 +1071,81 @@ mod tests {
         );
         assert!(parse_bearer_header(Some("   ")).unwrap().is_none());
         assert!(parse_bearer_header(None).unwrap().is_none());
+    }
+
+    #[test]
+    fn fleet_task_action_formats_all_15_wire_commands() {
+        assert_eq!(
+            FleetTaskAction::Drill { level: 0 }.to_wire_command(),
+            ("task-drill-l0", None)
+        );
+        assert_eq!(
+            FleetTaskAction::Drill { level: 1 }.to_wire_command(),
+            ("task-drill-l1", None)
+        );
+        assert_eq!(
+            FleetTaskAction::Drill { level: 2 }.to_wire_command(),
+            ("task-drill-l2", None)
+        );
+        assert_eq!(
+            FleetTaskAction::Drill { level: 3 }.to_wire_command(),
+            ("task-drill-l3", None)
+        );
+        assert_eq!(
+            FleetTaskAction::ProposeBranch {
+                label: Some("B1:Verify".to_owned()),
+            }
+            .to_wire_command(),
+            ("task-propose-branch", Some("B1:Verify".to_owned()))
+        );
+        assert_eq!(
+            FleetTaskAction::DetourBlocker {
+                note: Some("blk-1".to_owned()),
+            }
+            .to_wire_command(),
+            ("task-detour-blocker", Some("blk-1".to_owned()))
+        );
+        assert_eq!(
+            FleetTaskAction::DetourSidequest { note: None }.to_wire_command(),
+            ("task-detour-sidequest", None)
+        );
+        assert_eq!(
+            FleetTaskAction::DetourExitReturn.to_wire_command(),
+            ("task-detour-exit-return", None)
+        );
+        assert_eq!(
+            FleetTaskAction::DetourExitAbsorb.to_wire_command(),
+            ("task-detour-exit-absorb", None)
+        );
+        assert_eq!(
+            FleetTaskAction::DetourExitAbort.to_wire_command(),
+            ("task-detour-exit-abort", None)
+        );
+        assert_eq!(
+            FleetTaskAction::DetourExitSibling.to_wire_command(),
+            ("task-detour-exit-sibling", None)
+        );
+        assert_eq!(
+            FleetTaskAction::Peek {
+                actor_id: Some("actor-2".to_owned()),
+            }
+            .to_wire_command(),
+            ("task-peek", Some("actor-2".to_owned()))
+        );
+        assert_eq!(
+            FleetTaskAction::Reopen {
+                actor_id: Some("actor-2".to_owned()),
+            }
+            .to_wire_command(),
+            ("task-reopen", Some("actor-2".to_owned()))
+        );
+        assert_eq!(
+            FleetTaskAction::FleetStep.to_wire_command(),
+            ("task-fleet-step", None)
+        );
+        assert_eq!(
+            FleetTaskAction::SandboxVerify.to_wire_command(),
+            ("task-sandbox-verify", None)
+        );
     }
 }

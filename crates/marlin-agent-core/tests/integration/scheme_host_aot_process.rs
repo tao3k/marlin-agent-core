@@ -675,31 +675,45 @@ async fn linked_aot_scheme_host_boots_fast_without_scheme_tree_and_survives_os_r
             "unexpected ctl watch-tabs output from aot host: {watch_tabs_out}"
         );
 
-        for (action, arg) in [
-            ("task-detour-blocker", "blk-aot-cli"),
-            ("task-detour-exit-return", ""),
-            ("task-propose-branch", "B-aot-cli:Verify Turso lineage"),
+        let ndjson_tabs = run_ctl_json(
+            &ctl_bin,
+            &ep2,
+            bearer_token,
+            &["watch-tabs", "--count", "1", "--timeout-ms", "5000"],
+        )
+        .await;
+        assert_eq!(ndjson_tabs["seq"], 1);
+        assert!(
+            ndjson_tabs["tabs"]
+                .as_array()
+                .is_some_and(|arr| arr.iter().any(|t| t["id"] == "fleet-host-parent")),
+            "unexpected --json watch-tabs NDJSON frame: {ndjson_tabs}"
+        );
+
+        for (task_args, expected_action) in [
+            (
+                vec!["task", "detour-blocker", "blk-aot-cli"],
+                "task-detour-blocker",
+            ),
+            (
+                vec!["task", "detour-exit", "return"],
+                "task-detour-exit-return",
+            ),
+            (
+                vec!["task", "propose-branch", "B-aot-cli:Verify Turso lineage"],
+                "task-propose-branch",
+            ),
+            (vec!["task", "drill", "1"], "task-drill-l1"),
+            (vec!["task", "drill", "3"], "task-drill-l3"),
         ] {
-            let mut cmd = Command::new(&ctl_bin);
-            cmd.env("MARLIN_BRIDGE_ENDPOINT", &ep2)
-                .env("MARLIN_BRIDGE_TOKEN", bearer_token)
-                .args(["dispatch", action]);
-            if !arg.is_empty() {
-                cmd.arg(arg);
-            }
-            let out = cmd
-                .output()
-                .await
-                .unwrap_or_else(|e| panic!("run marlin-scheme-ctl dispatch {action}: {e}"));
-            assert!(
-                out.status.success(),
-                "ctl dispatch {action} failed: {}",
-                String::from_utf8_lossy(&out.stderr)
+            let task_resp = run_ctl_json(&ctl_bin, &ep2, bearer_token, &task_args).await;
+            assert_eq!(
+                task_resp["admitted"], true,
+                "typed ctl task {task_args:?} was not admitted: {task_resp}"
             );
-            let stdout_str = String::from_utf8_lossy(&out.stdout);
-            assert!(
-                stdout_str.contains(&format!("DISPATCH admitted=true action={action}")),
-                "unexpected ctl dispatch output for {action}: {stdout_str}"
+            assert_eq!(
+                task_resp["action"], expected_action,
+                "unexpected wire action for {task_args:?}: {task_resp}"
             );
             let host_line = tokio::time::timeout(Duration::from_secs(10), lines2.next_line())
                 .await
@@ -707,8 +721,8 @@ async fn linked_aot_scheme_host_boots_fast_without_scheme_tree_and_survives_os_r
                 .unwrap()
                 .expect("aot host exited early");
             assert!(
-                host_line.contains(&format!("FLEET_UI_ACTION action={action}")),
-                "expected FLEET_UI_ACTION for {action}, got: {host_line}"
+                host_line.contains(&format!("FLEET_UI_ACTION action={expected_action}")),
+                "expected FLEET_UI_ACTION for {expected_action}, got: {host_line}"
             );
         }
         eprintln!("LINKED_AOT_CTL_E2E=VERIFIED");

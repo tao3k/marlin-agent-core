@@ -14,6 +14,7 @@
 //!   status                                         Fetch unified live tabs + audit + governance + gates snapshot
 //!   governance                                     Show live Scheme Governance Authority snapshot (breaker/ASCENT/Cedar/proofs)
 //!   gov <subaction> [args...]                      Apply live incremental governance fact mutation, Bi-Temporal derivation DAG registration, or compiled Cedar probe (eval-clean|eval-incident|delegate|revoke|taint-edge|sanitize|context-flow|declassify|retract|register-derivation|check-cedar)
+//!   task <subaction> [args...]                     Apply typed Scheme fleet steering (drill <0..3>|propose-branch [label]|detour-blocker [note]|detour-sidequest [note]|detour-exit <return|absorb|abort|sibling>|peek [actor]|reopen [actor]|fleet-step|sandbox-verify)
 //!   estop [actor:reason]                           Trigger live operator E-Stop via UiWorkbenchService (`governance-estop`)
 //!   records [--project ID] [--kind PREFIX]         Query read-only ProjectionQueryService records (SecretVisibility::Denied)
 //!   open-workbench [session-id]                    Open live UiWorkbenchService session snapshot
@@ -34,10 +35,9 @@ use std::{
 };
 
 use marlin_agent_app_server::{
-    GrpcCode, MarlinSchemeHostClient,
+    FleetTaskAction, GovernanceFactAction, GrpcCode, MarlinSchemeHostClient,
     scheme_host_client::{
-        GovernanceFactAction, format_facets_sorted, graph_record_to_json, json_escape,
-        workbench_tab_kind_label,
+        format_facets_sorted, graph_record_to_json, json_escape, workbench_tab_kind_label,
     },
     wire::marlin::{common::v1::TargetKind, gate::v1::GraphHumanDecision},
 };
@@ -123,7 +123,7 @@ async fn run() -> Result<(), String> {
 
     if opts.help {
         println!(
-            "Usage: marlin-scheme-ctl [--json] --endpoint <url> [--token <tok>] <wait-ready|status|governance|gov|estop|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch>"
+            "Usage: marlin-scheme-ctl [--json] --endpoint <url> [--token <tok>] <wait-ready|status|governance|gov|task|estop|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch>"
         );
         return Ok(());
     }
@@ -133,7 +133,7 @@ async fn run() -> Result<(), String> {
     })?;
     let rest = opts.rest;
     let cmd = rest.first().map(String::as_str).ok_or_else(|| {
-        "missing subcommand (wait-ready|status|governance|gov|estop|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch)"
+        "missing subcommand (wait-ready|status|governance|gov|task|estop|records|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch)"
             .to_owned()
     })?;
 
@@ -284,6 +284,30 @@ async fn run() -> Result<(), String> {
             } else {
                 println!(
                     "GOV admitted={} action={wire_sym} arg={}",
+                    resp.admitted,
+                    wire_arg.as_deref().unwrap_or("")
+                );
+            }
+        }
+        "task" => {
+            let action = parse_fleet_task_action(&rest[1..])?;
+            let (wire_sym, wire_arg) = action.to_wire_command();
+            let resp = client
+                .dispatch_fleet_task("marlin-scheme-ctl", &action)
+                .await
+                .map_err(|s| format!("dispatch_fleet_task({wire_sym}) failed: {s}"))?;
+            if opts.json {
+                println!(
+                    "{{\"admitted\":{},\"action\":{},\"arg\":{}}}",
+                    resp.admitted,
+                    json_escape(wire_sym),
+                    wire_arg
+                        .as_deref()
+                        .map_or_else(|| "null".to_owned(), json_escape)
+                );
+            } else {
+                println!(
+                    "TASK admitted={} action={wire_sym} arg={}",
                     resp.admitted,
                     wire_arg.as_deref().unwrap_or("")
                 );
@@ -851,6 +875,62 @@ fn parse_gov_fact_action(args: &[String]) -> Result<GovernanceFactAction, String
     }
 }
 
+fn parse_fleet_task_action(args: &[String]) -> Result<FleetTaskAction, String> {
+    let sub = args.first().map(String::as_str).ok_or_else(|| {
+        "usage: task <drill|propose-branch|detour-blocker|detour-sidequest|detour-exit|peek|reopen|fleet-step|sandbox-verify> [args...]"
+            .to_owned()
+    })?;
+    let join_opt = |slice: &[String]| -> Option<String> {
+        let joined = slice.join(" ");
+        let trimmed = joined.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        }
+    };
+    match sub {
+        "drill" if args.len() == 2 => {
+            let level = args[1]
+                .parse::<u8>()
+                .map_err(|_| format!("invalid drill level `{}` (expected 0..=3)", args[1]))?;
+            if level > 3 {
+                return Err(format!("invalid drill level `{level}` (expected 0..=3)"));
+            }
+            Ok(FleetTaskAction::Drill { level })
+        }
+        "propose-branch" => Ok(FleetTaskAction::ProposeBranch {
+            label: join_opt(&args[1..]),
+        }),
+        "detour-blocker" => Ok(FleetTaskAction::DetourBlocker {
+            note: join_opt(&args[1..]),
+        }),
+        "detour-sidequest" => Ok(FleetTaskAction::DetourSidequest {
+            note: join_opt(&args[1..]),
+        }),
+        "detour-exit" if args.len() == 2 => match args[1].as_str() {
+            "return" => Ok(FleetTaskAction::DetourExitReturn),
+            "absorb" => Ok(FleetTaskAction::DetourExitAbsorb),
+            "abort" => Ok(FleetTaskAction::DetourExitAbort),
+            "sibling" => Ok(FleetTaskAction::DetourExitSibling),
+            other => Err(format!(
+                "invalid detour-exit disposition `{other}` (expected return|absorb|abort|sibling)"
+            )),
+        },
+        "peek" if args.len() <= 2 => Ok(FleetTaskAction::Peek {
+            actor_id: args.get(1).cloned(),
+        }),
+        "reopen" if args.len() <= 2 => Ok(FleetTaskAction::Reopen {
+            actor_id: args.get(1).cloned(),
+        }),
+        "fleet-step" if args.len() == 1 => Ok(FleetTaskAction::FleetStep),
+        "sandbox-verify" if args.len() == 1 => Ok(FleetTaskAction::SandboxVerify),
+        other => Err(format!(
+            "invalid task subaction `{other}` or wrong arity (expected drill|propose-branch|detour-blocker|detour-sidequest|detour-exit|peek|reopen|fleet-step|sandbox-verify)"
+        )),
+    }
+}
+
 fn parse_records_flags(args: &[String]) -> Result<RecordsFlags, String> {
     let mut project = None;
     let mut kind_prefix = None;
@@ -1107,5 +1187,56 @@ mod tests {
             parse_gov_fact_action(&s(&["register-derivation", "D-BAD", "pol.x", "none"])).is_err()
         );
         assert!(parse_gov_fact_action(&s(&["register-derivation", "D-BAD", "pol.x"])).is_err());
+    }
+
+    #[test]
+    fn parse_fleet_task_action_validates_all_variants_and_rejects_bypass() {
+        let s = |vals: &[&str]| vals.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            parse_fleet_task_action(&s(&["drill", "0"])).unwrap(),
+            FleetTaskAction::Drill { level: 0 }
+        );
+        assert_eq!(
+            parse_fleet_task_action(&s(&["drill", "3"])).unwrap(),
+            FleetTaskAction::Drill { level: 3 }
+        );
+        assert_eq!(
+            parse_fleet_task_action(&s(&["propose-branch", "B1:Verify", "lineage"])).unwrap(),
+            FleetTaskAction::ProposeBranch {
+                label: Some("B1:Verify lineage".to_owned()),
+            }
+        );
+        assert_eq!(
+            parse_fleet_task_action(&s(&["detour-blocker", "blk-1"])).unwrap(),
+            FleetTaskAction::DetourBlocker {
+                note: Some("blk-1".to_owned()),
+            }
+        );
+        assert_eq!(
+            parse_fleet_task_action(&s(&["detour-exit", "return"])).unwrap(),
+            FleetTaskAction::DetourExitReturn
+        );
+        assert_eq!(
+            parse_fleet_task_action(&s(&["detour-exit", "sibling"])).unwrap(),
+            FleetTaskAction::DetourExitSibling
+        );
+        assert_eq!(
+            parse_fleet_task_action(&s(&["peek", "actor-2"])).unwrap(),
+            FleetTaskAction::Peek {
+                actor_id: Some("actor-2".to_owned()),
+            }
+        );
+        assert_eq!(
+            parse_fleet_task_action(&s(&["fleet-step"])).unwrap(),
+            FleetTaskAction::FleetStep
+        );
+        assert_eq!(
+            parse_fleet_task_action(&s(&["sandbox-verify"])).unwrap(),
+            FleetTaskAction::SandboxVerify
+        );
+        assert!(parse_fleet_task_action(&s(&["drill", "4"])).is_err());
+        assert!(parse_fleet_task_action(&s(&["detour-exit", "force"])).is_err());
+        assert!(parse_fleet_task_action(&s(&["human-approve", "gate-1"])).is_err());
+        assert!(parse_fleet_task_action(&s(&["governance-rearm", "alice"])).is_err());
     }
 }
