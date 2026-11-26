@@ -487,4 +487,77 @@ mod tests {
                     && String::from_utf8_lossy(&p.stdout).trim() == "hello-atomic-sandbox"
         ));
     }
+
+    #[cfg(feature = "ui-grpc")]
+    #[tokio::test]
+    async fn mygo_bridge_host_executes_atomic_effect_batch_over_mounted_turso_executor() {
+        use marlin_agent_runtime::plugin::ReleaseTrust;
+        use std::collections::BTreeMap;
+
+        let unmounted =
+            crate::ui_grpc::MyGoBridgeHost::new(ReleaseTrust::new(BTreeMap::new()), |_| Ok(()));
+        let denied = unmounted
+            .run_atomic_effects(vec![AtomicEffect::CasGet(CasGetEffectPayload {
+                effect_id: "e-unmounted".to_owned(),
+                key: "k:missing".to_owned(),
+            })])
+            .await
+            .unwrap_err();
+        assert_eq!(denied.code(), tonic::Code::FailedPrecondition);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = TursoAgentStorageConfig {
+            path: dir.path().join("mygo-host-atomic.db"),
+            optimization_profile: TursoOptimizationProfile::AsyncIoWithMvcc,
+            batch_transaction_mode: TursoBatchTransactionMode::Concurrent,
+        };
+        let storage = TursoAgentStorage::open_local(cfg)
+            .await
+            .expect("open turso");
+        let exec = Arc::new(CompositeAtomicEffectExecutor::new(
+            storage,
+            EchoModelGateway,
+            ProjectId::new("proj-host-s13").unwrap(),
+            SessionId::new("sess-host-s13").unwrap(),
+            AgentId::new("mygo-host-s13").unwrap(),
+        ));
+        let host =
+            crate::ui_grpc::MyGoBridgeHost::new(ReleaseTrust::new(BTreeMap::new()), |_| Ok(()))
+                .with_atomic_executor(exec);
+
+        let put_rcpts = host
+            .run_atomic_effects(vec![
+                AtomicEffect::CasPut(CasPutEffectPayload {
+                    effect_id: "h-put".to_owned(),
+                    key: "k:host:s13".to_owned(),
+                    bytes: b"host-wal-bytes".to_vec(),
+                }),
+                AtomicEffect::LlmComplete(LlmCompleteEffectPayload {
+                    effect_id: "h-llm".to_owned(),
+                    request: ModelGatewayRequest::new(
+                        ModelEndpoint::new("openai", "gpt-marlin-echo"),
+                        vec![user_gateway_message("host-ping")],
+                    ),
+                }),
+            ])
+            .await
+            .expect("host atomic batch");
+        assert!(matches!(put_rcpts[0], AtomicEffectReceipt::CasStored(ref id) if id == "h-put"));
+        assert!(matches!(
+            put_rcpts[1],
+            AtomicEffectReceipt::LlmCompleted(ref p) if p.content == "echo:host-ping"
+        ));
+
+        let get_rcpts = host
+            .run_atomic_effects(vec![AtomicEffect::CasGet(CasGetEffectPayload {
+                effect_id: "h-get".to_owned(),
+                key: "k:host:s13".to_owned(),
+            })])
+            .await
+            .expect("host cas get");
+        assert!(matches!(
+            get_rcpts.as_slice(),
+            [AtomicEffectReceipt::CasHit(p)] if p.bytes == b"host-wal-bytes"
+        ));
+    }
 }

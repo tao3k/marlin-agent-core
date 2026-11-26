@@ -27,12 +27,13 @@ use std::{
 #[cfg(feature = "turso-host")]
 use marlin_agent_app_server::TaskActorControlPlane;
 use marlin_agent_app_server::{
-    AppServer, SessionBinding, SessionOpen, TaskActorPersistenceHandle,
+    AppServer, CompositeAtomicEffectExecutor, SessionBinding, SessionOpen,
+    TaskActorPersistenceHandle,
     ui_grpc::MyGoBridgeHost,
     wire::marlin::gate::v1::{GateKind, PendingGate},
 };
 use marlin_agent_protocol::{
-    ModelEndpoint, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse,
+    ModelEndpoint, ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse,
     ModelGatewayFuture, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
     assistant_gateway_message,
 };
@@ -69,8 +70,35 @@ const ADMISSION_EVENT_KIND: &str = "marlin.mygo.session.admitted.v1";
 /// `MARLIN_BRIDGE_REAL_SESSION=1` is enabled without any live external LLM calls.
 /// Prompts prefixed with `[hold-after-chunk-1]` emit chunk 1 durably and then
 /// wait deterministically so callers can exercise authoritative cancellation.
+#[derive(Clone, Copy)]
 struct DeterministicLocalGateway {
     chunk_delay: Duration,
+}
+
+impl ModelGateway for DeterministicLocalGateway {
+    fn complete(
+        &self,
+        request: ModelGatewayRequest,
+    ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayCompletionResponse>> {
+        let prompt = request
+            .messages()
+            .last()
+            .map(|msg| msg.content.clone())
+            .unwrap_or_default();
+        Box::pin(async move {
+            let reply =
+                format!("[marlin-core] processed \"{prompt}\" via durable ConversationJournal.");
+            Ok(ModelGatewayCompletionResponse::new(
+                "marlin-local-deterministic",
+                "gpt-marlin-local",
+                vec![ModelGatewayCompletionChoice::new(
+                    0,
+                    assistant_gateway_message(reply),
+                    None,
+                )],
+            ))
+        })
+    }
 }
 
 impl ModelStreamingGateway for DeterministicLocalGateway {
@@ -359,13 +387,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let task_actors =
                     TaskActorControlPlane::rehydrate_or_new(&storage, &task_project, &task_pointer)
                         .await?;
+                let atomic_exec = Arc::new(CompositeAtomicEffectExecutor::new(
+                    storage.clone(),
+                    DeterministicLocalGateway { chunk_delay },
+                    task_project.clone(),
+                    marlin_agent_storage::SessionId::new("marlin-mygo-atomic-pump")?,
+                    task_agent.clone(),
+                ));
                 persistence_handle = Some(task_actors.spawn_storage_persistence_loop(
                     storage.clone(),
                     task_project,
                     task_pointer,
                     task_agent,
                 ));
-                let host = host.with_task_actors(task_actors);
+                let host = host
+                    .with_task_actors(task_actors)
+                    .with_atomic_executor(atomic_exec);
                 build_real_session_router(storage, builder, host, expected_header, chunk_delay)?
             }
             #[cfg(not(feature = "turso-host"))]
@@ -378,6 +415,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         } else {
             let storage = InMemoryAgentStorage::default();
+            let atomic_exec = Arc::new(CompositeAtomicEffectExecutor::new(
+                storage.clone(),
+                DeterministicLocalGateway { chunk_delay },
+                ProjectId::new("default")?,
+                marlin_agent_storage::SessionId::new("marlin-mygo-atomic-pump")?,
+                AgentId::new("marlin-mygo-host")?,
+            ));
+            let host = host.with_atomic_executor(atomic_exec);
             build_real_session_router(storage, builder, host, expected_header, chunk_delay)?
         }
     } else {

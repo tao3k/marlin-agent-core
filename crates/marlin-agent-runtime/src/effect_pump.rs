@@ -153,7 +153,7 @@ pub async fn run_atomic_effect_batch<E>(
     effects: Vec<AtomicEffect>,
 ) -> Vec<AtomicEffectReceipt>
 where
-    E: AtomicEffectExecutor + 'static,
+    E: AtomicEffectExecutor + ?Sized + 'static,
 {
     let total = effects.len();
     let mut join_set = tokio::task::JoinSet::new();

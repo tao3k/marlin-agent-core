@@ -157,6 +157,7 @@ pub struct MyGoBridgeHost {
     panel_tx: broadcast::Sender<ScopedPanelEvent>,
     device_inv_tx: broadcast::Sender<DeviceInvocationRequest>,
     task_actors: crate::TaskActorControlPlane,
+    atomic_executor: Option<Arc<dyn marlin_agent_runtime::AtomicEffectExecutor>>,
 }
 
 struct BridgeState {
@@ -231,6 +232,7 @@ impl MyGoBridgeHost {
             panel_tx,
             device_inv_tx,
             task_actors: crate::TaskActorControlPlane::new(),
+            atomic_executor: None,
         })
     }
 
@@ -243,6 +245,35 @@ impl MyGoBridgeHost {
     /// Borrow the Session-free `TaskActorControlPlane` bound to this bridge host.
     pub fn task_actors(&self) -> &crate::TaskActorControlPlane {
         &self.task_actors
+    }
+
+    /// Mount a thin domain-agnostic 4-primitive `AtomicEffectExecutor` (e.g.
+    /// `CompositeAtomicEffectExecutor` backed by Turso WAL + `ModelGateway`) onto this host.
+    pub fn with_atomic_executor(
+        mut self,
+        executor: Arc<dyn marlin_agent_runtime::AtomicEffectExecutor>,
+    ) -> Self {
+        self.atomic_executor = Some(executor);
+        self
+    }
+
+    /// Borrow the mounted 4-primitive `AtomicEffectExecutor`, if configured.
+    pub fn atomic_executor(&self) -> Option<&Arc<dyn marlin_agent_runtime::AtomicEffectExecutor>> {
+        self.atomic_executor.as_ref()
+    }
+
+    /// Execute a Scheme-emitted batch of primitive `AtomicEffect`s concurrently through the
+    /// mounted leaf substrate; fails closed if no executor is mounted.
+    pub async fn run_atomic_effects(
+        &self,
+        effects: Vec<marlin_agent_runtime::AtomicEffect>,
+    ) -> Result<Vec<marlin_agent_runtime::AtomicEffectReceipt>, Status> {
+        let Some(executor) = &self.atomic_executor else {
+            return Err(Status::failed_precondition(
+                "atomic effect executor not mounted on MyGoBridgeHost",
+            ));
+        };
+        Ok(marlin_agent_runtime::run_atomic_effect_batch(Arc::clone(executor), effects).await)
     }
 
     /// Attach the 5 orthogonal UI/Gate/Plugin/Device/Projection services to an
