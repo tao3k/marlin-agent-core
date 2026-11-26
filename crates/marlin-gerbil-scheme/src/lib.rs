@@ -7,6 +7,7 @@
 mod agent_policy_routing;
 mod agent_policy_routing_abi;
 mod aot_runtime;
+mod atomic_effect_abi;
 mod brief_to_draft;
 mod deck_runtime_policy;
 mod graph_engine;
@@ -57,6 +58,15 @@ pub use aot_runtime::{
     GerbilAotPlan, GerbilAotProfile, GerbilAotStaticLinkPlan, GerbilAotStaticLinkStatus,
     GerbilAotStatus, GerbilAotSymbol, GerbilAotSymbolAuditMethod, GerbilCCompiler,
     GerbilLinkLibrary, GerbilSymbolAuditor,
+};
+pub use atomic_effect_abi::{
+    AtomicEffectAbiError, FleetAuditCapsuleProjection,
+    MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_AUDIT_CAPSULE_SYMBOL,
+    MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_DISPATCH_SYMBOL,
+    MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_OPEN_SYMBOL, MARLIN_GRAPH_ENGINE_STEP_DRIVER_SYMBOL,
+    MARLIN_GRAPH_ENGINE_STEP_FLEET_SYMBOL, SchemeAtomicEffect, SchemeAtomicReceipt,
+    decode_fleet_audit_capsule_vector, decode_scheme_atomic_effect_vector,
+    encode_scheme_atomic_receipt_vector,
 };
 pub use brief_to_draft::{
     BriefNode, BriefProposal, BriefSettings, BriefSettingsDenial, BriefTemplate,

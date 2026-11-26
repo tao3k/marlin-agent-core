@@ -30,6 +30,7 @@ gerbil-scheme.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 futures-executor.workspace = true
+marlin-agent-app-server = { workspace = true, features = ["turso-host"] }
 marlin-agent-kernel.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-agent-storage = { workspace = true, features = ["turso"] }

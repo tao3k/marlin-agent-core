@@ -8,15 +8,14 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
     PackageResolutionProgress, RootedSchemeObject, SchemeScalar,
 };
+use marlin_agent_app_server::{BoundedTokioSandboxRunner, CompositeAtomicEffectExecutor};
 use marlin_agent_graph::{
     DetourMode, DisclosureDepth, DispatchRequestId, ExecutionReceiptStatus, FencingEpoch,
     GovernedContextCapsule, GovernedContextRejection, GraphConvergenceNodeId,
@@ -25,7 +24,8 @@ use marlin_agent_graph::{
     TaskActorScopeMode, TaskActorStatus, WorkbenchActiveTaskInput, WorkbenchTabKind,
 };
 use marlin_agent_protocol::{
-    ModelEndpoint, ModelGatewayRequest, system_gateway_message, user_gateway_message,
+    ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse, ModelGatewayFuture,
+    ModelGatewayRequest, ModelGatewayResult, assistant_gateway_message,
 };
 use marlin_agent_runtime::{
     AtomicEffect, AtomicEffectExecutor, AtomicEffectReceipt, CasGetEffectPayload,
@@ -35,11 +35,13 @@ use marlin_agent_runtime::{
 };
 use marlin_gerbil_scheme::{
     GraphEngineDispatchProjection, GraphEngineGovernedContextProjection,
-    GraphEngineProjectionError, GraphEngineWorkbenchTaskRow, decode_graph_engine_dispatch_vector,
+    GraphEngineProjectionError, GraphEngineWorkbenchTaskRow, SchemeAtomicEffect,
+    SchemeAtomicReceipt, decode_fleet_audit_capsule_vector, decode_graph_engine_dispatch_vector,
     decode_graph_engine_governed_context_vector, decode_graph_engine_reconcile_vector,
-    decode_graph_engine_workbench_tabs_vector, encode_graph_engine_dispatch_request,
-    encode_graph_engine_governed_context_request, encode_graph_engine_reconcile_request,
-    encode_graph_engine_workbench_tabs_request, gerbil_package_root,
+    decode_graph_engine_workbench_tabs_vector, decode_scheme_atomic_effect_vector,
+    encode_graph_engine_dispatch_request, encode_graph_engine_governed_context_request,
+    encode_graph_engine_reconcile_request, encode_graph_engine_workbench_tabs_request,
+    encode_scheme_atomic_receipt_vector, gerbil_package_root,
 };
 
 fn vec_obj<'vm>(
@@ -392,13 +394,6 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
             .unwrap()
     }
 
-    fn read_opt_str(obj: RootedSchemeObject<'_>) -> Option<String> {
-        match obj.as_ref().kind().unwrap() {
-            ObjectKind::String => Some(read_str(obj)),
-            _ => None,
-        }
-    }
-
     fn read_fx(obj: RootedSchemeObject<'_>) -> isize {
         match obj.as_ref().scalar().unwrap() {
             SchemeScalar::Fixnum(n) => n,
@@ -407,69 +402,33 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
     }
 
     fn decode_effect<'vm>(obj: RootedSchemeObject<'vm>) -> AtomicEffect {
-        let v = obj.into_collection(CollectionKind::Vector).unwrap();
-        let kind = read_sym(v.element(0).unwrap());
-        let id = read_str(v.element(1).unwrap());
-        match kind.as_str() {
-            "cas-get" => AtomicEffect::CasGet(CasGetEffectPayload {
-                effect_id: id,
-                key: read_str(v.element(2).unwrap()),
-            }),
-            "cas-put" => AtomicEffect::CasPut(CasPutEffectPayload {
-                effect_id: id,
-                key: read_str(v.element(2).unwrap()),
-                bytes: read_str(v.element(3).unwrap()).into_bytes(),
-            }),
-            "llm-complete" => {
-                let endpoint_raw = read_str(v.element(2).unwrap());
-                let (prov, model) = endpoint_raw
-                    .split_once('/')
-                    .unwrap_or(("openai", endpoint_raw.as_str()));
-                let msgs_vec = v
-                    .element(3)
-                    .unwrap()
-                    .into_collection(CollectionKind::Vector)
-                    .unwrap();
-                let mut messages = Vec::with_capacity(msgs_vec.len());
-                for i in 0..msgs_vec.len() {
-                    let pair = msgs_vec
-                        .element(i)
-                        .unwrap()
-                        .into_collection(CollectionKind::Vector)
-                        .unwrap();
-                    let role = read_sym(pair.element(0).unwrap());
-                    let body = read_str(pair.element(1).unwrap());
-                    messages.push(if role == "system" {
-                        system_gateway_message(body)
-                    } else {
-                        user_gateway_message(body)
-                    });
-                }
-                AtomicEffect::LlmComplete(LlmCompleteEffectPayload {
-                    effect_id: id,
-                    request: ModelGatewayRequest::new(ModelEndpoint::new(prov, model), messages),
-                })
+        match decode_scheme_atomic_effect_vector(obj).expect("decode Scheme atomic effect vector") {
+            SchemeAtomicEffect::CasGet { effect_id, key } => {
+                AtomicEffect::CasGet(CasGetEffectPayload { effect_id, key })
             }
-            "sandbox-run" => {
-                let prog = read_str(v.element(2).unwrap());
-                let args_vec = v
-                    .element(3)
-                    .unwrap()
-                    .into_collection(CollectionKind::Vector)
-                    .unwrap();
-                let mut args = Vec::with_capacity(args_vec.len());
-                for i in 0..args_vec.len() {
-                    args.push(read_str(args_vec.element(i).unwrap()));
-                }
-                let cwd = read_opt_str(v.element(4).unwrap());
-                AtomicEffect::SandboxRun(SandboxRunEffectPayload {
-                    effect_id: id,
-                    program: prog,
-                    args,
-                    cwd,
-                })
+            SchemeAtomicEffect::CasPut {
+                effect_id,
+                key,
+                bytes,
+            } => AtomicEffect::CasPut(CasPutEffectPayload {
+                effect_id,
+                key,
+                bytes,
+            }),
+            SchemeAtomicEffect::LlmComplete { effect_id, request } => {
+                AtomicEffect::LlmComplete(LlmCompleteEffectPayload { effect_id, request })
             }
-            other => panic!("unexpected atomic effect kind from Scheme VM: {other}"),
+            SchemeAtomicEffect::SandboxRun {
+                effect_id,
+                program,
+                args,
+                cwd,
+            } => AtomicEffect::SandboxRun(SandboxRunEffectPayload {
+                effect_id,
+                program,
+                args,
+                cwd,
+            }),
         }
     }
 
@@ -477,48 +436,31 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
         rt: &'vm GerbilRuntime,
         receipt: &AtomicEffectReceipt,
     ) -> RootedSchemeObject<'vm> {
-        match receipt {
-            AtomicEffectReceipt::CasHit(p) => vec_obj(
-                rt,
-                &[
-                    sym(rt, "cas-hit"),
-                    txt(rt, &p.effect_id),
-                    txt(rt, &String::from_utf8_lossy(&p.bytes)),
-                ],
-            ),
-            AtomicEffectReceipt::CasMiss(id) => vec_obj(rt, &[sym(rt, "cas-miss"), txt(rt, id)]),
-            AtomicEffectReceipt::CasStored(id) => {
-                vec_obj(rt, &[sym(rt, "cas-stored"), txt(rt, id)])
-            }
-            AtomicEffectReceipt::LlmCompleted(p) => vec_obj(
-                rt,
-                &[
-                    sym(rt, "llm-completed"),
-                    txt(rt, &p.effect_id),
-                    txt(rt, &p.content),
-                ],
-            ),
-            AtomicEffectReceipt::SandboxExited(p) => vec_obj(
-                rt,
-                &[
-                    sym(rt, "sandbox-exited"),
-                    txt(rt, &p.effect_id),
-                    fx(rt, p.exit_code as isize),
-                    txt(rt, &String::from_utf8_lossy(&p.stdout)),
-                    txt(rt, &String::from_utf8_lossy(&p.stderr)),
-                ],
-            ),
+        let wire = match receipt {
+            AtomicEffectReceipt::CasHit(p) => SchemeAtomicReceipt::CasHit {
+                effect_id: p.effect_id.clone(),
+                bytes: p.bytes.clone(),
+            },
+            AtomicEffectReceipt::CasMiss(id) => SchemeAtomicReceipt::CasMiss(id.clone()),
+            AtomicEffectReceipt::CasStored(id) => SchemeAtomicReceipt::CasStored(id.clone()),
+            AtomicEffectReceipt::LlmCompleted(p) => SchemeAtomicReceipt::LlmCompleted {
+                effect_id: p.effect_id.clone(),
+                content: p.content.clone(),
+            },
+            AtomicEffectReceipt::SandboxExited(p) => SchemeAtomicReceipt::SandboxExited {
+                effect_id: p.effect_id.clone(),
+                exit_code: p.exit_code,
+                stdout: p.stdout.clone(),
+                stderr: p.stderr.clone(),
+            },
             AtomicEffectReceipt::EffectError(EffectErrorReceiptPayload { effect_id, message }) => {
-                vec_obj(
-                    rt,
-                    &[
-                        sym(rt, "effect-error"),
-                        txt(rt, effect_id),
-                        txt(rt, message),
-                    ],
-                )
+                SchemeAtomicReceipt::EffectError {
+                    effect_id: effect_id.clone(),
+                    message: message.clone(),
+                }
             }
-        }
+        };
+        encode_scheme_atomic_receipt_vector(rt, &wire).expect("encode Scheme receipt vector")
     }
 
     let rt_tokio = tokio::runtime::Builder::new_current_thread()
@@ -635,139 +577,54 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
     let scheme_fleet_restore = resolve("marlin-graph-engine-fleet-restore-vector");
     let scheme_fleet_summary = resolve("marlin-graph-engine-fleet-summary-vector");
 
-    struct TursoLeafSubstrate {
-        storage: marlin_agent_storage::TursoAgentStorage,
-        project_id: marlin_agent_storage::ProjectId,
-        session_id: marlin_agent_storage::SessionId,
-        agent_id: marlin_agent_storage::AgentId,
-        seq: AtomicU64,
-    }
+    struct VmEchoModelGateway;
 
-    impl TursoLeafSubstrate {
-        fn new(storage: marlin_agent_storage::TursoAgentStorage) -> Self {
-            Self {
-                storage,
-                project_id: marlin_agent_storage::ProjectId::new("proj-vm-turso").unwrap(),
-                session_id: marlin_agent_storage::SessionId::new("vm-turso-pump").unwrap(),
-                agent_id: marlin_agent_storage::AgentId::new("gerbil-vm-agent").unwrap(),
-                seq: AtomicU64::new(1),
-            }
-        }
-
-        fn pointer_key_for(key: &str) -> marlin_agent_storage::ArtifactPointerKey {
-            let digest = marlin_agent_context::governed_bridge::compute_kv_prefix_digest(key);
-            let hex = digest
-                .as_str()
-                .strip_prefix("sha256:")
-                .unwrap_or(digest.as_str());
-            marlin_agent_storage::ArtifactPointerKey::new(format!("ptr:cas:{hex}")).unwrap()
-        }
-    }
-
-    impl AtomicEffectExecutor for TursoLeafSubstrate {
-        fn execute_atomic<'a>(
-            &'a self,
-            effect: AtomicEffect,
-        ) -> Pin<Box<dyn Future<Output = AtomicEffectReceipt> + Send + 'a>> {
-            use marlin_agent_storage::AgentStorage;
+    impl ModelGateway for VmEchoModelGateway {
+        fn complete(
+            &self,
+            request: ModelGatewayRequest,
+        ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayCompletionResponse>> {
+            let tail = request
+                .messages()
+                .last()
+                .map(|m| m.content.clone())
+                .unwrap_or_default();
             Box::pin(async move {
-                match effect {
-                    AtomicEffect::CasGet(p) => {
-                        let ptr_key = Self::pointer_key_for(&p.key);
-                        let ptr = self
-                            .storage
-                            .get_artifact_pointer(&self.project_id, &ptr_key)
-                            .await
-                            .unwrap();
-                        if let Some(pointer) = ptr {
-                            let art = self
-                                .storage
-                                .get_artifact(&self.project_id, &pointer.target_artifact_hash)
-                                .await
-                                .unwrap()
-                                .expect("turso cas artifact must exist");
-                            AtomicEffectReceipt::CasHit(CasHitReceiptPayload {
-                                effect_id: p.effect_id,
-                                bytes: art.body,
-                            })
-                        } else {
-                            AtomicEffectReceipt::CasMiss(p.effect_id)
-                        }
-                    }
-                    AtomicEffect::CasPut(p) => {
-                        let body_text = String::from_utf8_lossy(&p.bytes);
-                        let digest =
-                            marlin_agent_context::governed_bridge::compute_kv_prefix_digest(
-                                &body_text,
-                            );
-                        let hash =
-                            marlin_agent_storage::ArtifactHash::new(digest.as_str().to_owned())
-                                .unwrap();
-                        let n = self.seq.fetch_add(1, Ordering::Relaxed);
-                        let event_id =
-                            marlin_agent_storage::EventId::new(format!("ev-vm-cas-{n}")).unwrap();
-                        self.storage
-                            .put_artifact(marlin_agent_storage::ArtifactRecord {
-                                project_id: self.project_id.clone(),
-                                artifact_hash: hash.clone(),
-                                artifact_kind: "scheme-cas-blob".to_owned(),
-                                producer_session_id: self.session_id.clone(),
-                                producer_agent_id: self.agent_id.clone(),
-                                producer_event_id: event_id.clone(),
-                                media_type: "text/plain".to_owned(),
-                                size_bytes: p.bytes.len() as u64,
-                                body: p.bytes,
-                                created_at_unix_ms: n as i64,
-                            })
-                            .await
-                            .unwrap();
-                        let ptr_key = Self::pointer_key_for(&p.key);
-                        let expected = self
-                            .storage
-                            .get_artifact_pointer(&self.project_id, &ptr_key)
-                            .await
-                            .unwrap()
-                            .map(|ptr| ptr.target_artifact_hash);
-                        self.storage
-                            .compare_and_swap_artifact_pointer(
-                                marlin_agent_storage::ArtifactPointerUpdate {
-                                    project_id: self.project_id.clone(),
-                                    pointer_key: ptr_key,
-                                    expected_artifact_hash: expected,
-                                    new_artifact_hash: hash,
-                                    updated_by_session_id: self.session_id.clone(),
-                                    updated_by_agent_id: self.agent_id.clone(),
-                                    updated_by_event_id: event_id,
-                                    updated_at_unix_ms: n as i64,
-                                },
-                            )
-                            .await
-                            .unwrap();
-                        AtomicEffectReceipt::CasStored(p.effect_id)
-                    }
-                    AtomicEffect::LlmComplete(p) => {
-                        let tail = p
-                            .request
-                            .messages()
-                            .last()
-                            .map(|m| m.content.clone())
-                            .unwrap_or_default();
-                        AtomicEffectReceipt::LlmCompleted(LlmCompletedReceiptPayload {
-                            effect_id: p.effect_id,
-                            content: format!("turso-llm:{tail}"),
-                        })
-                    }
-                    AtomicEffect::SandboxRun(p) => {
-                        AtomicEffectReceipt::SandboxExited(SandboxExitedReceiptPayload {
-                            effect_id: p.effect_id,
-                            exit_code: 0,
-                            stdout: format!("turso-ran:{}", p.program).into_bytes(),
-                            stderr: Vec::new(),
-                        })
-                    }
-                }
+                Ok(ModelGatewayCompletionResponse::new(
+                    "turso-vm-resp",
+                    "gpt-marlin-turso",
+                    vec![ModelGatewayCompletionChoice::new(
+                        0,
+                        assistant_gateway_message(format!("turso-llm:{tail}")),
+                        None,
+                    )],
+                ))
             })
         }
+    }
+
+    type ProdTursoExecutor = CompositeAtomicEffectExecutor<
+        marlin_agent_storage::TursoAgentStorage,
+        VmEchoModelGateway,
+        BoundedTokioSandboxRunner,
+    >;
+
+    fn make_prod_turso_executor(
+        storage: marlin_agent_storage::TursoAgentStorage,
+    ) -> Arc<ProdTursoExecutor> {
+        Arc::new(
+            CompositeAtomicEffectExecutor::new(
+                storage,
+                VmEchoModelGateway,
+                marlin_agent_storage::ProjectId::new("proj-vm-turso").unwrap(),
+                marlin_agent_storage::SessionId::new("vm-turso-pump").unwrap(),
+                marlin_agent_storage::AgentId::new("gerbil-vm-agent").unwrap(),
+            )
+            .with_sandbox(BoundedTokioSandboxRunner::new(
+                Duration::from_secs(5),
+                16 * 1024,
+            )),
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -776,7 +633,7 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
         step_proc: &RootedSchemeObject<'vm>,
         cp_proc: &RootedSchemeObject<'vm>,
         rt_tokio: &tokio::runtime::Runtime,
-        substrate: &Arc<TursoLeafSubstrate>,
+        substrate: &Arc<ProdTursoExecutor>,
         fleet: RootedSchemeObject<'vm>,
         incoming: Vec<AtomicEffectReceipt>,
         remaining: usize,
@@ -855,7 +712,7 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
             turso_cfg.clone(),
         ))
         .expect("open turso boot #1");
-    let turso_sub1 = Arc::new(TursoLeafSubstrate::new(storage1));
+    let turso_sub1 = make_prod_turso_executor(storage1);
     let fleet_req = vec_obj(
         &runtime,
         &[
@@ -897,7 +754,7 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
             turso_cfg,
         ))
         .expect("reopen turso boot #2");
-    let turso_sub2 = Arc::new(TursoLeafSubstrate::new(storage2));
+    let turso_sub2 = make_prod_turso_executor(storage2);
     let get_receipts = rt_tokio.block_on(run_atomic_effect_batch(
         Arc::clone(&turso_sub2),
         vec![AtomicEffect::CasGet(CasGetEffectPayload {
@@ -1152,7 +1009,7 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
             turso_cfg3,
         ))
         .expect("reopen turso boot #3");
-    let turso_sub3 = Arc::new(TursoLeafSubstrate::new(storage3));
+    let turso_sub3 = make_prod_turso_executor(storage3);
     let get3_receipts = rt_tokio.block_on(run_atomic_effect_batch(
         Arc::clone(&turso_sub3),
         vec![AtomicEffect::CasGet(CasGetEffectPayload {
@@ -1262,27 +1119,19 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
         .unwrap();
     let ctrl_b3_branched = branch_out.element(0).unwrap();
 
-    // 3. Export FleetAuditCapsule vector & verify all non-authorizing security invariants!
-    let audit3 = runtime
-        .call_rooted(&scheme_ctrl_audit, &ctrl_b3_branched)
-        .unwrap()
-        .into_collection(CollectionKind::Vector)
-        .unwrap();
-    assert_eq!(read_fx(audit3.element(0).unwrap()), 3); // 3 active actors (parent + sib2 + reopened sib)
-    assert_eq!(read_fx(audit3.element(1).unwrap()), 0); // 0 archived actors
-    assert_eq!(read_fx(audit3.element(2).unwrap()), 0); // 0 peeks
-    assert_eq!(
-        audit3.element(5).unwrap().as_ref().scalar().unwrap(),
-        SchemeScalar::Boolean(false)
-    ); // favored-path-collapsed?
-    assert_eq!(
-        audit3.element(6).unwrap().as_ref().scalar().unwrap(),
-        SchemeScalar::Boolean(false)
-    ); // authenticates-evidence?
-    assert_eq!(
-        audit3.element(7).unwrap().as_ref().scalar().unwrap(),
-        SchemeScalar::Boolean(false)
-    ); // authorizes-effect?
+    // 3. Export FleetAuditCapsule vector via production codec & verify all security invariants!
+    let audit3 = decode_fleet_audit_capsule_vector(
+        runtime
+            .call_rooted(&scheme_ctrl_audit, &ctrl_b3_branched)
+            .unwrap(),
+    )
+    .expect("decode audit3");
+    assert_eq!(audit3.active_actor_count, 3);
+    assert_eq!(audit3.archived_actor_count, 0);
+    assert_eq!(audit3.peek_count, 0);
+    assert!(!audit3.favored_path_collapsed);
+    assert!(!audit3.authenticates_evidence);
+    assert!(!audit3.authorizes_effect);
 
     // 4. Checkpoint post-reopen Fleet via `SPC o f c` -> REAL disk Turso WAL -> Drop -> Boot #4!
     let cp3_in = vec_obj(
@@ -1317,7 +1166,7 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
     ));
     drop(turso_sub3);
 
-    // Boot #4: Reopen REAL disk Turso SQLite WAL, restore Fleet, confirm all 3 active actors & invariants!
+    // Boot #4: Reopen REAL disk Turso SQLite WAL via production CompositeAtomicEffectExecutor!
     let turso_cfg4 = marlin_agent_storage::TursoAgentStorageConfig {
         path: tmp_dir.path().join("gerbil-vm-fleet.db"),
         optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvcc,
@@ -1328,7 +1177,7 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
             turso_cfg4,
         ))
         .expect("reopen turso boot #4");
-    let turso_sub4 = Arc::new(TursoLeafSubstrate::new(storage4));
+    let turso_sub4 = make_prod_turso_executor(storage4);
     let get4_rcpts = rt_tokio.block_on(run_atomic_effect_batch(
         Arc::clone(&turso_sub4),
         vec![AtomicEffect::CasGet(CasGetEffectPayload {
@@ -1347,23 +1196,13 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
             &vec_obj(&runtime, &[restored_fleet4, sym(&runtime, "L3")]),
         )
         .unwrap();
-    let audit4 = runtime
-        .call_rooted(&scheme_ctrl_audit, &ctrl_b4)
-        .unwrap()
-        .into_collection(CollectionKind::Vector)
-        .unwrap();
-    assert_eq!(read_fx(audit4.element(0).unwrap()), 3);
-    assert_eq!(read_fx(audit4.element(1).unwrap()), 0);
-    assert_eq!(
-        audit4.element(5).unwrap().as_ref().scalar().unwrap(),
-        SchemeScalar::Boolean(false)
-    );
-    assert_eq!(
-        audit4.element(6).unwrap().as_ref().scalar().unwrap(),
-        SchemeScalar::Boolean(false)
-    );
-    assert_eq!(
-        audit4.element(7).unwrap().as_ref().scalar().unwrap(),
-        SchemeScalar::Boolean(false)
-    );
+    let audit4 = decode_fleet_audit_capsule_vector(
+        runtime.call_rooted(&scheme_ctrl_audit, &ctrl_b4).unwrap(),
+    )
+    .expect("decode audit4");
+    assert_eq!(audit4.active_actor_count, 3);
+    assert_eq!(audit4.archived_actor_count, 0);
+    assert!(!audit4.favored_path_collapsed);
+    assert!(!audit4.authenticates_evidence);
+    assert!(!audit4.authorizes_effect);
 }
