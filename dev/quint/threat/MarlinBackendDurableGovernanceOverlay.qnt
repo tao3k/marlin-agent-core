@@ -5,10 +5,14 @@
 // @countermodel restart-preserves-estop step=stepRestartClearsEStop max-steps=6 itf="h.restartClearedTrip == true"
 // @countermodel restart-monotonic-epochs step=stepRestartRegressesEpoch max-steps=8 itf="h.restartEpochRegressed == true"
 // @countermodel corrupt-wal-fails-closed step=stepCorruptWalFailsOpen max-steps=6 itf="h.corruptWalOpened == true"
+// @countermodel corrupt-fact-graph-fails-closed step=stepCorruptFactGraphFailsOpen max-steps=6 itf="h.corruptFactGraphOpened == true"
+// @countermodel cedar-forbid-overrides-permit step=stepCedarForbidBypassedByPermit max-steps=6 itf="h.cedarForbidBypassed == true"
+// @countermodel retracted-derivation-denied step=stepRetractedDerivationCommits max-steps=6 itf="h.retractedDerivationCommitted == true"
 
-// Marlin Durable Higher-Order Governance overlay composing AgentToolCircuitBreaker
-// with Turso WAL / CAS checkpointing, OS process crash-restart recovery, and
-// tamper-evident SHA-256 checkpoint integrity verification (anti-restart-reset bypass).
+// Marlin Durable Governance overlay composing AgentToolCircuitBreaker
+// with Turso WAL / CAS MGV1+MGF1 checkpointing, OS process crash-restart recovery,
+// tamper-evident SHA-256 checkpoint integrity verification, Cedar forbid-overrides-permit,
+// and Bi-Temporal Truth Maintenance dynamic derivation invalidation.
 module marlin_backend_durable_governance_overlay {
   type State = {
     walCommitted: bool,
@@ -17,11 +21,16 @@ module marlin_backend_durable_governance_overlay {
     walProofEpoch: int,
     walFenced: bool,
     walCorrupted: bool,
+    factGraphCorrupted: bool,
     liveProofEpoch: int,
     liveFenced: bool,
+    dynamicDerivationRetracted: bool,
     restartClearedTrip: bool,
     restartEpochRegressed: bool,
-    corruptWalOpened: bool
+    corruptWalOpened: bool,
+    corruptFactGraphOpened: bool,
+    cedarForbidBypassed: bool,
+    retractedDerivationCommitted: bool
   }
 
   action init = h' = {
@@ -31,16 +40,21 @@ module marlin_backend_durable_governance_overlay {
     walProofEpoch: 1,
     walFenced: false,
     walCorrupted: false,
+    factGraphCorrupted: false,
     liveProofEpoch: 1,
     liveFenced: false,
+    dynamicDerivationRetracted: false,
     restartClearedTrip: false,
     restartEpochRegressed: false,
-    corruptWalOpened: false
+    corruptWalOpened: false,
+    corruptFactGraphOpened: false,
+    cedarForbidBypassed: false,
+    retractedDerivationCommitted: false
   }
 
   // Persist current live breaker + Scheme governance state into Turso WAL/CAS.
   action syncWalCheckpoint =
-    if (not(h.walCorrupted))
+    if (not(h.walCorrupted) and not(h.factGraphCorrupted))
       h' = h
         .with("walCommitted", true)
         .with("walTripped", h.breakerTripped)
@@ -52,10 +66,11 @@ module marlin_backend_durable_governance_overlay {
 
   // Scheme ASCENT/TM incident trips breaker, fences actor, advances proof epoch, and flushes WAL.
   action applyAscentIncidentAndPersist =
-    if (not(h.walCorrupted) and h.liveProofEpoch < 4)
+    if (not(h.walCorrupted) and not(h.factGraphCorrupted) and h.liveProofEpoch < 4)
       h' = h
         .with("breakerTripped", true)
         .with("liveFenced", true)
+        .with("dynamicDerivationRetracted", true)
         .with("liveProofEpoch", h.liveProofEpoch + 1)
         .with("walCommitted", true)
         .with("walTripped", true)
@@ -65,19 +80,26 @@ module marlin_backend_durable_governance_overlay {
     else
       h' = h
 
-  // Adversary corrupts or bit-flips the persisted Turso WAL blob on disk.
+  // Adversary corrupts or bit-flips the persisted MGV1 Turso WAL blob on disk.
   action tamperWalOnDisk =
     if (h.walCommitted and not(h.walCorrupted))
       h' = h.with("walCorrupted", true)
     else
       h' = h
 
+  // Adversary corrupts or bit-flips the companion MGF1 runtime fact-graph blob on disk.
+  action tamperFactGraphOnDisk =
+    if (h.walCommitted and not(h.factGraphCorrupted))
+      h' = h.with("factGraphCorrupted", true)
+    else
+      h' = h
+
   // Safe crash + OS process restart recovery:
   // 1. In-flight volatile leases are wiped on crash.
-  // 2. Corrupted/tampered WAL ALWAYS fails closed (breakerTripped=true, liveFenced=true).
+  // 2. Corrupted/tampered MGV1 OR MGF1 WAL ALWAYS fails closed (breakerTripped=true, liveFenced=true).
   // 3. Valid WAL restores persisted tripped latch, monotonic epochs, and ASCENT fences.
   action restartAndRecoverDurable =
-    if (h.walCorrupted)
+    if (h.walCorrupted or h.factGraphCorrupted)
       h' = h
         .with("leaseActive", false)
         .with("leaseEpoch", 0)
@@ -86,6 +108,7 @@ module marlin_backend_durable_governance_overlay {
         .with("liveProofEpoch", h.walProofEpoch)
         .with("liveFenced", true)
         .with("corruptWalOpened", h.corruptWalOpened or false)
+        .with("corruptFactGraphOpened", h.corruptFactGraphOpened or false)
     else if (h.walCommitted)
       h' = h
         .with("leaseActive", false)
@@ -105,17 +128,21 @@ module marlin_backend_durable_governance_overlay {
     syncWalCheckpoint,
     applyAscentIncidentAndPersist,
     tamperWalOnDisk,
+    tamperFactGraphOnDisk,
     restartAndRecoverDurable
   }
 
   val safety =
     not(h.restartClearedTrip) and
     not(h.restartEpochRegressed) and
-    not(h.corruptWalOpened)
+    not(h.corruptWalOpened) and
+    not(h.corruptFactGraphOpened) and
+    not(h.cedarForbidBypassed) and
+    not(h.retractedDerivationCommitted)
 
   // Countermodel 1: Restart-Reset Bypass — daemon reboots and wipes a persisted E-Stop latch.
   action restartClearsEStopUnchecked =
-    if (h.walCommitted and h.walTripped and not(h.walCorrupted))
+    if (h.walCommitted and h.walTripped and not(h.walCorrupted) and not(h.factGraphCorrupted))
       h' = h
         .with("leaseActive", false)
         .with("leaseEpoch", 0)
@@ -128,7 +155,7 @@ module marlin_backend_durable_governance_overlay {
 
   // Countermodel 2: Epoch Amnesia — daemon reboots back to epoch 1, enabling stale proof/lease replay.
   action restartRegressesEpochUnchecked =
-    if (h.walCommitted and not(h.walCorrupted) and (h.walTripEpoch > 1 or h.walProofEpoch > 1))
+    if (h.walCommitted and not(h.walCorrupted) and not(h.factGraphCorrupted) and (h.walTripEpoch > 1 or h.walProofEpoch > 1))
       h' = h
         .with("leaseActive", false)
         .with("leaseEpoch", 0)
@@ -140,7 +167,7 @@ module marlin_backend_durable_governance_overlay {
 
   action stepRestartRegressesEpoch = any { step, restartRegressesEpochUnchecked }
 
-  // Countermodel 3: Corrupt WAL Fail-Open — tampered Turso checkpoint boots armed instead of fail-closed.
+  // Countermodel 3: Corrupt MGV1 WAL Fail-Open — tampered Turso checkpoint boots armed instead of fail-closed.
   action corruptWalFailsOpenUnchecked =
     if (h.walCorrupted)
       h' = h
@@ -152,6 +179,37 @@ module marlin_backend_durable_governance_overlay {
       h' = h
 
   action stepCorruptWalFailsOpen = any { step, corruptWalFailsOpenUnchecked }
+
+  // Countermodel 4: Corrupt MGF1 Fact-Graph Fail-Open — tampered `:facts` CAS blob boots armed.
+  action corruptFactGraphFailsOpenUnchecked =
+    if (h.factGraphCorrupted)
+      h' = h
+        .with("leaseActive", false)
+        .with("leaseEpoch", 0)
+        .with("breakerTripped", false)
+        .with("corruptFactGraphOpened", true)
+    else
+      h' = h
+
+  action stepCorruptFactGraphFailsOpen = any { step, corruptFactGraphFailsOpenUnchecked }
+
+  // Countermodel 5: Cedar Permit Overrides Forbid — matching VerifiedHuman permit bypasses ASCENT forbid.
+  action cedarForbidBypassedByPermitUnchecked =
+    if (h.liveFenced)
+      h' = h.with("cedarForbidBypassed", true)
+    else
+      h' = h
+
+  action stepCedarForbidBypassedByPermit = any { step, cedarForbidBypassedByPermitUnchecked }
+
+  // Countermodel 6: Retracted Dynamic Derivation Commits — invalidated Bi-Temporal TM conclusion still commits.
+  action retractedDerivationCommitsUnchecked =
+    if (h.dynamicDerivationRetracted)
+      h' = h.with("retractedDerivationCommitted", true)
+    else
+      h' = h
+
+  action stepRetractedDerivationCommits = any { step, retractedDerivationCommitsUnchecked }
 
   run durableRestartRecoveryTest =
     init
@@ -174,7 +232,7 @@ module marlin_backend_durable_governance_overlay {
         assert(safety),
         h' = h
       })
-      .then(tamperWalOnDisk)
+      .then(tamperFactGraphOnDisk)
       .then(restartAndRecoverDurable)
       .then(all {
         assert(h.breakerTripped),
@@ -191,4 +249,13 @@ module marlin_backend_durable_governance_overlay {
 
   run corruptWalFailsOpenCountermodelTest =
     init.then(applyAscentIncidentAndPersist).then(tamperWalOnDisk).then(corruptWalFailsOpenUnchecked).then(checkUnsafe)
+
+  run corruptFactGraphFailsOpenCountermodelTest =
+    init.then(applyAscentIncidentAndPersist).then(tamperFactGraphOnDisk).then(corruptFactGraphFailsOpenUnchecked).then(checkUnsafe)
+
+  run cedarForbidBypassedCountermodelTest =
+    init.then(applyAscentIncidentAndPersist).then(cedarForbidBypassedByPermitUnchecked).then(checkUnsafe)
+
+  run retractedDerivationCommitsCountermodelTest =
+    init.then(applyAscentIncidentAndPersist).then(retractedDerivationCommitsUnchecked).then(checkUnsafe)
 }

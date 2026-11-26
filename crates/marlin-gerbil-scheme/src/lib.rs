@@ -137,7 +137,7 @@ pub use graph_loop_continuation::{
     project_gerbil_loop_graph_continuation_action,
 };
 pub use governance_policy_abi::{
-    GovernancePolicyAbiError, GovernancePolicyVectorProjection,
+    GovernanceDerivationSpec, GovernancePolicyAbiError, GovernancePolicyVectorProjection,
     GovernancePolicyVectorRequest, MARLIN_GOVERNANCE_PROJECT_SYMBOL,
     MARLIN_GOVERNANCE_ADMISSION_SCHEMA_VERSION, decode_governance_policy_vector,
     encode_governance_policy_request,

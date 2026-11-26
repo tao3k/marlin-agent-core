@@ -30,7 +30,16 @@ impl fmt::Display for GovernancePolicyAbiError {
 
 impl std::error::Error for GovernancePolicyAbiError {}
 
-/// Zero-JSON request payload encoded into a 15-slot rooted Gambit Scheme vector.
+/// One dynamic Bi-Temporal Truth Maintenance derivation node registered at runtime.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct GovernanceDerivationSpec {
+    pub derivation_id: String,
+    pub policy_id: String,
+    pub subject_premises: Vec<String>,
+    pub parent_derivations: Vec<String>,
+}
+
+/// Zero-JSON request payload encoded into a 16-slot rooted Gambit Scheme vector.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GovernancePolicyVectorRequest {
     pub delegation_edges: Vec<(String, String)>,
@@ -48,6 +57,7 @@ pub struct GovernancePolicyVectorRequest {
     pub retracted_subjects: Vec<String>,
     pub revocation_epoch: u64,
     pub policy_revision: u64,
+    pub derivation_specs: Vec<GovernanceDerivationSpec>,
 }
 
 /// Decoded 14-slot rooted Gambit Scheme governance proof projection.
@@ -113,7 +123,24 @@ fn encode_pair_vec<'vm>(
     encode_vec(runtime, &rooted)
 }
 
-/// Encodes `GovernancePolicyVectorRequest` into a 15-slot rooted Gambit heap vector.
+fn encode_derivation_specs<'vm>(
+    runtime: &'vm GerbilRuntime,
+    items: &[GovernanceDerivationSpec],
+) -> Result<RootedSchemeObject<'vm>, GovernancePolicyAbiError> {
+    let mut rooted = Vec::with_capacity(items.len());
+    for spec in items {
+        let entry = [
+            encode_str(runtime, &spec.derivation_id)?,
+            encode_str(runtime, &spec.policy_id)?,
+            encode_string_vec(runtime, &spec.subject_premises)?,
+            encode_string_vec(runtime, &spec.parent_derivations)?,
+        ];
+        rooted.push(encode_vec(runtime, &entry)?);
+    }
+    encode_vec(runtime, &rooted)
+}
+
+/// Encodes `GovernancePolicyVectorRequest` into a 16-slot rooted Gambit heap vector.
 pub fn encode_governance_policy_request<'vm>(
     runtime: &'vm GerbilRuntime,
     req: &GovernancePolicyVectorRequest,
@@ -138,6 +165,7 @@ pub fn encode_governance_policy_request<'vm>(
         runtime
             .scalar_object(SchemeScalar::Fixnum(req.policy_revision as isize))
             .map_err(|e| GovernancePolicyAbiError(format!("encode policy_revision: {e}")))?,
+        encode_derivation_specs(runtime, &req.derivation_specs)?,
     ];
     encode_vec(runtime, &slots)
 }

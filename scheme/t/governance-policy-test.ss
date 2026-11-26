@@ -360,6 +360,41 @@
         (check (> (vector-length (vector-ref out-admitted 13)) 2) => #t)))
 
     ;; -----------------------------------------------------------------------
+    ;; 10. Dynamic 16-Slot Runtime Bi-Temporal Causal Derivation DAG
+    ;; -----------------------------------------------------------------------
+    (test-case "16-slot governance vector computes exact blast radius over dynamic runtime derivation DAG"
+      (let* ((custom-dag
+              #(#("D-TOKEN" "pol.cert" #("token-cert-v1") #())
+                #("D-PLAN" "pol.plan" #("workspace-ok") #("D-TOKEN"))
+                #("D-DEPLOY" "pol.deploy" #("approval-sig") #("D-PLAN"))
+                #("D-AUDIT" "pol.audit" #("audit-log-ok") #())))
+             (req-retracted
+              (vector
+               #() #() #() #() #() #()
+               #() #() #() #()
+               #() #()
+               #("token-cert-v1")
+               4
+               2
+               custom-dag))
+             (req-clean
+              (vector
+               #() #() #() #() #() #()
+               #() #() #() #()
+               #() #()
+               #()
+               5
+               3
+               custom-dag))
+             (out-retracted (marlin-governance-project-vector req-retracted))
+             (out-clean (marlin-governance-project-vector req-clean)))
+        (check (vector-ref out-retracted 1) => #f)
+        (check (vector->list (vector-ref out-retracted 12))
+               => '("D-TOKEN" "D-PLAN" "D-DEPLOY"))
+        (check (vector-ref out-clean 1) => #t)
+        (check (vector->list (vector-ref out-clean 12)) => '())))
+
+    ;; -----------------------------------------------------------------------
     ;; 10. Official Yuanxu PolicyScope Publication Check
     ;; -----------------------------------------------------------------------
     (test-case "Marlin PolicyScope publishes both security-governance and governance bundles"

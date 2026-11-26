@@ -21,12 +21,12 @@ use std::{
 };
 
 use marlin_agent_kernel::{
-    BreakerActor, BreakerActorId, BreakerRejectionReason, BreakerTripReason, CedarPolicyId,
-    DerivationId, ExecutionCircuitBreaker, GovernanceProofDigest, GovernedSubjectName,
-    GOVERNANCE_ADMISSION_SCHEMA_VERSION, GovernanceAdmissionError,
-    GovernanceAdmissionGate, GovernanceProofEnvelope, GovernanceProofEpoch,
-    SynthesizedCedarPolicy, ToolBudgetUnits, ToolExecutionLease, ToolExecutionLeaseId,
-    ToolIfcContext,
+    BreakerActor, BreakerActorId, BreakerRejectionReason, BreakerTripReason, CedarContextValue,
+    CedarEntityRef, CedarEvaluationDecision, CedarEvaluationRequest, CedarPolicyId, DerivationId,
+    ExecutionCircuitBreaker, GovernanceProofDigest, GovernedSubjectName,
+    GOVERNANCE_ADMISSION_SCHEMA_VERSION, GovernanceAdmissionError, GovernanceAdmissionGate,
+    GovernanceProofEnvelope, GovernanceProofEpoch, SynthesizedCedarPolicy, ToolBudgetUnits,
+    ToolExecutionLease, ToolExecutionLeaseId, ToolIfcContext,
 };
 
 static DURABLE_QUINT_LOCK: Mutex<()> = Mutex::new(());
@@ -359,11 +359,17 @@ fn incident_envelope(epoch: u64) -> GovernanceProofEnvelope {
         fenced_actors: vec![GovernedSubjectName::new("agent-sub").unwrap()],
         blocked_tools: vec![GovernedSubjectName::new("os-shell").unwrap()],
         retracted_conclusions: vec![DerivationId::new("D-TOOL-EXEC").unwrap()],
-        cedar_policies: vec![SynthesizedCedarPolicy {
-            policy_id: CedarPolicyId::new("marlin.ascent.forbid.fenced.agent-sub").unwrap(),
-            source: "forbid(principal == Marlin::Actor::\"agent-sub\", action, resource);"
-                .to_owned(),
-        }],
+        cedar_policies: vec![
+            SynthesizedCedarPolicy {
+                policy_id: CedarPolicyId::new("marlin.permit.verified-human-governance").unwrap(),
+                source: "permit (principal in Marlin::Role::\"VerifiedHuman\", action in [Marlin::Action::\"rearm_breaker\"], resource) when { context.step_up_fresh == true };".to_owned(),
+            },
+            SynthesizedCedarPolicy {
+                policy_id: CedarPolicyId::new("marlin.ascent.forbid.fenced.agent-sub").unwrap(),
+                source: "forbid(principal == Marlin::Actor::\"agent-sub\", action, resource);"
+                    .to_owned(),
+            },
+        ],
     }
 }
 
@@ -382,6 +388,9 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
             "stepRestartClearsEStop",
             "stepRestartRegressesEpoch",
             "stepCorruptWalFailsOpen",
+            "stepCorruptFactGraphFailsOpen",
+            "stepCedarForbidBypassedByPermit",
+            "stepRetractedDerivationCommits",
         ],
     );
 
@@ -417,6 +426,12 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
             let restart_regressed =
                 b(next, "restartEpochRegressed") && !b(prev, "restartEpochRegressed");
             let corrupt_opened = b(next, "corruptWalOpened") && !b(prev, "corruptWalOpened");
+            let corrupt_fact_opened =
+                b(next, "corruptFactGraphOpened") && !b(prev, "corruptFactGraphOpened");
+            let cedar_forbid_bypassed =
+                b(next, "cedarForbidBypassed") && !b(prev, "cedarForbidBypassed");
+            let retracted_deriv_committed = b(next, "retractedDerivationCommitted")
+                && !b(prev, "retractedDerivationCommitted");
 
             if exec_tripped {
                 let (did, _) = active_lease.as_ref().unwrap();
@@ -563,10 +578,74 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                 countermodels_refused += 1;
                 break;
             }
+            if corrupt_fact_opened {
+                // Real Rust recovery on tampered companion MGF1 fact graph MUST fail closed!
+                let fresh_b = Arc::new(
+                    ExecutionCircuitBreaker::new(ToolBudgetUnits::new(1))
+                        .with_single_lease_enforced(true),
+                );
+                let fresh_g = GovernanceAdmissionGate::new(fresh_b);
+                let tripped = fresh_g
+                    .trip_corrupt_durable_state("fact-graph:SHA-256 mismatch")
+                    .expect("fail-closed trip on corrupt MGF1");
+                assert!(tripped.breaker.tripped && !tripped.admitted);
+                assert!(
+                    fresh_g
+                        .authorize_side_effect(
+                            None,
+                            &clean_actor,
+                            &tool,
+                            &ToolIfcContext::clean_trusted(),
+                        )
+                        .is_err()
+                );
+                countermodels_refused += 1;
+                break;
+            }
+            if cedar_forbid_bypassed {
+                // Real compiled Cedar evaluator MUST enforce forbid-overrides-permit even when
+                // principal holds VerifiedHuman + fresh step-up matching permit!
+                let req = CedarEvaluationRequest {
+                    principal: CedarEntityRef::actor("agent-sub"),
+                    principal_roles: vec![CedarEntityRef::role("VerifiedHuman")],
+                    action: CedarEntityRef::action("rearm_breaker"),
+                    resource: CedarEntityRef::resource("workspace"),
+                    resource_groups: Vec::new(),
+                    context: BTreeMap::from([(
+                        "step_up_fresh".to_owned(),
+                        CedarContextValue::Bool(true),
+                    )]),
+                };
+                let decision = gate.evaluate_cedar_request(&req).unwrap();
+                assert!(
+                    matches!(decision, CedarEvaluationDecision::Deny { .. }),
+                    "Cedar forbid MUST override VerifiedHuman permit, got {decision:?}"
+                );
+                countermodels_refused += 1;
+                break;
+            }
+            if retracted_deriv_committed {
+                // Real Rust admission gate MUST deny any effect bound to a Bi-Temporal TM retracted derivation!
+                let retracted_id = DerivationId::new("D-TOOL-EXEC").unwrap();
+                let err = gate
+                    .authorize_side_effect(
+                        Some(&retracted_id),
+                        &clean_actor,
+                        &tool,
+                        &ToolIfcContext::clean_trusted(),
+                    )
+                    .expect_err("retracted dynamic derivation must be denied");
+                assert!(matches!(
+                    err,
+                    GovernanceAdmissionError::DerivationRetractedDenied(_)
+                ));
+                countermodels_refused += 1;
+                break;
+            }
 
             // Safe transitions refined 1:1 against Rust durable gate & breaker:
-            let prev_corrupt = b(prev, "walCorrupted");
-            let next_corrupt = b(next, "walCorrupted");
+            let prev_corrupt = b(prev, "walCorrupted") || b(prev, "factGraphCorrupted");
+            let next_corrupt = b(next, "walCorrupted") || b(next, "factGraphCorrupted");
             let prev_proof = i(prev, "liveProofEpoch");
             let next_proof = i(next, "liveProofEpoch");
             let prev_wal = b(prev, "walCommitted");
@@ -614,7 +693,7 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                 let (_, lease) = active_lease.take().unwrap();
                 let _ = breaker.cancel_stale_lease(&lease.lease_id);
             } else if prev_corrupt && next_tripped && !prev_tripped {
-                // Safe restart on corrupted WAL -> reboot fresh Rust instances and verify fail-closed!
+                // Safe restart on corrupted MGV1 or MGF1 WAL -> reboot fresh Rust instances and verify fail-closed!
                 breaker = Arc::new(
                     ExecutionCircuitBreaker::new(ToolBudgetUnits::new(1))
                         .with_single_lease_enforced(true),
@@ -629,9 +708,9 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                 assert!(gate.snapshot().unwrap().breaker.tripped);
             } else if b(prev, "liveFenced") && !b(next, "liveFenced") {
                 unreachable!("ASCENT fences never silently clear on restart");
-            } else if b(next, "liveFenced") && !b(next, "walCorrupted") {
+            } else if b(next, "liveFenced") && !next_corrupt {
                 assert!(gate.is_actor_fenced(&fenced_actor));
-            } else if b(next, "walCorrupted") && b(next, "liveFenced") {
+            } else if next_corrupt && b(next, "liveFenced") {
                 // Corrupt WAL recovery fails closed via tripped breaker, blocking fenced & clean actors alike.
                 let bytes = wal_bytes.as_ref().unwrap();
                 let _ = gate.restore_durable_checkpoint_bytes(bytes);
@@ -650,7 +729,7 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
     }
 
     assert!(
-        countermodels_refused >= 7,
-        "expected all 7 durable governance countermodels refused, got {countermodels_refused}"
+        countermodels_refused >= 10,
+        "expected all 10 durable governance countermodels refused, got {countermodels_refused}"
     );
 }

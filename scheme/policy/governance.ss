@@ -866,12 +866,22 @@
   (map (lambda (item) (list (scalar->sym item)))
        (vector->list v)))
 
+(def (vec->derivation-specs v)
+  (map (lambda (spec-vec)
+         (unless (and (vector? spec-vec) (= (vector-length spec-vec) 4))
+           (error "derivation spec must be a 4-slot vector #(id policy premises parents)" spec-vec))
+         (list (scalar->str (vector-ref spec-vec 0))
+               (scalar->str (vector-ref spec-vec 1))
+               (map scalar->str (vector->list (vector-ref spec-vec 2)))
+               (map scalar->str (vector->list (vector-ref spec-vec 3)))))
+       (vector->list v)))
+
 ;;; Evaluates the entire 5-layer Higher-Order Governance Plane from a single
-;;; zero-JSON 15-slot rooted Gambit Scheme input vector and returns a canonical
+;;; zero-JSON 15-or-16-slot rooted Gambit Scheme input vector and returns a canonical
 ;;; 14-slot rooted Scheme output vector consumed directly by Rust `marlin-gerbil-scheme`
 ;;; and `marlin-agent-kernel::governance_admission`:
 ;;;
-;;; Input vector (15 slots):
+;;; Input vector (15 or 16 slots):
 ;;;   [0]  delegation_edges      : #(#(parent child) ...)
 ;;;   [1]  revoked_actors        : #(actor ...)
 ;;;   [2]  taint_edges           : #(#(from to) ...)
@@ -887,6 +897,7 @@
 ;;;   [12] retracted_subjects    : #(subject-str ...)  (triggers Bi-Temporal Truth Maintenance!)
 ;;;   [13] revocation_epoch      : fixnum (>= 1)
 ;;;   [14] policy_revision       : fixnum (>= 1)
+;;;   [15] derivation_specs (opt): #(#(deriv-id policy-id #(premise ...) #(parent-deriv ...)) ...)
 ;;;
 ;;; Output vector (14 slots):
 ;;;   [0]  schema_version        : 1
@@ -904,8 +915,10 @@
 ;;;   [12] retracted_conclusions : #(derivation-id-str ...)
 ;;;   [13] cedar_policies        : #(#(policy-id-str cedar-source-str) ...)
 (def (marlin-governance-project-vector req-vec)
-  (unless (and (vector? req-vec) (= (vector-length req-vec) 15))
-    (error "governance projection request must be a 15-slot rooted vector" req-vec))
+  (unless (and (vector? req-vec)
+               (or (= (vector-length req-vec) 15)
+                   (= (vector-length req-vec) 16)))
+    (error "governance projection request must be a 15-or-16-slot rooted vector" req-vec))
   (let* ((del-edges (vec->pair-rows (vector-ref req-vec 0)))
          (rev-actors (vec->singleton-rows (vector-ref req-vec 1)))
          (taint-edges (vec->pair-rows (vector-ref req-vec 2)))
@@ -921,6 +934,10 @@
          (retracted-subs (map scalar->str (vector->list (vector-ref req-vec 12))))
          (rev-epoch (vector-ref req-vec 13))
          (pol-rev (vector-ref req-vec 14))
+         (custom-derivs
+          (if (= (vector-length req-vec) 16)
+            (vec->derivation-specs (vector-ref req-vec 15))
+            '()))
          ;; 1. Atomic POO Governance Profile assessment
          (base-profile
           (make-marlin-governance-profile
@@ -953,35 +970,34 @@
            "E-AUTH" 1 0 5 4 3
            forbidden-event-syms: '(revoked)))
          ;; 5. Bi-Temporal Truth Maintenance reverse-dependency blast radius
+         ;;    Uses caller-supplied dynamic derivation DAG when provided in slot [15],
+         ;;    falling back to canonical 3-node session/tool/public derivation DAG.
+         (effective-derivs
+          (if (pair? custom-derivs)
+            custom-derivs
+            '(("D-OBO-TICKET" "pol.obo" ("human-session-alice") ())
+              ("D-TOOL-EXEC" "pol.tool" ("channel-cleanliness") ("D-OBO-TICKET"))
+              ("D-PUBLIC-DOC" "pol.public" ("public-workspace-policy") ()))))
+         (all-subjects
+          (delete-duplicates/hash
+           (append (append-map caddr effective-derivs) retracted-subs)))
          (base-revs
-          (list (make-governance-evidence-revision
-                 "rev-session-1" "human-session-alice" 'assert #f 1
-                 valid-start: 0 valid-end: 100)
-                (make-governance-evidence-revision
-                 "rev-channel-1" "channel-cleanliness" 'assert #f 1
-                 valid-start: 0 valid-end: 100)
-                (make-governance-evidence-revision
-                 "rev-public-1" "public-workspace-policy" 'assert #f 1
-                 valid-start: 0 valid-end: 100)))
+          (map (lambda (subj)
+                 (make-governance-evidence-revision
+                  (string-append "rev-assert-" subj) subj 'assert #f 1
+                  valid-start: 0 valid-end: 100))
+               all-subjects))
          (retract-revs
-          (filter-map
-           (lambda (subj)
-             (cond
-              ((equal? subj "human-session-alice")
-               (make-governance-evidence-revision
-                "rev-session-retract" "human-session-alice" 'retract "rev-session-1" 2))
-              ((equal? subj "channel-cleanliness")
-               (make-governance-evidence-revision
-                "rev-channel-retract" "channel-cleanliness" 'retract "rev-channel-1" 2))
-              (else #f)))
-           retracted-subs))
+          (map (lambda (subj)
+                 (make-governance-evidence-revision
+                  (string-append "rev-retract-" subj) subj 'retract
+                  (string-append "rev-assert-" subj) 2))
+               (delete-duplicates/hash retracted-subs)))
          (tm-receipt
           (evaluate-bitemporal-truth-maintenance
            "marlin-vm-evidence-journal"
            (append base-revs retract-revs)
-           '(("D-OBO-TICKET" "pol.obo" ("human-session-alice") ())
-             ("D-TOOL-EXEC" "pol.tool" ("channel-cleanliness") ("D-OBO-TICKET"))
-             ("D-PUBLIC-DOC" "pol.public" ("public-workspace-policy") ()))
+           effective-derivs
            1 2 10))
          (retracted-conclusions (.ref tm-receipt 'affected-conclusions))
          ;; 6. Cedar Authority Snapshot synthesis (fail-closed if ANY layer rejects)

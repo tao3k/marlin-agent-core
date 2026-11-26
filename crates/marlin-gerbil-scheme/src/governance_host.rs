@@ -35,7 +35,9 @@ use marlin_agent_kernel::{
 };
 use marlin_agent_storage::AgentStorage;
 
-use crate::{GovernancePolicyVectorProjection, GovernancePolicyVectorRequest};
+use crate::{
+    GovernanceDerivationSpec, GovernancePolicyVectorProjection, GovernancePolicyVectorRequest,
+};
 
 pub const GOVERNANCE_AUTHORITY_RECORD_ID: &str = "scheme:governance:authority-snapshot";
 pub const GOVERNANCE_AUTHORITY_RECORD_KIND: &str = "scheme.governance.authority_snapshot";
@@ -44,7 +46,7 @@ pub const GOVERNANCE_AUTHORITY_NODE_KIND: &str = "scheme_governance_authority";
 pub const GOVERNANCE_REARM_GATE_PREFIX: &str = "gov-rearm-epoch-";
 pub const DEFAULT_GOVERNANCE_CHECKPOINT_KEY: &str = "checkpoint:governance-authority:v1";
 pub const GOVERNANCE_FACT_STORE_MAGIC: &[u8; 4] = b"MGF1";
-pub const GOVERNANCE_FACT_STORE_VERSION: u32 = 1;
+pub const GOVERNANCE_FACT_STORE_VERSION: u32 = 2;
 
 /// Companion Turso CAS key storing the tamper-evident `MGF1` runtime fact-graph checkpoint.
 pub fn fact_store_checkpoint_key(checkpoint_key: &str) -> String {
@@ -116,6 +118,25 @@ pub enum GovernanceUiCommand {
     AddTaintSanitizer {
         node: String,
     },
+    RegisterDerivation {
+        derivation_id: String,
+        policy_id: String,
+        subject_premises: Vec<String>,
+        parent_derivations: Vec<String>,
+    },
+}
+
+fn parse_csv_tokens(raw: &str) -> Vec<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "-" || trimmed.eq_ignore_ascii_case("none") {
+        return Vec::new();
+    }
+    trimmed
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Parses declarative `scheme:governance-*` commands dispatched via `DispatchUiEvent`.
@@ -175,6 +196,22 @@ pub fn parse_governance_ui_command(raw: &str) -> Option<GovernanceUiCommand> {
                 node: parts[0].to_owned(),
             })
         }
+        "governance-register-derivation" if parts.len() >= 3 && parts.len() <= 4 => {
+            let subject_premises = parse_csv_tokens(parts[2]);
+            if subject_premises.is_empty() {
+                return None;
+            }
+            let parent_derivations = parts
+                .get(3)
+                .map(|p| parse_csv_tokens(p))
+                .unwrap_or_default();
+            Some(GovernanceUiCommand::RegisterDerivation {
+                derivation_id: parts[0].to_owned(),
+                policy_id: parts[1].to_owned(),
+                subject_premises,
+                parent_derivations,
+            })
+        }
         _ => None,
     }
 }
@@ -196,6 +233,7 @@ pub struct GovernanceFactStore {
     pub tripped_breakers: BTreeSet<String>,
     pub breaker_tools: BTreeSet<(String, String)>,
     pub retracted_subjects: BTreeSet<String>,
+    pub derivations: BTreeMap<String, GovernanceDerivationSpec>,
 }
 
 impl GovernanceFactStore {
@@ -213,6 +251,11 @@ impl GovernanceFactStore {
         self.tripped_breakers = req.tripped_breakers.iter().cloned().collect();
         self.breaker_tools = req.breaker_tools.iter().cloned().collect();
         self.retracted_subjects = req.retracted_subjects.iter().cloned().collect();
+        self.derivations = req
+            .derivation_specs
+            .iter()
+            .map(|d| (d.derivation_id.clone(), d.clone()))
+            .collect();
     }
 
     pub fn to_vector_request(
@@ -244,11 +287,12 @@ impl GovernanceFactStore {
             retracted_subjects: self.retracted_subjects.iter().cloned().collect(),
             revocation_epoch,
             policy_revision,
+            derivation_specs: self.derivations.values().cloned().collect(),
         }
     }
 
-    /// Serializes the full deterministic runtime fact graph into canonical `MGF1` binary bytes
-    /// sealed with a trailing 32-byte FIPS 180-4 SHA-256 integrity digest.
+    /// Serializes the full deterministic runtime fact graph into canonical `MGF1` v2 binary
+    /// bytes sealed with a trailing 32-byte FIPS 180-4 SHA-256 integrity digest.
     pub fn to_canonical_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(512);
         buf.extend_from_slice(GOVERNANCE_FACT_STORE_MAGIC);
@@ -266,12 +310,19 @@ impl GovernanceFactStore {
         put_str_set(&mut buf, &self.tripped_breakers);
         put_pair_set(&mut buf, &self.breaker_tools);
         put_str_set(&mut buf, &self.retracted_subjects);
+        put_u32(&mut buf, self.derivations.len() as u32);
+        for spec in self.derivations.values() {
+            put_str(&mut buf, &spec.derivation_id);
+            put_str(&mut buf, &spec.policy_id);
+            put_str_vec(&mut buf, &spec.subject_premises);
+            put_str_vec(&mut buf, &spec.parent_derivations);
+        }
         let mac = governance_sha256_bytes(&buf);
         buf.extend_from_slice(&mac);
         buf
     }
 
-    /// Validates magic `MGF1`, schema version, exact SHA-256 digest, bounds, and exact EOF.
+    /// Validates magic `MGF1`, schema version (`1` or `2`), exact SHA-256 digest, bounds, and exact EOF.
     pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < 4 + 4 + 32 {
             return Err("fact-graph checkpoint truncated below minimum size".to_owned());
@@ -287,28 +338,74 @@ impl GovernanceFactStore {
             return Err("invalid fact-graph checkpoint magic header".to_owned());
         }
         let version = cur.read_u32()?;
-        if version != GOVERNANCE_FACT_STORE_VERSION {
+        if version != 1 && version != GOVERNANCE_FACT_STORE_VERSION {
             return Err(format!("unsupported fact-graph checkpoint version {version}"));
         }
+        let delegation_edges = cur.read_pair_set(4096)?;
+        let revoked_actors = cur.read_str_set(4096)?;
+        let taint_edges = cur.read_pair_set(4096)?;
+        let taint_sources = cur.read_str_set(4096)?;
+        let taint_sinks = cur.read_str_set(4096)?;
+        let taint_sanitizers = cur.read_str_set(4096)?;
+        let context_entries = cur.read_str_map(4096)?;
+        let context_flows = cur.read_pair_set(4096)?;
+        let target_scopes = cur.read_str_map(4096)?;
+        let declassified_entries = cur.read_str_set(4096)?;
+        let tripped_breakers = cur.read_str_set(1024)?;
+        let breaker_tools = cur.read_pair_set(4096)?;
+        let retracted_subjects = cur.read_str_set(4096)?;
+        let derivations = if version >= 2 {
+            let count = cur.read_u32()? as usize;
+            if count > 4096 {
+                return Err(format!("excessive fact-graph derivation count {count}"));
+            }
+            let mut map = BTreeMap::new();
+            for _ in 0..count {
+                let derivation_id = cur.read_str()?;
+                let policy_id = cur.read_str()?;
+                let subject_premises = cur.read_str_vec(256)?;
+                let parent_derivations = cur.read_str_vec(256)?;
+                map.insert(
+                    derivation_id.clone(),
+                    GovernanceDerivationSpec {
+                        derivation_id,
+                        policy_id,
+                        subject_premises,
+                        parent_derivations,
+                    },
+                );
+            }
+            map
+        } else {
+            BTreeMap::new()
+        };
         let store = Self {
-            delegation_edges: cur.read_pair_set(4096)?,
-            revoked_actors: cur.read_str_set(4096)?,
-            taint_edges: cur.read_pair_set(4096)?,
-            taint_sources: cur.read_str_set(4096)?,
-            taint_sinks: cur.read_str_set(4096)?,
-            taint_sanitizers: cur.read_str_set(4096)?,
-            context_entries: cur.read_str_map(4096)?,
-            context_flows: cur.read_pair_set(4096)?,
-            target_scopes: cur.read_str_map(4096)?,
-            declassified_entries: cur.read_str_set(4096)?,
-            tripped_breakers: cur.read_str_set(1024)?,
-            breaker_tools: cur.read_pair_set(4096)?,
-            retracted_subjects: cur.read_str_set(4096)?,
+            delegation_edges,
+            revoked_actors,
+            taint_edges,
+            taint_sources,
+            taint_sinks,
+            taint_sanitizers,
+            context_entries,
+            context_flows,
+            target_scopes,
+            declassified_entries,
+            tripped_breakers,
+            breaker_tools,
+            retracted_subjects,
+            derivations,
         };
         if !cur.is_eof() {
             return Err("unexpected trailing bytes in fact-graph checkpoint".to_owned());
         }
         Ok(store)
+    }
+}
+
+fn put_str_vec(buf: &mut Vec<u8>, items: &[String]) {
+    put_u32(buf, items.len() as u32);
+    for item in items {
+        put_str(buf, item);
     }
 }
 
@@ -386,6 +483,18 @@ impl<'a> FactCursor<'a> {
         std::str::from_utf8(bytes)
             .map(str::to_owned)
             .map_err(|e| format!("invalid utf8 in fact-graph checkpoint: {e}"))
+    }
+
+    fn read_str_vec(&mut self, max_items: usize) -> Result<Vec<String>, String> {
+        let count = self.read_u32()? as usize;
+        if count > max_items {
+            return Err(format!("excessive fact-graph vec count {count} > {max_items}"));
+        }
+        let mut out = Vec::with_capacity(count);
+        for _ in 0..count {
+            out.push(self.read_str()?);
+        }
+        Ok(out)
     }
 
     fn read_str_set(&mut self, max_items: usize) -> Result<BTreeSet<String>, String> {
@@ -543,6 +652,7 @@ pub fn default_incident_governance_request(
         retracted_subjects: vec!["human-session-alice".to_owned()],
         revocation_epoch,
         policy_revision,
+        derivation_specs: Vec::new(),
     }
 }
 
@@ -570,6 +680,7 @@ pub fn default_clean_governance_request(
         retracted_subjects: Vec::new(),
         revocation_epoch,
         policy_revision,
+        derivation_specs: Vec::new(),
     }
 }
 
@@ -720,6 +831,28 @@ impl GovernanceHostController {
                 (
                     format!("governance_sanitize:{node}"),
                     format!("registered CaMeL sanitizer {node}"),
+                )
+            }
+            GovernanceUiCommand::RegisterDerivation {
+                derivation_id,
+                policy_id,
+                subject_premises,
+                parent_derivations,
+            } => {
+                meta.facts.derivations.insert(
+                    derivation_id.clone(),
+                    GovernanceDerivationSpec {
+                        derivation_id: derivation_id.clone(),
+                        policy_id: policy_id.clone(),
+                        subject_premises: subject_premises.clone(),
+                        parent_derivations: parent_derivations.clone(),
+                    },
+                );
+                (
+                    format!("governance_register_derivation:{derivation_id}"),
+                    format!(
+                        "registered bi-temporal derivation {derivation_id} ({policy_id})"
+                    ),
                 )
             }
             GovernanceUiCommand::OperatorEStop { .. } => return Ok(None),
@@ -1267,6 +1400,13 @@ fn encode_snapshot_facets(
         target: &'a str,
         dst_scope: &'a str,
     }
+    #[derive(serde::Serialize)]
+    struct DerivationWireEntry<'a> {
+        derivation_id: &'a str,
+        policy_id: &'a str,
+        subject_premises: &'a [String],
+        parent_derivations: &'a [String],
+    }
 
     let fenced: Vec<&str> = snap
         .fenced_actors
@@ -1327,6 +1467,16 @@ fn encode_snapshot_facets(
         .retracted_subjects
         .iter()
         .map(String::as_str)
+        .collect();
+    let fact_derivations: Vec<DerivationWireEntry<'_>> = facts
+        .derivations
+        .values()
+        .map(|d| DerivationWireEntry {
+            derivation_id: d.derivation_id.as_str(),
+            policy_id: d.policy_id.as_str(),
+            subject_premises: &d.subject_premises,
+            parent_derivations: &d.parent_derivations,
+        })
         .collect();
 
     let mut facets = HashMap::new();
@@ -1435,6 +1585,10 @@ fn encode_snapshot_facets(
         "fact_retracted_subjects_json".to_owned(),
         serde_json::to_string(&fact_retracted).unwrap_or_else(|_| "[]".to_owned()),
     );
+    facets.insert(
+        "fact_derivations_json".to_owned(),
+        serde_json::to_string(&fact_derivations).unwrap_or_else(|_| "[]".to_owned()),
+    );
     facets.insert("last_event_note".to_owned(), note.to_owned());
     facets
 }
@@ -1509,6 +1663,28 @@ mod tests {
             parse_governance_ui_command("scheme:governance-retract human-session-alice"),
             Some(GovernanceUiCommand::RetractPremise {
                 subject: "human-session-alice".to_owned(),
+            })
+        );
+        assert_eq!(
+            parse_governance_ui_command(
+                "scheme:governance-register-derivation D-PLAN pol.plan workspace-ok D-TOKEN"
+            ),
+            Some(GovernanceUiCommand::RegisterDerivation {
+                derivation_id: "D-PLAN".to_owned(),
+                policy_id: "pol.plan".to_owned(),
+                subject_premises: vec!["workspace-ok".to_owned()],
+                parent_derivations: vec!["D-TOKEN".to_owned()],
+            })
+        );
+        assert_eq!(
+            parse_governance_ui_command(
+                "scheme:governance-register-derivation D-TOKEN pol.cert token-cert-v1 none"
+            ),
+            Some(GovernanceUiCommand::RegisterDerivation {
+                derivation_id: "D-TOKEN".to_owned(),
+                policy_id: "pol.cert".to_owned(),
+                subject_premises: vec!["token-cert-v1".to_owned()],
+                parent_derivations: Vec::new(),
             })
         );
     }
@@ -1685,9 +1861,17 @@ mod tests {
                 child: "agent-worker".to_owned(),
             })
             .unwrap();
+        ctrl1
+            .mutate_facts_and_build_request(&GovernanceUiCommand::RegisterDerivation {
+                derivation_id: "D-TOKEN".to_owned(),
+                policy_id: "pol.cert".to_owned(),
+                subject_premises: vec!["token-cert-v1".to_owned()],
+                parent_derivations: Vec::new(),
+            })
+            .unwrap();
         ctrl1.persist_to_cas(&cas, key).await.unwrap();
 
-        // Fresh post-restart host restores BOTH MGV1 gate and MGF1 fact graph!
+        // Fresh post-restart host restores BOTH MGV1 gate and MGF1 v2 fact graph (including derivations)!
         let host2 = MyGoBridgeHost::new_default_trust(|_| Ok(()));
         let ctrl2 = GovernanceHostController::new(8, Arc::new(SharedProjectionRecords::new()));
         let (_snap2, mode2) = ctrl2
@@ -1697,7 +1881,7 @@ mod tests {
             .unwrap();
         assert_eq!(mode2, "restored");
 
-        // Incremental post-restart revoke builds a request retaining PRE-RESTART delegation edges!
+        // Incremental post-restart revoke builds a request retaining PRE-RESTART delegation edges & derivations!
         let (req, _, _) = ctrl2
             .mutate_facts_and_build_request(&GovernanceUiCommand::RevokeActor {
                 actor: "agent-lead".to_owned(),
@@ -1712,6 +1896,13 @@ mod tests {
                     .contains(&("agent-lead".to_owned(), "agent-worker".to_owned())),
             "restored MGF1 fact store must preserve pre-restart delegation edges: {:?}",
             req.delegation_edges
+        );
+        assert!(
+            req.derivation_specs
+                .iter()
+                .any(|d| d.derivation_id == "D-TOKEN" && d.subject_premises == vec!["token-cert-v1"]),
+            "restored MGF1 v2 fact store must preserve pre-restart dynamic derivations: {:?}",
+            req.derivation_specs
         );
         assert!(req.revoked_actors.contains(&"agent-lead".to_owned()));
 
