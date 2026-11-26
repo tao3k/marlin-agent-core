@@ -31,8 +31,12 @@ pub(super) fn http_loopback_request(
     let _ = stream.set_nodelay(true);
 
     let payload = body.unwrap_or(&[]);
+    let auth_header = endpoint
+        .control_token()
+        .map(|token| format!("Authorization: Bearer {token}\r\n"))
+        .unwrap_or_default();
     let header = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "{method} {path} HTTP/1.1\r\nHost: {}\r\n{auth_header}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         endpoint.authority(),
         payload.len()
     );

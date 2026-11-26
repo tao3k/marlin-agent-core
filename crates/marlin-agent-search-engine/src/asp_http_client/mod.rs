@@ -6,14 +6,20 @@
 //! and Gerbil Scheme Search DSL to ASP's language-agnostic forwarding gateway.
 
 mod domain_types;
+mod patch_client;
 mod protocol_types;
 mod sync;
 mod transport;
 
 pub use domain_types::{
-    ASP_FORWARDING_URL_ENV, AspForwardingEndpoint, AspLanguageId, AspProviderId,
-    GeneralOntologyKindName, HttpEndpointPath, NativeAstKindName, ProviderRegistrationMode,
-    ProviderRegistrationStatus, ProviderTransportProtocol, TargetedJsonSchemaDocument,
+    ASP_FORWARDING_TOKEN_ENV, ASP_FORWARDING_URL_ENV, AspForwardingEndpoint, AspLanguageId,
+    AspProviderId, GeneralOntologyKindName, HttpEndpointPath, NativeAstKindName,
+    ProviderRegistrationMode, ProviderRegistrationStatus, ProviderTransportProtocol,
+    TargetedJsonSchemaDocument,
+};
+pub use patch_client::{
+    AspHttpAstPatchOp, AspHttpAstPatchReceipt, AspHttpAstPatchRequest, AspHttpAstPatchStatus,
+    apply_ast_patch_via_asp_http,
 };
 pub use protocol_types::{
     AspHttpHydrationReceipt, AspHttpHydrationRequest, DynamicLanguageDescriptorRequest,

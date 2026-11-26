@@ -534,4 +534,29 @@
                          edb next-reg)))
         (check (and (member "fn_item" lk-enum) (member "gen_fn" lk-enum) #t) => #t)
         (check (vector-ref gen-res 3) => '(("stream_rows")))
-        (check (vector-ref impl-res 3) => '(("Registry")))))))
+        (check (vector-ref impl-res 3) => '(("Registry")))))
+
+    (test-case "General Ontology graph edges, entity_locator, and recursive depends_on closure"
+      (let* ((graph-edb
+               '((file . ((1 "rust" "src/a.rs") (2 "rust" "src/b.rs")))
+                 (entity . (("src/a.rs#fn:run" 1 "rust" "function" "fn_item" "run" 4)
+                            ("src/b.rs#fn:helper" 2 "rust" "function" "fn_item" "helper" 2)))
+                 (edge . (("src/a.rs#impl:App" "src/a.rs#fn:run" "contains" "src/a.rs" 4)
+                          ("src/a.rs" "src/b.rs" "imports" "src/a.rs" 1)
+                          ("src/b.rs" "src/c.rs" "imports" "src/b.rs" 1)))
+                 (attr . (("src/a.rs#fn:run" "locator" "src/a.rs#fn:run")))))
+             (loc-res (evaluate-search-dsl-over-edb
+                        "(ascent-fragment ((answer name loc) <-- (rust_fn id _ name _) (entity_locator id loc)))"
+                        graph-edb SearchLanguageRegistryValue))
+             (contains-res (evaluate-search-dsl-over-edb
+                             "(ascent-fragment ((answer p c) <-- (contains_edge p c _ _)))"
+                             graph-edb SearchLanguageRegistryValue))
+             (dep-res (evaluate-search-dsl-over-edb
+                        "(ascent-fragment ((answer dst) <-- (depends_on \"src/a.rs\" dst)))"
+                        graph-edb SearchLanguageRegistryValue)))
+        (check (vector-ref loc-res 3) => '(("run" "src/a.rs#fn:run")))
+        (check (vector-ref contains-res 3) => '(("src/a.rs#impl:App" "src/a.rs#fn:run")))
+        (check (and (member '("src/b.rs") (vector-ref dep-res 3))
+                    (member '("src/c.rs") (vector-ref dep-res 3))
+                    #t)
+               => #t))))))

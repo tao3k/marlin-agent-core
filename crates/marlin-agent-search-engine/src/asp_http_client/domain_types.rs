@@ -177,11 +177,17 @@ impl TargetedJsonSchemaDocument {
 /// (for example `MARLIN_ASP_FORWARDING_URL=http://127.0.0.1:41234`).
 pub const ASP_FORWARDING_URL_ENV: &str = "MARLIN_ASP_FORWARDING_URL";
 
-/// Validated loopback HTTP endpoint for an ASP forwarding gateway.
+/// Environment variable naming an optional loopback Bearer control-plane token
+/// for `POST /v1/providers/register` and `POST /shutdown`.
+pub const ASP_FORWARDING_TOKEN_ENV: &str = "MARLIN_ASP_FORWARDING_TOKEN";
+
+/// Validated loopback HTTP endpoint for an ASP forwarding gateway, optionally
+/// carrying its per-session Bearer control-plane token.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AspForwardingEndpoint {
     authority: String,
     raw_url: String,
+    control_token: Option<String>,
 }
 
 impl AspForwardingEndpoint {
@@ -203,15 +209,37 @@ impl AspForwardingEndpoint {
         Ok(Self {
             authority: authority.to_owned(),
             raw_url: format!("http://{authority}"),
+            control_token: None,
         })
     }
 
-    /// Resolve a validated loopback endpoint from [`ASP_FORWARDING_URL_ENV`],
-    /// returning `None` when unset or invalid (fail-closed).
+    /// Attach a loopback Bearer control-plane token to this endpoint.
+    #[must_use]
+    pub fn with_control_token(mut self, token: impl Into<String>) -> Self {
+        let trimmed = token.into().trim().to_owned();
+        if !trimmed.is_empty() {
+            self.control_token = Some(trimmed);
+        }
+        self
+    }
+
+    /// Borrow the optional Bearer control-plane token.
+    #[must_use]
+    pub fn control_token(&self) -> Option<&str> {
+        self.control_token.as_deref()
+    }
+
+    /// Resolve a validated loopback endpoint from [`ASP_FORWARDING_URL_ENV`]
+    /// (and optional [`ASP_FORWARDING_TOKEN_ENV`]), returning `None` when unset
+    /// or invalid (fail-closed).
     #[must_use]
     pub fn from_env() -> Option<Self> {
         let raw = std::env::var(ASP_FORWARDING_URL_ENV).ok()?;
-        Self::new(raw).ok()
+        let endpoint = Self::new(raw).ok()?;
+        match std::env::var(ASP_FORWARDING_TOKEN_ENV) {
+            Ok(token) => Some(endpoint.with_control_token(token)),
+            Err(_) => Some(endpoint),
+        }
     }
 
     /// Borrow the canonical `http://host:port` string.

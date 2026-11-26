@@ -262,6 +262,10 @@
             ((string=? lang "edb") #f)
             ((string=? lang "general")
              (hash-put! table rel-name '(string? integer? string? string? integer?)))
+            ((string=? lang "graph")
+             (hash-put! table rel-name '(string? string? string? integer?)))
+            ((string=? lang "graph-pair")
+             (hash-put! table rel-name '(string? string?)))
             (else
              (hash-put! table rel-name '(string? integer? string? integer?))))))
       (.get registry relation-meta))

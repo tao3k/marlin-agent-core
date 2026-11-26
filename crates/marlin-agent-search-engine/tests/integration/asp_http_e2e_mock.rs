@@ -14,15 +14,16 @@ use std::sync::{Arc, Mutex};
 
 use gerbil_scheme::GerbilRuntime;
 use marlin_agent_search_engine::{
-    AspForwardingEndpoint, AspHttpHydrationRequest, AspLanguageId, AspProviderId,
-    DynamicProviderCapabilities, DynamicProviderDslPackRegistration,
-    DynamicProviderRegistrationManifest, DynamicProviderRegistrationRequest,
-    DynamicProviderSyntaxSurface, DynamicProviderTransport, ForwardedKindMapping,
-    GeneralOntologyKindName, HttpEndpointPath, NativeAstKindName, ProviderRegistrationStatus,
-    ProviderTransportProtocol, SEMANTIC_OPEN_EDB_SCHEMA_ID, SEMANTIC_OPEN_EDB_SCHEMA_VERSION,
-    SearchDslExecutionRequest, WorkspaceIndexConfig, WorkspaceSearchIndex,
-    execute_package_search_dsl_structured, hydrate_workspace_from_asp_http,
-    project_package_search_dsl_completions, register_dynamic_provider_on_asp, shutdown_asp_gateway,
+    AspForwardingEndpoint, AspHttpAstPatchOp, AspHttpAstPatchRequest, AspHttpAstPatchStatus,
+    AspHttpHydrationRequest, AspLanguageId, AspProviderId, DynamicProviderCapabilities,
+    DynamicProviderDslPackRegistration, DynamicProviderRegistrationManifest,
+    DynamicProviderRegistrationRequest, DynamicProviderSyntaxSurface, DynamicProviderTransport,
+    ForwardedKindMapping, GeneralOntologyKindName, HttpEndpointPath, NativeAstKindName,
+    ProviderRegistrationStatus, ProviderTransportProtocol, SEMANTIC_OPEN_EDB_SCHEMA_ID,
+    SEMANTIC_OPEN_EDB_SCHEMA_VERSION, SearchDslExecutionRequest, WorkspaceIndexConfig,
+    WorkspaceSearchIndex, apply_ast_patch_via_asp_http, execute_package_search_dsl_structured,
+    hydrate_workspace_from_asp_http, project_package_search_dsl_completions,
+    register_dynamic_provider_on_asp, shutdown_asp_gateway,
 };
 use tempfile::TempDir;
 
@@ -360,4 +361,132 @@ pub(crate) fn run_self_contained_asp_http_forwarding_and_dynamic_o1_leverage(
 
     let _ = shutdown_asp_gateway(&endpoint);
     let _ = server_handle.join();
+}
+
+/// Live P3 verification:
+/// 1. Queries structural `contains_edge` and `imports_edge` across real hydrated files.
+/// 2. Executes the full closed-loop agent edit cycle against live `asp-gateway` + `asp-rust`:
+///    Search DSL -> `entity_locator` -> `POST /v1/ast/patch` with a broken missing-`}`
+///    snippet -> `asp-rust` syn oracle auto-calibrates -> atomic disk + Open EDB sync
+///    -> instant follow-up Search DSL sees the renamed symbol and new locator.
+pub(crate) fn run_live_p3_closed_loop_patch_phase(
+    runtime: &GerbilRuntime,
+    scheme_dir: &str,
+    endpoint: &AspForwardingEndpoint,
+    workspace_root: &std::path::Path,
+    edb_cache_path: &std::path::Path,
+    index: &mut WorkspaceSearchIndex,
+) -> (usize, usize) {
+    let contains_res = execute_package_search_dsl_structured(
+        runtime,
+        scheme_dir,
+        &SearchDslExecutionRequest {
+            index,
+            query: "(ascent-fragment ((answer parent child) <-- (contains_edge parent child _ _)))",
+            output_limit: 512,
+        },
+    )
+    .expect("live contains_edge query");
+    assert!(
+        !contains_res.rows.is_empty(),
+        "expected structural contains_edge rows from real hydrated files"
+    );
+
+    let imports_res = execute_package_search_dsl_structured(
+        runtime,
+        scheme_dir,
+        &SearchDslExecutionRequest {
+            index,
+            query: "(ascent-fragment ((answer src dst) <-- (imports_edge src dst _ _)))",
+            output_limit: 512,
+        },
+    )
+    .expect("live imports_edge query");
+    assert!(
+        !imports_res.rows.is_empty(),
+        "expected imports_edge rows from real hydrated files"
+    );
+
+    // Stage a real Rust file, hydrate via ASP HTTP, and retrieve its authoritative locator.
+    let rel_path = "src/rust/closed_loop_demo.rs";
+    fs::write(
+        workspace_root.join(rel_path),
+        "// Lossless header comment preserved across AST splice\npub fn compute_score(x: usize) -> usize {\n    x + 1\n}\n",
+    )
+    .expect("write closed_loop_demo.rs");
+    let _ = index.sync_workspace_from_disk();
+    let _ = hydrate_workspace_from_asp_http(
+        runtime,
+        index,
+        &AspHttpHydrationRequest {
+            scheme_dir,
+            endpoint,
+            cache_path: edb_cache_path,
+            sync_new_descriptors: false,
+        },
+    )
+    .expect("hydrate closed_loop_demo.rs");
+
+    let loc_res = execute_package_search_dsl_structured(
+        runtime,
+        scheme_dir,
+        &SearchDslExecutionRequest {
+            index,
+            query: "(ascent-fragment ((answer loc) <-- (rust_fn id _ \"compute_score\" _) (entity_locator id loc)))",
+            output_limit: 16,
+        },
+    )
+    .expect("entity_locator search for compute_score");
+    assert_eq!(loc_res.rows.len(), 1);
+    let locator = loc_res.rows[0].cells[0].clone();
+    assert_eq!(locator, "src/rust/closed_loop_demo.rs#fn:compute_score");
+
+    // Deliberately omit the closing `}` to prove live `asp-rust` syn oracle calibration!
+    let patch_receipt = apply_ast_patch_via_asp_http(
+        endpoint,
+        index,
+        &AspHttpAstPatchRequest {
+            workspace_root,
+            path: rel_path,
+            language_override: None,
+            expected_preimage_hash: None,
+            operation: AspHttpAstPatchOp::ReplaceItem {
+                target: locator,
+                snippet: "pub fn compute_weighted_score(x: usize) -> usize {\n    x * 2 + 1\n"
+                    .to_owned(),
+            },
+            dry_run: false,
+            auto_calibrate: true,
+        },
+    )
+    .expect("closed-loop POST /v1/ast/patch with calibration");
+    assert_eq!(
+        patch_receipt.status,
+        AspHttpAstPatchStatus::CalibratedAndApplied
+    );
+    assert!(patch_receipt.reparse_verified);
+    assert!(patch_receipt.synced_entities >= 1);
+
+    let on_disk =
+        fs::read_to_string(workspace_root.join(rel_path)).expect("read patched file from disk");
+    assert!(on_disk.contains("// Lossless header comment preserved across AST splice"));
+    assert!(on_disk.contains("pub fn compute_weighted_score"));
+
+    // Immediate follow-up Search DSL sees the renamed function + new locator (0 extra HTTP!).
+    let after_res = execute_package_search_dsl_structured(
+        runtime,
+        scheme_dir,
+        &SearchDslExecutionRequest {
+            index,
+            query: "(ascent-fragment ((answer loc) <-- (rust_fn id _ \"compute_weighted_score\" _) (entity_locator id loc)))",
+            output_limit: 16,
+        },
+    )
+    .expect("follow-up search for compute_weighted_score");
+    assert_eq!(after_res.rows.len(), 1);
+    assert_eq!(
+        after_res.rows[0].cells[0],
+        "src/rust/closed_loop_demo.rs#fn:compute_weighted_score"
+    );
+    (contains_res.rows.len(), imports_res.rows.len())
 }

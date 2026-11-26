@@ -55,6 +55,10 @@
       ((id string?) (file_id integer?) (lang string?)
        (kind string?) (language_kind string?)
        (name string?) (line integer?)))
+    (relation edge
+      ((src string?) (dst string?) (rel string?) (path string?) (line integer?)))
+    (relation attr
+      ((id string?) (key string?) (val string?)))
     (relation callable
       ((id string?) (file_id integer?) (lang string?) (name string?) (line integer?)))
     (relation type_decl
@@ -71,6 +75,18 @@
       ((id string?) (file_id integer?) (lang string?) (name string?) (line integer?)))
     (relation test_decl
       ((id string?) (file_id integer?) (lang string?) (name string?) (line integer?)))
+    (relation contains_edge
+      ((parent string?) (child string?) (path string?) (line integer?)))
+    (relation imports_edge
+      ((src string?) (dst string?) (path string?) (line integer?)))
+    (relation calls_edge
+      ((src string?) (dst string?) (path string?) (line integer?)))
+    (relation implements_edge
+      ((src string?) (dst string?) (path string?) (line integer?)))
+    (relation entity_locator
+      ((id string?) (locator string?)))
+    (relation depends_on
+      ((src string?) (dst string?)))
 
     ((callable id f lang name line) <-- (entity id f lang "function" _ name line))
     ((callable id f lang name line) <-- (entity id f lang "method" _ name line))
@@ -88,7 +104,17 @@
     ((binding_decl id f lang name line) <-- (entity id f lang "constant" _ name line))
     ((macro_decl id f lang name line) <-- (entity id f lang "macro" _ name line))
     ((comment_node id f lang name line) <-- (entity id f lang "doc" _ name line))
-    ((test_decl id f lang name line) <-- (entity id f lang "test" _ name line))))
+    ((test_decl id f lang name line) <-- (entity id f lang "test" _ name line))
+
+    ((contains_edge parent child path line) <-- (edge parent child "contains" path line))
+    ((imports_edge src dst path line) <-- (edge src dst "imports" path line))
+    ((calls_edge src dst path line) <-- (edge src dst "calls" path line))
+    ((implements_edge src dst path line) <-- (edge src dst "implements" path line))
+    ((entity_locator id loc) <-- (attr id "locator" loc))
+    ((depends_on src dst) <-- (edge src dst "imports" _ _))
+    ((depends_on src dst) <-- (edge src dst "calls" _ _))
+    ((depends_on src dst) <-- (edge src dst "implements" _ _))
+    ((depends_on src dst) <-- (depends_on src mid) (depends_on mid dst))))
 
 (.def BaseSearchLanguageFragment.
   languages: '()
@@ -158,8 +184,14 @@
       (import_decl  "general" "import_decl"  _ "General Ontology module import declaration")
       (binding_decl "general" "binding_decl" _ "General Ontology binding or constant declaration")
       (macro_decl   "general" "macro_decl"   _ "General Ontology macro/metaprogramming declaration")
-      (comment_node "general" "comment_node" _ "General Ontology doc/comment node (lexed natively by provider)")
-      (test_decl    "general" "test_decl"    _ "General Ontology test case declaration"))))
+      (comment_node    "general"    "comment_node" _ "General Ontology doc/comment node (lexed natively by provider)")
+      (test_decl       "general"    "test_decl"    _ "General Ontology test case declaration")
+      (contains_edge   "graph"      "contains"     _ "Structural parent-to-child AST containment edge (parent, child, path, line)")
+      (imports_edge    "graph"      "imports"      _ "Module/file import dependency edge (src, dst, path, line)")
+      (calls_edge      "graph"      "calls"        _ "Directed call graph edge (src, dst, path, line)")
+      (implements_edge "graph"      "implements"   _ "Trait/interface implementation edge (src, dst, path, line)")
+      (entity_locator  "graph-pair" "locator"      _ "Authoritative AST patch locator for an entity (id, locator)")
+      (depends_on      "graph-pair" "depends_on"   _ "Transitive dependency closure over imports, calls, and implements"))))
 
 (defasp-language RustSearchFragment.
   (languages rust)

@@ -30,7 +30,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use gerbil_scheme::{GerbilRuntime, IdentifierKind};
@@ -52,17 +52,21 @@ use tempfile::TempDir;
 
 struct GatewayGuard {
     child: Child,
+    stdin: Option<ChildStdin>,
     stdout: Option<BufReader<ChildStdout>>,
     endpoint: AspForwardingEndpoint,
     providers: Vec<String>,
+    boot_micros: u128,
 }
 
 impl Drop for GatewayGuard {
     fn drop(&mut self) {
-        // Release stdout pipe, send cooperative POST /shutdown so forwarding_gateway
-        // shuts down all 5 child compiler process groups cleanly, then wait up to 3s.
-        let _ = self.stdout.take();
+        // Send authenticated cooperative POST /shutdown AND close stdin pipe
+        // (triggering kernel stdin-EOF watchdog even if HTTP is unreachable),
+        // then wait up to 3s for clean child process-group teardown.
         let _ = shutdown_asp_gateway(&self.endpoint);
+        let _ = self.stdin.take();
+        let _ = self.stdout.take();
         let deadline = Instant::now() + Duration::from_secs(3);
         while Instant::now() < deadline {
             if let Ok(Some(_)) = self.child.try_wait() {
@@ -91,28 +95,40 @@ fn asp_root() -> PathBuf {
 }
 
 fn spawn_asp_forwarding_gateway(asp_dir: &Path) -> Option<GatewayGuard> {
-    let bin = asp_dir.join("target/debug/examples/forwarding_gateway");
-    if !bin.exists() {
+    let prod_bin = asp_dir.join("target/debug/asp-gateway");
+    let legacy_bin = asp_dir.join("target/debug/examples/forwarding_gateway");
+    let bin = if prod_bin.exists() {
+        prod_bin
+    } else if legacy_bin.exists() {
+        legacy_bin
+    } else {
         return None;
-    }
+    };
+    let boot_started = Instant::now();
     let mut child = Command::new(&bin)
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .expect("spawn ASP forwarding_gateway");
+        .expect("spawn ASP asp-gateway");
+    let stdin = child.stdin.take();
     let stdout = child.stdout.take().expect("gateway stdout");
     let mut reader = BufReader::new(stdout);
     let mut line = String::new();
     let n = reader.read_line(&mut line).expect("read gateway bootstrap");
-    assert!(n > 0, "forwarding_gateway exited before bootstrap");
+    assert!(n > 0, "asp-gateway exited before bootstrap");
+    let boot_micros = boot_started.elapsed().as_micros();
     let boot: serde_json::Value =
         serde_json::from_str(line.trim()).expect("decode gateway bootstrap JSON");
-    let endpoint = AspForwardingEndpoint::new(
+    let mut endpoint = AspForwardingEndpoint::new(
         boot["endpoint"]
             .as_str()
             .expect("gateway bootstrap endpoint"),
     )
     .expect("valid loopback endpoint");
+    if let Some(token) = boot["controlToken"].as_str() {
+        endpoint = endpoint.with_control_token(token);
+    }
     let providers = boot["providers"]
         .as_array()
         .expect("providers array")
@@ -121,9 +137,11 @@ fn spawn_asp_forwarding_gateway(asp_dir: &Path) -> Option<GatewayGuard> {
         .collect();
     Some(GatewayGuard {
         child,
+        stdin,
         stdout: Some(reader),
         endpoint,
         providers,
+        boot_micros,
     })
 }
 
@@ -661,16 +679,29 @@ fn asp_http_forwarding_to_marlin_search_and_dynamic_o1_leverage() {
         "Helm TAB completions must dynamically expose `zig_comptime_fn`, got {completions:?}"
     );
 
+    let (contains_edges, imports_edges) = asp_http_e2e_mock::run_live_p3_closed_loop_patch_phase(
+        &runtime,
+        &scheme_dir,
+        &gateway.endpoint,
+        ws,
+        &edb_cache_path,
+        &mut warm_index,
+    );
+
     println!(
         "\n=== ASP HTTP -> MARLIN 5+1 LANGUAGE E2E BENCHMARK SUMMARY ===\n\
-         Live providers booted         : {:?} (+ dynamic hot-registered `zig`)\n\
+         asp-gateway lazy boot         : {}us (all 5 providers discovered, Bearer auth={})\n\
+         Live providers registered     : {:?} (+ dynamic hot-registered `zig`)\n\
          Cold 5-lang HTTP hydration    : {} files, {} AST entities, ASP inspect={}us, total={}us\n\
          Warm BLAKE3 cache restore     : {} files, {} entities, HTTP calls=0, total={}us\n\
          5-lang General callable hits  : {} rows across {:?}\n\
          Hot zero-JSON C-ABI query     : p50={}us, p95={}us (30 iterations, pre-bound exports)\n\
          Package-lookup C-ABI query    : p50={}us, p95={}us (20 iterations, per-call export lookup)\n\
          Dynamic `zig` O(1) leverage   : targetedSchema + zig_comptime_fn + General callable + Helm TAB OK\n\
+         P3 semantic graph & edit loop : {} contains_edge, {} imports_edge, locator->patch->calibrate->re-search OK\n\
          ===============================================================",
+        gateway.boot_micros,
+        gateway.endpoint.control_token().is_some(),
         gateway.providers,
         cold_receipt.http_inspected_files,
         cold_receipt.http_ingested_entities,
@@ -685,5 +716,7 @@ fn asp_http_forwarding_to_marlin_search_and_dynamic_o1_leverage() {
         hot_p95_us,
         pkg_p50_us,
         pkg_p95_us,
+        contains_edges,
+        imports_edges,
     );
 }

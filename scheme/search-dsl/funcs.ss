@@ -126,6 +126,14 @@
                 (l1 (if lang (append-unique langs lang) langs))
                 (t1 (if (and name (>= (string-length name) 3)) (append-unique tokens name) tokens)))
            (values l1 path-prefix t1)))
+        ((and rel-role (string=? rel-role "graph"))
+         ;; 4-col General Graph Edge relation: (contains_edge src dst path line)
+         (let* ((path (and (>= (length args) 3) (datum->hint-string (list-ref args 2))))
+                (p1 (choose-path-prefix path-prefix path)))
+           (values langs p1 tokens)))
+        ((and rel-role (string=? rel-role "graph-pair"))
+         ;; 2-col General Graph/Locator relation: (entity_locator id loc) / (depends_on src dst)
+         (values langs path-prefix tokens))
         ((and rel-role (not (string=? rel-role "edb")))
          ;; Derived POO language relation, e.g. `(rust_fn id f "open_or_build_cached" line)`
          (let* ((l1 (append-unique langs rel-role))
@@ -492,7 +500,9 @@
            (poo-helper-entries
              (filter (lambda (m)
                        (and (not (string=? (cadr m) "edb"))
-                            (not (string=? (cadr m) "general"))))
+                            (not (string=? (cadr m) "general"))
+                            (not (string=? (cadr m) "graph"))
+                            (not (string=? (cadr m) "graph-pair"))))
                      (.get registry relation-meta)))
            (poo-helper-rels
              (map (lambda (m)
