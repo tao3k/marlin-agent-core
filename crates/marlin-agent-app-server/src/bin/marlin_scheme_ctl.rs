@@ -6,9 +6,11 @@
 //! `marlin-scheme-host` or `marlin-mygo-host` daemon over HTTP/2 gRPC.
 //!
 //! Usage:
-//!   marlin-scheme-ctl --endpoint http://127.0.0.1:PORT [--token TOKEN] <command>
+//!   marlin-scheme-ctl [--json] --endpoint http://127.0.0.1:PORT [--token TOKEN] <command>
 //!
 //! Commands:
+//!   status                                         Fetch unified live tabs + audit + gates snapshot
+//!   open-workbench [session-id]                    Open live UiWorkbenchService session snapshot
 //!   tabs                                           Show live WorkbenchTabs from AppServer
 //!   watch-tabs [--count N] [--timeout-ms MS]       Stream live WatchWorkbenchTabs updates
 //!   audit                                          Show live non-authorizing Scheme FleetAuditCapsule
@@ -26,26 +28,32 @@ use std::{
 };
 
 use marlin_agent_app_server::{
-    MarlinSchemeHostClient, scheme_host_client::format_facets_sorted, v1::WorkbenchTabKindProto,
-    wire::marlin::gate::v1::GraphHumanDecision,
+    MarlinSchemeHostClient,
+    scheme_host_client::{format_facets_sorted, json_escape, workbench_tab_kind_label},
+    wire::marlin::{common::v1::TargetKind, gate::v1::GraphHumanDecision},
 };
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-    if let Err(err) = run().await {
-        eprintln!("marlin-scheme-ctl error: {err}");
-        std::process::exit(1);
-    }
+#[derive(Debug, Eq, PartialEq)]
+struct CliOptions {
+    endpoint: Option<String>,
+    token: Option<String>,
+    json: bool,
+    help: bool,
+    rest: Vec<String>,
 }
 
-async fn run() -> Result<(), String> {
-    let mut args = env::args().skip(1);
-    let mut endpoint = env::var("MARLIN_BRIDGE_ENDPOINT")
-        .ok()
-        .filter(|s| !s.trim().is_empty());
-    let mut token = env::var("MARLIN_BRIDGE_TOKEN")
-        .ok()
-        .filter(|s| !s.trim().is_empty());
+fn parse_cli_args<I>(
+    mut args: I,
+    default_endpoint: Option<String>,
+    default_token: Option<String>,
+) -> Result<CliOptions, String>
+where
+    I: Iterator<Item = String>,
+{
+    let mut endpoint = default_endpoint;
+    let mut token = default_token;
+    let mut json = false;
+    let mut help = false;
     let mut rest = Vec::new();
 
     while let Some(arg) = args.next() {
@@ -62,44 +70,186 @@ async fn run() -> Result<(), String> {
                     .ok_or_else(|| "missing value for --token".to_owned())?;
                 token = Some(val);
             }
+            "--json" => {
+                json = true;
+            }
             "--help" | "-h" => {
-                println!(
-                    "Usage: marlin-scheme-ctl --endpoint <url> [--token <tok>] <tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch>"
-                );
-                return Ok(());
+                help = true;
+                return Ok(CliOptions {
+                    endpoint,
+                    token,
+                    json,
+                    help,
+                    rest,
+                });
             }
             _ => rest.push(arg),
         }
     }
+    Ok(CliOptions {
+        endpoint,
+        token,
+        json,
+        help,
+        rest,
+    })
+}
 
-    let endpoint = endpoint.ok_or_else(|| {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    if let Err(err) = run().await {
+        eprintln!("marlin-scheme-ctl error: {err}");
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<(), String> {
+    let default_endpoint = env::var("MARLIN_BRIDGE_ENDPOINT")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
+    let default_token = env::var("MARLIN_BRIDGE_TOKEN")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
+    let opts = parse_cli_args(env::args().skip(1), default_endpoint, default_token)?;
+
+    if opts.help {
+        println!(
+            "Usage: marlin-scheme-ctl [--json] --endpoint <url> [--token <tok>] <status|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch>"
+        );
+        return Ok(());
+    }
+
+    let endpoint = opts.endpoint.ok_or_else(|| {
         "missing --endpoint <http://host:port> (or MARLIN_BRIDGE_ENDPOINT)".to_owned()
     })?;
+    let rest = opts.rest;
     let cmd = rest.first().map(String::as_str).ok_or_else(|| {
-        "missing subcommand (tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch)"
+        "missing subcommand (status|open-workbench|tabs|watch-tabs|audit|watch-trajectory|gates|approve|reject|dispatch)"
             .to_owned()
     })?;
 
-    let client = MarlinSchemeHostClient::connect(endpoint, token.as_deref()).await?;
+    let client = MarlinSchemeHostClient::connect(endpoint, opts.token.as_deref()).await?;
 
     match cmd {
+        "status" => {
+            let snap = client
+                .fetch_status_snapshot("default")
+                .await
+                .map_err(|s| format!("fetch_status_snapshot failed: {s}"))?;
+            if opts.json {
+                println!("{}", snap.to_json());
+            } else {
+                println!(
+                    "STATUS tabs={} gates={}",
+                    snap.tabs.tabs.len(),
+                    snap.gates.len()
+                );
+                for tab in &snap.tabs.tabs {
+                    println!(
+                        "TAB kind={} id={} epoch={} status={}",
+                        workbench_tab_kind_label(tab.kind),
+                        tab.id,
+                        tab.fencing_epoch,
+                        tab.status_label
+                    );
+                }
+                match &snap.audit {
+                    Some(cap) => println!(
+                        "AUDIT active={} archived={} peek={} defeaters={} inbox={} disclosure={} favored_collapsed={} authenticates={} authorizes={}",
+                        cap.active_actor_count,
+                        cap.archived_actor_count,
+                        cap.peek_count,
+                        cap.total_active_defeaters,
+                        cap.total_human_inbox_items,
+                        cap.disclosure_level,
+                        cap.favored_path_collapsed,
+                        cap.authenticates_evidence,
+                        cap.authorizes_effect
+                    ),
+                    None => println!("AUDIT none"),
+                }
+                for g in &snap.gates {
+                    println!("GATE id={} tool={}", g.gate_id, g.tool_or_node_name);
+                }
+            }
+        }
+        "open-workbench" => {
+            let session_id = rest
+                .get(1)
+                .cloned()
+                .unwrap_or_else(|| "marlin-scheme-ctl".to_owned());
+            let wb = client
+                .open_workbench(session_id, TargetKind::DesktopMacos, None)
+                .await
+                .map_err(|s| format!("open_workbench failed: {s}"))?;
+            if opts.json {
+                let slots_json: Vec<String> = wb
+                    .slots
+                    .iter()
+                    .map(|s| {
+                        format!(
+                            "{{\"slot_id\":{},\"fallback_renderer\":{},\"allow_untrusted_plugin\":{}}}",
+                            json_escape(&s.slot_id),
+                            json_escape(&s.fallback_renderer),
+                            s.allow_untrusted_plugin
+                        )
+                    })
+                    .collect();
+                println!(
+                    "{{\"generation\":{},\"profile_name\":{},\"model_label\":{},\"session_label\":{},\"slots\":[{}]}}",
+                    wb.generation,
+                    json_escape(&wb.profile_name),
+                    json_escape(&wb.model_label),
+                    json_escape(&wb.session_label),
+                    slots_json.join(",")
+                );
+            } else {
+                println!(
+                    "WORKBENCH gen={} profile={} session={} slots={}",
+                    wb.generation,
+                    wb.profile_name,
+                    wb.session_label,
+                    wb.slots.len()
+                );
+                for slot in wb.slots {
+                    println!(
+                        "SLOT id={} fallback={} allow_untrusted={}",
+                        slot.slot_id, slot.fallback_renderer, slot.allow_untrusted_plugin
+                    );
+                }
+            }
+        }
         "tabs" => {
             let resp = client
                 .get_workbench_tabs()
                 .await
                 .map_err(|s| format!("get_workbench_tabs failed: {s}"))?;
-            println!("TABS count={}", resp.tabs.len());
-            for tab in resp.tabs {
-                let kind = match WorkbenchTabKindProto::try_from(tab.kind) {
-                    Ok(WorkbenchTabKindProto::PinnedIndex) => "PinnedIndex",
-                    Ok(WorkbenchTabKindProto::ActiveTask) => "ActiveTask",
-                    Ok(WorkbenchTabKindProto::ReadOnlyPeek) => "ReadOnlyPeek",
-                    _ => "Unspecified",
-                };
-                println!(
-                    "TAB kind={kind} id={} epoch={} status={}",
-                    tab.id, tab.fencing_epoch, tab.status_label
-                );
+            if opts.json {
+                let tabs_json: Vec<String> = resp
+                    .tabs
+                    .iter()
+                    .map(|t| {
+                        format!(
+                            "{{\"kind\":{},\"id\":{},\"fencing_epoch\":{},\"status_label\":{}}}",
+                            json_escape(workbench_tab_kind_label(t.kind)),
+                            json_escape(&t.id),
+                            t.fencing_epoch,
+                            json_escape(&t.status_label)
+                        )
+                    })
+                    .collect();
+                println!("{{\"tabs\":[{}]}}", tabs_json.join(","));
+            } else {
+                println!("TABS count={}", resp.tabs.len());
+                for tab in resp.tabs {
+                    println!(
+                        "TAB kind={} id={} epoch={} status={}",
+                        workbench_tab_kind_label(tab.kind),
+                        tab.id,
+                        tab.fencing_epoch,
+                        tab.status_label
+                    );
+                }
             }
         }
         "watch-tabs" => {
@@ -180,23 +330,32 @@ async fn run() -> Result<(), String> {
                 .query_fleet_audit_capsule("default")
                 .await
                 .map_err(|s| format!("query_fleet_audit_capsule failed: {s}"))?;
-            match maybe {
-                Some(cap) => {
-                    println!(
-                        "AUDIT active={} archived={} peek={} defeaters={} inbox={} disclosure={} favored_collapsed={} authenticates={} authorizes={}",
-                        cap.active_actor_count,
-                        cap.archived_actor_count,
-                        cap.peek_count,
-                        cap.total_active_defeaters,
-                        cap.total_human_inbox_items,
-                        cap.disclosure_level,
-                        cap.favored_path_collapsed,
-                        cap.authenticates_evidence,
-                        cap.authorizes_effect
-                    );
-                }
-                None => {
-                    println!("AUDIT none");
+            if opts.json {
+                println!(
+                    "{}",
+                    maybe
+                        .as_ref()
+                        .map_or_else(|| "null".to_owned(), |c| c.to_json())
+                );
+            } else {
+                match maybe {
+                    Some(cap) => {
+                        println!(
+                            "AUDIT active={} archived={} peek={} defeaters={} inbox={} disclosure={} favored_collapsed={} authenticates={} authorizes={}",
+                            cap.active_actor_count,
+                            cap.archived_actor_count,
+                            cap.peek_count,
+                            cap.total_active_defeaters,
+                            cap.total_human_inbox_items,
+                            cap.disclosure_level,
+                            cap.favored_path_collapsed,
+                            cap.authenticates_evidence,
+                            cap.authorizes_effect
+                        );
+                    }
+                    None => {
+                        println!("AUDIT none");
+                    }
                 }
             }
         }
@@ -205,9 +364,23 @@ async fn run() -> Result<(), String> {
                 .list_pending_gates()
                 .await
                 .map_err(|s| format!("list_pending_gates failed: {s}"))?;
-            println!("GATES count={}", gates.len());
-            for g in gates {
-                println!("GATE id={} tool={}", g.gate_id, g.tool_or_node_name);
+            if opts.json {
+                let items: Vec<String> = gates
+                    .iter()
+                    .map(|g| {
+                        format!(
+                            "{{\"gate_id\":{},\"tool_or_node_name\":{}}}",
+                            json_escape(&g.gate_id),
+                            json_escape(&g.tool_or_node_name)
+                        )
+                    })
+                    .collect();
+                println!("{{\"gates\":[{}]}}", items.join(","));
+            } else {
+                println!("GATES count={}", gates.len());
+                for g in gates {
+                    println!("GATE id={} tool={}", g.gate_id, g.tool_or_node_name);
+                }
             }
         }
         "approve" | "reject" => {
@@ -230,7 +403,17 @@ async fn run() -> Result<(), String> {
                 .submit_graph_human_decision(&gate_id, decision, idem, note)
                 .await
                 .map_err(|s| format!("submit_graph_human_decision failed: {s}"))?;
-            if receipt.claimed {
+            if opts.json {
+                let denial = receipt
+                    .denial
+                    .as_ref()
+                    .map_or_else(|| "null".to_owned(), |d| json_escape(&d.message));
+                println!(
+                    "{{\"claimed\":{},\"gate_id\":{},\"denial\":{denial}}}",
+                    receipt.claimed,
+                    json_escape(&receipt.gate_id)
+                );
+            } else if receipt.claimed {
                 println!("GATE_DECISION status=CLAIMED gate={}", receipt.gate_id);
             } else {
                 let reason = receipt
@@ -257,7 +440,15 @@ async fn run() -> Result<(), String> {
                 .dispatch_scheme_command("marlin-scheme-ctl", action, arg.as_deref())
                 .await
                 .map_err(|s| format!("dispatch_scheme_command failed: {s}"))?;
-            println!("DISPATCH admitted={} action={action}", resp.admitted);
+            if opts.json {
+                println!(
+                    "{{\"admitted\":{},\"action\":{}}}",
+                    resp.admitted,
+                    json_escape(action)
+                );
+            } else {
+                println!("DISPATCH admitted={} action={action}", resp.admitted);
+            }
         }
         other => {
             return Err(format!("unknown subcommand `{other}`"));
@@ -320,4 +511,54 @@ fn parse_watch_flags(args: &[String]) -> Result<WatchFlags, String> {
         timeout_ms,
         session,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_cli_args_supports_json_endpoint_and_token_flags() {
+        let args = [
+            "--json",
+            "-e",
+            "http://127.0.0.1:9001",
+            "--token",
+            "sec-1",
+            "status",
+        ]
+        .into_iter()
+        .map(str::to_owned);
+        let parsed = parse_cli_args(args, None, None).expect("parse cli args");
+        assert!(parsed.json);
+        assert!(!parsed.help);
+        assert_eq!(parsed.endpoint.as_deref(), Some("http://127.0.0.1:9001"));
+        assert_eq!(parsed.token.as_deref(), Some("sec-1"));
+        assert_eq!(parsed.rest, vec!["status".to_owned()]);
+    }
+
+    #[test]
+    fn parse_cli_args_rejects_missing_flag_values() {
+        assert!(parse_cli_args(["--endpoint".to_owned()].into_iter(), None, None).is_err());
+        assert!(parse_cli_args(["--token".to_owned()].into_iter(), None, None).is_err());
+    }
+
+    #[test]
+    fn parse_watch_flags_validates_bounds_and_unknown_options() {
+        let ok = parse_watch_flags(&[
+            "--count".to_owned(),
+            "2".to_owned(),
+            "--timeout-ms".to_owned(),
+            "3000".to_owned(),
+            "--session".to_owned(),
+            "s-1".to_owned(),
+        ])
+        .expect("valid watch flags");
+        assert_eq!(ok.count, Some(2));
+        assert_eq!(ok.timeout_ms, Some(3000));
+        assert_eq!(ok.session.as_deref(), Some("s-1"));
+
+        assert!(parse_watch_flags(&["--count".to_owned(), "0".to_owned()]).is_err());
+        assert!(parse_watch_flags(&["--bogus".to_owned()]).is_err());
+    }
 }

@@ -456,6 +456,65 @@ async fn linked_aot_scheme_host_boots_fast_without_scheme_tree_and_survives_os_r
             "unexpected ctl audit output from aot host: {audit_out}"
         );
 
+        let status_json_ctl = Command::new(&ctl_bin)
+            .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .args(["--json", "status"])
+            .output()
+            .await
+            .expect("run marlin-scheme-ctl --json status against aot host");
+        assert!(
+            status_json_ctl.status.success(),
+            "ctl --json status failed: {}",
+            String::from_utf8_lossy(&status_json_ctl.stderr)
+        );
+        let status_json: serde_json::Value = serde_json::from_slice(&status_json_ctl.stdout)
+            .expect("parse marlin-scheme-ctl --json status output");
+        assert_eq!(status_json["audit"]["active_actor_count"], 2);
+        assert_eq!(status_json["audit"]["archived_actor_count"], 2);
+        assert_eq!(status_json["audit"]["total_active_defeaters"], 0);
+        assert_eq!(status_json["audit"]["total_human_inbox_items"], 2);
+        assert_eq!(status_json["audit"]["authorizes_effect"], false);
+        assert!(
+            status_json["tabs"]
+                .as_array()
+                .is_some_and(|tabs| tabs.iter().any(|t| t["id"] == "fleet-host-parent")
+                    && tabs.iter().any(|t| t["id"] == "sib-aot-deny")),
+            "status json missing expected tabs: {status_json}"
+        );
+        assert!(
+            status_json["gates"]
+                .as_array()
+                .is_some_and(|gates| gates.iter().any(|g| g["gate_id"] == "gate-aot-s32-2")),
+            "status json missing pending gate: {status_json}"
+        );
+
+        let wb_json_ctl = Command::new(&ctl_bin)
+            .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .args(["--json", "open-workbench", "aot-tui-session"])
+            .output()
+            .await
+            .expect("run marlin-scheme-ctl --json open-workbench against aot host");
+        assert!(
+            wb_json_ctl.status.success(),
+            "ctl --json open-workbench failed: {}",
+            String::from_utf8_lossy(&wb_json_ctl.stderr)
+        );
+        let wb_json: serde_json::Value = serde_json::from_slice(&wb_json_ctl.stdout)
+            .expect("parse marlin-scheme-ctl --json open-workbench output");
+        assert_eq!(wb_json["session_label"], "aot-tui-session");
+        assert!(
+            wb_json["slots"].as_array().is_some_and(|slots| {
+                slots.iter().any(|s| {
+                    s["slot_id"] == "approval.gate"
+                        && s["fallback_renderer"] == "host.gate"
+                        && s["allow_untrusted_plugin"] == false
+                })
+            }),
+            "open-workbench json missing protected approval.gate slot: {wb_json}"
+        );
+
         let traj_ctl = Command::new(&ctl_bin)
             .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
             .env("MARLIN_BRIDGE_TOKEN", bearer_token)
