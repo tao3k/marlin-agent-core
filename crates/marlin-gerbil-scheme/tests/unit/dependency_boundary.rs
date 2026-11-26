@@ -38,3 +38,53 @@ fn gerbil_scheme_does_not_depend_on_rust_side_scheme_source_parsers() {
         }
     }
 }
+
+#[test]
+fn graph_engine_scheme_sources_stay_rfc44_poo_and_free_of_kitchen_sink_imports() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scheme/graph-engine");
+    let mut ss_files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .expect("read scheme/graph-engine directory")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("ss"))
+        .collect();
+    ss_files.sort();
+    assert!(
+        ss_files.len() >= 8,
+        "expected at least 8 Scheme source files under {}, found {}",
+        dir.display(),
+        ss_files.len()
+    );
+
+    let forbidden_tokens = [
+        "bind-these: #f",
+        ":marlin-agent-core/interface",
+        ":marlin-agent-core/init",
+        "helm-workbench",
+        "ui-helm",
+        "orgize",
+        "gerbil-parser",
+        "search-dsl",
+        "search-engine",
+        "module-authoring",
+    ];
+
+    for file in ss_files {
+        let raw = std::fs::read_to_string(&file)
+            .unwrap_or_else(|err| panic!("read {}: {err}", file.display()));
+        // Strip Scheme line comments so explanatory docstrings remain allowed while
+        // any executable form or import referencing forbidden modules fails closed.
+        let code_only: String = raw
+            .lines()
+            .map(|line| line.split(';').next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for token in forbidden_tokens {
+            assert!(
+                !code_only.contains(token),
+                "{} must not reference `{token}` (violates RFC 44 POO style or Linked-AOT slim closure boundary)",
+                file.display()
+            );
+        }
+    }
+}

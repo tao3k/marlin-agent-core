@@ -16,12 +16,20 @@
 ;;;      `fencing-epoch` anti-split-brain rejection on stale Marlin receipts.
 
 (import :std/test
+        (only-in :std/list/list find)
         (only-in :clan/poo/object .get .ref .slot?)
         (only-in :tao3k/agentic-ai-lab/modules/graph-engine/obligation-graph
                  make-obligation make-evidence-fact make-obligation-graph)
         (only-in :tao3k/agentic-ai-lab/modules/graph-engine/delegation-fence
                  make-capability-envelope)
         (only-in :marlin-agent-core/init Marlin)
+        (only-in :marlin-agent-core/graph-engine/funcs
+                 marlin-graph-engine-make-demo-fleet-vector
+                 marlin-graph-engine-vector->atomic-receipt)
+        (only-in :marlin-agent-core/graph-engine/fleet-controller
+                 make-marlin-fleet-workbench-controller
+                 marlin-fleet-workbench-controller-apply-action
+                 marlin-fleet-workbench-controller-audit-capsule)
         (only-in :marlin-agent-core/ui/task-workbench
                  make-marlin-task-workbench-package)
         (only-in :marlin-agent-core/policy/projection/graph/continuation
@@ -148,4 +156,60 @@
             (when (file-exists? (string-append db-path "-wal"))
               (delete-file (string-append db-path "-wal")))
             (when (file-exists? (string-append db-path "-shm"))
-              (delete-file (string-append db-path "-shm")))))))))
+              (delete-file (string-append db-path "-shm"))))))
+
+    (test-case "task-sandbox-verify emits sandbox-run directly and escalates oscillation to human-inbox"
+      (let* ((fleet0 (marlin-graph-engine-make-demo-fleet-vector '#("p1" "s1" "sha256:kv")))
+             (ctrl0 (make-marlin-fleet-workbench-controller fleet0 disclosure-level: 'L1))
+             (cap0 (marlin-fleet-workbench-controller-audit-capsule ctrl0))
+             (ctrl1 (marlin-fleet-workbench-controller-apply-action
+                     ctrl0 'task-sandbox-verify arg: "sib-deny:/bin/sh:forbidden"))
+             (effs1 (.get ctrl1 last-effects))
+             (sbx1 (find (lambda (e) (eq? (.ref e 'kind) 'sandbox-run)) effs1))
+             (llm1 (find (lambda (e) (eq? (.ref e 'kind) 'llm-complete)) effs1))
+             (rcpt1 (marlin-graph-engine-vector->atomic-receipt
+                     (vector 'sandbox-exited (.ref sbx1 'effect-id) 126 "" "sandbox-denied: /bin/sh")))
+             (ctrl2 (marlin-fleet-workbench-controller-apply-action
+                     ctrl1 'task-fleet-step receipts: (list rcpt1)))
+             (sbx2 (find (lambda (e) (eq? (.ref e 'kind) 'sandbox-run)) (.get ctrl2 last-effects)))
+             (rcpt2 (marlin-graph-engine-vector->atomic-receipt
+                     (vector 'sandbox-exited (.ref sbx2 'effect-id) 126 "" "sandbox-denied: /bin/sh")))
+             (ctrl3 (marlin-fleet-workbench-controller-apply-action
+                     ctrl2 'task-fleet-step receipts: (list rcpt2)))
+             (sbx3 (find (lambda (e) (eq? (.ref e 'kind) 'sandbox-run)) (.get ctrl3 last-effects)))
+             (cap3 (marlin-fleet-workbench-controller-audit-capsule ctrl3)))
+        (check (object? sbx1) => #t)
+        (check (.ref sbx1 'program) => "/bin/sh")
+        (check (.ref sbx1 'args) => '("forbidden"))
+        (check llm1 => #f)
+        (check (object? sbx2) => #t)
+        (check sbx3 => #f)
+        (check (.ref cap0 'total-human-inbox-items) => 1)
+        (check (.ref cap3 'total-human-inbox-items) => 2)
+        (check (.ref cap3 'authenticates-evidence?) => #f)
+        (check (.ref cap3 'authorizes-effect?) => #f)))
+
+    (test-case "cross-focus task-human-approve resolves parent defeater after task-reopen shifts focus"
+      (let* ((fleet0 (marlin-graph-engine-make-demo-fleet-vector '#("p1" "s1" "sha256:kv")))
+             (ctrl0 (make-marlin-fleet-workbench-controller fleet0 disclosure-level: 'L1))
+             (ctrl-sbx (marlin-fleet-workbench-controller-apply-action
+                        ctrl0 'task-sandbox-verify arg: "sib-ok:/bin/echo:verified"))
+             (sbx-ok (find (lambda (e) (eq? (.ref e 'kind) 'sandbox-run)) (.get ctrl-sbx last-effects)))
+             (rcpt-ok (marlin-graph-engine-vector->atomic-receipt
+                       (vector 'sandbox-exited (.ref sbx-ok 'effect-id) 0 "verified\n" "")))
+             (ctrl-settled (marlin-fleet-workbench-controller-apply-action
+                            ctrl-sbx 'task-fleet-step receipts: (list rcpt-ok) auto-archive?: #t))
+             (cap-settled (marlin-fleet-workbench-controller-audit-capsule ctrl-settled))
+             (ctrl-reopened (marlin-fleet-workbench-controller-apply-action
+                             ctrl-settled 'task-reopen arg: "sib-ok"))
+             (cap-reopened (marlin-fleet-workbench-controller-audit-capsule ctrl-reopened))
+             (ctrl-approved (marlin-fleet-workbench-controller-apply-action
+                             ctrl-reopened 'task-human-approve arg: "def-turso-01"))
+             (cap-approved (marlin-fleet-workbench-controller-audit-capsule ctrl-approved)))
+        (check (object? sbx-ok) => #t)
+        (check (.ref cap-settled 'archived-actor-count) => 1)
+        (check (.ref (.get ctrl-reopened fleet) 'focused-task-id) => "sib-ok")
+        (check (.ref cap-reopened 'total-active-defeaters) => 1)
+        (check (.ref cap-approved 'total-active-defeaters) => 0)
+        (check (.ref cap-approved 'favored-path-collapsed?) => #f)
+        (check (.ref cap-approved 'authorizes-effect?) => #f))))))

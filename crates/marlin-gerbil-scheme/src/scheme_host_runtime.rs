@@ -574,6 +574,14 @@ fn parse_disclosure_depth(raw: &str) -> DisclosureDepth {
     }
 }
 
+fn parse_detour_mode(raw: &str) -> DetourMode {
+    match raw {
+        "blocker-active" => DetourMode::BlockerActive,
+        "side-quest-active" => DetourMode::SideQuestActive,
+        _ => DetourMode::Mainline,
+    }
+}
+
 async fn run_one_atomic_effect(
     cas: Option<Arc<StorageCasStore<TursoAgentStorage>>>,
     sandbox: Option<Arc<AllowlistSandboxRunner>>,
@@ -703,7 +711,7 @@ fn sync_boot_fleet_to_control_plane(
             })
             .map_err(|e| format!("register fleet parent actor: {e}"))?;
     }
-    if capsule.active_actor_count >= 2 {
+    if capsule.active_actor_count >= 2 && snap.actors.len() < capsule.active_actor_count {
         if !snap.actors.contains_key(&sib_id) {
             task_actors
                 .register_actor(RegisterTaskActorRequest {
@@ -714,7 +722,7 @@ fn sync_boot_fleet_to_control_plane(
                 .map_err(|e| format!("register reopened fleet sibling actor: {e}"))?;
         }
         let _ = task_actors.close_read_only_peek(&sib_id);
-    } else {
+    } else if !snap.actors.contains_key(&sib_id) {
         let _ = task_actors.open_read_only_peek(sib_id);
     }
     let has_defeater = capsule.total_active_defeaters > 0;
@@ -746,11 +754,34 @@ fn sync_ui_action_fleet_to_control_plane(
     step: &SchemeFleetDispatchStep,
     capsule: &FleetAuditCapsuleProjection,
 ) -> Result<(), String> {
+    // Mirror Scheme's authoritative `visible_tab_ids` (`["index", active..., peeks...]`)
+    // onto `TaskActorControlPlane` so `GetWorkbenchTabs` / `WatchWorkbenchTabs` reflect
+    // live reopened, sandbox-spawned, and detour-spawned sibling actors.
+    let active_tab_ids = step
+        .visible_tab_ids
+        .iter()
+        .skip(1)
+        .take(capsule.active_actor_count);
+    let snap = task_actors.snapshot();
+    for raw_id in active_tab_ids {
+        if let Ok(actor_id) = TaskActorId::new(raw_id) {
+            if !snap.actors.contains_key(&actor_id) {
+                task_actors
+                    .register_actor(RegisterTaskActorRequest {
+                        task_id: actor_id.clone(),
+                        title: format!("Scheme Actor {raw_id}"),
+                        scope_mode: TaskActorScopeMode::Project,
+                    })
+                    .map_err(|e| format!("register scheme actor {raw_id}: {e}"))?;
+            }
+            let _ = task_actors.close_read_only_peek(&actor_id);
+        }
+    }
     if action_sym == "task-reopen" {
         let sib_raw = arg.unwrap_or("fleet-host-sib");
         let sib_id = TaskActorId::new(sib_raw).map_err(|e| format!("{e}"))?;
-        let snap = task_actors.snapshot();
-        if !snap.actors.contains_key(&sib_id) {
+        let snap_after = task_actors.snapshot();
+        if !snap_after.actors.contains_key(&sib_id) {
             task_actors
                 .register_actor(RegisterTaskActorRequest {
                     task_id: sib_id.clone(),
@@ -761,6 +792,18 @@ fn sync_ui_action_fleet_to_control_plane(
         }
         let _ = task_actors.close_read_only_peek(&sib_id);
     }
+    let snap_peeks = task_actors.snapshot();
+    for peek_raw in step
+        .visible_tab_ids
+        .iter()
+        .skip(1 + capsule.active_actor_count)
+    {
+        if let Ok(peek_id) = TaskActorId::new(peek_raw)
+            && !snap_peeks.actors.contains_key(&peek_id)
+        {
+            let _ = task_actors.open_read_only_peek(peek_id);
+        }
+    }
     let parent_id = TaskActorId::new("fleet-host-parent").map_err(|e| format!("{e}"))?;
     let kv_digest = KvPrefixDigest::new("sha256:scheme-host-kv").map_err(|e| format!("{e}"))?;
     let has_defeater = capsule.total_active_defeaters > 0;
@@ -769,6 +812,16 @@ fn sync_ui_action_fleet_to_control_plane(
         DisclosureDepth::L3
     } else {
         requested_depth
+    };
+    let scheme_detour = step
+        .detour_modes
+        .first()
+        .map(|s| parse_detour_mode(s))
+        .unwrap_or(DetourMode::Mainline);
+    let effective_detour = if has_defeater {
+        DetourMode::BlockerActive
+    } else {
+        scheme_detour
     };
     task_actors
         .bind_governed_context(GovernedContextCapsule {
@@ -780,12 +833,8 @@ fn sync_ui_action_fleet_to_control_plane(
             quarantined_memory_count: 0,
             sandbox_admitted: true,
             cedar_handoff_valid: true,
-            detour_mode: if has_defeater {
-                DetourMode::BlockerActive
-            } else {
-                DetourMode::Mainline
-            },
-            auto_archive_enabled: !has_defeater,
+            detour_mode: effective_detour,
+            auto_archive_enabled: !has_defeater && effective_detour != DetourMode::BlockerActive,
         })
         .map_err(|e| format!("rebind ui action governed context: {e}"))?;
     Ok(())
@@ -1512,5 +1561,67 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
             eprintln!("marlin-scheme-host error: {err}");
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_detour_mode, parse_scheme_ui_command};
+    use marlin_agent_graph::DetourMode;
+
+    #[test]
+    fn parse_detour_mode_maps_scheme_symbols() {
+        assert_eq!(
+            parse_detour_mode("blocker-active"),
+            DetourMode::BlockerActive
+        );
+        assert_eq!(
+            parse_detour_mode("side-quest-active"),
+            DetourMode::SideQuestActive
+        );
+        assert_eq!(parse_detour_mode("mainline"), DetourMode::Mainline);
+        assert_eq!(parse_detour_mode("unexpected"), DetourMode::Mainline);
+    }
+
+    #[test]
+    fn parse_scheme_ui_command_denies_human_approval_and_privileged_bypasses() {
+        for forbidden in [
+            "scheme:task-human-approve",
+            "scheme:task-human-approve def-turso-01",
+            "  scheme:task-human-approve   def-turso-01  ",
+            "task-human-approve",
+            "scheme:task-propagate-defeater def:prem",
+            "scheme:task-fleet-checkpoint cp:1",
+            "scheme:unknown-action arg",
+            "task-reopen sib-1",
+            "scheme:",
+            "",
+        ] {
+            assert_eq!(
+                parse_scheme_ui_command(forbidden),
+                None,
+                "UI command `{forbidden}` must be rejected fail-closed"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_scheme_ui_command_allows_declarative_ui_actions() {
+        assert_eq!(
+            parse_scheme_ui_command("scheme:task-reopen sib-1"),
+            Some(("task-reopen", Some("sib-1".to_owned())))
+        );
+        assert_eq!(
+            parse_scheme_ui_command("scheme:task-sandbox-verify sib:/bin/echo:ok"),
+            Some(("task-sandbox-verify", Some("sib:/bin/echo:ok".to_owned())))
+        );
+        assert_eq!(
+            parse_scheme_ui_command("  scheme:task-drill-l3  "),
+            Some(("task-drill-l3", None))
+        );
+        assert_eq!(
+            parse_scheme_ui_command("scheme:task-fleet-step"),
+            Some(("task-fleet-step", None))
+        );
     }
 }

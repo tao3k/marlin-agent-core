@@ -295,6 +295,22 @@ async fn linked_aot_scheme_host_boots_fast_without_scheme_tree_and_survives_os_r
         .unwrap()
         .unwrap();
 
+    // 2b-neg. Security invariant: `scheme:task-human-approve` over `DispatchUiEvent` MUST NEVER
+    //         bypass `ApprovalGateService` — defeaters must remain 1 until one-shot gate approval.
+    client1
+        .dispatch_scheme_command("aot-ctl", "task-human-approve", Some("def-turso-01"))
+        .await
+        .unwrap();
+    let pre_gate_cap = client1
+        .query_fleet_audit_capsule("default")
+        .await
+        .unwrap()
+        .expect("pre-gate capsule");
+    assert_eq!(
+        pre_gate_cap.total_active_defeaters, 1,
+        "DispatchUiEvent(scheme:task-human-approve) must never bypass ApprovalGateService"
+    );
+
     // 2c. One-shot `GraphHumanDecision::Approve` resolves `def-turso-01` (`defeaters=0`).
     let claim = client1
         .submit_graph_human_decision(
@@ -356,7 +372,16 @@ async fn linked_aot_scheme_host_boots_fast_without_scheme_tree_and_survives_os_r
         }
     };
     let boot2_ms = t1.elapsed().as_millis();
-    eprintln!("LINKED_AOT_BOOT2_MS={boot2_ms}");
+    let boot2_budget_ms: u128 = std::env::var("MARLIN_AOT_BOOT2_BUDGET_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u128>().ok())
+        .filter(|ms| *ms > 0)
+        .unwrap_or(2_500);
+    eprintln!("LINKED_AOT_BOOT2_MS={boot2_ms} LINKED_AOT_BOOT2_BUDGET_MS={boot2_budget_ms}");
+    assert!(
+        boot2_ms <= boot2_budget_ms,
+        "Linked-AOT warm restart regressed: boot2_ms={boot2_ms}ms exceeded budget {boot2_budget_ms}ms (check AOT closure bloat or accidental dynamic dlopen)"
+    );
     assert!(boot2.unwrap().contains("mode=restored"));
 
     let client2 = MarlinSchemeHostClient::connect(format!("http://{addr2}"), Some(bearer_token))
@@ -376,16 +401,27 @@ async fn linked_aot_scheme_host_boots_fast_without_scheme_tree_and_survives_os_r
     assert!(!cap2.authorizes_effect);
     assert_eq!(llm_calls.load(Ordering::SeqCst), 1);
 
-    // 3. When `marlin-scheme-ctl` binary is available (via `MARLIN_SCHEME_CTL_BIN` or sibling
-    //    target dir), exercise the real compiled CLI against the live Linked-AOT host!
-    let ctl_candidate = std::env::var_os("MARLIN_SCHEME_CTL_BIN")
-        .map(std::path::PathBuf::from)
+    // 3. Exercise the real compiled `marlin-scheme-ctl` CLI against the live Linked-AOT host.
+    //    When `MARLIN_SCHEME_CTL_BIN` or `CI` is set, missing the binary MUST fail closed
+    //    rather than silently skipping CLI E2E coverage.
+    let explicit_ctl = std::env::var_os("MARLIN_SCHEME_CTL_BIN").map(std::path::PathBuf::from);
+    let require_ctl = explicit_ctl.is_some()
+        || std::env::var("CI")
+            .ok()
+            .is_some_and(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes"));
+    let ctl_candidate = explicit_ctl
         .or_else(|| {
             std::path::Path::new(env!("CARGO_BIN_EXE_marlin-scheme-host-aot"))
                 .parent()
                 .map(|dir| dir.join("marlin-scheme-ctl"))
-                .filter(|p| p.is_file())
-        });
+        })
+        .filter(|p| p.is_file());
+    if require_ctl {
+        assert!(
+            ctl_candidate.is_some(),
+            "strict Linked-AOT CTL E2E enabled (CI or MARLIN_SCHEME_CTL_BIN set), but marlin-scheme-ctl binary was not found"
+        );
+    }
     if let Some(ctl_bin) = ctl_candidate {
         let ep2 = format!("http://{addr2}");
         let unauth_ctl = Command::new(&ctl_bin)
@@ -465,6 +501,92 @@ async fn linked_aot_scheme_host_boots_fast_without_scheme_tree_and_survives_os_r
             rej_out.contains("GATE_DECISION status=CLAIMED gate=gate-aot-s32-2"),
             "unexpected ctl reject output: {rej_out}"
         );
+        let rej_host_line = tokio::time::timeout(Duration::from_secs(10), lines2.next_line())
+            .await
+            .expect("aot host gate-rejected stdout timeout")
+            .unwrap()
+            .expect("aot host exited early");
+        assert!(
+            rej_host_line.contains("FLEET_GATE_REJECTED gate=gate-aot-s32-2"),
+            "expected FLEET_GATE_REJECTED line, got: {rej_host_line}"
+        );
+
+        let tabs_ctl = Command::new(&ctl_bin)
+            .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .arg("tabs")
+            .output()
+            .await
+            .expect("run marlin-scheme-ctl tabs against aot host");
+        assert!(
+            tabs_ctl.status.success(),
+            "ctl tabs failed: {}",
+            String::from_utf8_lossy(&tabs_ctl.stderr)
+        );
+        let tabs_out = String::from_utf8_lossy(&tabs_ctl.stdout);
+        assert!(
+            tabs_out.contains("TAB kind=PinnedIndex id=index")
+                && tabs_out.contains("TAB kind=ActiveTask id=fleet-host-parent")
+                && tabs_out.contains("TAB kind=ActiveTask id=sib-aot-deny"),
+            "unexpected ctl tabs output from aot host: {tabs_out}"
+        );
+
+        let watch_tabs_ctl = Command::new(&ctl_bin)
+            .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
+            .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+            .args(["watch-tabs", "--count", "1", "--timeout-ms", "5000"])
+            .output()
+            .await
+            .expect("run marlin-scheme-ctl watch-tabs against aot host");
+        assert!(
+            watch_tabs_ctl.status.success(),
+            "ctl watch-tabs failed: {}",
+            String::from_utf8_lossy(&watch_tabs_ctl.stderr)
+        );
+        let watch_tabs_out = String::from_utf8_lossy(&watch_tabs_ctl.stdout);
+        assert!(
+            watch_tabs_out.contains("WATCH_TABS seq=1")
+                && watch_tabs_out.contains("fleet-host-parent")
+                && watch_tabs_out.contains("sib-aot-deny"),
+            "unexpected ctl watch-tabs output from aot host: {watch_tabs_out}"
+        );
+
+        for (action, arg) in [
+            ("task-detour-blocker", "blk-aot-cli"),
+            ("task-detour-exit-return", ""),
+            ("task-propose-branch", "B-aot-cli:Verify Turso lineage"),
+        ] {
+            let mut cmd = Command::new(&ctl_bin);
+            cmd.env("MARLIN_BRIDGE_ENDPOINT", &ep2)
+                .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+                .args(["dispatch", action]);
+            if !arg.is_empty() {
+                cmd.arg(arg);
+            }
+            let out = cmd
+                .output()
+                .await
+                .unwrap_or_else(|e| panic!("run marlin-scheme-ctl dispatch {action}: {e}"));
+            assert!(
+                out.status.success(),
+                "ctl dispatch {action} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let stdout_str = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                stdout_str.contains(&format!("DISPATCH admitted=true action={action}")),
+                "unexpected ctl dispatch output for {action}: {stdout_str}"
+            );
+            let host_line = tokio::time::timeout(Duration::from_secs(10), lines2.next_line())
+                .await
+                .expect("aot host ui action stdout timeout")
+                .unwrap()
+                .expect("aot host exited early");
+            assert!(
+                host_line.contains(&format!("FLEET_UI_ACTION action={action}")),
+                "expected FLEET_UI_ACTION for {action}, got: {host_line}"
+            );
+        }
         eprintln!("LINKED_AOT_CTL_E2E=VERIFIED");
     }
 
