@@ -13,11 +13,23 @@ use std::fmt;
 
 use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
-    RootedSchemeObject, SchemeScalar,
+    RootedSchemeCollection, RootedSchemeObject, SchemeScalar,
 };
 use marlin_agent_protocol::{
     ModelEndpoint, ModelGatewayRequest, system_gateway_message, user_gateway_message,
 };
+
+use crate::scheme_types::{
+    GerbilSchemeAbiSymbol, GerbilSchemeCAbiContract, GerbilSchemeCAbiId,
+    GerbilSchemeCAbiReadinessPlan,
+};
+
+/// Native ABI identifier for `scheme/c-abi/graph-engine.ss` atomic-effect & Fleet controller symbols.
+pub const MARLIN_GRAPH_ENGINE_ATOMIC_FLEET_ABI_ID: &str =
+    "marlin.agent.graph-engine.atomic-fleet-projection";
+
+/// Native ABI version for `scheme/c-abi/graph-engine.ss` atomic-effect & Fleet controller symbols.
+pub const MARLIN_GRAPH_ENGINE_ATOMIC_FLEET_ABI_VERSION: u32 = 1;
 
 /// Linked C-ABI symbol for single-actor driver step.
 pub const MARLIN_GRAPH_ENGINE_STEP_DRIVER_SYMBOL: &str = "marlin_graph_engine_step_driver_vector";
@@ -36,6 +48,37 @@ pub const MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_DISPATCH_SYMBOL: &str =
 /// Linked C-ABI symbol projecting a non-authorizing `FleetAuditCapsule.` vector.
 pub const MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_AUDIT_CAPSULE_SYMBOL: &str =
     "marlin_graph_engine_fleet_controller_audit_capsule_vector";
+
+/// Native AOT C-ABI contract for the 5 atomic-effect & Fleet controller symbols in
+/// `scheme/c-abi/graph-engine.ss`.
+pub fn marlin_graph_engine_atomic_fleet_abi_contract() -> GerbilSchemeCAbiContract {
+    GerbilSchemeCAbiContract::new(
+        GerbilSchemeCAbiId::new(MARLIN_GRAPH_ENGINE_ATOMIC_FLEET_ABI_ID),
+        MARLIN_GRAPH_ENGINE_ATOMIC_FLEET_ABI_VERSION,
+    )
+    .with_exported_symbols([
+        GerbilSchemeAbiSymbol::new(MARLIN_GRAPH_ENGINE_STEP_DRIVER_SYMBOL),
+        GerbilSchemeAbiSymbol::new(MARLIN_GRAPH_ENGINE_STEP_FLEET_SYMBOL),
+        GerbilSchemeAbiSymbol::new(MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_OPEN_SYMBOL),
+        GerbilSchemeAbiSymbol::new(MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_DISPATCH_SYMBOL),
+        GerbilSchemeAbiSymbol::new(MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_AUDIT_CAPSULE_SYMBOL),
+    ])
+}
+
+/// Readiness plan verified before invoking the 5 linked atomic-effect & Fleet controller symbols.
+pub fn marlin_graph_engine_atomic_fleet_readiness_plan() -> GerbilSchemeCAbiReadinessPlan {
+    GerbilSchemeCAbiReadinessPlan::new(
+        GerbilSchemeCAbiId::new(MARLIN_GRAPH_ENGINE_ATOMIC_FLEET_ABI_ID),
+        MARLIN_GRAPH_ENGINE_ATOMIC_FLEET_ABI_VERSION,
+    )
+    .with_exported_symbols([
+        GerbilSchemeAbiSymbol::new(MARLIN_GRAPH_ENGINE_STEP_DRIVER_SYMBOL),
+        GerbilSchemeAbiSymbol::new(MARLIN_GRAPH_ENGINE_STEP_FLEET_SYMBOL),
+        GerbilSchemeAbiSymbol::new(MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_OPEN_SYMBOL),
+        GerbilSchemeAbiSymbol::new(MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_DISPATCH_SYMBOL),
+        GerbilSchemeAbiSymbol::new(MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_AUDIT_CAPSULE_SYMBOL),
+    ])
+}
 
 /// Error decoding or encoding rooted Gambit vectors at the atomic-effect C-ABI boundary.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -521,92 +564,7 @@ impl<'vm> SchemeFleetSessionDriver<'vm> {
             .map_err(|e| AtomicEffectAbiError(format!("dispatch `{action_sym}`: {e}")))?
             .into_collection(CollectionKind::Vector)
             .map_err(|e| AtomicEffectAbiError(format!("dispatch output vector: {e}")))?;
-        if out.len() != 7 {
-            return Err(AtomicEffectAbiError(format!(
-                "expected 7-slot controller dispatch output, got {}",
-                out.len()
-            )));
-        }
-
-        let step = {
-            let disclosure_level = read_sym(
-                out.element(1)
-                    .map_err(|e| AtomicEffectAbiError(format!("output[1] disclosure: {e}")))?,
-            )?;
-
-            let effs_vec = out
-                .element(2)
-                .map_err(|e| AtomicEffectAbiError(format!("output[2] effects: {e}")))?
-                .into_collection(CollectionKind::Vector)
-                .map_err(|e| AtomicEffectAbiError(format!("effects vector: {e}")))?;
-            let mut effects = Vec::with_capacity(effs_vec.len());
-            for i in 0..effs_vec.len() {
-                effects.push(decode_scheme_atomic_effect_vector(
-                    effs_vec
-                        .element(i)
-                        .map_err(|e| AtomicEffectAbiError(format!("effect[{i}]: {e}")))?,
-                )?);
-            }
-
-            let vis_vec = out
-                .element(3)
-                .map_err(|e| AtomicEffectAbiError(format!("output[3] visible tabs: {e}")))?
-                .into_collection(CollectionKind::Vector)
-                .map_err(|e| AtomicEffectAbiError(format!("visible tabs vector: {e}")))?;
-            let mut visible_tab_ids = Vec::with_capacity(vis_vec.len());
-            for i in 0..vis_vec.len() {
-                visible_tab_ids.push(read_str(
-                    vis_vec
-                        .element(i)
-                        .map_err(|e| AtomicEffectAbiError(format!("visible_tab[{i}]: {e}")))?,
-                )?);
-            }
-
-            let detours_vec = out
-                .element(4)
-                .map_err(|e| AtomicEffectAbiError(format!("output[4] detours: {e}")))?
-                .into_collection(CollectionKind::Vector)
-                .map_err(|e| AtomicEffectAbiError(format!("detours vector: {e}")))?;
-            let mut detour_modes = Vec::with_capacity(detours_vec.len());
-            for i in 0..detours_vec.len() {
-                detour_modes.push(read_sym(
-                    detours_vec
-                        .element(i)
-                        .map_err(|e| AtomicEffectAbiError(format!("detour[{i}]: {e}")))?,
-                )?);
-            }
-
-            let defs_vec = out
-                .element(5)
-                .map_err(|e| AtomicEffectAbiError(format!("output[5] defeaters: {e}")))?
-                .into_collection(CollectionKind::Vector)
-                .map_err(|e| AtomicEffectAbiError(format!("defeaters vector: {e}")))?;
-            let mut active_defeater_counts = Vec::with_capacity(defs_vec.len());
-            for i in 0..defs_vec.len() {
-                active_defeater_counts.push(read_nonneg_usize(
-                    defs_vec
-                        .element(i)
-                        .map_err(|e| AtomicEffectAbiError(format!("defeater[{i}]: {e}")))?,
-                )?);
-            }
-
-            let ui_element_count = out
-                .element(6)
-                .map_err(|e| AtomicEffectAbiError(format!("output[6] ui elements: {e}")))?
-                .into_collection(CollectionKind::Vector)
-                .map_err(|e| AtomicEffectAbiError(format!("ui elements vector: {e}")))?
-                .len();
-
-            SchemeFleetDispatchStep {
-                disclosure_level,
-                effects,
-                visible_tab_ids,
-                detour_modes,
-                active_defeater_counts,
-                ui_element_count,
-            }
-        };
-
+        let step = decode_fleet_dispatch_output(&out)?;
         self.state = FleetControllerRoot::Dispatched(out);
         Ok(step)
     }
@@ -684,31 +642,267 @@ impl<'vm> SchemeFleetSessionDriver<'vm> {
     }
 }
 
+/// Linked native AOT C-ABI function pointers for `FleetWorkbenchController.` exported by
+/// `scheme/c-abi/graph-engine.ss`.
+#[derive(Clone, Copy, Debug)]
+pub struct SchemeFleetLinkedExports {
+    /// Exported symbol `marlin_graph_engine_fleet_controller_open_vector`.
+    pub open_vector: unsafe extern "C" fn(i64) -> i64,
+    /// Exported symbol `marlin_graph_engine_fleet_controller_dispatch_vector`.
+    pub dispatch_vector: unsafe extern "C" fn(i64) -> i64,
+    /// Exported symbol `marlin_graph_engine_fleet_controller_audit_capsule_vector`.
+    pub audit_capsule_vector: unsafe extern "C" fn(i64) -> i64,
+}
+
+fn decode_fleet_dispatch_output(
+    out: &RootedSchemeCollection<'_>,
+) -> Result<SchemeFleetDispatchStep, AtomicEffectAbiError> {
+    if out.len() != 7 {
+        return Err(AtomicEffectAbiError(format!(
+            "expected 7-slot controller dispatch output, got {}",
+            out.len()
+        )));
+    }
+    let disclosure_level = read_sym(
+        out.element(1)
+            .map_err(|e| AtomicEffectAbiError(format!("output[1] disclosure: {e}")))?,
+    )?;
+
+    let effs_vec = out
+        .element(2)
+        .map_err(|e| AtomicEffectAbiError(format!("output[2] effects: {e}")))?
+        .into_collection(CollectionKind::Vector)
+        .map_err(|e| AtomicEffectAbiError(format!("effects vector: {e}")))?;
+    let mut effects = Vec::with_capacity(effs_vec.len());
+    for i in 0..effs_vec.len() {
+        effects.push(decode_scheme_atomic_effect_vector(
+            effs_vec
+                .element(i)
+                .map_err(|e| AtomicEffectAbiError(format!("effect[{i}]: {e}")))?,
+        )?);
+    }
+
+    let vis_vec = out
+        .element(3)
+        .map_err(|e| AtomicEffectAbiError(format!("output[3] visible tabs: {e}")))?
+        .into_collection(CollectionKind::Vector)
+        .map_err(|e| AtomicEffectAbiError(format!("visible tabs vector: {e}")))?;
+    let mut visible_tab_ids = Vec::with_capacity(vis_vec.len());
+    for i in 0..vis_vec.len() {
+        visible_tab_ids.push(read_str(
+            vis_vec
+                .element(i)
+                .map_err(|e| AtomicEffectAbiError(format!("visible_tab[{i}]: {e}")))?,
+        )?);
+    }
+
+    let detours_vec = out
+        .element(4)
+        .map_err(|e| AtomicEffectAbiError(format!("output[4] detours: {e}")))?
+        .into_collection(CollectionKind::Vector)
+        .map_err(|e| AtomicEffectAbiError(format!("detours vector: {e}")))?;
+    let mut detour_modes = Vec::with_capacity(detours_vec.len());
+    for i in 0..detours_vec.len() {
+        detour_modes.push(read_sym(
+            detours_vec
+                .element(i)
+                .map_err(|e| AtomicEffectAbiError(format!("detour[{i}]: {e}")))?,
+        )?);
+    }
+
+    let defs_vec = out
+        .element(5)
+        .map_err(|e| AtomicEffectAbiError(format!("output[5] defeaters: {e}")))?
+        .into_collection(CollectionKind::Vector)
+        .map_err(|e| AtomicEffectAbiError(format!("defeaters vector: {e}")))?;
+    let mut active_defeater_counts = Vec::with_capacity(defs_vec.len());
+    for i in 0..defs_vec.len() {
+        active_defeater_counts.push(read_nonneg_usize(
+            defs_vec
+                .element(i)
+                .map_err(|e| AtomicEffectAbiError(format!("defeater[{i}]: {e}")))?,
+        )?);
+    }
+
+    let ui_element_count = out
+        .element(6)
+        .map_err(|e| AtomicEffectAbiError(format!("output[6] ui elements: {e}")))?
+        .into_collection(CollectionKind::Vector)
+        .map_err(|e| AtomicEffectAbiError(format!("ui elements vector: {e}")))?
+        .len();
+
+    Ok(SchemeFleetDispatchStep {
+        disclosure_level,
+        effects,
+        visible_tab_ids,
+        detour_modes,
+        active_defeater_counts,
+        ui_element_count,
+    })
+}
+
+/// Static AOT-linked counterpart to `SchemeFleetSessionDriver` calling the compiled C-ABI
+/// function pointers exported by `scheme/c-abi/graph-engine.ss`.
+pub struct SchemeFleetLinkedDriver<'vm> {
+    runtime: &'vm GerbilRuntime,
+    exports: SchemeFleetLinkedExports,
+    state: FleetControllerRoot<'vm>,
+}
+
+impl<'vm> SchemeFleetLinkedDriver<'vm> {
+    /// Opens a live `FleetWorkbenchController.` via the statically linked AOT `open_vector` symbol.
+    ///
+    /// # Safety
+    /// All symbols in `exports` must belong to `runtime`'s initialized linked programme.
+    pub unsafe fn open(
+        runtime: &'vm GerbilRuntime,
+        exports: SchemeFleetLinkedExports,
+        fleet: RootedSchemeObject<'vm>,
+        disclosure_level: &str,
+    ) -> Result<Self, AtomicEffectAbiError> {
+        let open_proc = unsafe { runtime.bind_object_export(exports.open_vector) }
+            .map_err(|e| AtomicEffectAbiError(format!("bind linked open_vector: {e}")))?;
+        let open_in = vec_obj(runtime, &[fleet, sym(runtime, disclosure_level)?])?;
+        let controller = open_proc
+            .call(&open_in)
+            .into_result()
+            .map_err(|e| AtomicEffectAbiError(format!("linked open fleet controller: {e}")))?;
+        Ok(Self {
+            runtime,
+            exports,
+            state: FleetControllerRoot::Initial(controller),
+        })
+    }
+
+    fn with_controller<T>(
+        &self,
+        f: impl FnOnce(&RootedSchemeObject<'_>) -> Result<T, AtomicEffectAbiError>,
+    ) -> Result<T, AtomicEffectAbiError> {
+        match &self.state {
+            FleetControllerRoot::Initial(ctrl) => f(ctrl),
+            FleetControllerRoot::Dispatched(out) => {
+                let ctrl = out
+                    .element(0)
+                    .map_err(|e| AtomicEffectAbiError(format!("output[0] controller: {e}")))?;
+                f(&ctrl)
+            }
+        }
+    }
+
+    /// Dispatches one declarative TUI `scheme-action` via the linked `dispatch_vector` symbol.
+    pub fn dispatch(
+        &mut self,
+        action_sym: &str,
+        task_id: Option<&str>,
+        arg: Option<&str>,
+        receipts: &[SchemeAtomicReceipt],
+        auto_archive: bool,
+    ) -> Result<SchemeFleetDispatchStep, AtomicEffectAbiError> {
+        let rt = self.runtime;
+        let dispatch_proc = unsafe { rt.bind_object_export(self.exports.dispatch_vector) }
+            .map_err(|e| AtomicEffectAbiError(format!("bind linked dispatch_vector: {e}")))?;
+        let task_obj = match task_id {
+            Some(t) => txt(rt, t)?,
+            None => rt
+                .scalar_object(SchemeScalar::Boolean(false))
+                .map_err(|e| AtomicEffectAbiError(format!("alloc false: {e}")))?,
+        };
+        let arg_obj = match arg {
+            Some(a) => txt(rt, a)?,
+            None => rt
+                .scalar_object(SchemeScalar::Boolean(false))
+                .map_err(|e| AtomicEffectAbiError(format!("alloc false: {e}")))?,
+        };
+        let mut rcpt_objs = Vec::with_capacity(receipts.len());
+        for rcpt in receipts {
+            rcpt_objs.push(encode_scheme_atomic_receipt_vector(rt, rcpt)?);
+        }
+        let rcpts_vec = vec_obj(rt, &rcpt_objs)?;
+        let auto_obj = rt
+            .scalar_object(SchemeScalar::Boolean(auto_archive))
+            .map_err(|e| AtomicEffectAbiError(format!("alloc bool: {e}")))?;
+        let action_obj = sym(rt, action_sym)?;
+        let dispatch_in = self.with_controller(|ctrl| {
+            rt.collection_from_objects(
+                CollectionKind::Vector,
+                &[
+                    ctrl,
+                    &action_obj,
+                    &task_obj,
+                    &arg_obj,
+                    &rcpts_vec,
+                    &auto_obj,
+                ],
+            )
+            .map(|c| c.into_object())
+            .map_err(|e| AtomicEffectAbiError(format!("construct dispatch vector: {e}")))
+        })?;
+        let out = dispatch_proc
+            .call(&dispatch_in)
+            .into_result()
+            .map_err(|e| AtomicEffectAbiError(format!("linked dispatch `{action_sym}`: {e}")))?
+            .into_collection(CollectionKind::Vector)
+            .map_err(|e| AtomicEffectAbiError(format!("dispatch output vector: {e}")))?;
+        let step = decode_fleet_dispatch_output(&out)?;
+        self.state = FleetControllerRoot::Dispatched(out);
+        Ok(step)
+    }
+
+    /// Projects the current non-authorizing `FleetAuditCapsuleProjection` via linked C-ABI.
+    pub fn audit_capsule(&self) -> Result<FleetAuditCapsuleProjection, AtomicEffectAbiError> {
+        let audit_proc = unsafe {
+            self.runtime
+                .bind_object_export(self.exports.audit_capsule_vector)
+        }
+        .map_err(|e| AtomicEffectAbiError(format!("bind linked audit_capsule_vector: {e}")))?;
+        let out = self.with_controller(|ctrl| {
+            audit_proc
+                .call(ctrl)
+                .into_result()
+                .map_err(|e| AtomicEffectAbiError(format!("linked audit capsule: {e}")))
+        })?;
+        decode_fleet_audit_capsule_vector(out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn linked_atomic_effect_c_abi_symbols_match_scheme_exports() {
+        let contract = marlin_graph_engine_atomic_fleet_abi_contract();
+        let plan = marlin_graph_engine_atomic_fleet_readiness_plan();
         assert_eq!(
-            MARLIN_GRAPH_ENGINE_STEP_DRIVER_SYMBOL,
-            "marlin_graph_engine_step_driver_vector"
+            contract.abi_id.as_str(),
+            MARLIN_GRAPH_ENGINE_ATOMIC_FLEET_ABI_ID
         );
         assert_eq!(
-            MARLIN_GRAPH_ENGINE_STEP_FLEET_SYMBOL,
-            "marlin_graph_engine_step_fleet_vector"
+            contract.version,
+            MARLIN_GRAPH_ENGINE_ATOMIC_FLEET_ABI_VERSION
+        );
+        assert_eq!(plan.abi_id, contract.abi_id);
+        assert_eq!(plan.version, contract.version);
+        assert_eq!(plan.exported_symbols.len(), 5);
+        assert_eq!(
+            plan.exported_symbols[0].as_str(),
+            MARLIN_GRAPH_ENGINE_STEP_DRIVER_SYMBOL
         );
         assert_eq!(
-            MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_OPEN_SYMBOL,
-            "marlin_graph_engine_fleet_controller_open_vector"
+            plan.exported_symbols[1].as_str(),
+            MARLIN_GRAPH_ENGINE_STEP_FLEET_SYMBOL
         );
         assert_eq!(
-            MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_DISPATCH_SYMBOL,
-            "marlin_graph_engine_fleet_controller_dispatch_vector"
+            plan.exported_symbols[2].as_str(),
+            MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_OPEN_SYMBOL
         );
         assert_eq!(
-            MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_AUDIT_CAPSULE_SYMBOL,
-            "marlin_graph_engine_fleet_controller_audit_capsule_vector"
+            plan.exported_symbols[3].as_str(),
+            MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_DISPATCH_SYMBOL
+        );
+        assert_eq!(
+            plan.exported_symbols[4].as_str(),
+            MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_AUDIT_CAPSULE_SYMBOL
         );
         let err = AtomicEffectAbiError("bounded test error".to_owned());
         assert_eq!(err.to_string(), "bounded test error");

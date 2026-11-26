@@ -15,10 +15,12 @@ publish = false
 
 [features]
 external-program = ["gerbil-scheme/external-program"]
-app-server-host = ["dep:marlin-agent-app-server"]
+app-server-host = ["dep:marlin-agent-app-server", "dep:marlin-agent-storage", "dep:tokio"]
 
 [dependencies]
 marlin-agent-app-server = { workspace = true, features = ["turso-host"], optional = true }
+marlin-agent-storage = { workspace = true, features = ["turso"], optional = true }
+tokio = { workspace = true, optional = true }
 marlin-agent-harness-types.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-graph.workspace = true
@@ -42,7 +44,17 @@ tempfile.workspace = true
 tokio.workspace = true
 toml.workspace = true
 
+[[bin]]
+name = "marlin-scheme-host"
+path = "src/bin/marlin_scheme_host.rs"
+required-features = ["app-server-host"]
+
 [[test]]
 name = "graph_engine_vm"
 path = "tests/graph_engine_vm.rs"
+required-features = ["app-server-host"]
+
+[[test]]
+name = "scheme_host_process"
+path = "tests/scheme_host_process.rs"
 required-features = ["app-server-host"]

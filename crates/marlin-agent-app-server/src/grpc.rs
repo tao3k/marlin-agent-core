@@ -199,13 +199,26 @@ impl<S: marlin_agent_storage::SessionEventStore + Clone + 'static> AppServer<S> 
         bridge: crate::ui_grpc::MyGoBridgeHost,
         listener: tokio::net::TcpListener,
     ) -> Result<(), tonic::transport::Error> {
+        self.serve_with_ui_on_shutdown(bridge, listener, std::future::pending())
+            .await
+    }
+
+    /// Serve this co-hosted `AppServer` plus `MyGoBridgeHost` on `listener` until `signal`
+    /// resolves, then shut down gracefully.
+    #[cfg(feature = "ui-grpc")]
+    pub async fn serve_with_ui_on_shutdown<F: Future<Output = ()>>(
+        self,
+        bridge: crate::ui_grpc::MyGoBridgeHost,
+        listener: tokio::net::TcpListener,
+        signal: F,
+    ) -> Result<(), tonic::transport::Error> {
         let incoming = async_stream::stream! {
             loop {
                 yield listener.accept().await.map(|(stream, _)| stream);
             }
         };
         self.into_ui_router(bridge)
-            .serve_with_incoming(incoming)
+            .serve_with_incoming_shutdown(incoming, signal)
             .await
     }
 

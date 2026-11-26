@@ -189,6 +189,29 @@ impl MyGoBridgeHost {
             .expect("built-in Scheme profile overlays must satisfy invariants")
     }
 
+    /// Construct a `MyGoBridgeHost` with an empty publisher trust set (rejecting all untrusted
+    /// signed panel releases while serving built-in Scheme profile overlays and gates).
+    pub fn new_default_trust(
+        authorize: impl Fn(&MetadataMap) -> Result<(), Status> + Send + Sync + 'static,
+    ) -> Self {
+        Self::new(ReleaseTrust::new(BTreeMap::new()), authorize)
+    }
+
+    /// Standard Bearer-token authorization check for gRPC metadata.
+    /// When `expected_header` is `None`, all requests are admitted (loopback dev mode).
+    pub fn check_bearer_header(
+        meta: &MetadataMap,
+        expected_header: Option<&str>,
+    ) -> Result<(), Status> {
+        let Some(expected) = expected_header else {
+            return Ok(());
+        };
+        match meta.get("authorization").and_then(|v| v.to_str().ok()) {
+            Some(actual) if actual == expected => Ok(()),
+            _ => Err(Status::unauthenticated("missing or invalid bearer token")),
+        }
+    }
+
     pub fn with_profile_overlays(
         trust: ReleaseTrust,
         overlays: Vec<SchemeOverlayProjection>,

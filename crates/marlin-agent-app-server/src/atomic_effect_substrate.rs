@@ -13,7 +13,9 @@
 //! Zero high-order orchestration lives here; Scheme owns all scheduling, caching policy,
 //! prompt construction, detour rules, and hypothesis inference.
 
+use std::collections::BTreeSet;
 use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -108,6 +110,95 @@ impl AtomicSandboxRunner for BoundedTokioSandboxRunner {
                 }),
             }
         })
+    }
+}
+
+/// Fail-closed policy wrapper around `BoundedTokioSandboxRunner` enforcing:
+/// 1. Explicit exact-match `allowed_programs` allowlist, and
+/// 2. Optional `confined_root` directory confinement (canonical path check blocking `..` escape).
+#[derive(Clone, Debug)]
+pub struct AllowlistSandboxRunner {
+    inner: BoundedTokioSandboxRunner,
+    allowed_programs: BTreeSet<String>,
+    confined_root: Option<PathBuf>,
+}
+
+impl AllowlistSandboxRunner {
+    /// Creates an allowlisted sandbox runner (denies all programs not in `allowed_programs`).
+    pub fn new<I, S>(timeout: Duration, max_output_bytes: usize, allowed_programs: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self {
+            inner: BoundedTokioSandboxRunner::new(timeout, max_output_bytes),
+            allowed_programs: allowed_programs.into_iter().map(Into::into).collect(),
+            confined_root: None,
+        }
+    }
+
+    /// Confines all executed commands to `root` (or subdirectories thereof).
+    pub fn with_confined_root(mut self, root: impl AsRef<Path>) -> Self {
+        self.confined_root = Some(root.as_ref().to_path_buf());
+        self
+    }
+
+    fn validate_and_resolve_cwd(&self, requested: Option<&str>) -> Result<Option<String>, String> {
+        let Some(root) = &self.confined_root else {
+            return Ok(requested.map(str::to_owned));
+        };
+        let canonical_root = std::fs::canonicalize(root)
+            .map_err(|err| format!("confined sandbox root unavailable: {err}"))?;
+        let candidate = match requested {
+            Some(raw) if !raw.trim().is_empty() => {
+                let p = Path::new(raw);
+                if p.is_absolute() {
+                    p.to_path_buf()
+                } else {
+                    canonical_root.join(p)
+                }
+            }
+            _ => canonical_root.clone(),
+        };
+        let canonical_cwd = std::fs::canonicalize(&candidate)
+            .map_err(|err| format!("sandbox cwd invalid: {err}"))?;
+        if !canonical_cwd.starts_with(&canonical_root) {
+            return Err("sandbox cwd escapes confined root".to_owned());
+        }
+        Ok(Some(canonical_cwd.to_string_lossy().into_owned()))
+    }
+}
+
+impl AtomicSandboxRunner for AllowlistSandboxRunner {
+    fn run_sandbox<'a>(
+        &'a self,
+        mut payload: SandboxRunEffectPayload,
+    ) -> Pin<Box<dyn Future<Output = AtomicEffectReceipt> + Send + 'a>> {
+        if !self.allowed_programs.contains(&payload.program) {
+            let effect_id = payload.effect_id;
+            let program = payload.program;
+            return Box::pin(async move {
+                AtomicEffectReceipt::EffectError(EffectErrorReceiptPayload {
+                    effect_id,
+                    message: format!("sandbox program denied by allowlist: {program}"),
+                })
+            });
+        }
+        match self.validate_and_resolve_cwd(payload.cwd.as_deref()) {
+            Ok(resolved_cwd) => {
+                payload.cwd = resolved_cwd;
+                self.inner.run_sandbox(payload)
+            }
+            Err(message) => {
+                let effect_id = payload.effect_id;
+                Box::pin(async move {
+                    AtomicEffectReceipt::EffectError(EffectErrorReceiptPayload {
+                        effect_id,
+                        message,
+                    })
+                })
+            }
+        }
     }
 }
 
@@ -367,7 +458,10 @@ mod tests {
         TursoBatchTransactionMode, TursoOptimizationProfile,
     };
 
-    use super::{BoundedTokioSandboxRunner, CompositeAtomicEffectExecutor};
+    use super::{
+        AllowlistSandboxRunner, AtomicSandboxRunner, BoundedTokioSandboxRunner,
+        CompositeAtomicEffectExecutor,
+    };
 
     struct EchoModelGateway;
 
@@ -511,6 +605,78 @@ mod tests {
         assert!(
             matches!(put2.as_slice(), [AtomicEffectReceipt::CasStored(id)] if id == "e-put-boot2")
         );
+    }
+
+    #[tokio::test]
+    async fn allowlist_sandbox_runner_enforces_program_allowlist_and_cwd_confinement() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let sub = dir.path().join("work");
+        std::fs::create_dir_all(&sub).expect("create work subdir");
+        let outside = tempfile::tempdir().expect("outside tempdir");
+
+        let runner = AllowlistSandboxRunner::new(Duration::from_secs(5), 4096, ["/bin/echo"])
+            .with_confined_root(dir.path());
+
+        // 1. Allowed program inside confined subdir succeeds.
+        let ok = runner
+            .run_sandbox(SandboxRunEffectPayload {
+                effect_id: "sb-ok".to_owned(),
+                program: "/bin/echo".to_owned(),
+                args: vec!["confined-ok".to_owned()],
+                cwd: Some("work".to_owned()),
+            })
+            .await;
+        assert!(matches!(
+            ok,
+            AtomicEffectReceipt::SandboxExited(ref p)
+                if p.effect_id == "sb-ok"
+                    && p.exit_code == 0
+                    && String::from_utf8_lossy(&p.stdout).trim() == "confined-ok"
+        ));
+
+        // 2. Disallowed program fails closed.
+        let denied_prog = runner
+            .run_sandbox(SandboxRunEffectPayload {
+                effect_id: "sb-deny-prog".to_owned(),
+                program: "/bin/ls".to_owned(),
+                args: vec![],
+                cwd: None,
+            })
+            .await;
+        assert!(matches!(
+            denied_prog,
+            AtomicEffectReceipt::EffectError(ref p)
+                if p.effect_id == "sb-deny-prog" && p.message.contains("allowlist")
+        ));
+
+        // 3. Escaping confined root via absolute outside path or `..` fails closed.
+        let escaped_abs = runner
+            .run_sandbox(SandboxRunEffectPayload {
+                effect_id: "sb-escape-abs".to_owned(),
+                program: "/bin/echo".to_owned(),
+                args: vec!["nope".to_owned()],
+                cwd: Some(outside.path().to_string_lossy().into_owned()),
+            })
+            .await;
+        assert!(matches!(
+            escaped_abs,
+            AtomicEffectReceipt::EffectError(ref p)
+                if p.effect_id == "sb-escape-abs" && p.message.contains("escapes confined root")
+        ));
+
+        let escaped_rel = runner
+            .run_sandbox(SandboxRunEffectPayload {
+                effect_id: "sb-escape-rel".to_owned(),
+                program: "/bin/echo".to_owned(),
+                args: vec!["nope".to_owned()],
+                cwd: Some("..".to_owned()),
+            })
+            .await;
+        assert!(matches!(
+            escaped_rel,
+            AtomicEffectReceipt::EffectError(ref p)
+                if p.effect_id == "sb-escape-rel" && p.message.contains("escapes confined root")
+        ));
     }
 
     #[cfg(feature = "ui-grpc")]

@@ -16,8 +16,8 @@ pub use session::{SessionBinding, SessionOpen};
 pub mod atomic_effect_substrate;
 #[cfg(feature = "grpc")]
 pub use atomic_effect_substrate::{
-    AtomicSandboxRunner, BoundedTokioSandboxRunner, CompositeAtomicEffectExecutor,
-    DenySandboxRunner,
+    AllowlistSandboxRunner, AtomicSandboxRunner, BoundedTokioSandboxRunner,
+    CompositeAtomicEffectExecutor, DenySandboxRunner,
 };
 #[cfg(feature = "grpc")]
 pub mod task_actors;
