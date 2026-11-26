@@ -297,6 +297,22 @@ impl MyGoBridgeHost {
         self.attach_ui_services(base)
     }
 
+    /// Serve all 6 orthogonal bridge services (`marlin.{app,ui,gate,plugin,device,projection}.v1`)
+    /// on an already-bound `tokio::net::TcpListener`.
+    pub async fn serve_standalone_on(
+        self,
+        listener: tokio::net::TcpListener,
+    ) -> Result<(), tonic::transport::Error> {
+        let incoming = async_stream::stream! {
+            loop {
+                yield listener.accept().await.map(|(stream, _)| stream);
+            }
+        };
+        self.into_standalone_router()
+            .serve_with_incoming(incoming)
+            .await
+    }
+
     /// Enqueue an authoritative pending approval gate visible to connected MyGo shells.
     pub fn enqueue_pending_gate(&self, gate: PendingGate) {
         let mut st = self.state.lock().expect("bridge mutex poisoned");

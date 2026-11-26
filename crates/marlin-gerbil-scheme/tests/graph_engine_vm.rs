@@ -15,7 +15,18 @@ use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
     PackageResolutionProgress, RootedSchemeObject, SchemeScalar,
 };
-use marlin_agent_app_server::{BoundedTokioSandboxRunner, CompositeAtomicEffectExecutor};
+use marlin_agent_app_server::{
+    BoundedTokioSandboxRunner, CompositeAtomicEffectExecutor,
+    ui_grpc::MyGoBridgeHost,
+    wire::marlin::{
+        common::v1::{DenialCode, TargetKind},
+        gate::v1::{
+            GateKind, GraphHumanDecision, PendingGate, SubmitGraphHumanDecisionRequest,
+            approval_gate_service_client::ApprovalGateServiceClient,
+        },
+        ui::v1::{OpenWorkbenchRequest, ui_workbench_service_client::UiWorkbenchServiceClient},
+    },
+};
 use marlin_agent_graph::{
     DetourMode, DisclosureDepth, DispatchRequestId, ExecutionReceiptStatus, FencingEpoch,
     GovernedContextCapsule, GovernedContextRejection, GraphConvergenceNodeId,
@@ -1205,4 +1216,291 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
     assert!(!audit4.favored_path_collapsed);
     assert!(!audit4.authenticates_evidence);
     assert!(!audit4.authorizes_effect);
+
+    // -------------------------------------------------------------------------
+    // Phase 7 (Round S15): Full Closed Loop — Embedded Gerbil Scheme Fleet
+    // Controller <-> C-ABI atomic_effect_abi <-> Live HTTP/2 MyGoBridgeHost
+    // (UiWorkbenchService + one-shot ApprovalGateService + run_atomic_effects)
+    // <-> Real Disk Turso WAL Boot #4 -> Boot #5 Cold Restart!
+    // -------------------------------------------------------------------------
+    let unmounted_bridge = MyGoBridgeHost::new(
+        marlin_agent_runtime::plugin::ReleaseTrust::new(BTreeMap::new()),
+        |_meta| Ok(()),
+    );
+    let unmounted_err =
+        rt_tokio.block_on(
+            unmounted_bridge.run_atomic_effects(vec![AtomicEffect::CasGet(CasGetEffectPayload {
+                effect_id: "unmounted-check".to_owned(),
+                key: "fleet:turso:boot3-after-reopen".to_owned(),
+            })]),
+        );
+    assert!(
+        unmounted_err.is_err(),
+        "unmounted MyGoBridgeHost must fail closed on run_atomic_effects"
+    );
+
+    let bridge4 = MyGoBridgeHost::new(
+        marlin_agent_runtime::plugin::ReleaseTrust::new(BTreeMap::new()),
+        |_meta| Ok(()),
+    )
+    .with_atomic_executor(turso_sub4.clone() as Arc<dyn AtomicEffectExecutor>);
+    bridge4.enqueue_pending_gate(PendingGate {
+        gate_id: "gate-vm-s15".to_owned(),
+        kind: GateKind::GraphHumanGate as i32,
+        turn: None,
+        call_id: None,
+        tool_or_node_name: "task-turso-parent".to_owned(),
+        prompt: "Approve Scheme Fleet blocker detour release?".to_owned(),
+        details_heading: "Scheme Fleet Human Gate".to_owned(),
+        choices: Vec::new(),
+        card: None,
+        created_at_unix_ms: 15,
+        expires_at_unix_ms: None,
+    });
+
+    // 1. Live HTTP/2 gRPC round-trip: locked host.gate + one-shot GraphHumanGate claim + replay denial.
+    let (minted_receipt_id, server_handle4) = rt_tokio.block_on(async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let srv_bridge = bridge4.clone();
+        let handle = tokio::spawn(async move {
+            let _ = srv_bridge.serve_standalone_on(listener).await;
+        });
+        let endpoint = format!("http://{addr}");
+
+        let mut ui_client = UiWorkbenchServiceClient::connect(endpoint.clone())
+            .await
+            .unwrap();
+        let wb = ui_client
+            .open_workbench(OpenWorkbenchRequest {
+                session_id: "s15-vm-live".to_owned(),
+                client_target_kind: TargetKind::DesktopMacos as i32,
+                preferred_profile: None,
+            })
+            .await
+            .unwrap()
+            .into_inner()
+            .workbench
+            .unwrap();
+        assert!(wb.slots.iter().any(|s| {
+            s.slot_id == "approval.gate"
+                && s.fallback_renderer == "host.gate"
+                && !s.allow_untrusted_plugin
+        }));
+
+        let mut gate_client = ApprovalGateServiceClient::connect(endpoint).await.unwrap();
+        let first_claim = gate_client
+            .submit_graph_human_decision(SubmitGraphHumanDecisionRequest {
+                turn: None,
+                gate_id: "gate-vm-s15".to_owned(),
+                decision: GraphHumanDecision::Approve as i32,
+                idempotency_key: "idem-s15-1".to_owned(),
+                note: Some("verified live gRPC approval for Scheme VM".to_owned()),
+            })
+            .await
+            .unwrap()
+            .into_inner()
+            .receipt
+            .unwrap();
+        assert!(first_claim.claimed);
+        assert_eq!(first_claim.kind, GateKind::GraphHumanGate as i32);
+        assert!(first_claim.denial.is_none());
+        let receipt_id = first_claim.receipt.unwrap().receipt_id;
+        assert!(!receipt_id.is_empty());
+
+        let replay = gate_client
+            .submit_graph_human_decision(SubmitGraphHumanDecisionRequest {
+                turn: None,
+                gate_id: "gate-vm-s15".to_owned(),
+                decision: GraphHumanDecision::Approve as i32,
+                idempotency_key: "idem-s15-2".to_owned(),
+                note: None,
+            })
+            .await
+            .unwrap()
+            .into_inner()
+            .receipt
+            .unwrap();
+        assert!(!replay.claimed);
+        assert_eq!(replay.denial.unwrap().code, DenialCode::StaleOrdinal as i32);
+
+        (receipt_id, handle)
+    });
+    assert!(!minted_receipt_id.is_empty());
+
+    // 2. Drive the REAL embedded Gerbil Scheme FleetWorkbenchController:
+    //    blocker detour -> gRPC-authorized human-approve -> return-to-origin -> branch proposal -> checkpoint!
+    let blk_out = runtime
+        .call_rooted(
+            &scheme_ctrl_dispatch,
+            &vec_obj(
+                &runtime,
+                &[
+                    ctrl_b4,
+                    sym(&runtime, "task-detour-blocker"),
+                    txt(&runtime, "task-turso-parent"),
+                    txt(&runtime, "blk-s15-gate"),
+                    vec_obj(&runtime, &[]),
+                    flag(&runtime, false),
+                ],
+            ),
+        )
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let blk_detours = blk_out
+        .element(4)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    assert_eq!(read_sym(blk_detours.element(0).unwrap()), "blocker-active");
+
+    let appr_s15_out = runtime
+        .call_rooted(
+            &scheme_ctrl_dispatch,
+            &vec_obj(
+                &runtime,
+                &[
+                    blk_out.element(0).unwrap(),
+                    sym(&runtime, "task-human-approve"),
+                    txt(&runtime, "task-turso-parent"),
+                    txt(&runtime, &minted_receipt_id),
+                    vec_obj(&runtime, &[]),
+                    flag(&runtime, false),
+                ],
+            ),
+        )
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+
+    let ret_s15_out = runtime
+        .call_rooted(
+            &scheme_ctrl_dispatch,
+            &vec_obj(
+                &runtime,
+                &[
+                    appr_s15_out.element(0).unwrap(),
+                    sym(&runtime, "task-detour-exit-return"),
+                    txt(&runtime, "task-turso-parent"),
+                    flag(&runtime, false),
+                    vec_obj(&runtime, &[]),
+                    flag(&runtime, false),
+                ],
+            ),
+        )
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let ret_detours = ret_s15_out
+        .element(4)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    assert_eq!(read_sym(ret_detours.element(0).unwrap()), "mainline");
+
+    let br_s15_out = runtime
+        .call_rooted(
+            &scheme_ctrl_dispatch,
+            &vec_obj(
+                &runtime,
+                &[
+                    ret_s15_out.element(0).unwrap(),
+                    sym(&runtime, "task-propose-branch"),
+                    txt(&runtime, "task-turso-parent"),
+                    txt(&runtime, "B-s15:Verify live HTTP/2 gate receipt lineage"),
+                    vec_obj(&runtime, &[]),
+                    flag(&runtime, false),
+                ],
+            ),
+        )
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+
+    let cp4_out = runtime
+        .call_rooted(
+            &scheme_ctrl_dispatch,
+            &vec_obj(
+                &runtime,
+                &[
+                    br_s15_out.element(0).unwrap(),
+                    sym(&runtime, "task-fleet-checkpoint"),
+                    flag(&runtime, false),
+                    txt(&runtime, "fleet:turso:boot4-after-grpc-gate"),
+                    vec_obj(&runtime, &[]),
+                    flag(&runtime, false),
+                ],
+            ),
+        )
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    let cp4_effs = cp4_out
+        .element(2)
+        .unwrap()
+        .into_collection(CollectionKind::Vector)
+        .unwrap();
+    assert_eq!(cp4_effs.len(), 1);
+
+    // 3. Dispatch Scheme-emitted CasPut through the EXACT SAME live MyGoBridgeHost::run_atomic_effects!
+    let put4_rcpts = rt_tokio
+        .block_on(bridge4.run_atomic_effects(vec![decode_effect(cp4_effs.element(0).unwrap())]))
+        .expect("live MyGoBridgeHost runs Scheme CasPut");
+    assert!(matches!(
+        put4_rcpts.as_slice(),
+        [AtomicEffectReceipt::CasStored(_)]
+    ));
+
+    server_handle4.abort();
+    drop(bridge4);
+    drop(turso_sub4);
+
+    // 4. Boot #5 Cold Restart: Reopen disk Turso WAL -> fresh MyGoBridgeHost -> CasGet -> Scheme restore!
+    let turso_cfg5 = marlin_agent_storage::TursoAgentStorageConfig {
+        path: tmp_dir.path().join("gerbil-vm-fleet.db"),
+        optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvcc,
+        batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent,
+    };
+    let storage5 = rt_tokio
+        .block_on(marlin_agent_storage::TursoAgentStorage::open_local(
+            turso_cfg5,
+        ))
+        .expect("reopen turso boot #5");
+    let bridge5 = MyGoBridgeHost::new(
+        marlin_agent_runtime::plugin::ReleaseTrust::new(BTreeMap::new()),
+        |_meta| Ok(()),
+    )
+    .with_atomic_executor(make_prod_turso_executor(storage5));
+
+    let get5_rcpts = rt_tokio
+        .block_on(
+            bridge5.run_atomic_effects(vec![AtomicEffect::CasGet(CasGetEffectPayload {
+                effect_id: "restore-fleet-boot5".to_owned(),
+                key: "fleet:turso:boot4-after-grpc-gate".to_owned(),
+            })]),
+        )
+        .expect("boot #5 host CasGet");
+    let hit5 = get5_rcpts.into_iter().next().unwrap();
+    assert!(matches!(hit5, AtomicEffectReceipt::CasHit(_)));
+
+    let restored_fleet5 = runtime
+        .call_rooted(&scheme_fleet_restore, &encode_receipt(&runtime, &hit5))
+        .unwrap();
+    let ctrl_b5 = runtime
+        .call_rooted(
+            &scheme_ctrl_open,
+            &vec_obj(&runtime, &[restored_fleet5, sym(&runtime, "L3")]),
+        )
+        .unwrap();
+    let audit5 = decode_fleet_audit_capsule_vector(
+        runtime.call_rooted(&scheme_ctrl_audit, &ctrl_b5).unwrap(),
+    )
+    .expect("decode audit5");
+    assert_eq!(audit5.active_actor_count, 3);
+    assert_eq!(audit5.archived_actor_count, 0);
+    assert_eq!(audit5.peek_count, 0);
+    assert!(!audit5.favored_path_collapsed);
+    assert!(!audit5.authenticates_evidence);
+    assert!(!audit5.authorizes_effect);
 }
