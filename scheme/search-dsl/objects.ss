@@ -168,14 +168,15 @@
   (project-markers "Cargo.toml")
   (kind-map
     ("fn_item"     "function" "Rust free function item")
-    ("impl_method" "method"   "Rust inherent or trait impl method")
+    ("impl_fn"     "method"   "Rust inherent or trait impl method")
     ("struct_item" "struct"   "Rust struct declaration")
     ("enum_item"   "enum"     "Rust enum declaration")
     ("trait_item"  "trait"    "Rust trait declaration")
     ("type_item"   "type"     "Rust type alias")
     ("impl_item"   "item"     "Rust impl block (POO special extension)")
     ("macro_rules" "macro"    "Rust macro_rules! definition")
-    ("mod_item"    "module"   "Rust inline or external module"))
+    ("mod_item"    "module"   "Rust inline or external module")
+    ("use_item"    "import"   "Rust use import declaration"))
   (relations
     (rust_fn     "rust" "function" _           "Rust function declaration")
     (rust_method "rust" "method"   _           "Rust method declaration")
@@ -211,7 +212,8 @@
     ("defclass"    "type"     "Gerbil class declaration")
     ("defsyntax"   "macro"    "Gerbil hygienic macro (defsyntax/defrules)")
     ("poo_def"     "item"     "Gerbil POO prototype (.def ...)")
-    ("deflanguage" "item"     ":gerbil-parser deflanguage grammar"))
+    ("deflanguage" "item"     ":gerbil-parser deflanguage grammar")
+    ("import"      "import"   "Gerbil module import declaration"))
   (relations
     (scheme_def     "scheme" "function" _             "Gerbil procedure or method definition")
     (scheme_const   "scheme" "constant" _             "Gerbil value binding")
@@ -243,7 +245,8 @@
     ("method_declaration"     "method"   "TypeScript class method declaration")
     ("class_declaration"      "struct"   "TypeScript class declaration")
     ("interface_declaration"  "trait"    "TypeScript interface declaration")
-    ("type_alias_declaration" "type"     "TypeScript type alias declaration"))
+    ("type_alias_declaration" "type"     "TypeScript type alias declaration")
+    ("import_declaration"     "import"   "TypeScript import declaration"))
   (relations
     (ts_fn        "typescript" "function" _                       "TypeScript function declaration")
     (ts_class     "typescript" _          "class_declaration"     "TypeScript class declaration")
@@ -269,7 +272,9 @@
   (project-markers "pyproject.toml")
   (kind-map
     ("function_def"       "function" "Python function definition")
+    ("function_def"       "method"   "Python class method definition")
     ("async_function_def" "function" "Python async function definition")
+    ("async_function_def" "method"   "Python async class method definition")
     ("class_def"          "struct"   "Python class definition")
     ("import"             "import"   "Python import statement")
     ("import_from"        "import"   "Python from-import statement"))
@@ -299,7 +304,9 @@
     ("macro"    "macro"    "Julia hygienic macro definition")
     ("struct"   "struct"   "Julia concrete struct definition")
     ("abstract" "trait"    "Julia abstract type hierarchy node")
-    ("module"   "module"   "Julia module namespace"))
+    ("module"   "module"   "Julia module namespace")
+    ("using"    "import"   "Julia using import declaration")
+    ("import"   "import"   "Julia import declaration"))
   (relations
     (julia_fn       "julia" "function" _          "Julia function / multiple-dispatch method")
     (julia_macro    "julia" "macro"    _          "Julia macro definition")

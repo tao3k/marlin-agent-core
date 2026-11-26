@@ -9,7 +9,8 @@
 ;;; Safe Pre-Tool-Call Model AST Repair Hook (`repair.ss`).
 (import :std/test
         (only-in :std/string/misc string-contains)
-        (only-in :clan/poo/object .get)
+        (only-in :clan/poo/object .get .ref)
+        (only-in :gerbil-ascent/rules/closed-source ascent-closed-dsl-parts)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
         (only-in :marlin-agent-core/search-dsl/syntax
                  relational-choice-program)
@@ -21,6 +22,9 @@
                  read-ascent-search-form
                  repair-ascent-search-form
                  compile-search-dsl-prefilter
+                 compile-closed-ascent-session
+                 run-compiled-ascent-session
+                 prune-ascent-parts-for-query
                  evaluate-search-dsl-over-edb
                  evaluate-choice-program-over-edb
                  search-dsl-completions
@@ -479,4 +483,55 @@
                    ((>= i (vector-length comps)) #f)
                    ((string=? (vector-ref (vector-ref comps i) 0) "zig_comptime_fn") #t)
                    (else (loop (+ i 1)))))
-               => #t)))))
+               => #t)))
+
+    (test-case "Dependency-cone pruning shrinks 50+ rules to 2 rules & compiled session retracts cleanly"
+      (let* ((qform '(ascent-fragment
+                       (relation answer ((name string?)))
+                       ((answer name) <-- (rust_impl _ _ name _))))
+             (qpart (car (ascent-closed-dsl-parts (list qform))))
+             (compiled (compile-closed-ascent-session qform SearchLanguageRegistryValue '()))
+             (edb-a '((entity . (("e1" 1 "rust" "item" "impl_item" "AlphaImpl" 10)))))
+             (edb-b '((entity . (("e2" 1 "rust" "item" "impl_item" "BetaImpl" 20))))))
+        (let-values (((prog active-edb)
+                      (prune-ascent-parts-for-query
+                        (.get SearchLanguageRegistryValue ascent-fragments)
+                        qpart)))
+          (check (length (.ref prog 'rules)) => 2)
+          (check active-edb => '(entity)))
+        (check (vector-ref (run-compiled-ascent-session compiled edb-a) 3) => '(("AlphaImpl")))
+        (check (vector-ref (run-compiled-ascent-session compiled edb-b) 3) => '(("BetaImpl")))))
+
+    (test-case "Prefilter pushes down General Ontology language, symbol token, and path-prefix"
+      (let ((pf-gen (compile-search-dsl-prefilter
+                      "(ascent-fragment ((answer name) <-- (callable _ _ \"rust\" \"open_cached\" _)))"))
+            (pf-path (compile-search-dsl-prefilter
+                       "(ascent-fragment
+                          (relation answer ((path string?)))
+                          ((answer path) <-- (file _ \"rust\" path) (if (string-prefix? \"crates/search/\" path))))")))
+        (check (vector-ref pf-gen 1) => #("rust"))
+        (check (vector-ref pf-gen 3) => #("open_cached"))
+        (check (vector-ref pf-path 1) => #("rust"))
+        (check (vector-ref pf-path 2) => "crates/search/")))
+
+    (test-case "Built-in language additive extension merges new Rust syntax kinds without losing built-ins"
+      (let* ((rust-addon
+               #("rust"
+                 "rust"
+                 #(".rs")
+                 #(#("gen_fn" "function" "Rust generator function"))
+                 #(#("rust_gen_fn" #f "gen_fn" "Rust generator function"))))
+             (next-reg (extend-search-language-registry SearchLanguageRegistryValue rust-addon))
+             (rust-schema (project-language-json-schema 'rust next-reg))
+             (lk-enum (cdr (assq 'enum (cdr (assq 'languageKind (cdr (assq 'properties rust-schema)))))))
+             (edb '((entity . (("r1" 1 "rust" "function" "gen_fn" "stream_rows" 5)
+                               ("r2" 1 "rust" "item" "impl_item" "Registry" 10)))))
+             (gen-res (evaluate-search-dsl-over-edb
+                        "(ascent-fragment ((answer name) <-- (rust_gen_fn _ _ name _)))"
+                        edb next-reg))
+             (impl-res (evaluate-search-dsl-over-edb
+                         "(ascent-fragment ((answer name) <-- (rust_impl _ _ name _)))"
+                         edb next-reg)))
+        (check (and (member "fn_item" lk-enum) (member "gen_fn" lk-enum) #t) => #t)
+        (check (vector-ref gen-res 3) => '(("stream_rows")))
+        (check (vector-ref impl-res 3) => '(("Registry")))))))

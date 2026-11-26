@@ -24,19 +24,16 @@
 
 #![cfg(not(feature = "linked-ui"))]
 
+mod asp_http_e2e_mock;
+
 use std::collections::BTreeSet;
 use std::fs;
-use std::io;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{Child, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use gerbil_scheme::{GerbilRuntime, IdentifierKind};
-use marlin_agent_runtime::{
-    AsyncManagedChildProcess, ManagedChildProcessSpec, ManagedChildStdout,
-    ProcessGracefulShutdownPolicy, ProcessShutdownHook, RuntimeTaskTrackerPolicy,
-    TokioAgentRuntime, TokioAgentRuntimeBuildRequest, process::RuntimeProcessKind,
-};
 use marlin_agent_search_engine::{
     AspForwardingEndpoint, AspHttpHydrationRequest, AspLanguageId, AspProviderId,
     DynamicProviderCapabilities, DynamicProviderDslPackRegistration,
@@ -52,32 +49,29 @@ use marlin_agent_search_engine::{
     register_dynamic_provider_on_asp, shutdown_asp_gateway,
 };
 use tempfile::TempDir;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command as AsyncCommand;
 
 struct GatewayGuard {
-    tokio_rt: tokio::runtime::Runtime,
-    runtime: TokioAgentRuntime,
-    child: Option<AsyncManagedChildProcess>,
-    stdout: Option<BufReader<ManagedChildStdout>>,
-    _ledger_dir: TempDir,
+    child: Child,
+    stdout: Option<BufReader<ChildStdout>>,
     endpoint: AspForwardingEndpoint,
     providers: Vec<String>,
 }
 
 impl Drop for GatewayGuard {
     fn drop(&mut self) {
-        // Release the leased stdout pipe before graceful shutdown so cooperative
-        // POST /shutdown + SIGTERM grace window can finish cleaning up all 5
-        // child compiler processes without premature SIGKILL.
+        // Release stdout pipe, send cooperative POST /shutdown so forwarding_gateway
+        // shuts down all 5 child compiler process groups cleanly, then wait up to 3s.
         let _ = self.stdout.take();
-        if let Some(child) = self.child.take() {
-            let _ = self.tokio_rt.block_on(child.shutdown_gracefully());
+        let _ = shutdown_asp_gateway(&self.endpoint);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            if let Ok(Some(_)) = self.child.try_wait() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
         }
-        let _ = self.tokio_rt.block_on(
-            self.runtime
-                .shutdown_tasks(&RuntimeTaskTrackerPolicy::cancel_on_shutdown(Some(6_000))),
-        );
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -101,39 +95,16 @@ fn spawn_asp_forwarding_gateway(asp_dir: &Path) -> Option<GatewayGuard> {
     if !bin.exists() {
         return None;
     }
-    let ledger_dir = TempDir::new().expect("temp process ledger dir");
-    let ledger_path = ledger_dir.path().join("managed-processes.json");
-    let tokio_rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .expect("build Tokio runtime for managed gateway");
-    let (runtime, _events) = TokioAgentRuntime::from_build_request(
-        TokioAgentRuntimeBuildRequest::runtime_root(16).with_process_ledger_path(&ledger_path),
-    );
-    let context = runtime.context();
-    let (mut child, reader, line) = tokio_rt.block_on(async {
-        let mut command = AsyncCommand::new(&bin);
-        command.stdout(Stdio::piped()).stderr(Stdio::null());
-        let spec =
-            ManagedChildProcessSpec::new(RuntimeProcessKind::Provider, "asp-forwarding-gateway")
-                .with_graceful_shutdown(
-                    ProcessGracefulShutdownPolicy::new(Duration::from_secs(5))
-                        .with_cooperative_timeout(Duration::from_secs(3)),
-                );
-        let mut child = AsyncManagedChildProcess::spawn_with_spec(&context, command, spec)
-            .await
-            .expect("spawn managed ASP forwarding_gateway");
-        let stdout = child.take_stdout().expect("managed gateway stdout");
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
-        let n = reader
-            .read_line(&mut line)
-            .await
-            .expect("read gateway bootstrap");
-        assert!(n > 0, "forwarding_gateway exited before bootstrap");
-        (child, reader, line)
-    });
+    let mut child = Command::new(&bin)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn ASP forwarding_gateway");
+    let stdout = child.stdout.take().expect("gateway stdout");
+    let mut reader = BufReader::new(stdout);
+    let mut line = String::new();
+    let n = reader.read_line(&mut line).expect("read gateway bootstrap");
+    assert!(n > 0, "forwarding_gateway exited before bootstrap");
     let boot: serde_json::Value =
         serde_json::from_str(line.trim()).expect("decode gateway bootstrap JSON");
     let endpoint = AspForwardingEndpoint::new(
@@ -142,11 +113,6 @@ fn spawn_asp_forwarding_gateway(asp_dir: &Path) -> Option<GatewayGuard> {
             .expect("gateway bootstrap endpoint"),
     )
     .expect("valid loopback endpoint");
-    let endpoint_for_hook = endpoint.clone();
-    child.set_shutdown_hook(ProcessShutdownHook::from_blocking(
-        "asp-http-shutdown",
-        move || shutdown_asp_gateway(&endpoint_for_hook).map_err(io::Error::other),
-    ));
     let providers = boot["providers"]
         .as_array()
         .expect("providers array")
@@ -154,11 +120,8 @@ fn spawn_asp_forwarding_gateway(asp_dir: &Path) -> Option<GatewayGuard> {
         .filter_map(|v| v.as_str().map(str::to_owned))
         .collect();
     Some(GatewayGuard {
-        tokio_rt,
-        runtime,
-        child: Some(child),
+        child,
         stdout: Some(reader),
-        _ledger_dir: ledger_dir,
         endpoint,
         providers,
     })
@@ -230,271 +193,6 @@ fn benchmark_hot_c_abi_query(
     )
 }
 
-fn run_self_contained_asp_http_forwarding_and_dynamic_o1_leverage(
-    runtime: &GerbilRuntime,
-    scheme_dir: &str,
-) {
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
-    use std::sync::{Arc, Mutex};
-
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback mock ASP gateway");
-    let addr = listener.local_addr().expect("mock gateway local addr");
-    let endpoint = AspForwardingEndpoint::new(format!("http://{addr}")).expect("mock endpoint");
-
-    let registered_odin: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
-    let registered_odin_srv = Arc::clone(&registered_odin);
-    let server_handle = std::thread::spawn(move || {
-        for stream_res in listener.incoming() {
-            let Ok(mut stream) = stream_res else {
-                break;
-            };
-            let mut buf = vec![0u8; 65536];
-            let Ok(n) = stream.read(&mut buf) else {
-                continue;
-            };
-            let raw = String::from_utf8_lossy(&buf[..n]);
-            let first_line = raw.lines().next().unwrap_or("");
-            let mut parts = first_line.split_whitespace();
-            let method = parts.next().unwrap_or("");
-            let path = parts.next().unwrap_or("");
-            let body_str = raw.split("\r\n\r\n").nth(1).unwrap_or("");
-
-            let (status, resp_json, stop) = match (method, path) {
-                ("GET", "/v1/providers") => {
-                    let mut providers = vec![serde_json::json!({
-                        "manifest": {
-                            "languageId": "rust",
-                            "providerId": "asp-rust",
-                            "extensions": [".rs"]
-                        },
-                        "targetedSchema": {
-                            "type": "object",
-                            "properties": {
-                                "languageKind": { "type": "string", "enum": ["fn_item", "impl_item"] }
-                            }
-                        }
-                    })];
-                    if let Some(odin) = registered_odin_srv.lock().expect("lock").clone() {
-                        providers.push(odin);
-                    }
-                    (
-                        200,
-                        serde_json::json!({
-                            "schemaId": "agent.semantic-protocols.provider-forwarding-catalog",
-                            "schemaVersion": "1",
-                            "generation": 1,
-                            "registryDigest": "blake3-256:self-contained",
-                            "providers": providers
-                        }),
-                        false,
-                    )
-                }
-                ("POST", "/v1/providers/register") => {
-                    let req: serde_json::Value =
-                        serde_json::from_str(body_str).unwrap_or(serde_json::Value::Null);
-                    let env = serde_json::json!({
-                        "manifest": req["manifest"],
-                        "targetedSchema": {
-                            "type": "object",
-                            "properties": {
-                                "languageKind": {
-                                    "type": "string",
-                                    "enum": ["proc_decl", "struct_decl"]
-                                }
-                            }
-                        },
-                        "dslPack": req["dslPack"]
-                    });
-                    *registered_odin_srv.lock().expect("lock") = Some(env);
-                    (
-                        200,
-                        serde_json::json!({
-                            "status": "registered",
-                            "mode": "descriptor-only",
-                            "languageId": "odin",
-                            "providerId": "asp-odin"
-                        }),
-                        false,
-                    )
-                }
-                ("POST", "/v1/open-edb/inspect-files") => (
-                    200,
-                    serde_json::json!({
-                        "inspectedFiles": 1,
-                        "elapsedMicros": 50,
-                        "batches": [{
-                            "schemaId": SEMANTIC_OPEN_EDB_SCHEMA_ID,
-                            "schemaVersion": SEMANTIC_OPEN_EDB_SCHEMA_VERSION,
-                            "languageId": "rust",
-                            "providerId": "asp-rust",
-                            "entities": [{
-                                "entityId": "rs1",
-                                "fileId": 0,
-                                "path": "src/lib.rs",
-                                "line": 1,
-                                "name": "DemoRegistry",
-                                "language": "rust",
-                                "kind": "item",
-                                "languageKind": "impl_item",
-                                "source": "native-parser",
-                                "attrs": []
-                            }],
-                            "edges": []
-                        }]
-                    }),
-                    false,
-                ),
-                ("POST", "/shutdown") => (200, serde_json::json!({"status": "stopping"}), true),
-                _ => (404, serde_json::json!({"error": "not found"}), false),
-            };
-            let body = resp_json.to_string();
-            let resp = format!(
-                "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            );
-            let _ = stream.write_all(resp.as_bytes());
-            let _ = stream.flush();
-            if stop {
-                break;
-            }
-        }
-    });
-
-    let tmp = TempDir::new().expect("temp workspace");
-    let ws = tmp.path();
-    fs::create_dir_all(ws.join("src")).expect("create src");
-    fs::write(ws.join("src/lib.rs"), "impl DemoRegistry {}\n").expect("write lib.rs");
-
-    let snap_path = ws.join(".marlin-test-cache/index.snap");
-    let edb_cache_path = ws.join(".marlin-test-cache/open-edb.cache.json");
-    let mut index =
-        WorkspaceSearchIndex::open_or_build_cached(ws, &snap_path, WorkspaceIndexConfig::default());
-
-    let cold = hydrate_workspace_from_asp_http(
-        runtime,
-        &mut index,
-        &AspHttpHydrationRequest {
-            scheme_dir,
-            endpoint: &endpoint,
-            cache_path: &edb_cache_path,
-            sync_new_descriptors: true,
-        },
-    )
-    .expect("self-contained cold hydration");
-    assert_eq!(cold.http_inspected_files, 1);
-    assert_eq!(cold.http_ingested_entities, 1);
-    assert!(cold.cache_saved);
-
-    let mut warm_index =
-        WorkspaceSearchIndex::open_or_build_cached(ws, &snap_path, WorkspaceIndexConfig::default());
-    let warm = hydrate_workspace_from_asp_http(
-        runtime,
-        &mut warm_index,
-        &AspHttpHydrationRequest {
-            scheme_dir,
-            endpoint: &endpoint,
-            cache_path: &edb_cache_path,
-            sync_new_descriptors: false,
-        },
-    )
-    .expect("self-contained warm cache hydration");
-    assert_eq!(warm.http_inspected_files, 0);
-    assert_eq!(warm.restored_from_cache_entities, 1);
-
-    let rust_res = execute_package_search_dsl_structured(
-        runtime,
-        scheme_dir,
-        &SearchDslExecutionRequest {
-            index: &warm_index,
-            query: "(ascent-fragment ((answer name) <-- (rust_impl _ _ name _)))",
-            output_limit: 32,
-        },
-    )
-    .expect("self-contained rust_impl query");
-    assert_eq!(rust_res.rows.len(), 1);
-    assert_eq!(rust_res.rows[0].cells, vec!["DemoRegistry"]);
-
-    let odin_lang = AspLanguageId::new("odin").expect("odin lang id");
-    let odin_provider = AspProviderId::new("asp-odin").expect("odin provider id");
-    let ack = register_dynamic_provider_on_asp(
-        &endpoint,
-        &DynamicProviderRegistrationRequest {
-            manifest: DynamicProviderRegistrationManifest {
-                schema_id: "agent.semantic-protocols.provider-core-manifest".to_owned(),
-                schema_version: "1".to_owned(),
-                language_id: odin_lang.clone(),
-                provider_id: odin_provider,
-                display_name: "Odin".to_owned(),
-                extensions: vec![".odin".to_owned()],
-                project_markers: vec!["ols.json".to_owned()],
-                syntax_surface: DynamicProviderSyntaxSurface {
-                    line_comment: Some("//".to_owned()),
-                    block_comment: None,
-                    delimiter_pairs: vec![["(".to_owned(), ")".to_owned()]],
-                    statement_terminator: None,
-                    string_delimiters: vec!["\"".to_owned()],
-                },
-                transport: DynamicProviderTransport {
-                    transport: ProviderTransportProtocol::HttpJson,
-                    command: vec!["serve".to_owned()],
-                    health_path: HttpEndpointPath::new("/health").expect("health"),
-                    request_path: HttpEndpointPath::new("/v1/provider-runtime").expect("req"),
-                    shutdown_path: HttpEndpointPath::new("/shutdown").expect("shutdown"),
-                },
-                capabilities: DynamicProviderCapabilities {
-                    ast_inspect: true,
-                    ast_verify: true,
-                    open_edb: true,
-                    project_resolution: false,
-                },
-            },
-            endpoint: None,
-            dsl_pack: Some(DynamicProviderDslPackRegistration {
-                schema_id: "agent.semantic-protocols.language-conformance-pack".to_owned(),
-                schema_version: "1".to_owned(),
-                language_id: odin_lang.clone(),
-                provider_language_id: odin_lang,
-                extensions: vec![".odin".to_owned()],
-                project_markers: vec!["ols.json".to_owned()],
-                kind_mappings: vec![ForwardedKindMapping {
-                    native_language_kind: NativeAstKindName::new("proc_decl").expect("kind"),
-                    general_kind: GeneralOntologyKindName::new("function").expect("kind"),
-                    description: "Odin procedure declaration".to_owned(),
-                }],
-                special_relations: vec!["odin_proc_decl".to_owned()],
-                probes: Vec::new(),
-            }),
-        },
-    )
-    .expect("register odin on mock gateway");
-    assert_eq!(ack.status, ProviderRegistrationStatus::Registered);
-
-    let synced = hydrate_workspace_from_asp_http(
-        runtime,
-        &mut warm_index,
-        &AspHttpHydrationRequest {
-            scheme_dir,
-            endpoint: &endpoint,
-            cache_path: &edb_cache_path,
-            sync_new_descriptors: true,
-        },
-    )
-    .expect("sync dynamic odin descriptor");
-    assert_eq!(synced.dynamic_descriptors_synced, 1);
-
-    let completions = project_package_search_dsl_completions(
-        runtime,
-        scheme_dir,
-        "(ascent-fragment ((a n) <-- (odin_",
-    )
-    .expect("dynamic odin completions");
-    assert!(completions.iter().any(|c| c.form == "odin_proc_decl"));
-
-    let _ = shutdown_asp_gateway(&endpoint);
-    let _ = server_handle.join();
-}
-
 #[test]
 fn asp_http_forwarding_to_marlin_search_and_dynamic_o1_leverage() {
     let scheme_dir = default_marlin_scheme_dir()
@@ -505,7 +203,10 @@ fn asp_http_forwarding_to_marlin_search_and_dynamic_o1_leverage() {
     let runtime = GerbilRuntime::initialize().expect("initialize GerbilRuntime");
 
     // Always-on CI coverage: self-contained loopback mock ASP HTTP gateway.
-    run_self_contained_asp_http_forwarding_and_dynamic_o1_leverage(&runtime, &scheme_dir);
+    asp_http_e2e_mock::run_self_contained_asp_http_forwarding_and_dynamic_o1_leverage(
+        &runtime,
+        &scheme_dir,
+    );
 
     let asp_dir = asp_root();
     let marlin_dir = marlin_root();
@@ -606,6 +307,12 @@ fn asp_http_forwarding_to_marlin_search_and_dynamic_o1_leverage() {
         "expected >=40 real AST entities across 5 languages, got {}",
         cold_receipt.http_ingested_entities
     );
+    assert_eq!(
+        cold_receipt.schema_validated_entities, cold_receipt.http_ingested_entities,
+        "all live 5-language AST entities must pass forwarded targetedSchema validation"
+    );
+    assert_eq!(cold_receipt.schema_drift_entities, 0);
+    assert_eq!(cold_receipt.failed_files, 0);
     assert!(cold_receipt.cache_saved, "BLAKE3 Open EDB cache must save");
 
     // Verify ASP forwarded targeted JSON Schemas for all 5 languages.

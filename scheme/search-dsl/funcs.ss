@@ -27,7 +27,7 @@
 ;;;      failing closed on legacy `@sym:`, `#.(...)`, and host callbacks.
 ;;;   5. Live Introspection of composed `:gerbil-ascent` Relations ->
 ;;;      Helm interactive TAB completion table & `workspace_search` Tool Schema.
-(import (only-in :clan/poo/object .get .o .ref seal-object!)
+(import (only-in :clan/poo/object .get .o .ref .slot? seal-object!)
         (only-in :std/string/misc string-contains string-trim)
         (only-in :gerbil-ascent/rules/closed-source ascent-closed-dsl-parts)
         (only-in :gerbil-ascent/program/api
@@ -55,6 +55,9 @@
 (export read-ascent-search-form
         repair-ascent-search-form
         compile-search-dsl-prefilter
+        compile-closed-ascent-session
+        run-compiled-ascent-session
+        prune-ascent-parts-for-query
         evaluate-search-dsl-over-edb
         evaluate-choice-program-over-edb
         search-dsl-completions
@@ -100,105 +103,172 @@
      (symbol->string (cadadr x)))
     (else #f)))
 
-(def (relation->language-hint rel-name registry)
+(def (relation->language-entry rel-name registry)
   (let ((entry (assq rel-name (.get registry relation-meta))))
-    (and entry
-         (let ((lang (cadr entry)))
-           (and (not (string=? lang "edb"))
-                (not (string=? lang "general"))
-                lang)))))
+    (and entry (cadr entry))))
 
-(def (extract-atom-hints atom registry langs tokens)
+(def (choose-path-prefix current candidate)
+  (if (and (string? candidate) (> (string-length candidate) 0))
+    (or current candidate)
+    current))
+
+(def (extract-atom-hints atom registry langs path-prefix tokens)
   (if (not (and (pair? atom) (symbol? (car atom))))
-    (values langs tokens)
+    (values langs path-prefix tokens)
     (let* ((head (car atom))
            (args (cdr atom))
-           (rel-lang (relation->language-hint head registry)))
+           (rel-role (relation->language-entry head registry)))
       (cond
-        (rel-lang
+        ((and rel-role (string=? rel-role "general"))
+         ;; 5-col General Language Ontology relation: (callable id f lang name line)
+         (let* ((lang (and (>= (length args) 3) (datum->hint-string (list-ref args 2))))
+                (name (and (>= (length args) 4) (datum->hint-string (list-ref args 3))))
+                (l1 (if lang (append-unique langs lang) langs))
+                (t1 (if (and name (>= (string-length name) 3)) (append-unique tokens name) tokens)))
+           (values l1 path-prefix t1)))
+        ((and rel-role (not (string=? rel-role "edb")))
          ;; Derived POO language relation, e.g. `(rust_fn id f "open_or_build_cached" line)`
-         (let* ((l1 (append-unique langs rel-lang))
+         (let* ((l1 (append-unique langs rel-role))
                 (name (and (>= (length args) 3) (datum->hint-string (caddr args))))
                 (t1 (if (and name (>= (string-length name) 3)) (append-unique tokens name) tokens)))
-           (values l1 t1)))
+           (values l1 path-prefix t1)))
         ((eq? head 'file)
          (let* ((lang (and (>= (length args) 2) (datum->hint-string (cadr args))))
                 (path (and (>= (length args) 3) (datum->hint-string (caddr args))))
                 (l1 (if lang (append-unique langs lang) langs))
+                (p1 (choose-path-prefix path-prefix path))
                 (t1 (if (and path (>= (string-length path) 3)) (append-unique tokens path) tokens)))
-           (values l1 t1)))
+           (values l1 p1 t1)))
+        ((eq? head 'string-prefix?)
+         ;; Guard form `(if (string-prefix? "src/rust/" path))` -> path-prefix pushdown!
+         (let* ((prefix (and (>= (length args) 2) (datum->hint-string (car args))))
+                (p1 (choose-path-prefix path-prefix prefix)))
+           (values langs p1 tokens)))
         ((eq? head 'entity)
          ;; (entity id file_id lang kind language_kind name line)
          (let* ((lang (and (>= (length args) 3) (datum->hint-string (list-ref args 2))))
                 (name (and (>= (length args) 6) (datum->hint-string (list-ref args 5))))
                 (l1 (if lang (append-unique langs lang) langs))
                 (t1 (if (and name (>= (string-length name) 3)) (append-unique tokens name) tokens)))
-           (values l1 t1)))
+           (values l1 path-prefix t1)))
         ((eq? head 'edge)
          ;; (edge src dst rel path line)
          (let* ((src (and (>= (length args) 1) (datum->hint-string (car args))))
                 (dst (and (>= (length args) 2) (datum->hint-string (cadr args))))
                 (t1 (if (and src (>= (string-length src) 3)) (append-unique tokens src) tokens))
                 (t2 (if (and dst (>= (string-length dst) 3)) (append-unique t1 dst) t1)))
-           (values langs t2)))
-        (else (values langs tokens))))))
+           (values langs path-prefix t2)))
+        (else (values langs path-prefix tokens))))))
 
-(def (walk-form-hints form registry langs tokens)
+(def (walk-form-hints form registry langs path-prefix tokens)
   (cond
-    ((not (pair? form)) (values langs tokens))
+    ((not (pair? form)) (values langs path-prefix tokens))
     ((symbol? (car form))
-     (let-values (((l1 t1) (extract-atom-hints form registry langs tokens)))
-       (let loop ((rest (cdr form)) (l l1) (t t1))
+     (let-values (((l1 p1 t1) (extract-atom-hints form registry langs path-prefix tokens)))
+       (let loop ((rest (cdr form)) (l l1) (p p1) (t t1))
          (if (not (pair? rest))
-           (values l t)
-           (let-values (((nl nt) (walk-form-hints (car rest) registry l t)))
-             (loop (cdr rest) nl nt))))))
+           (values l p t)
+           (let-values (((nl np nt) (walk-form-hints (car rest) registry l p t)))
+             (loop (cdr rest) nl np nt))))))
     (else
-     (let loop ((rest form) (l langs) (t tokens))
+     (let loop ((rest form) (l langs) (p path-prefix) (t tokens))
        (if (not (pair? rest))
-         (values l t)
-         (let-values (((nl nt) (walk-form-hints (car rest) registry l t)))
-           (loop (cdr rest) nl nt)))))))
+         (values l p t)
+         (let-values (((nl np nt) (walk-form-hints (car rest) registry l p t)))
+           (loop (cdr rest) nl np nt)))))))
 
 ;;; Compile any native `:gerbil-ascent` query (after automatic safe AST repair)
 ;;; into a zero-regex rooted Rust Open EDB prefilter 5-vector:
 ;;;   #(search-edb-prefilter languages-vec path-prefix tokens-vec max-files)
 (def (compile-search-dsl-prefilter text (registry SearchLanguageRegistryValue))
   (let-values (((form _repairs) (repair-and-read-ascent-query text registry)))
-    (let-values (((langs tokens) (walk-form-hints form registry '() '())))
+    (let-values (((langs path-prefix tokens) (walk-form-hints form registry '() #f '())))
       (vector 'search-edb-prefilter
               (list->vector langs)
-              #f
+              path-prefix
               (list->vector tokens)
               +default-max-files+))))
 
 ;;; ============================================================================
-;;; 1. Zero-Eval Closed Upstream `:gerbil-ascent` Composition & Execution
+;;; 1. Zero-Eval Closed Upstream `:gerbil-ascent` Pruning, Composition & Execution
 ;;; ============================================================================
 
 (def (edb-table-ref edb key)
   (let ((entry (assq key edb)))
     (if entry (cdr entry) '())))
 
-(def (compose-ascent-parts parts)
-  (let ((relations (make-hash-table-eq))
-        (order '())
-        (rules (apply append (map (lambda (p) (.ref p 'rules)) parts))))
+(def (rule-head-relations rule)
+  (filter-map (lambda (h) (and (.slot? h 'relation) (.ref h 'relation)))
+              (.ref rule 'heads)))
+
+(def (rule-body-relations rule)
+  (filter-map (lambda (b) (and (.slot? b 'relation) (.ref b 'relation)))
+              (.ref rule 'body)))
+
+;;; Compute the exact dependency cone of relation names reachable from
+;;; `query-part` across `all-rules`.
+(def (reachable-relation-names query-part all-rules)
+  (let ((deps-by-head (make-hash-table-eq))
+        (needed (make-hash-table-eq)))
+    (for-each
+      (lambda (rule)
+        (let ((body-rels (rule-body-relations rule)))
+          (for-each
+            (lambda (head-rel)
+              (hash-put! deps-by-head head-rel
+                         (append body-rels (or (hash-get deps-by-head head-rel) '()))))
+            (rule-head-relations rule))))
+      all-rules)
+    (let ((seeds
+            (append
+              (map (lambda (r) (.ref r 'name)) (.ref query-part 'relations))
+              (apply append (map rule-head-relations (.ref query-part 'rules)))
+              (apply append (map rule-body-relations (.ref query-part 'rules))))))
+      (let loop ((queue seeds))
+        (when (pair? queue)
+          (let ((rel (car queue)))
+            (if (hash-get needed rel)
+              (loop (cdr queue))
+              (begin
+                (hash-put! needed rel #t)
+                (loop (append (or (hash-get deps-by-head rel) '()) (cdr queue))))))))
+      needed)))
+
+;;; Prune `fragments` to ONLY the transitive dependency cone of `query-part`,
+;;; returning `(values pruned-program active-edb-names)`.
+;;; Example: a `(rust_impl ...)` query shrinks 50+ rules across 8 languages down
+;;; to 2 rules (`rust_impl` + `answer`) and 1 active EDB relation (`entity`).
+(def (prune-ascent-parts-for-query fragments query-part)
+  (let* ((all-parts (append fragments (list query-part)))
+         (all-rules (apply append (map (lambda (p) (.ref p 'rules)) all-parts)))
+         (needed (reachable-relation-names query-part all-rules))
+         (pruned-rules
+           (filter (lambda (rule)
+                     (ormap (lambda (h) (hash-get needed h))
+                            (rule-head-relations rule)))
+                   all-rules))
+         (relations (make-hash-table-eq))
+         (order '()))
     (for-each
       (lambda (part)
         (for-each
           (lambda (rel)
             (let* ((name (.ref rel 'name))
-                   (old (hash-get relations name)))
-              (when (and old (not (= (.ref old 'arity) (.ref rel 'arity))))
-                (error "incompatible ASCENT relation arity across fragments" name))
-              (unless old
-                (hash-put! relations name rel)
-                (set! order (cons name order)))))
+                   (keep? (or (hash-get needed name) (memq name +edb-relation-names+))))
+              (when keep?
+                (let ((old (hash-get relations name)))
+                  (when (and old (not (= (.ref old 'arity) (.ref rel 'arity))))
+                    (error "incompatible ASCENT relation arity across fragments" name))
+                  (unless old
+                    (hash-put! relations name rel)
+                    (set! order (cons name order)))))))
           (.ref part 'relations)))
-      parts)
-    (let ((ordered (map (lambda (n) (hash-ref relations n)) (reverse order))))
-      (gerbil-ascent-program ordered rules 100000 100000 100000 +edb-relation-names+))))
+      all-parts)
+    (let* ((ordered (map (lambda (n) (hash-ref relations n)) (reverse order)))
+           (active-edb (filter (lambda (n) (hash-get needed n)) +edb-relation-names+))
+           (program (gerbil-ascent-program
+                      ordered pruned-rules 100000 100000 100000 +edb-relation-names+)))
+      (values program active-edb))))
 
 (def (select-query-output-relation query-part)
   (let* ((names (map (lambda (r) (.ref r 'name)) (.ref query-part 'relations)))
@@ -208,27 +278,42 @@
       ((pair? derived) (car (reverse derived)))
       (else (error "ASCENT query must declare at least one derived output relation")))))
 
-;;; Evaluate an upstream closed `(ascent ...)` or `(ascent-fragment ...)` form
-;;; strictly via `:gerbil-ascent/rules/closed-source#ascent-closed-dsl-parts`
-;;; (ZERO `eval-syntax`, 100% AOT `linked-ui` safe!) composed directly with the
-;;; REAL compiled `:gerbil-ascent` fragments owned by `SearchLanguageRegistryValue`.
-(def (evaluate-closed-ascent-over-edb form edb registry repairs)
+;;; Compile a repaired closed `(ascent ...)` / `(ascent-fragment ...)` form into
+;;; a reusable pruned `:gerbil-ascent` session:
+;;;   #(compiled-ascent-session session target-rel repairs active-edb-names)
+(def (compile-closed-ascent-session form registry repairs)
   (let ((query-parts (ascent-closed-dsl-parts (list form))))
     (unless (and (pair? query-parts) (null? (cdr query-parts)))
       (error "ASCENT query rejected: only closed inert :gerbil-ascent declarations are admitted (explicit column predicates and closed guards; host callbacks forbidden)" form))
     (let* ((query-part (car query-parts))
-           (target-rel (select-query-output-relation query-part))
-           (program (compose-ascent-parts
-                      (append (.get registry ascent-fragments) (list query-part))))
-           (session (gerbil-ascent-open-session program)))
-      (gerbil-ascent-session-run session)
-      (for-each
-        (lambda (rel-name)
-          (gerbil-ascent-session-replace-source! session rel-name (edb-table-ref edb rel-name)))
-        +edb-relation-names+)
-      (let* ((result (gerbil-ascent-session-run session))
-             (rows ((.ref result 'rows-of) target-rel)))
-        (vector 'search-result 'ascent target-rel rows repairs)))))
+           (target-rel (select-query-output-relation query-part)))
+      (let-values (((program active-edb)
+                    (prune-ascent-parts-for-query (.get registry ascent-fragments) query-part)))
+        (let ((session (gerbil-ascent-open-session program)))
+          (gerbil-ascent-session-run session)
+          (vector 'compiled-ascent-session session target-rel repairs active-edb))))))
+
+;;; Execute a compiled pruned `:gerbil-ascent` session against an EDB alist,
+;;; updating ONLY the active EDB relations actually referenced by the pruned cone.
+(def (run-compiled-ascent-session compiled edb)
+  (let ((session (vector-ref compiled 1))
+        (target-rel (vector-ref compiled 2))
+        (repairs (vector-ref compiled 3))
+        (active-edb (vector-ref compiled 4)))
+    (for-each
+      (lambda (rel-name)
+        (gerbil-ascent-session-replace-source! session rel-name (edb-table-ref edb rel-name)))
+      active-edb)
+    (let* ((result (gerbil-ascent-session-run session))
+           (rows ((.ref result 'rows-of) target-rel)))
+      (vector 'search-result 'ascent target-rel rows repairs))))
+
+;;; Evaluate an upstream closed `(ascent ...)` or `(ascent-fragment ...)` form
+;;; strictly via `:gerbil-ascent/rules/closed-source#ascent-closed-dsl-parts`
+;;; (ZERO `eval-syntax`, 100% AOT `linked-ui` safe!) with dependency-cone pruning.
+(def (evaluate-closed-ascent-over-edb form edb registry repairs)
+  (let ((compiled (compile-closed-ascent-session form registry repairs)))
+    (run-compiled-ascent-session compiled edb)))
 
 ;;; ============================================================================
 ;;; 2. Zero-Eval Upstream Dusa POPL 2025 `(relational-choice-program ...)`
@@ -693,14 +778,28 @@
                          (doc (list-ref spec 3)))
                     (list rel-sym lang-str kind-pat lk-pat doc)))
                 special-specs))
+         (existing-contract
+           (find (lambda (c) (eq? (car c) lang-sym))
+                 (.get base-registry language-contracts)))
          (dyn-contract
-           (list lang-sym
-                 provider-lang
-                 extensions
-                 '()
-                 kind-map
-                 (map (lambda (spec) (string->symbol (car spec))) special-specs)
-                 '()))
+           (if existing-contract
+             (list lang-sym
+                   provider-lang
+                   (unique-strings (append (list-ref existing-contract 2) extensions))
+                   (list-ref existing-contract 3)
+                   (append-unique-by-key (list-ref existing-contract 4) kind-map car)
+                   (append-unique-by-key
+                     (list-ref existing-contract 5)
+                     (map (lambda (spec) (string->symbol (car spec))) special-specs)
+                     (lambda (s) s))
+                   (list-ref existing-contract 6))
+             (list lang-sym
+                   provider-lang
+                   extensions
+                   '()
+                   kind-map
+                   (map (lambda (spec) (string->symbol (car spec))) special-specs)
+                   '())))
          (next-langs (if (memq lang-sym (.get base-registry languages))
                        (.get base-registry languages)
                        (append (.get base-registry languages) (list lang-sym))))

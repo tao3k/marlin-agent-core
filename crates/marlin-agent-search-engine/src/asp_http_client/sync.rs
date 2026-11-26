@@ -17,7 +17,9 @@ use serde::{Deserialize, Serialize};
 use crate::SearchPlanProjectionError;
 use crate::edb_bridge::{decode_string, decode_usize, make_string, make_vector, native};
 
-use super::domain_types::{AspForwardingEndpoint, GeneralOntologyKindName, NativeAstKindName};
+use super::domain_types::{
+    AspForwardingEndpoint, GeneralOntologyKindName, NativeAstKindName, TargetedJsonSchemaDocument,
+};
 #[cfg(not(feature = "linked-ui"))]
 use super::protocol_types::AspHttpHydrationRequest;
 use super::protocol_types::{
@@ -27,6 +29,43 @@ use super::protocol_types::{
 use super::transport::{fetch_asp_provider_catalog, http_loopback_request};
 
 const MAX_INSPECT_BATCH_FILES: usize = 512;
+
+const BUILTIN_SPECIAL_RELATIONS: &[&str] = &[
+    "rust_fn",
+    "rust_method",
+    "rust_struct",
+    "rust_enum",
+    "rust_trait",
+    "rust_type",
+    "rust_impl",
+    "rust_macro",
+    "rust_mod",
+    "scheme_def",
+    "scheme_const",
+    "scheme_struct",
+    "scheme_class",
+    "scheme_macro",
+    "scheme_poo_def",
+    "scheme_grammar",
+    "ts_fn",
+    "ts_class",
+    "ts_interface",
+    "ts_type",
+    "py_fn",
+    "py_class",
+    "julia_fn",
+    "julia_macro",
+    "julia_struct",
+    "julia_abstract",
+    "julia_module",
+    "sysml_requirement",
+    "sysml_part",
+    "sysml_state",
+    "sysml_action",
+    "quint_action",
+    "quint_invariant",
+    "org_heading",
+];
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,10 +82,19 @@ struct InspectFilesRequestPayload {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ForwardedInspectFailureWire {
+    #[serde(default)]
+    _path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ForwardedOpenEdbWireResponse {
     inspected_files: usize,
     elapsed_micros: u64,
     batches: Vec<WorkspaceOpenEdbIngestBatch>,
+    #[serde(default)]
+    failed_paths: Vec<ForwardedInspectFailureWire>,
 }
 
 fn encode_optional_str<'a>(
@@ -246,20 +294,39 @@ fn supported_languages_from_catalog(catalog: &ForwardedProviderCatalog) -> BTree
         .collect()
 }
 
-fn dynamic_provider_packs(
+fn dynamic_provider_sync_deltas(
     catalog: &ForwardedProviderCatalog,
-) -> impl Iterator<Item = (&[String], &ForwardedDslPack)> {
-    catalog.providers.iter().filter_map(|env| {
-        if is_builtin_search_language(env.manifest.language_id.as_str()) {
-            return None;
-        }
-        env.dsl_pack
-            .as_ref()
-            .map(|pack| (env.manifest.extensions.as_slice(), pack))
-    })
+) -> Vec<(
+    &[String],
+    &ForwardedDslPack,
+    Vec<DynamicSpecialRelationSpec>,
+)> {
+    catalog
+        .providers
+        .iter()
+        .filter_map(|env| {
+            let pack = env.dsl_pack.as_ref()?;
+            let all_specs = infer_special_specs_from_dsl_pack(pack);
+            if !is_builtin_search_language(env.manifest.language_id.as_str()) {
+                return Some((env.manifest.extensions.as_slice(), pack, all_specs));
+            }
+            // Even built-in languages (e.g., `rust` shipping a brand-new syntax
+            // kind) dynamically absorb additive special relations with zero
+            // Marlin recompilation!
+            let additive: Vec<DynamicSpecialRelationSpec> = all_specs
+                .into_iter()
+                .filter(|spec| !BUILTIN_SPECIAL_RELATIONS.contains(&spec.relation_name.as_str()))
+                .collect();
+            if additive.is_empty() {
+                None
+            } else {
+                Some((env.manifest.extensions.as_slice(), pack, additive))
+            }
+        })
+        .collect()
 }
 
-/// Fetch ASP's live provider catalog and sync any non-builtin dynamic language
+/// Fetch ASP's live provider catalog and sync any new or additive language
 /// descriptors into Marlin's AOT-linked `*active-search-registry*` over zero-JSON C-ABI.
 /// Returns the number of dynamically synced provider descriptors.
 ///
@@ -271,22 +338,25 @@ pub unsafe fn sync_linked_asp_provider_descriptors(
     endpoint: &AspForwardingEndpoint,
 ) -> Result<usize, SearchPlanProjectionError> {
     let catalog = fetch_asp_provider_catalog(endpoint)?;
-    dynamic_provider_packs(&catalog).try_fold(0usize, |synced, (extensions, pack)| {
-        let specs = infer_special_specs_from_dsl_pack(pack);
-        let desc_req = DynamicLanguageDescriptorRequest {
-            scheme_dir: "",
-            language_id: &pack.language_id,
-            provider_language_id: &pack.provider_language_id,
-            extensions,
-            kind_mappings: &pack.kind_mappings,
-            special_specs: &specs,
-        };
-        let _ = unsafe { register_linked_dynamic_language_descriptor(runtime, export, &desc_req) }?;
-        Ok(synced + 1)
-    })
+    dynamic_provider_sync_deltas(&catalog).into_iter().try_fold(
+        0usize,
+        |synced, (extensions, pack, specs)| {
+            let desc_req = DynamicLanguageDescriptorRequest {
+                scheme_dir: "",
+                language_id: &pack.language_id,
+                provider_language_id: &pack.provider_language_id,
+                extensions,
+                kind_mappings: &pack.kind_mappings,
+                special_specs: &specs,
+            };
+            let _ =
+                unsafe { register_linked_dynamic_language_descriptor(runtime, export, &desc_req) }?;
+            Ok(synced + 1)
+        },
+    )
 }
 
-/// Fetch ASP's live provider catalog and sync any non-builtin dynamic language
+/// Fetch ASP's live provider catalog and sync any new or additive language
 /// descriptors into Marlin's compiled package `*active-search-registry*`.
 #[cfg(not(feature = "linked-ui"))]
 pub fn sync_package_asp_provider_descriptors(
@@ -295,19 +365,21 @@ pub fn sync_package_asp_provider_descriptors(
     endpoint: &AspForwardingEndpoint,
 ) -> Result<usize, SearchPlanProjectionError> {
     let catalog = fetch_asp_provider_catalog(endpoint)?;
-    dynamic_provider_packs(&catalog).try_fold(0usize, |synced, (extensions, pack)| {
-        let specs = infer_special_specs_from_dsl_pack(pack);
-        let desc_req = DynamicLanguageDescriptorRequest {
-            scheme_dir,
-            language_id: &pack.language_id,
-            provider_language_id: &pack.provider_language_id,
-            extensions,
-            kind_mappings: &pack.kind_mappings,
-            special_specs: &specs,
-        };
-        let _ = register_package_dynamic_language_descriptor(runtime, &desc_req)?;
-        Ok(synced + 1)
-    })
+    dynamic_provider_sync_deltas(&catalog).into_iter().try_fold(
+        0usize,
+        |synced, (extensions, pack, specs)| {
+            let desc_req = DynamicLanguageDescriptorRequest {
+                scheme_dir,
+                language_id: &pack.language_id,
+                provider_language_id: &pack.provider_language_id,
+                extensions,
+                kind_mappings: &pack.kind_mappings,
+                special_specs: &specs,
+            };
+            let _ = register_package_dynamic_language_descriptor(runtime, &desc_req)?;
+            Ok(synced + 1)
+        },
+    )
 }
 
 #[cfg(not(feature = "linked-ui"))]
@@ -325,13 +397,52 @@ fn restore_cached_open_edb(
     }
 }
 
+fn targeted_schemas_by_language(
+    catalog: &ForwardedProviderCatalog,
+) -> BTreeMap<&str, &TargetedJsonSchemaDocument> {
+    catalog
+        .providers
+        .iter()
+        .map(|env| {
+            (
+                canonical_search_language(env.manifest.language_id.as_str()),
+                &env.targeted_schema,
+            )
+        })
+        .collect()
+}
+
+fn normalize_and_validate_batch(
+    mut batch: WorkspaceOpenEdbIngestBatch,
+    schemas_by_lang: &BTreeMap<&str, &TargetedJsonSchemaDocument>,
+    receipt: &mut AspHttpHydrationReceipt,
+) -> WorkspaceOpenEdbIngestBatch {
+    for ent in &mut batch.entities {
+        if ent.language == "gerbil-scheme" {
+            ent.language = "scheme".to_owned();
+        }
+        if let Some(schema) = schemas_by_lang.get(ent.language.as_str()) {
+            if schema.admits_entity_kinds(&ent.kind, &ent.language_kind) {
+                receipt.schema_validated_entities += 1;
+            } else {
+                receipt.schema_drift_entities += 1;
+            }
+        }
+    }
+    if batch.language_id.as_deref() == Some("gerbil-scheme") {
+        batch.language_id = Some("scheme".to_owned());
+    }
+    batch
+}
+
 fn inspect_and_ingest_pending_files(
     endpoint: &AspForwardingEndpoint,
     index: &mut WorkspaceSearchIndex,
-    supported_langs: &BTreeSet<String>,
+    catalog: &ForwardedProviderCatalog,
     cache_path: &Path,
     receipt: &mut AspHttpHydrationReceipt,
 ) -> Result<(), SearchPlanProjectionError> {
+    let supported_langs = supported_languages_from_catalog(catalog);
     let lang_refs: Vec<&str> = supported_langs.iter().map(String::as_str).collect();
     let pending = index.live_files_needing_open_edb(&lang_refs, MAX_INSPECT_BATCH_FILES);
     if pending.is_empty() {
@@ -366,18 +477,13 @@ fn inspect_and_ingest_pending_files(
         SearchPlanProjectionError::Native(format!("decode inspect-files response: {e}"))
     })?;
 
+    let schemas_by_lang = targeted_schemas_by_language(catalog);
     receipt.http_inspected_files = wire.inspected_files;
+    receipt.failed_files = wire.failed_paths.len();
     receipt.asp_inspect_micros = wire.elapsed_micros;
-    for mut batch in wire.batches {
-        for ent in &mut batch.entities {
-            if ent.language == "gerbil-scheme" {
-                ent.language = "scheme".to_owned();
-            }
-        }
-        if batch.language_id.as_deref() == Some("gerbil-scheme") {
-            batch.language_id = Some("scheme".to_owned());
-        }
-        let ing = index.ingest_open_edb_facts(batch);
+    for batch in wire.batches {
+        let normalized = normalize_and_validate_batch(batch, &schemas_by_lang, receipt);
+        let ing = index.ingest_open_edb_facts(normalized);
         receipt.http_ingested_entities += ing.ingested_entities;
     }
     if receipt.http_ingested_entities > 0 {
@@ -398,8 +504,7 @@ pub fn hydrate_workspace_pending_via_asp_http(
     let mut receipt = AspHttpHydrationReceipt::default();
     let catalog = fetch_asp_provider_catalog(endpoint)?;
     receipt.providers_discovered = catalog.providers.len();
-    let supported_langs = supported_languages_from_catalog(&catalog);
-    inspect_and_ingest_pending_files(endpoint, index, &supported_langs, cache_path, &mut receipt)?;
+    inspect_and_ingest_pending_files(endpoint, index, &catalog, cache_path, &mut receipt)?;
     receipt.total_elapsed_micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
     Ok(receipt)
 }
@@ -424,11 +529,10 @@ pub fn hydrate_workspace_from_asp_http(
         receipt.dynamic_descriptors_synced =
             sync_package_asp_provider_descriptors(runtime, request.scheme_dir, request.endpoint)?;
     }
-    let supported_langs = supported_languages_from_catalog(&catalog);
     inspect_and_ingest_pending_files(
         request.endpoint,
         index,
-        &supported_langs,
+        &catalog,
         request.cache_path,
         &mut receipt,
     )?;

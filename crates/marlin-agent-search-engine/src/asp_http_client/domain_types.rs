@@ -150,6 +150,27 @@ impl TargetedJsonSchemaDocument {
             .map(|items| items.iter().filter_map(Value::as_str).collect())
             .unwrap_or_default()
     }
+
+    /// Extract the allowed General Ontology `kind` enum entries from this schema.
+    #[must_use]
+    pub fn kind_enum(&self) -> Vec<&str> {
+        self.0
+            .pointer("/properties/kind/enum")
+            .and_then(Value::as_array)
+            .map(|items| items.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default()
+    }
+
+    /// Validate an entity's `(kind, language_kind)` pair against any enum
+    /// constraints declared in this targeted JSON Schema.
+    #[must_use]
+    pub fn admits_entity_kinds(&self, kind: &str, language_kind: &str) -> bool {
+        let allowed_lk = self.language_kind_enum();
+        let lk_ok = allowed_lk.is_empty() || allowed_lk.contains(&language_kind);
+        let allowed_kind = self.kind_enum();
+        let kind_ok = allowed_kind.is_empty() || allowed_kind.contains(&kind);
+        lk_ok && kind_ok
+    }
 }
 
 /// Environment variable naming an optional loopback ASP HTTP forwarding gateway
