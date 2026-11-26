@@ -1513,6 +1513,112 @@ fn graph_engine_vm_round_trips_all_four_rooted_vectors_and_live_scheme_exports()
     assert_eq!(step5.disclosure_level, "L3");
     assert_eq!(step5.visible_tab_ids.len(), 4);
     assert_eq!(step5.ui_element_count, 9);
+
+    // Pump Boot #5 to quiescence via production `pump_until_quiescent` + live `bridge5`!
+    let pump5 = driver5
+        .pump_until_quiescent(&[], false, 8, |scheme_effs| {
+            let runtime_effs: Vec<AtomicEffect> = scheme_effs
+                .into_iter()
+                .map(|eff| match eff {
+                    SchemeAtomicEffect::CasGet { effect_id, key } => {
+                        AtomicEffect::CasGet(CasGetEffectPayload { effect_id, key })
+                    }
+                    SchemeAtomicEffect::CasPut {
+                        effect_id,
+                        key,
+                        bytes,
+                    } => AtomicEffect::CasPut(CasPutEffectPayload {
+                        effect_id,
+                        key,
+                        bytes,
+                    }),
+                    SchemeAtomicEffect::LlmComplete { effect_id, request } => {
+                        AtomicEffect::LlmComplete(LlmCompleteEffectPayload { effect_id, request })
+                    }
+                    SchemeAtomicEffect::SandboxRun {
+                        effect_id,
+                        program,
+                        args,
+                        cwd,
+                    } => AtomicEffect::SandboxRun(SandboxRunEffectPayload {
+                        effect_id,
+                        program,
+                        args,
+                        cwd,
+                    }),
+                })
+                .collect();
+            let raw_rcpts = rt_tokio
+                .block_on(bridge5.run_atomic_effects(runtime_effs))
+                .map_err(|s| marlin_gerbil_scheme::AtomicEffectAbiError(s.to_string()))?;
+            Ok(raw_rcpts
+                .into_iter()
+                .map(|r| match r {
+                    AtomicEffectReceipt::CasHit(p) => SchemeAtomicReceipt::CasHit {
+                        effect_id: p.effect_id,
+                        bytes: p.bytes,
+                    },
+                    AtomicEffectReceipt::CasMiss(id) => SchemeAtomicReceipt::CasMiss(id),
+                    AtomicEffectReceipt::CasStored(id) => SchemeAtomicReceipt::CasStored(id),
+                    AtomicEffectReceipt::LlmCompleted(p) => SchemeAtomicReceipt::LlmCompleted {
+                        effect_id: p.effect_id,
+                        content: p.content,
+                    },
+                    AtomicEffectReceipt::SandboxExited(p) => SchemeAtomicReceipt::SandboxExited {
+                        effect_id: p.effect_id,
+                        exit_code: p.exit_code,
+                        stdout: p.stdout,
+                        stderr: p.stderr,
+                    },
+                    AtomicEffectReceipt::EffectError(p) => SchemeAtomicReceipt::EffectError {
+                        effect_id: p.effect_id,
+                        message: p.message,
+                    },
+                })
+                .collect())
+        })
+        .expect("Boot #5 pump_until_quiescent");
+    assert!(pump5.rounds >= 1);
+    assert!(pump5.final_step.effects.is_empty());
+
+    // Emit & store a Boot #5 checkpoint via `SchemeFleetSessionDriver::checkpoint` -> Turso WAL!
+    let cp5_eff = driver5
+        .checkpoint("fleet:turso:boot5-driver-quiescent")
+        .expect("emit Boot #5 CasPut via driver.checkpoint");
+    let SchemeAtomicEffect::CasPut {
+        effect_id,
+        key,
+        bytes,
+    } = cp5_eff
+    else {
+        panic!("expected CasPut from driver.checkpoint");
+    };
+    let cp5_put = rt_tokio
+        .block_on(
+            bridge5.run_atomic_effects(vec![AtomicEffect::CasPut(CasPutEffectPayload {
+                effect_id,
+                key: key.clone(),
+                bytes: bytes.clone(),
+            })]),
+        )
+        .expect("store Boot #5 checkpoint");
+    assert!(matches!(
+        cp5_put.as_slice(),
+        [AtomicEffectReceipt::CasStored(_)]
+    ));
+    let cp5_get = rt_tokio
+        .block_on(
+            bridge5.run_atomic_effects(vec![AtomicEffect::CasGet(CasGetEffectPayload {
+                effect_id: "verify-boot5-cp".to_owned(),
+                key,
+            })]),
+        )
+        .expect("read back Boot #5 checkpoint");
+    assert!(matches!(
+        cp5_get.as_slice(),
+        [AtomicEffectReceipt::CasHit(p)] if p.bytes == bytes
+    ));
+
     let audit5 = driver5.audit_capsule().expect("decode audit5 via driver");
     assert_eq!(audit5.active_actor_count, 3);
     assert_eq!(audit5.archived_actor_count, 0);

@@ -406,6 +406,14 @@ pub struct SchemeFleetDispatchStep {
     pub ui_element_count: usize,
 }
 
+/// Summary of pumping `"task-fleet-step"` until Scheme emits zero pending effects.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SchemeFleetQuiescentSummary {
+    pub rounds: usize,
+    pub total_effects_executed: usize,
+    pub final_step: SchemeFleetDispatchStep,
+}
+
 enum FleetControllerRoot<'vm> {
     Initial(RootedSchemeObject<'vm>),
     Dispatched(gerbil_scheme::RootedSchemeCollection<'vm>),
@@ -611,5 +619,98 @@ impl<'vm> SchemeFleetSessionDriver<'vm> {
                 .map_err(|e| AtomicEffectAbiError(format!("audit capsule: {e}")))
         })?;
         decode_fleet_audit_capsule_vector(out)
+    }
+
+    /// Dispatches `"task-fleet-checkpoint"` and returns the single Scheme-emitted `CasPut` effect.
+    pub fn checkpoint(
+        &mut self,
+        cas_key: &str,
+    ) -> Result<SchemeAtomicEffect, AtomicEffectAbiError> {
+        let step = self.dispatch("task-fleet-checkpoint", None, Some(cas_key), &[], false)?;
+        let mut effects = step.effects.into_iter();
+        match (effects.next(), effects.next()) {
+            (Some(effect @ SchemeAtomicEffect::CasPut { .. }), None) => Ok(effect),
+            (Some(other), _) => Err(AtomicEffectAbiError(format!(
+                "expected single CasPut checkpoint effect, got {other:?}"
+            ))),
+            (None, _) => Err(AtomicEffectAbiError(
+                "task-fleet-checkpoint emitted zero effects".to_owned(),
+            )),
+        }
+    }
+
+    /// Pumps `"task-fleet-step"` rounds through caller-supplied 4-primitive leaf execution
+    /// until Scheme emits zero pending `AtomicEffect`s (quiescent) or `max_rounds` is hit.
+    ///
+    /// Contains zero orchestration policy: Scheme owns all scheduling, memoization, and halting.
+    pub fn pump_until_quiescent<F>(
+        &mut self,
+        initial_receipts: &[SchemeAtomicReceipt],
+        auto_archive: bool,
+        max_rounds: usize,
+        mut execute_batch: F,
+    ) -> Result<SchemeFleetQuiescentSummary, AtomicEffectAbiError>
+    where
+        F: FnMut(Vec<SchemeAtomicEffect>) -> Result<Vec<SchemeAtomicReceipt>, AtomicEffectAbiError>,
+    {
+        if max_rounds == 0 {
+            return Err(AtomicEffectAbiError(
+                "max_rounds must be >= 1 for pump_until_quiescent".to_owned(),
+            ));
+        }
+        let mut pending_receipts: Vec<SchemeAtomicReceipt> = initial_receipts.to_vec();
+        let mut total_effects_executed = 0usize;
+        for round in 1..=max_rounds {
+            let step = self.dispatch(
+                "task-fleet-step",
+                None,
+                None,
+                &pending_receipts,
+                auto_archive,
+            )?;
+            if step.effects.is_empty() {
+                return Ok(SchemeFleetQuiescentSummary {
+                    rounds: round,
+                    total_effects_executed,
+                    final_step: step,
+                });
+            }
+            total_effects_executed += step.effects.len();
+            pending_receipts = execute_batch(step.effects)?;
+        }
+        Err(AtomicEffectAbiError(format!(
+            "fleet pump exceeded max_rounds ({max_rounds}) without reaching quiescence"
+        )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linked_atomic_effect_c_abi_symbols_match_scheme_exports() {
+        assert_eq!(
+            MARLIN_GRAPH_ENGINE_STEP_DRIVER_SYMBOL,
+            "marlin_graph_engine_step_driver_vector"
+        );
+        assert_eq!(
+            MARLIN_GRAPH_ENGINE_STEP_FLEET_SYMBOL,
+            "marlin_graph_engine_step_fleet_vector"
+        );
+        assert_eq!(
+            MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_OPEN_SYMBOL,
+            "marlin_graph_engine_fleet_controller_open_vector"
+        );
+        assert_eq!(
+            MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_DISPATCH_SYMBOL,
+            "marlin_graph_engine_fleet_controller_dispatch_vector"
+        );
+        assert_eq!(
+            MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_AUDIT_CAPSULE_SYMBOL,
+            "marlin_graph_engine_fleet_controller_audit_capsule_vector"
+        );
+        let err = AtomicEffectAbiError("bounded test error".to_owned());
+        assert_eq!(err.to_string(), "bounded test error");
     }
 }
