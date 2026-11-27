@@ -44,11 +44,27 @@ pub struct ArbitrationClaim {
 /// Machine-checkable fail-closed refusal reasons for B13 arbitration liveness.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArbitrationRejection {
-    InvalidRetryBudget { max_attempts: u32 },
-    RetryBudgetExhausted { case_id: String, attempts: u32, max_attempts: u32 },
-    DeadlockCycleDetected { case_id: String, witness_node: String },
-    TerminalReentryRefused { case_id: String, phase: ArbitrationPhase },
-    EscalationNotJustified { case_id: String, attempts: u32, max_attempts: u32 },
+    InvalidRetryBudget {
+        max_attempts: u32,
+    },
+    RetryBudgetExhausted {
+        case_id: String,
+        attempts: u32,
+        max_attempts: u32,
+    },
+    DeadlockCycleDetected {
+        case_id: String,
+        witness_node: String,
+    },
+    TerminalReentryRefused {
+        case_id: String,
+        phase: ArbitrationPhase,
+    },
+    EscalationNotJustified {
+        case_id: String,
+        attempts: u32,
+        max_attempts: u32,
+    },
 }
 
 /// Deterministic admission or escalation receipt for a B13 arbitration case.

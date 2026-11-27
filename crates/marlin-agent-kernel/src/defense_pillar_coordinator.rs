@@ -243,9 +243,7 @@ mod tests {
     use crate::federated_arbitration_liveness::ArbitrationPhase;
     use crate::federated_org_reciprocity::BilateralTreaty;
     use crate::governance_admission::{GovernanceProofDigest, GovernedSubjectName};
-    use crate::model_weight_attestation::{
-        ModelWeightGovernancePolicy, compute_shard_merkle_root,
-    };
+    use crate::model_weight_attestation::{ModelWeightGovernancePolicy, compute_shard_merkle_root};
     use crate::post_quantum_agility::CryptoSuite;
     use crate::supply_chain_provenance::SupplyChainDependencySpec;
     use crate::transparency_log::verify_inclusion_proof;
@@ -262,10 +260,8 @@ mod tests {
         GovernedSubjectName::new(name).expect("valid governed subject")
     }
 
-    fn build_clean_coordinator_and_claim() -> (
-        UnifiedDefensePillarCoordinator,
-        UnifiedDefenseReleaseClaim,
-    ) {
+    fn build_clean_coordinator_and_claim()
+    -> (UnifiedDefensePillarCoordinator, UnifiedDefenseReleaseClaim) {
         let b13 = FederatedArbitrationLivenessGate::new(2).expect("init b13");
 
         let mut b14 = SupplyChainProvenanceGate::new();
@@ -461,7 +457,10 @@ mod tests {
         let (mut coord, mut claim) = build_clean_coordinator_and_claim();
         // Sabotage ONLY B18 (over-disclosure of forbidden raw_pii); B13/B14/B15/B16/B17 state
         // and B9 log must remain completely untouched!
-        claim.b18_zk_disclosure.disclosed_fields.insert("raw_pii".to_owned());
+        claim
+            .b18_zk_disclosure
+            .disclosed_fields
+            .insert("raw_pii".to_owned());
         assert!(matches!(
             coord.admit_release(&claim),
             Err(UnifiedDefenseRejection::B18ZkSelectiveDisclosure(_))

@@ -52,14 +52,37 @@ pub struct CryptoRewrapClaim {
 /// Machine-checkable refusal reasons for B16 key rotation & crypto-shredding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyRotationRejection {
-    TenantMismatch { expected: String, actual: String },
-    NonMonotonicEpochRotation { active_epoch: u64, requested_epoch: u64 },
-    InvalidDigest { digest: String },
-    StaleWriteEpoch { active_epoch: u64, write_epoch: u64 },
-    EpochShredded { epoch: u64, tombstone_digest: String },
-    ActiveEpochCannotBeShreddedWithoutRotation { active_epoch: u64 },
-    PlaintextDigestMutatedDuringRewrap { before: String, after: String },
-    InvalidRewrapEpochs { from_epoch: u64, to_epoch: u64, active_epoch: u64 },
+    TenantMismatch {
+        expected: String,
+        actual: String,
+    },
+    NonMonotonicEpochRotation {
+        active_epoch: u64,
+        requested_epoch: u64,
+    },
+    InvalidDigest {
+        digest: String,
+    },
+    StaleWriteEpoch {
+        active_epoch: u64,
+        write_epoch: u64,
+    },
+    EpochShredded {
+        epoch: u64,
+        tombstone_digest: String,
+    },
+    ActiveEpochCannotBeShreddedWithoutRotation {
+        active_epoch: u64,
+    },
+    PlaintextDigestMutatedDuringRewrap {
+        before: String,
+        after: String,
+    },
+    InvalidRewrapEpochs {
+        from_epoch: u64,
+        to_epoch: u64,
+        active_epoch: u64,
+    },
 }
 
 /// Deterministic receipt emitted on monotonic epoch rotation.
@@ -161,7 +184,8 @@ impl KeyRotationShreddingGate {
         }
         let previous_epoch = self.active_epoch;
         self.active_epoch = next_epoch;
-        self.epoch_commitments.insert(next_epoch, commitment.clone());
+        self.epoch_commitments
+            .insert(next_epoch, commitment.clone());
         Ok(KeyRotationReceipt {
             tenant_id: self.tenant_id.clone(),
             previous_epoch,
@@ -188,7 +212,11 @@ impl KeyRotationShreddingGate {
         }
         let reason = reason.into();
         let tombstone_digest = sha256_hex(
-            format!("b16-shred|tenant={}|epoch={epoch}|reason={reason}", self.tenant_id).as_bytes(),
+            format!(
+                "b16-shred|tenant={}|epoch={epoch}|reason={reason}",
+                self.tenant_id
+            )
+            .as_bytes(),
         );
         let tombstone = CryptoShredTombstone {
             tenant_id: self.tenant_id.clone(),

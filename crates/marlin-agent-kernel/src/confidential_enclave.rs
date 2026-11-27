@@ -45,13 +45,29 @@ pub struct EnclaveAttestationQuote {
 /// Machine-checkable failure reasons for B15 enclave attestation & key release.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfidentialEnclaveRejection {
-    DebugEnclaveRefused { enclave_id: String },
-    InvalidQuoteSignature { enclave_id: String },
-    InvalidMeasurementDigest { digest: String },
-    UnmeasuredOrUnpinnedEnclave { measurement_digest: String },
-    StaleTcbSvn { actual_svn: u32, min_required_svn: u32 },
-    InvalidOrReplayedNonce { nonce: String },
-    B14ArtifactBindingMismatch { expected: String, actual: Option<String> },
+    DebugEnclaveRefused {
+        enclave_id: String,
+    },
+    InvalidQuoteSignature {
+        enclave_id: String,
+    },
+    InvalidMeasurementDigest {
+        digest: String,
+    },
+    UnmeasuredOrUnpinnedEnclave {
+        measurement_digest: String,
+    },
+    StaleTcbSvn {
+        actual_svn: u32,
+        min_required_svn: u32,
+    },
+    InvalidOrReplayedNonce {
+        nonce: String,
+    },
+    B14ArtifactBindingMismatch {
+        expected: String,
+        actual: Option<String>,
+    },
 }
 
 /// Deterministic key-release receipt bound to measurement, TCB SVN, and consumed nonce.

@@ -58,14 +58,35 @@ pub struct FederatedOpClaim {
 /// Machine-checkable refusal reasons for B20 federated reciprocity enforcement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FederatedOrgRejection {
-    SelfReciprocitySpoofing { org: String },
-    UnknownTreaty { treaty_id: String },
-    TreatyNotRatified { treaty_id: String },
-    TreatyExpired { treaty_id: String, expires_at_unix_ms: u64, observed_unix_ms: u64 },
-    OrgPairMismatch { treaty_id: String, origin_org: String, target_org: String },
-    UnilateralSignatureRefused { origin_verified: bool, target_verified: bool },
-    DisputeFreezeActive { treaty_id: String },
-    InvalidPayloadDigest { digest: String },
+    SelfReciprocitySpoofing {
+        org: String,
+    },
+    UnknownTreaty {
+        treaty_id: String,
+    },
+    TreatyNotRatified {
+        treaty_id: String,
+    },
+    TreatyExpired {
+        treaty_id: String,
+        expires_at_unix_ms: u64,
+        observed_unix_ms: u64,
+    },
+    OrgPairMismatch {
+        treaty_id: String,
+        origin_org: String,
+        target_org: String,
+    },
+    UnilateralSignatureRefused {
+        origin_verified: bool,
+        target_verified: bool,
+    },
+    DisputeFreezeActive {
+        treaty_id: String,
+    },
+    InvalidPayloadDigest {
+        digest: String,
+    },
 }
 
 /// Deterministic admission receipt for a ratified, bilaterally countersigned federated op.
@@ -93,14 +114,15 @@ impl FederatedOrgReciprocityGate {
     }
 
     /// Register a bilateral treaty between two distinct organizations.
-    pub fn register_treaty(&mut self, treaty: BilateralTreaty) -> Result<(), FederatedOrgRejection> {
+    pub fn register_treaty(
+        &mut self,
+        treaty: BilateralTreaty,
+    ) -> Result<(), FederatedOrgRejection> {
         if treaty.org_a.trim().is_empty()
             || treaty.org_b.trim().is_empty()
             || treaty.org_a == treaty.org_b
         {
-            return Err(FederatedOrgRejection::SelfReciprocitySpoofing {
-                org: treaty.org_a,
-            });
+            return Err(FederatedOrgRejection::SelfReciprocitySpoofing { org: treaty.org_a });
         }
         self.treaties.insert(treaty.treaty_id.clone(), treaty);
         Ok(())
@@ -191,7 +213,11 @@ impl FederatedOrgReciprocityGate {
         let receipt_digest = sha256_hex(
             format!(
                 "b20|op={}|treaty={}|epoch={}|{}->{}|payload={payload}",
-                claim.op_id, treaty.treaty_id, treaty.treaty_epoch, claim.origin_org, claim.target_org
+                claim.op_id,
+                treaty.treaty_id,
+                treaty.treaty_epoch,
+                claim.origin_org,
+                claim.target_org
             )
             .as_bytes(),
         );
@@ -245,14 +271,17 @@ mod tests {
         let r1 = gate.admit_federated_op(&claim).expect("admit bilateral");
         assert_eq!(r1.receipt_digest.len(), 64);
 
-        gate.raise_dispute_freeze("treaty-alpha-beta-v1").expect("freeze");
+        gate.raise_dispute_freeze("treaty-alpha-beta-v1")
+            .expect("freeze");
         assert!(matches!(
             gate.admit_federated_op(&claim),
             Err(FederatedOrgRejection::DisputeFreezeActive { .. })
         ));
 
-        gate.resolve_dispute_freeze("treaty-alpha-beta-v1").expect("resolve");
-        gate.admit_federated_op(&claim).expect("admit after arbitration");
+        gate.resolve_dispute_freeze("treaty-alpha-beta-v1")
+            .expect("resolve");
+        gate.admit_federated_op(&claim)
+            .expect("admit after arbitration");
         assert_eq!(gate.admitted_ops(), 2);
     }
 

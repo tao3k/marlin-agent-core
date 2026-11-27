@@ -42,3 +42,7 @@ path = "tests/integration/governance_admission_mbt.rs"
 [[test]]
 name = "governance_plane_mbt"
 path = "tests/integration/governance_plane_mbt.rs"
+
+[[test]]
+name = "defense_pillars_adv_l4"
+path = "tests/integration/defense_pillars_adv_l4.rs"

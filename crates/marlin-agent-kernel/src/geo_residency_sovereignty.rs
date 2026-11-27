@@ -63,14 +63,33 @@ pub struct GeoPlacementClaim {
 /// Machine-checkable refusal reasons for B19 sovereign geo-residency enforcement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GeoResidencyRejection {
-    SanctionedTargetRegion { region: String },
-    DisallowedTargetRegion { region: String },
-    SanctionedInferenceRegion { region: String },
-    InferenceRegionEscape { region: String },
-    MissingCrossBorderPermit { from_region: String, destination_region: String },
-    InvalidCrossBorderPermit { reason: String },
-    RevokedPermitOrAuthority { identifier: String },
-    ExpiredCrossBorderPermit { permit_id: String, expires_at_unix_ms: u64, observed_unix_ms: u64 },
+    SanctionedTargetRegion {
+        region: String,
+    },
+    DisallowedTargetRegion {
+        region: String,
+    },
+    SanctionedInferenceRegion {
+        region: String,
+    },
+    InferenceRegionEscape {
+        region: String,
+    },
+    MissingCrossBorderPermit {
+        from_region: String,
+        destination_region: String,
+    },
+    InvalidCrossBorderPermit {
+        reason: String,
+    },
+    RevokedPermitOrAuthority {
+        identifier: String,
+    },
+    ExpiredCrossBorderPermit {
+        permit_id: String,
+        expires_at_unix_ms: u64,
+        observed_unix_ms: u64,
+    },
 }
 
 /// Deterministic admission receipt bound to regions, tenant, and optional permit digest.
@@ -103,11 +122,13 @@ impl GeoResidencySovereigntyGate {
     }
 
     pub fn allow_storage_region(&mut self, region: impl AsRef<str>) {
-        self.allowed_storage_regions.insert(norm_region(region.as_ref()));
+        self.allowed_storage_regions
+            .insert(norm_region(region.as_ref()));
     }
 
     pub fn allow_inference_region(&mut self, region: impl AsRef<str>) {
-        self.allowed_inference_regions.insert(norm_region(region.as_ref()));
+        self.allowed_inference_regions
+            .insert(norm_region(region.as_ref()));
     }
 
     pub fn sanction_region(&mut self, region: impl AsRef<str>) {
@@ -193,7 +214,10 @@ impl GeoResidencySovereigntyGate {
             }
             let p_from = norm_region(&permit.from_region);
             let p_to = norm_region(&permit.to_region);
-            if p_from != source || (cross_border_storage && p_to != target) || (cross_border_inference && p_to != inference) {
+            if p_from != source
+                || (cross_border_storage && p_to != target)
+                || (cross_border_inference && p_to != inference)
+            {
                 return Err(GeoResidencyRejection::InvalidCrossBorderPermit {
                     reason: format!(
                         "permit corridor {p_from}->{p_to} does not cover {source}->({target},{inference})"
@@ -268,7 +292,9 @@ mod tests {
             observed_unix_ms: 1_700_000_000_000,
             cross_border_permit: None,
         };
-        let r_local = gate.admit_placement(&local).expect("intra-region admits without permit");
+        let r_local = gate
+            .admit_placement(&local)
+            .expect("intra-region admits without permit");
         assert!(!r_local.cross_border);
 
         let xborder = GeoPlacementClaim {
@@ -288,7 +314,9 @@ mod tests {
                 permit_digest: hex64('c'),
             }),
         };
-        let r_xb = gate.admit_placement(&xborder).expect("permitted cross-border admits");
+        let r_xb = gate
+            .admit_placement(&xborder)
+            .expect("permitted cross-border admits");
         assert!(r_xb.cross_border);
         assert_eq!(gate.admitted_count(), 2);
     }

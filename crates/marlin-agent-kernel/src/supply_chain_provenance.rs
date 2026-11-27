@@ -56,17 +56,29 @@ pub struct SupplyChainBuildClaim {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SupplyChainRejection {
     EmptyDependencies,
-    InvalidArtifactDigest { digest: String },
-    SlopsquattedOrUnregisteredPackage { package_name: String, version: String },
+    InvalidArtifactDigest {
+        digest: String,
+    },
+    SlopsquattedOrUnregisteredPackage {
+        package_name: String,
+        version: String,
+    },
     UnpinnedOrMismatchedDependencyDigest {
         package_name: String,
         version: String,
         expected: String,
         actual: String,
     },
-    CveTombstoneMatched { identifier: String, cve_id: String },
-    NonHermeticBuild { reason: String },
-    BuilderParityFailed { reason: String },
+    CveTombstoneMatched {
+        identifier: String,
+        cve_id: String,
+    },
+    NonHermeticBuild {
+        reason: String,
+    },
+    BuilderParityFailed {
+        reason: String,
+    },
 }
 
 /// Deterministic admission receipt bound to the exact artifact, pinned deps, and builder pair.
