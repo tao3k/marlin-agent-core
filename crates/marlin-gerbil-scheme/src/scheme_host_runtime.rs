@@ -250,12 +250,12 @@ impl<'vm> HostFleetDriver<'vm> {
 }
 
 fn execute_effects_on_tokio(
-    effect_tx: &tokio::sync::mpsc::UnboundedSender<EffectBatchRequest>,
+    effect_tx: &tokio::sync::mpsc::Sender<EffectBatchRequest>,
     effects: Vec<SchemeAtomicEffect>,
 ) -> Result<Vec<SchemeAtomicReceipt>, AtomicEffectAbiError> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     effect_tx
-        .send(EffectBatchRequest {
+        .blocking_send(EffectBatchRequest {
             effects,
             reply: reply_tx,
         })
@@ -278,7 +278,7 @@ fn assert_non_authorizing_capsule(capsule: &FleetAuditCapsuleProjection) -> Resu
 fn bootstrap_scheme_fleet<'vm>(
     runtime: &'vm GerbilRuntime,
     bootstrap: HostFleetBootstrap<'vm>,
-    effect_tx: &tokio::sync::mpsc::UnboundedSender<EffectBatchRequest>,
+    effect_tx: &tokio::sync::mpsc::Sender<EffectBatchRequest>,
     checkpoint_key: &str,
 ) -> Result<(HostFleetDriver<'vm>, FleetBootReport), String> {
     let probe = execute_effects_on_tokio(
@@ -598,7 +598,19 @@ fn parse_detour_mode(raw: &str) -> DetourMode {
     }
 }
 
-async fn run_one_atomic_effect(
+const MAX_CONCURRENT_SCHEME_EFFECTS: usize = 16;
+
+/// Returns `true` if `key` belongs to the Governance Authority's reserved durable `MGV1`/`MGF1`
+/// checkpoint namespace so untrusted `SchemeAtomicEffect::CasPut` effects can NEVER overwrite
+/// durable E-Stop latches or security fact graphs (SM30).
+pub fn is_reserved_governance_cas_key(key: &str) -> bool {
+    let trimmed = key.trim();
+    trimmed == DEFAULT_GOVERNANCE_CHECKPOINT_KEY
+        || trimmed.starts_with("checkpoint:governance")
+        || trimmed.ends_with(":facts")
+}
+
+pub async fn run_one_atomic_effect(
     cas: Option<Arc<StorageCasStore<TursoAgentStorage>>>,
     sandbox: Option<Arc<AllowlistSandboxRunner>>,
     governance_host: Arc<GovernanceHostController>,
@@ -625,6 +637,14 @@ async fn run_one_atomic_effect(
             key,
             bytes,
         } => {
+            if is_reserved_governance_cas_key(&key) {
+                return SchemeAtomicReceipt::EffectError {
+                    effect_id,
+                    message: format!(
+                        "cas-put-denied: cannot overwrite reserved governance checkpoint key {key:?}"
+                    ),
+                };
+            }
             let Some(store) = cas else {
                 return SchemeAtomicReceipt::EffectError {
                     effect_id,
@@ -676,6 +696,14 @@ async fn run_one_atomic_effect(
             }
         }
         SchemeAtomicEffect::LlmComplete { effect_id, request } => {
+            if let Err(err) =
+                governance_host.authorize_llm_effect("scheme-llm-worker", "llm-complete")
+            {
+                return SchemeAtomicReceipt::EffectError {
+                    effect_id,
+                    message: err,
+                };
+            }
             if let Some(client) = http_llm {
                 match client.complete_text(&request).await {
                     Ok(content) => SchemeAtomicReceipt::LlmCompleted { effect_id, content },
@@ -1101,7 +1129,7 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
     let oracle_arc: Arc<dyn marlin_agent_graph::GraphEngineOracle + Send + Sync> =
         Arc::new(oracle_handle);
     let (fleet_tx, fleet_rx) = mpsc::sync_channel::<FleetVmCommand>(32);
-    let (effect_tx, mut effect_rx) = tokio::sync::mpsc::unbounded_channel::<EffectBatchRequest>();
+    let (effect_tx, mut effect_rx) = tokio::sync::mpsc::channel::<EffectBatchRequest>(64);
     let fleet_checkpoint_key_srv = fleet_checkpoint_key.clone();
     let projection_records = Arc::new(SharedProjectionRecords::new());
     let governance_host = Arc::new(GovernanceHostController::new(
@@ -1159,28 +1187,79 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
             let http_llm_for_worker = http_llm_client.clone();
             let llm_for_worker = loopback_llm_response.clone();
             let effect_worker = tokio::spawn(async move {
+                let semaphore = Arc::new(tokio::sync::Semaphore::new(
+                    MAX_CONCURRENT_SCHEME_EFFECTS,
+                ));
                 while let Some(batch) = effect_rx.recv().await {
-                    let mut handles = Vec::with_capacity(batch.effects.len());
-                    for eff in batch.effects {
+                    let count = batch.effects.len();
+                    let mut join_set = tokio::task::JoinSet::new();
+                    let mut task_meta: std::collections::HashMap<tokio::task::Id, (usize, String)> =
+                        std::collections::HashMap::with_capacity(count);
+                    for (idx, eff) in batch.effects.into_iter().enumerate() {
+                        let effect_id = match &eff {
+                            SchemeAtomicEffect::CasGet { effect_id, .. }
+                            | SchemeAtomicEffect::CasPut { effect_id, .. }
+                            | SchemeAtomicEffect::SandboxRun { effect_id, .. }
+                            | SchemeAtomicEffect::LlmComplete { effect_id, .. } => {
+                                effect_id.clone()
+                            }
+                        };
                         let cas = cas_for_worker.clone();
                         let sbx = sandbox_for_worker.clone();
                         let gov = Arc::clone(&gov_for_worker);
                         let http_llm = http_llm_for_worker.clone();
                         let llm = llm_for_worker.clone();
-                        handles.push(tokio::spawn(async move {
-                            run_one_atomic_effect(cas, sbx, gov, http_llm, llm, eff).await
-                        }));
+                        let sem = Arc::clone(&semaphore);
+                        let eff_id_for_join = effect_id.clone();
+                        let abort_handle = join_set.spawn(async move {
+                            let Ok(_permit) = sem.acquire_owned().await else {
+                                return (
+                                    idx,
+                                    SchemeAtomicReceipt::EffectError {
+                                        effect_id,
+                                        message: "atomic effect concurrency semaphore closed"
+                                            .to_owned(),
+                                    },
+                                );
+                            };
+                            (
+                                idx,
+                                run_one_atomic_effect(cas, sbx, gov, http_llm, llm, eff).await,
+                            )
+                        });
+                        task_meta.insert(abort_handle.id(), (idx, eff_id_for_join));
                     }
-                    let mut receipts = Vec::with_capacity(handles.len());
-                    for handle in handles {
-                        match handle.await {
-                            Ok(r) => receipts.push(r),
-                            Err(err) => receipts.push(SchemeAtomicReceipt::EffectError {
-                                effect_id: "effect-worker-join".to_owned(),
-                                message: format!("atomic effect task panicked: {err}"),
-                            }),
+                    let mut ordered: Vec<Option<SchemeAtomicReceipt>> =
+                        (0..count).map(|_| None).collect();
+                    while let Some(joined) = join_set.join_next().await {
+                        match joined {
+                            Ok((idx, r)) => {
+                                if let Some(slot) = ordered.get_mut(idx) {
+                                    *slot = Some(r);
+                                }
+                            }
+                            Err(err) => {
+                                if let Some((idx, caller_effect_id)) = task_meta.remove(&err.id())
+                                    && let Some(slot) = ordered.get_mut(idx)
+                                {
+                                    *slot = Some(SchemeAtomicReceipt::EffectError {
+                                        effect_id: caller_effect_id,
+                                        message: format!("atomic effect task panicked: {err}"),
+                                    });
+                                }
+                            }
                         }
                     }
+                    let receipts: Vec<SchemeAtomicReceipt> = ordered
+                        .into_iter()
+                        .enumerate()
+                        .map(|(idx, slot)| {
+                            slot.unwrap_or_else(|| SchemeAtomicReceipt::EffectError {
+                                effect_id: format!("effect-missing-{idx}"),
+                                message: "atomic effect task did not yield a receipt".to_owned(),
+                            })
+                        })
+                        .collect();
                     let _ = batch.reply.send(receipts);
                 }
             });
@@ -1373,7 +1452,8 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                             _ = stop_rx.recv() => break,
                             res = gate_rx.recv() => match res {
                                 Ok(ev) => ev,
-                                Err(_) => break,
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                             }
                         };
                         if gov_for_gate
@@ -1462,7 +1542,8 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                             _ = stop_rx.recv() => break,
                             res = ui_cmd_rx.recv() => match res {
                                 Ok(ev) => ev,
-                                Err(_) => break,
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                             }
                         };
                         if let Some(gov_cmd) = parse_governance_ui_command(&ev.command)

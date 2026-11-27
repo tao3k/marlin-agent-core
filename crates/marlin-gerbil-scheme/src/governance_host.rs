@@ -49,6 +49,33 @@ pub const GOVERNANCE_REARM_GATE_PREFIX: &str = "gov-rearm-epoch-";
 pub const DEFAULT_GOVERNANCE_CHECKPOINT_KEY: &str = "checkpoint:governance-authority:v1";
 pub const GOVERNANCE_FACT_STORE_MAGIC: &[u8; 4] = b"MGF1";
 pub const GOVERNANCE_FACT_STORE_VERSION: u32 = 2;
+/// Maximum entries per `GovernanceFactStore` collection matching `MGF1` deserialization cap (SM30).
+pub const MAX_FACT_STORE_ENTRIES: usize = 4096;
+
+fn constant_time_eq_32(lhs: &[u8], rhs: &[u8; 32]) -> bool {
+    if lhs.len() != 32 {
+        return false;
+    }
+    let mut diff = 0u8;
+    for i in 0..32 {
+        diff |= std::hint::black_box(lhs[i] ^ rhs[i]);
+    }
+    std::hint::black_box(diff) == 0
+}
+
+fn ensure_fact_capacity(
+    current_len: usize,
+    cap: usize,
+    already_present: bool,
+    label: &str,
+) -> Result<(), String> {
+    if !already_present && current_len >= cap {
+        return Err(format!(
+            "governance fact-graph capacity limit reached for {label}: {current_len} >= {cap}"
+        ));
+    }
+    Ok(())
+}
 
 /// Companion Turso CAS key storing the tamper-evident `MGF1` runtime fact-graph checkpoint.
 pub fn fact_store_checkpoint_key(checkpoint_key: &str) -> String {
@@ -362,7 +389,7 @@ impl GovernanceFactStore {
         }
         let (body, tag) = bytes.split_at(bytes.len() - 32);
         let expected = governance_sha256_bytes(body);
-        if tag != expected {
+        if !constant_time_eq_32(tag, &expected) {
             return Err("fact-graph SHA-256 integrity verification mismatch".to_owned());
         }
         let mut cur = FactCursor::new(body);
@@ -581,11 +608,36 @@ impl<'a> FactCursor<'a> {
     }
 }
 
+/// Validates that an RFC 9470 / NIST 800-63 Authentication Context Class Reference (`acr`)
+/// meets the high-assurance human MFA floor required for E-Stop circuit-breaker re-arm (SM30).
+pub fn is_verified_mfa_acr(acr: &str) -> bool {
+    let trimmed = acr.trim();
+    if matches!(
+        trimmed,
+        "urn:ietf:params:oauth:acr:mfa"
+            | "urn:ietf:params:oauth:acr:phr"
+            | "urn:ietf:params:oauth:acr:phrh"
+            | "urn:nist:800-63:aal:2"
+            | "urn:nist:800-63:aal:3"
+    ) {
+        return true;
+    }
+    if let Some(suffix) = trimmed.strip_prefix("urn:marlin:acr:mfa:") {
+        return !suffix.is_empty()
+            && suffix.len() <= 64
+            && suffix
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'));
+    }
+    false
+}
+
 /// Parses RFC 9470 Step-Up attestation from an `ApprovalGateService` human decision note:
 /// `stepup-verified:actor=<human-id>:acr=<acr-uri>`.
 ///
-/// Missing step-up markers, empty ACR, or agent-prefixed identities are classified as
-/// `UnverifiedActor` / `Agent` so `ExecutionCircuitBreaker::rearm` fails closed.
+/// Missing step-up markers, duplicate keys, weak/unallowlisted ACR URNs, or non-human
+/// identities (`agent*`/`bot*`/`llm*`/`worker*`/`scheme-sandbox*`/`system*`/`service*`)
+/// are classified as `UnverifiedActor` / `Agent` so `ExecutionCircuitBreaker::rearm` fails closed.
 pub fn parse_verified_step_up_actor(note: Option<&str>) -> Result<BreakerActor, String> {
     let raw = note.unwrap_or("").trim();
     let Some(rest) = raw.strip_prefix("stepup-verified:") else {
@@ -594,20 +646,41 @@ pub fn parse_verified_step_up_actor(note: Option<&str>) -> Result<BreakerActor, 
         return Ok(BreakerActor::UnverifiedActor(fallback_id));
     };
 
-    let mut actor = String::new();
-    let mut acr = String::new();
+    let mut actor: Option<String> = None;
+    let mut acr: Option<String> = None;
     for segment in rest.split(':') {
         if let Some(v) = segment.strip_prefix("actor=") {
-            actor = v.trim().to_owned();
+            if actor.is_some() {
+                let fallback_id = BreakerActorId::new("duplicate-actor-param")
+                    .map_err(|e| format!("invalid fallback actor: {e}"))?;
+                return Ok(BreakerActor::UnverifiedActor(fallback_id));
+            }
+            actor = Some(v.trim().to_owned());
         } else if let Some(v) = segment.strip_prefix("acr=") {
-            acr = v.trim().to_owned();
-        } else if !acr.is_empty() {
-            // Preserve colons inside URN ACR values (e.g. `urn:ietf:params:oauth:acr:mfa`).
-            acr.push(':');
-            acr.push_str(segment);
+            if acr.is_some() {
+                let fallback_id = BreakerActorId::new("duplicate-acr-param")
+                    .map_err(|e| format!("invalid fallback actor: {e}"))?;
+                return Ok(BreakerActor::UnverifiedActor(fallback_id));
+            }
+            acr = Some(v.trim().to_owned());
+        } else if let Some(acr_buf) = acr.as_mut() {
+            // Preserve colons inside URN ACR values (e.g. `urn:ietf:params:oauth:acr:mfa`),
+            // while still rejecting embedded `key=` smuggling.
+            if segment.contains('=') {
+                let fallback_id = BreakerActorId::new("smuggled-acr-param")
+                    .map_err(|e| format!("invalid fallback actor: {e}"))?;
+                return Ok(BreakerActor::UnverifiedActor(fallback_id));
+            }
+            acr_buf.push(':');
+            acr_buf.push_str(segment);
+        } else {
+            let fallback_id = BreakerActorId::new("unexpected-stepup-segment")
+                .map_err(|e| format!("invalid fallback actor: {e}"))?;
+            return Ok(BreakerActor::UnverifiedActor(fallback_id));
         }
     }
 
+    let actor = actor.unwrap_or_default();
     if actor.is_empty() {
         let fallback_id = BreakerActorId::new("missing-actor")
             .map_err(|e| format!("invalid missing actor id: {e}"))?;
@@ -616,10 +689,14 @@ pub fn parse_verified_step_up_actor(note: Option<&str>) -> Result<BreakerActor, 
 
     let actor_id = BreakerActorId::new(actor.clone()).map_err(|e| format!("invalid actor: {e}"))?;
     let lower = actor.to_ascii_lowercase();
-    if lower.starts_with("agent") || lower.starts_with("bot") || lower.starts_with("llm") {
+    if !infer_actor_roles(&actor).is_empty()
+        || lower.starts_with("system")
+        || lower.starts_with("service")
+    {
         return Ok(BreakerActor::Agent(actor_id));
     }
-    if acr.trim().is_empty() {
+    let acr = acr.unwrap_or_default();
+    if !is_verified_mfa_acr(&acr) {
         return Ok(BreakerActor::UnverifiedActor(actor_id));
     }
     Ok(BreakerActor::VerifiedHuman(actor_id))
@@ -824,15 +901,26 @@ impl GovernanceHostController {
                 )));
             }
             GovernanceUiCommand::DelegateActor { parent, child } => {
-                meta.facts
-                    .delegation_edges
-                    .insert((parent.clone(), child.clone()));
+                let pair = (parent.clone(), child.clone());
+                ensure_fact_capacity(
+                    meta.facts.delegation_edges.len(),
+                    MAX_FACT_STORE_ENTRIES,
+                    meta.facts.delegation_edges.contains(&pair),
+                    "delegation_edges",
+                )?;
+                meta.facts.delegation_edges.insert(pair);
                 (
                     format!("governance_delegate:{parent}->{child}"),
                     format!("delegated {parent} -> {child} (live ASCENT re-eval)"),
                 )
             }
             GovernanceUiCommand::RevokeActor { actor } => {
+                ensure_fact_capacity(
+                    meta.facts.revoked_actors.len(),
+                    MAX_FACT_STORE_ENTRIES,
+                    meta.facts.revoked_actors.contains(actor),
+                    "revoked_actors",
+                )?;
                 meta.facts.revoked_actors.insert(actor.clone());
                 (
                     format!("governance_revoke:{actor}"),
@@ -845,12 +933,29 @@ impl GovernanceHostController {
                 target,
                 dst_scope,
             } => {
+                let flow_pair = (entry.clone(), target.clone());
+                ensure_fact_capacity(
+                    meta.facts.context_entries.len(),
+                    MAX_FACT_STORE_ENTRIES,
+                    meta.facts.context_entries.contains_key(entry),
+                    "context_entries",
+                )?;
+                ensure_fact_capacity(
+                    meta.facts.context_flows.len(),
+                    MAX_FACT_STORE_ENTRIES,
+                    meta.facts.context_flows.contains(&flow_pair),
+                    "context_flows",
+                )?;
+                ensure_fact_capacity(
+                    meta.facts.target_scopes.len(),
+                    MAX_FACT_STORE_ENTRIES,
+                    meta.facts.target_scopes.contains_key(target),
+                    "target_scopes",
+                )?;
                 meta.facts
                     .context_entries
                     .insert(entry.clone(), src_scope.clone());
-                meta.facts
-                    .context_flows
-                    .insert((entry.clone(), target.clone()));
+                meta.facts.context_flows.insert(flow_pair);
                 meta.facts
                     .target_scopes
                     .insert(target.clone(), dst_scope.clone());
@@ -860,6 +965,12 @@ impl GovernanceHostController {
                 )
             }
             GovernanceUiCommand::DeclassifyContext { entry } => {
+                ensure_fact_capacity(
+                    meta.facts.declassified_entries.len(),
+                    MAX_FACT_STORE_ENTRIES,
+                    meta.facts.declassified_entries.contains(entry),
+                    "declassified_entries",
+                )?;
                 meta.facts.declassified_entries.insert(entry.clone());
                 (
                     format!("governance_declassify:{entry}"),
@@ -867,6 +978,12 @@ impl GovernanceHostController {
                 )
             }
             GovernanceUiCommand::RetractPremise { subject } => {
+                ensure_fact_capacity(
+                    meta.facts.retracted_subjects.len(),
+                    MAX_FACT_STORE_ENTRIES,
+                    meta.facts.retracted_subjects.contains(subject),
+                    "retracted_subjects",
+                )?;
                 meta.facts.retracted_subjects.insert(subject.clone());
                 (
                     format!("governance_retract:{subject}"),
@@ -879,7 +996,30 @@ impl GovernanceHostController {
                 mark_source,
                 mark_sink,
             } => {
-                meta.facts.taint_edges.insert((src.clone(), dst.clone()));
+                let edge = (src.clone(), dst.clone());
+                ensure_fact_capacity(
+                    meta.facts.taint_edges.len(),
+                    MAX_FACT_STORE_ENTRIES,
+                    meta.facts.taint_edges.contains(&edge),
+                    "taint_edges",
+                )?;
+                if *mark_source {
+                    ensure_fact_capacity(
+                        meta.facts.taint_sources.len(),
+                        MAX_FACT_STORE_ENTRIES,
+                        meta.facts.taint_sources.contains(src),
+                        "taint_sources",
+                    )?;
+                }
+                if *mark_sink {
+                    ensure_fact_capacity(
+                        meta.facts.taint_sinks.len(),
+                        MAX_FACT_STORE_ENTRIES,
+                        meta.facts.taint_sinks.contains(dst),
+                        "taint_sinks",
+                    )?;
+                }
+                meta.facts.taint_edges.insert(edge);
                 if *mark_source {
                     meta.facts.taint_sources.insert(src.clone());
                 }
@@ -892,6 +1032,12 @@ impl GovernanceHostController {
                 )
             }
             GovernanceUiCommand::AddTaintSanitizer { node } => {
+                ensure_fact_capacity(
+                    meta.facts.taint_sanitizers.len(),
+                    MAX_FACT_STORE_ENTRIES,
+                    meta.facts.taint_sanitizers.contains(node),
+                    "taint_sanitizers",
+                )?;
                 meta.facts.taint_sanitizers.insert(node.clone());
                 (
                     format!("governance_sanitize:{node}"),
@@ -904,6 +1050,12 @@ impl GovernanceHostController {
                 subject_premises,
                 parent_derivations,
             } => {
+                ensure_fact_capacity(
+                    meta.facts.derivations.len(),
+                    MAX_FACT_STORE_ENTRIES,
+                    meta.facts.derivations.contains_key(derivation_id),
+                    "derivations",
+                )?;
                 meta.facts.derivations.insert(
                     derivation_id.clone(),
                     GovernanceDerivationSpec {
@@ -1036,8 +1188,21 @@ impl GovernanceHostController {
         Ok(result)
     }
 
-    /// Gates a real OS `SandboxRun` atomic effect through `GovernanceAdmissionGate`.
+    /// Gates a real OS `SandboxRun` atomic effect through `GovernanceAdmissionGate`,
+    /// enforcing ASCENT fencing, breaker blocks, pinpoint Cedar forbids, AND registered
+    /// `Marlin::Scope::"..."` `unless`-clause policies on the target program/resource.
     pub fn authorize_sandbox_effect(&self, actor: &str, program: &str) -> Result<(), String> {
+        self.authorize_sandbox_effect_on_resource(actor, program, program)
+    }
+
+    /// Resource-explicit variant of `authorize_sandbox_effect` for callers passing a
+    /// target resource identity distinct from the executable program name.
+    pub fn authorize_sandbox_effect_on_resource(
+        &self,
+        actor: &str,
+        program: &str,
+        resource: &str,
+    ) -> Result<(), String> {
         let actor_id = GovernedSubjectName::new(if actor.trim().is_empty() {
             "scheme-sandbox-worker"
         } else {
@@ -1050,10 +1215,49 @@ impl GovernanceHostController {
             program.trim()
         })
         .map_err(|e| format!("invalid sandbox tool: {e}"))?;
+        let resource_id = GovernedSubjectName::new(if resource.trim().is_empty() {
+            tool_id.as_str()
+        } else {
+            resource.trim()
+        })
+        .map_err(|e| format!("invalid sandbox resource: {e}"))?;
         self.gate
-            .authorize_side_effect(None, &actor_id, &tool_id, &ToolIfcContext::clean_trusted())
+            .authorize_side_effect_on_resource(
+                None,
+                &actor_id,
+                &tool_id,
+                &resource_id,
+                &ToolIfcContext::clean_trusted(),
+            )
             .map(|_| ())
             .map_err(|e| format!("governance denied sandbox execution: {e}"))
+    }
+
+    /// Gates an external `LlmComplete` atomic effect through `GovernanceAdmissionGate`,
+    /// failing closed under active Operator E-Stop, ASCENT fences, or Cedar forbids (SM30).
+    pub fn authorize_llm_effect(&self, actor: &str, tool: &str) -> Result<(), String> {
+        let actor_id = GovernedSubjectName::new(if actor.trim().is_empty() {
+            "scheme-llm-worker"
+        } else {
+            actor.trim()
+        })
+        .map_err(|e| format!("invalid llm actor: {e}"))?;
+        let tool_id = GovernedSubjectName::new(if tool.trim().is_empty() {
+            "llm-complete"
+        } else {
+            tool.trim()
+        })
+        .map_err(|e| format!("invalid llm tool: {e}"))?;
+        self.gate
+            .authorize_side_effect_on_resource(
+                None,
+                &actor_id,
+                &tool_id,
+                &tool_id,
+                &ToolIfcContext::clean_trusted(),
+            )
+            .map(|_| ())
+            .map_err(|e| format!("governance denied llm completion: {e}"))
     }
 
     /// Persists BOTH the tamper-evident `MGV1` governance gate checkpoint AND the companion
@@ -1285,8 +1489,23 @@ impl GovernanceHostController {
 
         match self.gate.rearm_by_verified_human(actor) {
             Ok((receipt, _snap)) => {
-                if let (Some(store), Some(key)) = (cas, checkpoint_key) {
-                    let _ = self.persist_to_cas(store, key).await;
+                if let (Some(store), Some(key)) = (cas, checkpoint_key)
+                    && let Err(persist_err) = self.persist_to_cas(store, key).await
+                {
+                    let msg = format!(
+                        "step-up re-arm aborted fail-closed (durable CAS persist failed): {persist_err}"
+                    );
+                    let _ = self.gate.trip_operator_estop(
+                        "governance-host",
+                        &format!("rearm-cas-persist-failed:{persist_err}"),
+                    );
+                    if let Ok(snap) = self.gate.snapshot()
+                        && snap.breaker.tripped
+                    {
+                        self.rotate_rearm_gate(host, snap.breaker.trip_epoch.get(), &msg);
+                    }
+                    let _ = self.publish_snapshot(host, "governance_rearm_persist_failed", &msg);
+                    return true;
                 }
                 {
                     let mut meta = self.meta.lock().expect("host governance meta poisoned");
@@ -1803,9 +2022,11 @@ fn encode_snapshot_facets(
     );
     facets.insert(
         "last_cedar_probe_json".to_owned(),
-        last_probe
-            .and_then(|p| serde_json::to_string(p).ok())
-            .unwrap_or_default(),
+        match last_probe {
+            Some(p) => serde_json::to_string(p)
+                .unwrap_or_else(|e| format!("{{\"serialization_error\":{e:?}}}")),
+            None => String::new(),
+        },
     );
     facets.insert("last_event_note".to_owned(), note.to_owned());
     facets
@@ -2358,5 +2579,90 @@ mod tests {
                 "hostile UI command {hostile:?} must be rejected fail-closed"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn mgv1_v2_preserves_sandbox_external_scope_unless_enforcement_without_facts_blob() {
+        use marlin_agent_storage::{AgentId, InMemoryAgentStorage, ProjectId, SessionId};
+
+        let storage = InMemoryAgentStorage::default();
+        let cas = StorageCasStore::new(
+            storage,
+            ProjectId::new("default").unwrap(),
+            SessionId::new("sess-mgv1-v2-scope").unwrap(),
+            AgentId::new("agent-mgv1-v2-scope").unwrap(),
+        );
+        let key = "checkpoint:gov-scope-mgv1-v2";
+
+        let host1 = MyGoBridgeHost::new_default_trust(|_| Ok(()));
+        let ctrl1 = GovernanceHostController::new(8, Arc::new(SharedProjectionRecords::new()));
+        let d = |ch: char| format!("sha256:{}", std::iter::repeat_n(ch, 64).collect::<String>());
+        let proj = GovernancePolicyVectorProjection {
+            schema_version: 1,
+            admitted: true,
+            revocation_epoch: 2,
+            policy_revision: 1,
+            assessment_digest: d('a'),
+            taint_proof_digest: d('b'),
+            fixpoint_proof_digest: d('c'),
+            temporal_proof_digest: d('d'),
+            invalidation_digest: d('e'),
+            rejection_reasons: Vec::new(),
+            fenced_actors: Vec::new(),
+            blocked_tools: Vec::new(),
+            retracted_conclusions: Vec::new(),
+            cedar_policies: vec![(
+                "marlin.ascent.forbid.scope.external-unless-declassified".to_owned(),
+                "forbid (principal, action, resource in Marlin::Scope::\"external\") unless { context.declassified == true };".to_owned(),
+            )],
+        };
+        let _ = ctrl1
+            .mutate_facts_and_build_request(&GovernanceUiCommand::ContextFlow {
+                entry: "public-report".to_owned(),
+                src_scope: "workspace".to_owned(),
+                target: "ext-curl".to_owned(),
+                dst_scope: "external".to_owned(),
+            })
+            .unwrap();
+        ctrl1
+            .apply_scheme_projection_durable(
+                &host1,
+                Some(&cas),
+                Some(key),
+                &proj,
+                "scope-seed",
+                "seed external scope",
+            )
+            .await
+            .unwrap();
+
+        // Simulate reboot where ONLY `MGV1` v2 is persisted (companion `MGF1` `:facts` key absent!).
+        let mgv1_bytes = cas.get_blob(key).await.unwrap().unwrap();
+        let mgv1_only_key = "checkpoint:gov-scope-mgv1-only";
+        cas.put_blob(mgv1_only_key, mgv1_bytes).await.unwrap();
+
+        let host2 = MyGoBridgeHost::new_default_trust(|_| Ok(()));
+        let ctrl2 = GovernanceHostController::new(8, Arc::new(SharedProjectionRecords::new()));
+        let (_, mode2) = ctrl2
+            .restore_from_cas(&host2, &cas, mgv1_only_key)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(mode2, "restored");
+
+        // Sandbox execution targeting `ext-curl` MUST STILL be denied by `MGV1` v2's persisted
+        // `resource_scopes` + `marlin.ascent.forbid.scope.external-unless-declassified`!
+        let err = ctrl2
+            .authorize_sandbox_effect("ops-bob", "ext-curl")
+            .expect_err("MGV1 v2 must preserve external-scope sandbox denial even without MGF1");
+        assert!(
+            err.contains("marlin.ascent.forbid.scope.external-unless-declassified"),
+            "unexpected sandbox denial message: {err}"
+        );
+
+        // Non-external sandbox binary remains admitted.
+        ctrl2
+            .authorize_sandbox_effect("ops-bob", "/bin/echo")
+            .expect("non-external sandbox program should remain admitted");
     }
 }
