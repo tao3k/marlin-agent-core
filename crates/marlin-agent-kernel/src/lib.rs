@@ -7,8 +7,11 @@
 mod adapters;
 mod controller;
 mod driver;
+pub mod confidential_enclave;
 pub mod context_distillation;
+pub mod defense_pillar_coordinator;
 pub mod execution_breaker;
+pub mod federated_org_reciprocity;
 pub mod geo_residency_sovereignty;
 pub mod governance_admission;
 pub mod governance_cedar;
@@ -64,9 +67,21 @@ pub use governance_plane::{
     GovernanceTenantId, MultiTenantIsolationFence, PrivilegedHumanReceipt, SodProposalRecord,
     TenantExecutionTicket, TenantExecutionTicketId, TenantOutboxEntry, TenantOutboxEntryId,
 };
+pub use confidential_enclave::{
+    ConfidentialEnclaveGate, ConfidentialEnclaveRejection, EnclaveAttestationQuote,
+    EnclaveKeyReleaseReceipt,
+};
 pub use context_distillation::{
     ContextDistillationGate, ContextDistillationReceipt, ContextDistillationRejection,
     ContextSegment, DistilledContextPacket, EpistemicIntegrity, SecrecyClass,
+};
+pub use defense_pillar_coordinator::{
+    UnifiedDefensePillarCoordinator, UnifiedDefenseRejection, UnifiedDefenseReleaseCertificate,
+    UnifiedDefenseReleaseClaim,
+};
+pub use federated_org_reciprocity::{
+    BilateralTreaty, FederatedOpClaim, FederatedOpReceipt, FederatedOrgReciprocityGate,
+    FederatedOrgRejection,
 };
 pub use geo_residency_sovereignty::{
     CrossBorderPermit, GeoPlacementClaim, GeoPlacementReceipt, GeoResidencyRejection,
