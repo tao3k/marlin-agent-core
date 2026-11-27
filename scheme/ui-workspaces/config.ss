@@ -26,5 +26,23 @@
     workspace-buffers: marlin-ws-buffers
     all-workspace-buffers: marlin-ws-all-buffers
     isolate-buffer-candidates: marlin-ws-isolate-candidates
+    window-list: marlin-ws-window-list
+    window-count: marlin-ws-window-count
+    focused-window: marlin-ws-focused-window
+    window-number: marlin-ws-window-number
+    focused-window-number: marlin-ws-focused-window-number
+    split-window: marlin-ws-split-window
+    select-window-number: marlin-ws-select-window-number
+    other-window: marlin-ws-other-window
+    delete-window: marlin-ws-delete-window
+    delete-other-windows: marlin-ws-delete-other-windows
+    swap-windows: marlin-ws-swap-windows
+    resize-window: marlin-ws-resize-window
+    balance-windows: marlin-ws-balance-windows
+    toggle-dedicated: marlin-ws-toggle-dedicated
+    winner-undo: marlin-ws-winner-undo
+    winner-redo: marlin-ws-winner-redo
+    modeline-window-indicator: marlin-ws-modeline-window-indicator
+    project-window-tree: marlin-ws-project-window-tree
     project-state: marlin-ws-project-state
     project-popup-rules: marlin-ws-project-popup-rules))

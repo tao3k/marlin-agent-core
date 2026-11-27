@@ -36,6 +36,8 @@
           layout-kind: [MygoLayoutKind]
           allowed-runtimes: [(List MygoPanelRuntime)]
           device-protocols: [(List Symbol)]
+          shared-modules: [(List Symbol)]
+          target-modules: [(List Symbol)]
           slots: [(List MygoSlotDeclarationContract)]))
 
 (def UiMygoScopeContract
@@ -43,7 +45,9 @@
                profile-for: [(Fun MygoProfileOverlayContract <- MygoTargetKind)]
                layout-scope-for: [(Fun Object <- MygoTargetKind)]
                slot-declarations-for: [(Fun (List MygoSlotDeclarationContract) <- MygoTargetKind)]
+               modules-for: [(Fun (List Symbol) <- MygoTargetKind)]
                admit-plugin-slot?: [(Fun Bool <- MygoTargetKind Symbol MygoPanelRuntime Bool)]
                project-profile-overlay: [(Fun MygoVector <- MygoTargetKind)]
+               project-surface-manifest: [(Fun MygoVector <- MygoTargetKind)]
                make-mygo-ui-scope: [(Fun Object <- MygoTargetKind)])
        identity: 'marlin/ui-mygo))

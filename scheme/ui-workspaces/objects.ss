@@ -2,10 +2,11 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-;;; POO prototypes for Doom Emacs-style popup rules (set-popup-rule!) and
-;;; isolated perspective workspaces (persp-mode / :ui workspaces).
+;;; POO prototypes for Doom Emacs-style popup rules (set-popup-rule!),
+;;; recursive multi-window trees (winum + winner-mode + dedicated windows),
+;;; and isolated perspective workspaces (persp-mode / :ui workspaces).
 (import (only-in :clan/poo/object .def .o seal-object!))
-(export PopupRule. Workspace. DefaultPopupRules)
+(export PopupRule. WindowLeaf. WindowSplit. Workspace. DefaultPopupRules)
 
 ;;; Base POO prototype for a declarative popup window rule.
 (.def PopupRule.
@@ -18,7 +19,24 @@
   ttl: 'ephemeral
   modeline?: #f)
 
-;;; Base POO prototype for one isolated perspective workspace.
+;;; Leaf window inside a workspace's window tree (mirrors an Emacs live window).
+;;; dedicated? is #f (normal), 'weak, or 'strong (Emacs 30 toggle-window-dedicated).
+(.def WindowLeaf.
+  kind: 'leaf
+  id: "w1"
+  buffer: "*Dashboard*"
+  dedicated?: #f)
+
+;;; Binary split node inside a workspace's window tree.
+;;; direction is 'vertical (left | right) or 'horizontal (top / bottom).
+(.def WindowSplit.
+  kind: 'split
+  direction: 'vertical
+  ratio: 0.50
+  first: #f
+  second: #f)
+
+;;; Base POO prototype for one isolated perspective workspace (persp-mode).
 (.def Workspace.
   id: "main"
   name: "main"
@@ -29,7 +47,12 @@
   popup-rule: #f
   popup-visible?: #f
   last-popup-buffer: #f
-  layout-mode: 'single)
+  layout-mode: 'single
+  window-tree: #f
+  focused-window-id: "w1"
+  next-window-seq: 1
+  winner-undo: '()
+  winner-redo: '())
 
 ;;; Curated Doom Emacs popup rules keeping auxiliary buffers out of the main
 ;;; editing/conversation layout while preserving instant dismiss & raise.

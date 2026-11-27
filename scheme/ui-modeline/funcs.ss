@@ -62,6 +62,13 @@
   (def mode
     (ui-choice (list (list 'normal-mode (mode-label " NORMAL " " [N] ")))
                (mode-label " INSERT " " [I] ")))
+  ;; Doom Emacs window-number segment: rendered directly alongside the modal
+  ;; state indicator ONLY when multiple windows are open (never "W1" on single).
+  (def window-number
+    (ui-template 'none
+      (list (list 'literal 'accent #t " ")
+            (list 'binding 'accent #t 'window-number)
+            (list 'literal 'accent #t " "))))
   (let* ((slot (lambda (identity-value)
                  (or (find (lambda (entry) (eq? (.get entry identity) identity-value)) nodes)
                      (error "missing modeline entry" identity-value))))
@@ -128,4 +135,6 @@
                                      (dynamic entry (.get entry label) value-name tail-value)
                                      (dynamic entry (.get entry compact) value-name tail-value))))))
                         (else '())))) nodes))))
-    (ui-bar 'bar 3 (append segments (list (list 'left 0 0 #f mode))))))
+    (ui-bar 'bar 3 (append segments
+                           (list (list 'left 0 0 #f mode)
+                                 (list 'left 0 0 'multi-window window-number))))))

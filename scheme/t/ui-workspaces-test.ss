@@ -85,4 +85,52 @@
         (check-equal? (vector-ref first-rule 2) 'right)
         (check-equal? (vector-ref first-rule 3) 0.45)
         (check-equal? (vector-ref first-rule 5) 'other)
-        (check-equal? (vector-ref first-rule 6) 'session)))))
+        (check-equal? (vector-ref first-rule 6) 'session)))
+
+    (test-case "Doom multi-window tree, winum numbering, dedicated pin, winner-mode & modeline indicator"
+      (let* ((s0 ((.get ui-ws make-state)))
+             ;; Single window -> Doom modeline hides window number (never "W1").
+             (_ (check-equal? ((.get ui-ws window-count) s0) 1))
+             (_ (check-equal? ((.get ui-ws modeline-window-indicator) s0 "w1" #f) ""))
+             (_ (check-equal? ((.get ui-ws modeline-window-indicator) s0 "w1" #t) ""))
+             ;; Vertical split -> 2 windows: w1=1 (*Dashboard*), w2=2 (*conversation*, focused).
+             (s1 ((.get ui-ws split-window) s0 'vertical "*conversation*"))
+             (_ (check-equal? ((.get ui-ws window-count) s1) 2))
+             (_ (check-equal? ((.get ui-ws focused-window-number) s1) 2))
+             (_ (check-equal? ((.get ui-ws modeline-window-indicator) s1 "w1" #f) "1"))
+             (_ (check-equal? ((.get ui-ws modeline-window-indicator) s1 "w2" #f) "2"))
+             (_ (check-equal? ((.get ui-ws modeline-window-indicator) s1 "w2" #t) "➋"))
+             ;; Nested horizontal split inside window 2 -> 3 windows (1, 2, 3)!
+             (s2 ((.get ui-ws split-window) s1 'horizontal "*Sessions*"))
+             (_ (check-equal? ((.get ui-ws window-count) s2) 3))
+             (_ (check-equal? ((.get ui-ws focused-window-number) s2) 3))
+             (_ (check-equal? (.get ((.get ui-ws focused-window) s2) buffer) "*Sessions*"))
+             ;; Direct winum jump: SPC w 1 focuses window 1 (*Dashboard*).
+             (s3 ((.get ui-ws select-window-number) s2 1))
+             (_ (check-equal? ((.get ui-ws focused-window-number) s3) 1))
+             (_ (check-equal? (.get ((.get ui-ws focused-window) s3) buffer) "*Dashboard*"))
+             ;; Toggle strong window dedication on window 1 -> opening *Packages* preserves window 1!
+             (s4 ((.get ui-ws toggle-dedicated) s3))
+             (s5 ((.get ui-ws open-buffer) s4 "*Packages*"))
+             (_ (check-equal? (.get (car ((.get ui-ws window-list) s5)) buffer) "*Dashboard*"))
+             (_ (check-equal? (.get ((.get ui-ws focused-window) s5) buffer) "*Packages*"))
+             ;; Per-workspace isolation: new workspace starts clean 1-window, switching back restores 3-window tree!
+             (s6 ((.get ui-ws create-workspace) s5 "lab" "Lab" "/repo/lab"))
+             (_ (check-equal? ((.get ui-ws window-count) s6) 1))
+             (s7 ((.get ui-ws switch-workspace) s6 "main"))
+             (_ (check-equal? ((.get ui-ws window-count) s7) 3))
+             ;; Delete other windows (SPC w o) collapses to 1 window, winner-undo (SPC w u) restores 3 windows!
+             (s8 ((.get ui-ws delete-other-windows) s7))
+             (_ (check-equal? ((.get ui-ws window-count) s8) 1))
+             (_ (check-equal? ((.get ui-ws modeline-window-indicator) s8 (.get ((.get ui-ws focused-window) s8) id) #f) ""))
+             (s9 ((.get ui-ws winner-undo) s8))
+             (_ (check-equal? ((.get ui-ws window-count) s9) 3))
+             (s10 ((.get ui-ws winner-redo) s9))
+             (_ (check-equal? ((.get ui-ws window-count) s10) 1))
+             ;; Close-window-or-workspace: closing last window in non-main workspace "lab" kills "lab".
+             (s11 ((.get ui-ws switch-workspace) s10 "lab"))
+             (s12 ((.get ui-ws delete-window) s11))
+             (tree-proj ((.get ui-ws project-window-tree) s9)))
+        (check-equal? (vector-ref ((.get ui-ws project-state) s12) 1) "main")
+        (check-equal? (vector-ref tree-proj 0) 'window-tree)
+        (check-equal? (vector-ref tree-proj 2) 3)))))

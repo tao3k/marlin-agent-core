@@ -35,18 +35,28 @@
         (make-slot 'workbench.tool-card 'keyed 'host.tool-card #t)
         (make-slot 'approval.gate 'single 'host.gate #f)))
 
+(def MygoSharedCoreModules
+  '(ui-themes ui-transcript ui-helm ui-chatroom ui-promptgate ui-models))
+
+(def MygoDesktopWorkbenchModules
+  '(ui-workspaces ui-window-tree ui-modeline ui-centaur-tabs
+    ui-meow ui-hydra ui-minibuffer ui-dashboard-bento ui-workflow-canvas))
+
 (.def MygoBaseProfile.
   target-kind: 'remote-headless
   layout-kind: 'desktop-split
   allowed-runtimes: '(declarative)
   device-protocols: '()
+  shared-modules: MygoSharedCoreModules
+  target-modules: '()
   slots: MygoBaseSlots)
 
 (.def (MygoDesktopMacosProfile. @ MygoBaseProfile.)
   target-kind: 'desktop-macos
   layout-kind: 'desktop-split
   allowed-runtimes: '(declarative webview-untrusted wasm-ui-ir mygo-js-wasm)
-  device-protocols: '(device.desktop.clipboard device.desktop.notifications device.desktop.files-picker))
+  device-protocols: '(device.desktop.clipboard device.desktop.notifications device.desktop.files-picker)
+  target-modules: MygoDesktopWorkbenchModules)
 
 (.def (MygoDesktopLinuxProfile. @ MygoDesktopMacosProfile.)
   target-kind: 'desktop-linux)
@@ -60,17 +70,20 @@
   target-kind: 'mobile-ios
   layout-kind: 'mobile-stack
   allowed-runtimes: '(declarative)
-  device-protocols: '(device.ios.photos device.ios.eventkit device.ios.contacts device.ios.voice device.ios.share-extension))
+  device-protocols: '(device.ios.photos device.ios.eventkit device.ios.contacts device.ios.voice device.ios.share-extension)
+  target-modules: '(ui-ios-tabbar ui-ios-sheets ui-ios-bento))
 
 ;;; Android Personal Assistant Overlay: Play Store safe declarative packs + platform.android device protocols.
 (.def (MygoAndroidPersonalProfile. @ MygoBaseProfile.)
   target-kind: 'mobile-android
   layout-kind: 'mobile-stack
   allowed-runtimes: '(declarative)
-  device-protocols: '(device.android.content-resolver device.android.notifications device.android.intents))
+  device-protocols: '(device.android.content-resolver device.android.notifications device.android.intents)
+  target-modules: '(ui-android-material3 ui-android-nav))
 
 (.def (MygoRemoteHeadlessProfile. @ MygoBaseProfile.)
   target-kind: 'remote-headless
   layout-kind: 'desktop-split
   allowed-runtimes: '(declarative)
-  device-protocols: '())
+  device-protocols: '()
+  target-modules: '(ui-workspaces ui-modeline))

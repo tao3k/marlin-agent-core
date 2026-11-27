@@ -73,4 +73,22 @@
         ;; Fourth slot is approval.gate owned by host.gate with allow-untrusted = #f
         (check-equal? (vector-ref (vector-ref (vector-ref overlay-vec 5) 3) 0) 'approval.gate)
         (check-equal? (vector-ref (vector-ref (vector-ref overlay-vec 5) 3) 2) 'host.gate)
-        (check-equal? (vector-ref (vector-ref (vector-ref overlay-vec 5) 3) 3) #f)))))
+        (check-equal? (vector-ref (vector-ref (vector-ref overlay-vec 5) 3) 3) #f)))
+
+    (test-case "Declarative surface module manifest exposes shared core vs platform-specific modules"
+      (let ((mac-mods ((.get ui-mygo modules-for) 'desktop-macos))
+            (ios-mods ((.get ui-mygo modules-for) 'mobile-ios))
+            (and-mods ((.get ui-mygo modules-for) 'mobile-android))
+            (mac-manifest ((.get ui-mygo project-surface-manifest) 'desktop-macos))
+            (ios-manifest ((.get ui-mygo project-surface-manifest) 'mobile-ios)))
+        ;; Shared core modules (ui-chatroom, ui-transcript, ui-helm, ui-themes) appear on every surface
+        (check-equal? (and (memq 'ui-chatroom mac-mods) (memq 'ui-chatroom ios-mods) (memq 'ui-chatroom and-mods) #t) #t)
+        ;; Desktop mounts Doom multi-window + modeline modules; Mobile mounts compact native chrome
+        (check-equal? (and (memq 'ui-workspaces mac-mods) (memq 'ui-window-tree mac-mods) (memq 'ui-modeline mac-mods) #t) #t)
+        (check-equal? (memq 'ui-window-tree ios-mods) #f)
+        (check-equal? (and (memq 'ui-ios-tabbar ios-mods) #t) #t)
+        (check-equal? (and (memq 'ui-android-material3 and-mods) #t) #t)
+        ;; Projected Scheme vectors carry shared vs target-specific module tuples
+        (check-equal? (vector-ref mac-manifest 0) 'mygo-surface-manifest)
+        (check-equal? (vector-ref mac-manifest 1) 'desktop-macos)
+        (check-equal? (vector-ref ios-manifest 1) 'mobile-ios)))))

@@ -25,8 +25,10 @@
         marlin-mygo-layout-policy-for
         marlin-mygo-layout-scope-for
         marlin-mygo-slot-declarations-for
+        marlin-mygo-modules-for
         marlin-mygo-admit-plugin-slot?
         marlin-mygo-project-overlay
+        marlin-mygo-project-surface-manifest
         marlin-mygo-make-ui-scope)
 
 (def mygo-panel-title
@@ -49,6 +51,13 @@
 
 (def (marlin-mygo-slot-declarations-for target-kind)
   (.get (marlin-mygo-profile-for target-kind) slots))
+
+;;; Return the full ordered list of declarative UI modules mounted on target-kind
+;;; (shared cross-platform core modules followed by target-specific chrome modules).
+(def (marlin-mygo-modules-for target-kind)
+  (let ((profile (marlin-mygo-profile-for target-kind)))
+    (append (.get profile shared-modules)
+            (.get profile target-modules))))
 
 ;;; Enforce BOTH target runtime allowlist (e.g. App Store declarative-only on iOS)
 ;;; AND slot trust boundary (approval.gate never mounts untrusted plugins).
@@ -108,6 +117,16 @@
 (def (marlin-mygo-make-ui-scope target-kind)
   (make-ui-scope UiComponentsScope UiModelineScope UiTranscriptScope
                  UiThemesScope (marlin-mygo-layout-scope-for target-kind)))
+
+;;; Native Scheme vector projection of shared vs target-specific UI modules
+;;; crossing C ABI / gRPC into MyGo surfaces (Desktop, iOS, Android).
+(def (marlin-mygo-project-surface-manifest target-kind)
+  (let ((profile (marlin-mygo-profile-for target-kind)))
+    (vector 'mygo-surface-manifest
+            (.get profile target-kind)
+            (.get profile layout-kind)
+            (list->vector (.get profile shared-modules))
+            (list->vector (.get profile target-modules)))))
 
 ;;; Native Scheme vector projection crossing C ABI into Rust (zero text serialization).
 (def (marlin-mygo-project-overlay target-kind)

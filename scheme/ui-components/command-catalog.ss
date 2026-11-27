@@ -47,6 +47,22 @@
                        ("task-tab-focus" "Focus an active TaskActor tab by ID" required scheme-action "task-tab-focus")
                        ("task-tab-peek" "Open a read-only peek tab for an archived task ID" required scheme-action "task-tab-peek")
                        ("task-tab-unpeek" "Close a read-only peek tab by task ID" required scheme-action "task-tab-unpeek"))))
+;;; Doom Emacs canonical window, winum, winner-mode, popup & persp-mode commands.
+(.def WindowWorkspaceCommands.
+  (entries => append '(("split-window-right" "Split focused window vertically left | right (SPC w v)" none scheme-action "window-split-right")
+                       ("split-window-below" "Split focused window horizontally top / bottom (SPC w s)" none scheme-action "window-split-below")
+                       ("other-window" "Cycle focus to next window in winum order (SPC w w)" none scheme-action "window-other")
+                       ("delete-window" "Close focused window or non-main workspace (SPC w d)" none scheme-action "window-delete")
+                       ("delete-other-windows" "Collapse split panes to focused window (SPC w o)" none scheme-action "window-only")
+                       ("swap-window-panes" "Swap focused window with next window (SPC w x)" none scheme-action "window-swap")
+                       ("balance-windows" "Reset all split ratios to 50/50 (SPC w =)" none scheme-action "window-balance")
+                       ("toggle-window-dedicated" "Pin or unpin focused window to its buffer (SPC w t)" none scheme-action "window-toggle-dedicated")
+                       ("winner-undo" "Undo previous window layout in active workspace (SPC w u)" none scheme-action "winner-undo")
+                       ("winner-redo" "Redo undone window layout in active workspace (SPC w U)" none scheme-action "winner-redo")
+                       ("popup-toggle" "Toggle active workspace's Doom popup drawer (SPC ~)" none scheme-action "popup-toggle")
+                       ("popup-raise" "Promote active popup drawer into a main window (SPC w r)" none scheme-action "popup-raise")
+                       ("workspace-new" "Create a new isolated persp-mode workspace (SPC TAB n)" none scheme-action "workspace-new")
+                       ("workspace-kill" "Kill active workspace if others remain (SPC TAB d)" none scheme-action "workspace-kill"))))
 ;;; The inherited slot computes one ordered catalog when the selected module reads it.
 (def marlin-ui-command-catalog
-  (seal-object! (.mix TaskTabCommands. WorkspaceCommands. JournalCommands. UiCommandCatalog.)))
+  (seal-object! (.mix WindowWorkspaceCommands. TaskTabCommands. WorkspaceCommands. JournalCommands. UiCommandCatalog.)))

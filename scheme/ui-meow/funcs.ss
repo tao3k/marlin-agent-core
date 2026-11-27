@@ -40,7 +40,8 @@
       (list spelling description 'normal)
       (list spelling
             (or (and (equal? prefix '(SPC))
-                     (assget key '((b . "Buffers") (c . "Control") (m . "Meta") (t . "Themes"))))
+                     (assget key '((b . "Buffers") (c . "Control") (m . "Meta")
+                                   (t . "Themes") (w . "Windows") (TAB . "Workspaces"))))
                 "More bindings")
             'info))))
 

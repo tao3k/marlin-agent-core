@@ -53,7 +53,7 @@
 (def KeyBindings
   (.cc Type. .element?:
     (lambda (bindings)
-      (and (bounded-list? bindings 128) (andmap binding? bindings)))))
+      (and (bounded-list? bindings 192) (andmap binding? bindings)))))
 
 (def KeypadAliases
   (.cc Type. .element?:

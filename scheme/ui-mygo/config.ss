@@ -13,6 +13,8 @@
     profile-for: marlin-mygo-profile-for
     layout-scope-for: marlin-mygo-layout-scope-for
     slot-declarations-for: marlin-mygo-slot-declarations-for
+    modules-for: marlin-mygo-modules-for
     admit-plugin-slot?: marlin-mygo-admit-plugin-slot?
     project-profile-overlay: marlin-mygo-project-overlay
+    project-surface-manifest: marlin-mygo-project-surface-manifest
     make-mygo-ui-scope: marlin-mygo-make-ui-scope))
