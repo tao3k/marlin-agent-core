@@ -30,6 +30,12 @@ pub const MAX_ACTIVE_SOURCE_LEASES: usize = 64;
 /// Maximum retained spent nonces per coordinator epoch before rotation.
 pub const MAX_RETAINED_NONCES: usize = 4096;
 
+/// Maximum registered governed Org sources held concurrently by one ledger.
+pub const MAX_GOVERNED_SOURCES: usize = 256;
+
+/// Maximum UTF-8 byte length accepted for a single governed subtree replacement body (1 MiB).
+pub const MAX_GOVERNED_REPLACEMENT_BYTES: usize = 1024 * 1024;
+
 macro_rules! gov_id {
     ($name:ident, $label:literal) => {
         #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -38,7 +44,10 @@ macro_rules! gov_id {
         impl $name {
             pub fn new(value: impl Into<String>) -> Result<Self, OrgGovernanceError> {
                 let value = value.into();
-                if value.is_empty() || value.chars().take(257).count() > 256 {
+                if value.trim().is_empty()
+                    || value.chars().any(char::is_control)
+                    || value.chars().take(257).count() > 256
+                {
                     return Err(OrgGovernanceError::InvalidIdentifier($label));
                 }
                 Ok(Self(value))
@@ -299,6 +308,14 @@ pub enum OrgGovernanceError {
     Utf8BoundaryMismatch,
     #[error("spent governance nonce table exhausted; rotate epoch")]
     NonceCapacityExhausted,
+    #[error("Org snapshot generation rollback rejected (current={current}, incoming={incoming})")]
+    GenerationRollback { current: u16, incoming: u16 },
+    #[error("cannot replace governed Org snapshot while active region leases remain open")]
+    ActiveLeasesPresent,
+    #[error("governed Org source table capacity reached")]
+    SourceCapacityExhausted,
+    #[error("governed Org subtree replacement exceeds maximum size of {limit} bytes")]
+    ReplacementTooLarge { limit: usize },
 }
 
 /// Pluggable subtree digest & body-safety verifier.
@@ -340,7 +357,26 @@ impl<V: SubtreeSemanticVerifier> OrgGovernanceLedger<V> {
         &mut self,
         snapshot: GovernedOrgSnapshot,
     ) -> Result<(), OrgGovernanceError> {
+        if let Some(existing) = self.sources.get(&snapshot.source_id) {
+            if existing.generation >= snapshot.generation {
+                return Err(OrgGovernanceError::GenerationRollback {
+                    current: existing.generation.get(),
+                    incoming: snapshot.generation.get(),
+                });
+            }
+            if self.active_lease_count(&snapshot.source_id) > 0 {
+                return Err(OrgGovernanceError::ActiveLeasesPresent);
+            }
+        } else if self.sources.len() >= MAX_GOVERNED_SOURCES {
+            return Err(OrgGovernanceError::SourceCapacityExhausted);
+        }
         for desc in snapshot.anchors.values() {
+            GovernedSectionSpan::new(
+                desc.span.container_start,
+                desc.span.drawer_end,
+                desc.span.body_end,
+                desc.span.container_end,
+            )?;
             if desc.span.container_end > snapshot.source.len()
                 || !snapshot.source.is_char_boundary(desc.span.container_start)
                 || !snapshot.source.is_char_boundary(desc.span.drawer_end)
@@ -466,6 +502,11 @@ impl<V: SubtreeSemanticVerifier> OrgGovernanceLedger<V> {
             rebased: false,
         };
 
+        if proposal.replacement_body.len() > MAX_GOVERNED_REPLACEMENT_BYTES {
+            return Err(OrgGovernanceError::ReplacementTooLarge {
+                limit: MAX_GOVERNED_REPLACEMENT_BYTES,
+            });
+        }
         if self.consumed_nonces.contains(&proposal.nonce) {
             return Ok(reject(GovernanceRejectionReason::NonceAlreadyConsumed));
         }
@@ -483,6 +524,9 @@ impl<V: SubtreeSemanticVerifier> OrgGovernanceLedger<V> {
             || lease.session_id != proposal.session_id
         {
             return Ok(reject(GovernanceRejectionReason::LeaseNotFoundOrMismatch));
+        }
+        if lease.expected_subtree_digest != proposal.expected_subtree_digest {
+            return Ok(reject(GovernanceRejectionReason::SubtreeDigestMismatch));
         }
 
         let Some(snapshot) = self.sources.get(&proposal.source_id) else {
@@ -539,11 +583,19 @@ impl<V: SubtreeSemanticVerifier> OrgGovernanceLedger<V> {
         let mut next_anchors = HashMap::with_capacity(snapshot.anchors.len());
         for (prop_id, mut desc) in snapshot.anchors.clone() {
             if prop_id == proposal.target_property_id {
+                let next_body_end = span
+                    .drawer_end
+                    .checked_add(new_body_len)
+                    .ok_or(OrgGovernanceError::Utf8BoundaryMismatch)?;
+                let next_container_end = span
+                    .container_end
+                    .checked_add_signed(byte_delta)
+                    .ok_or(OrgGovernanceError::Utf8BoundaryMismatch)?;
                 desc.span = GovernedSectionSpan::new(
                     span.container_start,
                     span.drawer_end,
-                    span.drawer_end + new_body_len,
-                    (span.container_end as isize + byte_delta) as usize,
+                    next_body_end,
+                    next_container_end,
                 )?;
                 desc.subtree_digest = after_digest.clone();
             } else if desc.span.container_start >= span.container_end {
@@ -552,25 +604,45 @@ impl<V: SubtreeSemanticVerifier> OrgGovernanceLedger<V> {
             } else if desc.span.container_start <= span.container_start
                 && desc.span.container_end >= span.container_end
             {
-                // Enclosing ancestor container: only its `container_end` grows/shrinks.
+                // Enclosing ancestor container: shift `container_end` (and `body_end` when enclosing).
+                let next_body_end = if desc.span.body_end >= span.container_end {
+                    desc.span
+                        .body_end
+                        .checked_add_signed(byte_delta)
+                        .ok_or(OrgGovernanceError::Utf8BoundaryMismatch)?
+                } else {
+                    desc.span.body_end
+                };
+                let next_container_end = desc
+                    .span
+                    .container_end
+                    .checked_add_signed(byte_delta)
+                    .ok_or(OrgGovernanceError::Utf8BoundaryMismatch)?;
                 desc.span = GovernedSectionSpan::new(
                     desc.span.container_start,
                     desc.span.drawer_end,
-                    desc.span.body_end,
-                    (desc.span.container_end as isize + byte_delta) as usize,
+                    next_body_end,
+                    next_container_end,
                 )?;
             }
             next_anchors.insert(prop_id, desc);
         }
 
-        // Rebase active concurrent leases on downstream disjoint sections in O(leases),
-        // then release the completed lease and record the spent nonce.
-        self.leases.remove(&proposal.lease_id);
-        for active in self.leases.values_mut() {
-            if active.source_id == proposal.source_id
+        // Pre-compute all active lease rebases before mutating ledger state (atomic commit).
+        let mut rebased_leases = Vec::new();
+        for (id, active) in &self.leases {
+            if id != &proposal.lease_id
+                && active.source_id == proposal.source_id
                 && active.span.container_start >= span.container_end
             {
-                active.span = active.span.shifted_by(byte_delta)?;
+                rebased_leases.push((id.clone(), active.span.shifted_by(byte_delta)?));
+            }
+        }
+
+        self.leases.remove(&proposal.lease_id);
+        for (id, new_span) in rebased_leases {
+            if let Some(active) = self.leases.get_mut(&id) {
+                active.span = new_span;
             }
         }
         self.consumed_nonces.insert(proposal.nonce);

@@ -320,6 +320,9 @@ impl SharedContextGovernanceLedger {
     where
         I: IntoIterator<Item = ContextPrincipalId>,
     {
+        if let Some(existing) = self.channels.get(&channel_id) {
+            return existing.acl_epoch;
+        }
         let member_set: BTreeSet<ContextPrincipalId> = members.into_iter().collect();
         self.channels.insert(
             channel_id,

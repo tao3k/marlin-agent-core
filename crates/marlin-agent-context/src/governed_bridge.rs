@@ -97,6 +97,12 @@ pub fn commit_governed_org_subtree<V: SubtreeSemanticVerifier>(
             capsule_task_id: current_context.capsule().task_id.as_str().to_owned(),
         });
     }
+    if proposal.task_id.as_str() != cursor.task_id.as_str() {
+        return Err(GovernedContextBridgeError::TaskActorMismatch {
+            cursor_task_id: cursor.task_id.as_str().to_owned(),
+            capsule_task_id: proposal.task_id.as_str().to_owned(),
+        });
+    }
     if cursor.scope_mode == TaskActorScopeMode::Detached {
         return Err(
             GovernedContextBridgeError::DetachedActorCannotMutateProjectOrg {
@@ -192,9 +198,16 @@ pub fn assemble_two_zone_gateway_messages(
     history: &[ModelGatewayMessage],
 ) -> Result<Vec<ModelGatewayMessage>, GovernedContextBridgeError> {
     let cap = admitted.capsule();
-    if envelope.kv_prefix_digest != cap.kv_prefix_digest {
+    let actual_digest = compute_kv_prefix_digest(&envelope.frozen_prefix);
+    if !constant_time_eq_bytes(
+        envelope.kv_prefix_digest.as_str().as_bytes(),
+        cap.kv_prefix_digest.as_str().as_bytes(),
+    ) || !constant_time_eq_bytes(
+        actual_digest.as_str().as_bytes(),
+        cap.kv_prefix_digest.as_str().as_bytes(),
+    ) {
         return Err(GovernedContextBridgeError::KvPrefixDigestMismatch {
-            envelope: envelope.kv_prefix_digest.as_str().to_owned(),
+            envelope: actual_digest.as_str().to_owned(),
             admitted: cap.kv_prefix_digest.as_str().to_owned(),
         });
     }
@@ -286,4 +299,15 @@ pub fn assemble_scoped_two_zone_gateway_messages(
         messages,
         bundle_receipt,
     })
+}
+
+fn constant_time_eq_bytes(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (&lhs, &rhs) in left.iter().zip(right.iter()) {
+        diff |= lhs ^ rhs;
+    }
+    std::hint::black_box(diff) == 0
 }

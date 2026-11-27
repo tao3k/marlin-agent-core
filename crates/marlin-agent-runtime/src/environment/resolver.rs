@@ -4,7 +4,7 @@
 
 //! Resolves `RuntimeEnvironment` snapshots from home, config, sandbox, and sub-agent inputs.
 
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use marlin_agent_protocol::{
     MARLIN_HOME_ENV_VAR, MARLIN_SESSION_ID_ENV_VAR, RuntimeConfigLayer, RuntimeConfigLayerSource,
@@ -168,11 +168,12 @@ impl RuntimeEnvironmentResolver {
             .as_ref()
             .map(|home| home.path.clone())
             .ok_or(RuntimeEnvironmentError::MissingParentHome)?;
-        let child_home = request.home_path.unwrap_or_else(|| {
-            parent_home
+        let child_home = match request.home_path {
+            Some(explicit_home) => validate_child_home_path(&parent_home, &explicit_home)?,
+            None => parent_home
                 .join("sub-agents")
-                .join(agent_home_slug(&request.agent_reference))
-        });
+                .join(agent_home_slug(&request.agent_reference)),
+        };
         let child_profile = request.profile.or_else(|| {
             parent
                 .home
@@ -471,6 +472,30 @@ pub enum RuntimeEnvironmentError {
     /// A sub-agent environment needs a parent home to derive its inherited home.
     #[error("sub-agent environment requires a parent runtime home")]
     MissingParentHome,
+    /// Explicit child home path escapes the parent runtime home or contains traversal/control bytes.
+    #[error("sub-agent home path `{}` escapes parent runtime home", path.display())]
+    UnsafeChildHomePath { path: PathBuf },
+}
+
+fn validate_child_home_path(
+    parent_home: &Path,
+    child_home: &Path,
+) -> Result<PathBuf, RuntimeEnvironmentError> {
+    if child_home.as_os_str().is_empty()
+        || child_home.to_string_lossy().chars().any(char::is_control)
+        || child_home
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        || parent_home
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        || !child_home.starts_with(parent_home)
+    {
+        return Err(RuntimeEnvironmentError::UnsafeChildHomePath {
+            path: child_home.to_path_buf(),
+        });
+    }
+    Ok(child_home.to_path_buf())
 }
 
 fn sort_config_layers(layers: &mut [RuntimeConfigLayer]) {

@@ -6,7 +6,9 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::{Path, PathBuf},
+    fs,
+    path::{Component, Path, PathBuf},
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -18,7 +20,15 @@ use marlin_agent_protocol::{
 };
 use serde_json::Value;
 use thiserror::Error;
-use tokio::process::Command;
+use tokio::{io::AsyncReadExt, process::Command};
+
+/// Maximum byte size accepted from `direnv` stdout / JSON export (1 MiB).
+pub const MAX_DIRENV_JSON_BYTES: usize = 1024 * 1024;
+
+/// Maximum environment variable entries accepted from a single `direnv export json` payload.
+pub const MAX_DIRENV_ENV_ENTRIES: usize = 4096;
+
+const DIRENV_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Input used to apply a runtime environment activation policy.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -83,7 +93,7 @@ impl DirenvCommandRunner for ProcessDirenvCommandRunner {
         cwd: &Path,
         environment: &BTreeMap<String, String>,
     ) -> Result<(), RuntimeEnvironmentActivationError> {
-        run_direnv_command(cwd, environment, &["allow"]).await
+        run_direnv_command(cwd, environment, &["allow", "./.envrc"]).await
     }
 
     async fn reload(
@@ -163,7 +173,7 @@ async fn direnv_output(
         .kill_on_drop(true);
     #[cfg(unix)]
     command.process_group(0);
-    let child = command.spawn().map_err(direnv_io_error)?;
+    let mut child = command.spawn().map_err(direnv_io_error)?;
     // Dropping an in-flight load has to stop the shell running .envrc as well
     // as direnv itself. Keep the group guard alive while draining the output.
     #[cfg(unix)]
@@ -172,7 +182,40 @@ async fn direnv_output(
             .ok()
             .and_then(rustix::process::Pid::from_raw)
     }));
-    let output = child.wait_with_output().await.map_err(direnv_io_error)?;
+    let mut stdout_pipe = child
+        .stdout
+        .take()
+        .ok_or_else(|| RuntimeEnvironmentActivationError::CommandOutput {
+            message: "direnv stdout pipe unavailable".to_owned(),
+        })?;
+    let bounded_run = tokio::time::timeout(DIRENV_COMMAND_TIMEOUT, async {
+        let mut stdout = Vec::new();
+        let mut limited = (&mut stdout_pipe).take((MAX_DIRENV_JSON_BYTES + 1) as u64);
+        limited
+            .read_to_end(&mut stdout)
+            .await
+            .map_err(direnv_io_error)?;
+        if stdout.len() > MAX_DIRENV_JSON_BYTES {
+            let _ = child.kill().await;
+            return Err(RuntimeEnvironmentActivationError::OutputTooLarge {
+                limit: MAX_DIRENV_JSON_BYTES,
+            });
+        }
+        let status = child.wait().await.map_err(direnv_io_error)?;
+        Ok(std::process::Output {
+            status,
+            stdout,
+            stderr: Vec::new(),
+        })
+    })
+    .await;
+    let output = match bounded_run {
+        Ok(result) => result?,
+        Err(_) => {
+            let _ = child.kill().await;
+            return Err(RuntimeEnvironmentActivationError::CommandTimedOut);
+        }
+    };
     #[cfg(unix)]
     {
         group.0 = None;
@@ -299,7 +342,7 @@ where
                 return rejected_with_actions(request.base_environment, policy, error, actions);
             }
         };
-        let activated = match apply_direnv_json(&request.base_environment, &json) {
+        let activated = match apply_direnv_json(&request.base_environment, &policy.shell, &json) {
             Ok(activated) => activated,
             Err(error) => {
                 return rejected_with_actions(request.base_environment, policy, error, actions);
@@ -329,6 +372,16 @@ pub enum RuntimeEnvironmentActivationError {
     UnsupportedExplicitEnvrc { file: PathBuf },
     #[error("explicit envrc file has no parent directory")]
     ExplicitEnvrcMissingParent { file: PathBuf },
+    #[error("unsafe envrc path escapes workspace root or traverses symlink: {}", path.display())]
+    UnsafeEnvrcPath { path: PathBuf },
+    #[error("direnv command timed out")]
+    CommandTimedOut,
+    #[error("direnv output exceeded maximum size of {limit} bytes")]
+    OutputTooLarge { limit: usize },
+    #[error("direnv exported more than {limit} environment entries")]
+    TooManyEnvEntries { limit: usize },
+    #[error("direnv exported disallowed or malformed environment variable `{name}`")]
+    DisallowedEnvKey { name: String },
     #[error("direnv command failed with status {status:?}")]
     CommandFailed { status: Option<i32> },
     #[error("direnv command could not run: {message}")]
@@ -375,22 +428,92 @@ pub(crate) fn direnv_cwd(
     envrc: &RuntimeEnvrcPolicy,
 ) -> Result<PathBuf, RuntimeEnvironmentActivationError> {
     match envrc {
-        RuntimeEnvrcPolicy::Project => environment
-            .cwd
-            .clone()
-            .ok_or(RuntimeEnvironmentActivationError::MissingCwd),
-        RuntimeEnvrcPolicy::Explicit { file } => {
-            if file.file_name().and_then(|name| name.to_str()) != Some(".envrc") {
-                return Err(
-                    RuntimeEnvironmentActivationError::UnsupportedExplicitEnvrc {
-                        file: file.clone(),
-                    },
-                );
+        RuntimeEnvrcPolicy::Project => {
+            let cwd = environment
+                .cwd
+                .clone()
+                .ok_or(RuntimeEnvironmentActivationError::MissingCwd)?;
+            if cwd
+                .components()
+                .any(|component| matches!(component, Component::ParentDir))
+            {
+                return Err(RuntimeEnvironmentActivationError::UnsafeEnvrcPath { path: cwd });
             }
-            file.parent().map(Path::to_path_buf).ok_or_else(|| {
-                RuntimeEnvironmentActivationError::ExplicitEnvrcMissingParent { file: file.clone() }
+            reject_symlink_envrc(&cwd.join(".envrc"))?;
+            Ok(cwd)
+        }
+        RuntimeEnvrcPolicy::Explicit { file } => {
+            confine_explicit_envrc(environment.cwd.as_deref(), file)
+        }
+    }
+}
+
+fn confine_explicit_envrc(
+    base_cwd: Option<&Path>,
+    file: &Path,
+) -> Result<PathBuf, RuntimeEnvironmentActivationError> {
+    if file.file_name().and_then(|name| name.to_str()) != Some(".envrc") {
+        return Err(
+            RuntimeEnvironmentActivationError::UnsupportedExplicitEnvrc {
+                file: file.to_path_buf(),
+            },
+        );
+    }
+    if file
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(RuntimeEnvironmentActivationError::UnsafeEnvrcPath {
+            path: file.to_path_buf(),
+        });
+    }
+    let parent = match file.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => {
+            return Err(
+                RuntimeEnvironmentActivationError::ExplicitEnvrcMissingParent {
+                    file: file.to_path_buf(),
+                },
+            );
+        }
+    };
+    if let Some(base_cwd) = base_cwd {
+        if base_cwd
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        {
+            return Err(RuntimeEnvironmentActivationError::UnsafeEnvrcPath {
+                path: base_cwd.to_path_buf(),
+            });
+        }
+        if file.is_absolute() && base_cwd.is_absolute() && !file.starts_with(base_cwd) {
+            return Err(RuntimeEnvironmentActivationError::UnsafeEnvrcPath {
+                path: file.to_path_buf(),
+            });
+        }
+        if let (Ok(canon_base), Ok(canon_parent)) =
+            (fs::canonicalize(base_cwd), fs::canonicalize(&parent))
+            && !canon_parent.starts_with(&canon_base)
+        {
+            return Err(RuntimeEnvironmentActivationError::UnsafeEnvrcPath {
+                path: file.to_path_buf(),
+            });
+        }
+    }
+    reject_symlink_envrc(file)?;
+    Ok(parent)
+}
+
+fn reject_symlink_envrc(path: &Path) -> Result<(), RuntimeEnvironmentActivationError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            Err(RuntimeEnvironmentActivationError::UnsafeEnvrcPath {
+                path: path.to_path_buf(),
             })
         }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(direnv_io_error(error)),
     }
 }
 
@@ -419,10 +542,42 @@ pub(crate) fn command_environment(
         .collect()
 }
 
+fn is_disallowed_direnv_export_key(name: &str) -> bool {
+    const DISALLOWED_LOADER_AND_SHELL_KEYS: &[&str] = &[
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "LD_AUDIT",
+        "LD_DEBUG",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FRAMEWORK_PATH",
+        "DYLD_FALLBACK_LIBRARY_PATH",
+        "BASH_ENV",
+        "ENV",
+        "PROMPT_COMMAND",
+        "IFS",
+        "GCONV_PATH",
+        "LOCPATH",
+        "PYTHONSTARTUP",
+        "NODE_OPTIONS",
+        "PERL5OPT",
+        "RUBYOPT",
+    ];
+    DISALLOWED_LOADER_AND_SHELL_KEYS
+        .iter()
+        .any(|blocked| name.eq_ignore_ascii_case(blocked))
+}
+
 fn apply_direnv_json(
     base: &BTreeMap<String, String>,
+    shell: &RuntimeShellIsolationPolicy,
     json: &str,
 ) -> Result<BTreeMap<String, String>, RuntimeEnvironmentActivationError> {
+    if json.len() > MAX_DIRENV_JSON_BYTES {
+        return Err(RuntimeEnvironmentActivationError::OutputTooLarge {
+            limit: MAX_DIRENV_JSON_BYTES,
+        });
+    }
     let value = serde_json::from_str::<Value>(json).map_err(|error| {
         RuntimeEnvironmentActivationError::InvalidJson {
             message: error.to_string(),
@@ -431,14 +586,42 @@ fn apply_direnv_json(
     let object = value
         .as_object()
         .ok_or(RuntimeEnvironmentActivationError::InvalidJsonShape)?;
+    if object.len() > MAX_DIRENV_ENV_ENTRIES {
+        return Err(RuntimeEnvironmentActivationError::TooManyEnvEntries {
+            limit: MAX_DIRENV_ENV_ENTRIES,
+        });
+    }
+    let denylist = shell
+        .denylist
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
     let mut environment = base.clone();
 
     for (name, value) in object {
+        if name.is_empty()
+            || name.contains('=')
+            || name.chars().any(char::is_control)
+        {
+            return Err(RuntimeEnvironmentActivationError::DisallowedEnvKey {
+                name: name.clone(),
+            });
+        }
         match value {
             Value::Null => {
                 environment.remove(name);
             }
             Value::String(value) => {
+                if value.contains('\0') {
+                    return Err(RuntimeEnvironmentActivationError::InvalidEnvValue {
+                        name: name.clone(),
+                    });
+                }
+                if denylist.contains(name.as_str()) || is_disallowed_direnv_export_key(name) {
+                    return Err(RuntimeEnvironmentActivationError::DisallowedEnvKey {
+                        name: name.clone(),
+                    });
+                }
                 environment.insert(name.clone(), value.clone());
             }
             _ => {

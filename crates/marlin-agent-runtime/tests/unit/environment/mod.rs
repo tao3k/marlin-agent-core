@@ -7,5 +7,6 @@ mod fixtures;
 mod import;
 mod refresh;
 mod resolver;
+mod sm34_env_activation_confinement;
 mod state_storage;
 mod workspace_project;

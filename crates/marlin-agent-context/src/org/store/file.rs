@@ -6,13 +6,19 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, OpenOptions},
-    io::Write,
+    fs::{self, File, OpenOptions},
+    io::{Read, Write},
     path::{Component, Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::org::store::{OrgSourceStore, OrgSourceStoreError, OrgSourceStoreResult};
+
+/// Maximum document byte size read from `FileSystemOrgSourceStore` (16 MiB).
+pub const MAX_ORG_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
+
+static TEMP_FILE_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Root-scoped filesystem implementation of the source store contract.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -31,25 +37,46 @@ impl FileSystemOrgSourceStore {
 
     fn document_path(&self, document: &str) -> OrgSourceStoreResult<PathBuf> {
         let relative = validated_relative_path(document)?;
-        Ok(self.root.join(relative))
+        verify_confined_no_symlinks(&self.root, &relative)
     }
 }
 
 impl OrgSourceStore for FileSystemOrgSourceStore {
     fn read_document(&self, document: &str) -> OrgSourceStoreResult<Option<String>> {
         let path = self.document_path(document)?;
-        match fs::read_to_string(path) {
-            Ok(text) => Ok(Some(text)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(OrgSourceStoreError::new(format!(
-                "read document failed: {error}"
-            ))),
+        let file = match File::open(&path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(OrgSourceStoreError::new(format!(
+                    "read document failed: {error}"
+                )));
+            }
+        };
+        let metadata = file.metadata().map_err(|error| {
+            OrgSourceStoreError::new(format!("read document metadata failed: {error}"))
+        })?;
+        if !metadata.is_file() {
+            return Err(OrgSourceStoreError::new(
+                "document path must point to a regular file",
+            ));
         }
+        let mut text = String::new();
+        file.take((MAX_ORG_DOCUMENT_BYTES + 1) as u64)
+            .read_to_string(&mut text)
+            .map_err(|error| OrgSourceStoreError::new(format!("read document failed: {error}")))?;
+        if text.len() > MAX_ORG_DOCUMENT_BYTES {
+            return Err(OrgSourceStoreError::new(format!(
+                "document exceeds maximum allowed size of {MAX_ORG_DOCUMENT_BYTES} bytes"
+            )));
+        }
+        Ok(Some(text))
     }
 
     fn write_documents(&mut self, documents: BTreeMap<String, String>) -> OrgSourceStoreResult<()> {
         let writes = planned_writes(self, documents)?;
         for write in &writes {
+            verify_confined_no_symlinks(&self.root, &write.relative)?;
             atomic_write(&write.path, &write.text)?;
         }
         Ok(())
@@ -58,6 +85,7 @@ impl OrgSourceStore for FileSystemOrgSourceStore {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PlannedWrite {
+    relative: PathBuf,
     path: PathBuf,
     text: String,
 }
@@ -70,15 +98,93 @@ fn planned_writes(
     documents
         .into_iter()
         .map(|(document, text)| {
-            let path = store.document_path(&document)?;
+            let relative = validated_relative_path(&document)?;
+            let path = verify_confined_no_symlinks(&store.root, &relative)?;
             if !paths.insert(path.clone()) {
                 return Err(OrgSourceStoreError::new(format!(
                     "multiple document paths resolve to the same lexical path: {document}"
                 )));
             }
-            Ok(PlannedWrite { path, text })
+            Ok(PlannedWrite {
+                relative,
+                path,
+                text,
+            })
         })
         .collect()
+}
+
+fn verify_confined_no_symlinks(root: &Path, relative: &Path) -> OrgSourceStoreResult<PathBuf> {
+    match fs::symlink_metadata(root) {
+        Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => {
+            return Err(OrgSourceStoreError::new(
+                "store root must be a real directory, not a symlink",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(OrgSourceStoreError::new(format!(
+                "inspect store root failed: {error}"
+            )));
+        }
+    }
+
+    let canonical_root = fs::canonicalize(root).ok();
+    let mut current = root.to_path_buf();
+    let mut stop_fs_walk = false;
+    let mut components = relative.components().peekable();
+    while let Some(component) = components.next() {
+        let is_last = components.peek().is_none();
+        match component {
+            Component::Normal(part) => {
+                current.push(part);
+                if stop_fs_walk {
+                    continue;
+                }
+                match fs::symlink_metadata(&current) {
+                    Ok(meta) => {
+                        if meta.file_type().is_symlink() {
+                            return Err(OrgSourceStoreError::new(format!(
+                                "document path traverses symlink outside store root: {}",
+                                relative.display()
+                            )));
+                        }
+                        if !is_last && !meta.is_dir() {
+                            stop_fs_walk = true;
+                        } else if !is_last
+                            && meta.is_dir()
+                            && let Some(canon_root) = &canonical_root
+                            && let Ok(canon_current) = fs::canonicalize(&current)
+                            && !canon_current.starts_with(canon_root)
+                        {
+                            return Err(OrgSourceStoreError::new(format!(
+                                "document path escapes canonical store root: {}",
+                                relative.display()
+                            )));
+                        }
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        stop_fs_walk = true;
+                    }
+                    Err(error) => {
+                        return Err(OrgSourceStoreError::new(format!(
+                            "inspect document path failed: {error}"
+                        )));
+                    }
+                }
+            }
+            Component::CurDir => {}
+            _ => {
+                return Err(OrgSourceStoreError::new(format!(
+                    "document path escapes store root: {}",
+                    relative.display()
+                )));
+            }
+        }
+    }
+
+    Ok(current)
 }
 
 fn validated_relative_path(document: &str) -> OrgSourceStoreResult<PathBuf> {
@@ -174,12 +280,13 @@ fn temp_path(path: &Path) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
+    let seq = TEMP_FILE_SEQ.fetch_add(1, Ordering::Relaxed);
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("document");
     path.with_file_name(format!(
-        ".{file_name}.marlin-tmp-{}-{suffix}",
+        ".{file_name}.marlin-tmp-{}-{suffix}-{seq}",
         std::process::id()
     ))
 }

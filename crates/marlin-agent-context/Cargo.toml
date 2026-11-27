@@ -89,3 +89,8 @@ path = "tests/unit/governance_async_mediation.rs"
 name = "governed_context_bridge"
 path = "tests/unit/governed_context_bridge.rs"
 required-features = ["org-memory"]
+
+[[test]]
+name = "sm34_context_governance_confinement"
+path = "tests/unit/sm34_context_governance_confinement.rs"
+required-features = ["org-memory"]
