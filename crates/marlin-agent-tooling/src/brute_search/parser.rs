@@ -41,6 +41,7 @@ pub(crate) struct FileOutlineRequest {
     pub(crate) max_symbols: usize,
     pub(crate) max_per_file: Option<usize>,
     pub(crate) skeleton: bool,
+    pub(crate) kind_summary: bool,
     pub(crate) wrapped_bare_form: bool,
 }
 
@@ -426,6 +427,7 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
         max_symbols: DEFAULT_OUTLINE_MAX_SYMBOLS,
         max_per_file: None,
         skeleton: false,
+        kind_summary: false,
         wrapped_bare_form,
     };
     let mut idx = 1usize;
@@ -504,6 +506,10 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
                     req.skeleton = matches!(
                         lc.as_str(),
                         "callable-skeleton" | "skeleton" | "signatures" | "signature"
+                    );
+                    req.kind_summary = matches!(
+                        lc.as_str(),
+                        "kind-summary" | "summary" | "inventory" | "kinds"
                     );
                     idx += 2;
                 }

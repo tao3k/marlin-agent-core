@@ -157,16 +157,88 @@ fn format_ascent_row_with_context(
     block
 }
 
+fn append_ram_witness_fallback(
+    rendered_text: &mut String,
+    snapshot: &WorkspaceEdbSnapshot,
+    index: Option<&WorkspaceSearchIndex>,
+    prefilter: Option<&OwnedWorkspaceEdbPrefilter>,
+) {
+    let scope_prefix = prefilter.and_then(|pf| pf.path_prefix.as_deref());
+    let first_token = prefilter
+        .and_then(|pf| pf.required_tokens.first())
+        .map(String::as_str);
+
+    if let (Some(idx), Some(tok)) = (index, first_token) {
+        let report = idx.query(&agent_semantic_search::WorkspaceSearchQuery {
+            pattern: tok,
+            languages: prefilter.map_or(&[], |pf| pf.languages.as_slice()),
+            documents: &[],
+            path_prefix: scope_prefix,
+            extension: None,
+            symbol: None,
+            graph_target: None,
+            max_hits: 6,
+            context_radius: 0,
+        });
+        if !report.hits.is_empty() {
+            let witnesses: Vec<String> = report
+                .hits
+                .iter()
+                .take(6)
+                .map(|h| {
+                    let line = h.line_matches.first().map_or(1, |m| m.line_number);
+                    format!("{}:{line}", h.path)
+                })
+                .collect();
+            let scope_arg = scope_prefix.map_or_else(
+                String::new,
+                |p| format!(" path-prefix: \"{p}\""),
+            );
+            let _ = writeln!(
+                rendered_text,
+                "l0_ram_witness: {} file(s) matched \"{tok}\" in RAM ({})\nnext_query: (brute-search \"{tok}\"{scope_arg} limit: 24)",
+                report.hits.len(),
+                witnesses.join(", ")
+            );
+            return;
+        }
+    }
+
+    let scope_arg = scope_prefix.unwrap_or("crates/");
+    let lang_arg = prefilter
+        .and_then(|pf| pf.languages.first())
+        .map_or_else(String::new, |l| format!(" lang: \"{l}\""));
+    let sample_symbols: Vec<String> = snapshot
+        .entities
+        .iter()
+        .filter(|e| e.kind != "import")
+        .take(6)
+        .map(|e| format!("{} [{}] ({}:{})", e.name, e.kind, e.path, e.line))
+        .collect();
+    if !sample_symbols.is_empty() {
+        let _ = writeln!(
+            rendered_text,
+            "l0_ram_witness: sample resident symbols in scope: {}",
+            sample_symbols.join(", ")
+        );
+    }
+    let _ = writeln!(
+        rendered_text,
+        "next_query: (file-outline \"{scope_arg}\" projection: \"kind-summary\"{lang_arg} exclude-tests?: #t limit: 60)"
+    );
+}
+
 fn append_zero_hit_diagnostic(
     rendered_text: &mut String,
     snapshot: &WorkspaceEdbSnapshot,
+    index: Option<&WorkspaceSearchIndex>,
     prefilter: Option<&OwnedWorkspaceEdbPrefilter>,
 ) {
     if snapshot.files.is_empty() {
         if let Some(prefix) = prefilter.and_then(|pf| pf.path_prefix.as_deref()) {
             let _ = writeln!(
                 rendered_text,
-                "diagnostic: scope path-prefix=\"{prefix}\" matched 0 indexed files; list directories with (brute-search \"\" path-prefix: \"crates/\" limit: 40) or widen scope"
+                "diagnostic: scope path-prefix=\"{prefix}\" matched 0 indexed files; orient first with (workspace-map \"\" depth: 2)"
             );
         } else {
             let _ = writeln!(
@@ -188,14 +260,15 @@ fn append_zero_hit_diagnostic(
     if native_ast_files == 0 {
         let _ = writeln!(
             rendered_text,
-            "diagnostic: matched {} scoped file(s) with 0 native AST facts (only coarse resident-index `type_decl`/`callable` symbols available); retry with `type_decl`/`callable` or `(file-outline \"...\")`",
+            "diagnostic: matched {} scoped file(s) with 0 native AST facts (only coarse resident-index `type_decl`/`callable` symbols available; parsed_kinds: {parsed_kinds})",
             snapshot.files.len(),
         );
+        append_ram_witness_fallback(rendered_text, snapshot, index, prefilter);
         return;
     }
     let coverage_note = if native_ast_files < snapshot.files.len() {
         format!(
-            "partial native_ast coverage ({native_ast_files}/{} files); unhydrated files can still be inspected via (brute-search ...) or (find-impact ...)",
+            "partial native_ast coverage ({native_ast_files}/{} files); unhydrated files can still be inspected via (file-outline ... projection: \"kind-summary\") or (brute-search ...)",
             snapshot.files.len()
         )
     } else {
@@ -203,10 +276,37 @@ fn append_zero_hit_diagnostic(
     };
     let _ = writeln!(
         rendered_text,
-        "diagnostic: 0 rows matched across {} scoped file(s) ({} facts; parsed_kinds: {parsed_kinds}; {coverage_note}); widen path-prefix:/kind: or inspect with (file-outline \"...\")",
+        "diagnostic: 0 rows matched across {} scoped file(s) ({} facts; parsed_kinds: {parsed_kinds}; {coverage_note})",
         snapshot.files.len(),
         snapshot.entities.len().saturating_add(snapshot.edges.len()),
     );
+    if native_ast_files < snapshot.files.len() {
+        append_ram_witness_fallback(rendered_text, snapshot, index, prefilter);
+    }
+}
+
+fn format_truncation_next_query_hint(
+    rows: &[SearchDslStructuredRow],
+    prefilter: Option<&OwnedWorkspaceEdbPrefilter>,
+) -> String {
+    let looks_like_test = |p: &str| {
+        let lc = p.to_ascii_lowercase();
+        lc.contains("/tests/") || lc.starts_with("tests/") || lc.contains("_test.") || lc.contains("/t/")
+    };
+    let test_rows = rows
+        .iter()
+        .filter(|r| r.cells.iter().any(|c| looks_like_test(c)))
+        .count();
+    let mut hints = Vec::new();
+    if test_rows > 0 {
+        hints.push("exclude-tests?: #t");
+    }
+    if prefilter.and_then(|pf| pf.path_prefix.as_deref()).is_none() {
+        hints.push("path-prefix: \"crates/<crate>/\"");
+    }
+    hints.push("name-all: (\"stem1\" \"stem2\")");
+    hints.push("or raise limit:");
+    hints.join(", ")
 }
 
 pub(super) fn render_ascent_search_text(inputs: AscentRenderInputs<'_>) -> String {
@@ -289,14 +389,15 @@ pub(super) fn render_ascent_search_text(inputs: AscentRenderInputs<'_>) -> Strin
         }
     }
     if total_results == 0 {
-        append_zero_hit_diagnostic(&mut rendered_text, snapshot, ctx.prefilter);
+        append_zero_hit_diagnostic(&mut rendered_text, snapshot, ctx.index, ctx.prefilter);
     }
     rendered_text.extend(body_lines);
     if truncated {
         let omitted = total_results.saturating_sub(returned_results);
+        let hint = format_truncation_next_query_hint(&rows[..returned_results], ctx.prefilter);
         let _ = writeln!(
             rendered_text,
-            "... (+{omitted} omitted; next_query: narrow via path-prefix:, name-contains: (\"...\"), min-files: 3, or raise limit:)"
+            "... (+{omitted} omitted; next_query: narrow via {hint})"
         );
     }
     rendered_text

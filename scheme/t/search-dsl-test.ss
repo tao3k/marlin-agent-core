@@ -1293,4 +1293,35 @@
                     (member '("calls" "eval-query" "helper-fn" "scheme/search-dsl/funcs.ss" 2)
                             (vector-ref trace-res 3))
                     #t)
+               => #t)))
+
+    (test-case "LLM-ASP P1: orthography-normalized cross-language name matching and prefilter stem splitting"
+      (let* ((edb
+               '((file
+                   (1 "rust" "crates/kernel/src/gov.rs")
+                   (2 "scheme" "scheme/policy/gov.ss"))
+                 (entity
+                   ("g1" 1 "rust" "struct" "struct_item" "ReadOnlyGovernanceGate" 12)
+                   ("g2" 1 "rust" "function" "fn_item" "enforce_read_only_policy" 28)
+                   ("g3" 2 "scheme" "function" "def_proc" "read-only-policy-ok?" 15))
+                 (edge)
+                 (attr)
+                 (symbol_ref)))
+             (pref
+               (compile-search-dsl-prefilter
+                 "(find-symbols name-contains: \"read-only\" lang: \"any\" limit: 20)"
+                 SearchLanguageRegistryValue))
+             (res
+               (evaluate-search-dsl-over-edb
+                 "(find-symbols name-contains: \"read-only\" lang: \"any\" limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             (names (map car (vector-ref res 3))))
+        ;; Prefilter splits `"read-only"` into atomic stems `#("read" "only")` so CamelCase & snake_case survive trigram pushdown
+        (check (vector-ref pref 3) => #("read" "only"))
+        ;; Matches CamelCase Rust struct, snake_case Rust fn, AND kebab-case Scheme fn in one query!
+        (check (and (member "ReadOnlyGovernanceGate" names)
+                    (member "enforce_read_only_policy" names)
+                    (member "read-only-policy-ok?" names)
+                    (= (length names) 3)
+                    #t)
                => #t)))))

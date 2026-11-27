@@ -20,6 +20,34 @@ struct OutlineFileEntry<'a> {
     symbols: Vec<(usize, &'a str, &'a str)>,
 }
 
+fn refine_coarse_entity_kind<'a>(
+    index: &WorkspaceSearchIndex,
+    path: &str,
+    line: usize,
+    kind: &'a str,
+) -> &'a str {
+    if !kind.eq_ignore_ascii_case("type") {
+        return kind;
+    }
+    let Some(row) = index
+        .live_file_context(path, line, 0)
+        .into_iter()
+        .find(|r| r.line_number == line)
+    else {
+        return kind;
+    };
+    let trimmed = row.text.trim_start();
+    if trimmed.contains("enum ") {
+        "enum"
+    } else if trimmed.contains("struct ") {
+        "struct"
+    } else if trimmed.contains("trait ") || trimmed.contains("interface ") {
+        "trait"
+    } else {
+        kind
+    }
+}
+
 fn outline_kind_matches(kind: &str, language_kind: &str, requested: &[String]) -> bool {
     if requested.is_empty() {
         return true;
@@ -40,6 +68,33 @@ fn outline_kind_matches(kind: &str, language_kind: &str, requested: &[String]) -
         }
         other => kind_lc == other || lk_lc.contains(other),
     })
+}
+
+fn format_kind_summary_file_row(path: &str, entry: &OutlineFileEntry<'_>) -> String {
+    let mut by_kind: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    entry.symbols.iter().for_each(|(_, kind, name)| {
+        let names = by_kind.entry(*kind).or_default();
+        if !names.contains(name) {
+            names.push(*name);
+        }
+    });
+    let parts: Vec<String> = by_kind
+        .into_iter()
+        .map(|(kind, names)| {
+            let preview: Vec<&str> = names.iter().copied().take(8).collect();
+            if names.len() > 8 {
+                format!("{kind}({}): {}, +{}", names.len(), preview.join(", "), names.len() - 8)
+            } else {
+                format!("{kind}({}): {}", names.len(), preview.join(", "))
+            }
+        })
+        .collect();
+    format!(
+        "  - @{path} [{} · {} sym] {}\n",
+        entry.language,
+        entry.symbols.len(),
+        parts.join(" | ")
+    )
 }
 
 fn top_two_segments(path: &str) -> String {
@@ -280,19 +335,20 @@ pub(super) fn execute_file_outline(
         {
             continue;
         }
+        let refined_kind = refine_coarse_entity_kind(index, &ent.path, ent.line, &ent.kind);
         if by_file.contains_key(ent.path.as_str()) {
-            *scoped_kind_counts.entry(ent.kind.as_str()).or_insert(0) += 1;
+            *scoped_kind_counts.entry(refined_kind).or_insert(0) += 1;
             if ent.source != "resident-index" {
                 native_ast_file_ids.insert(ent.file_id);
             }
         }
-        if !outline_kind_matches(&ent.kind, &ent.language_kind, &req.kinds) {
+        if !outline_kind_matches(refined_kind, &ent.language_kind, &req.kinds) {
             continue;
         }
         if let Some(entry) = by_file.get_mut(ent.path.as_str()) {
             entry
                 .symbols
-                .push((ent.line, ent.kind.as_str(), ent.name.as_str()));
+                .push((ent.line, refined_kind, ent.name.as_str()));
         }
     }
     let matched_files_raw = by_file.len();
@@ -374,6 +430,50 @@ pub(super) fn execute_file_outline(
             "returned: 0\ntruncated: false\ndiagnostic: kind filter ({}) matched 0 symbols across {matched_files_raw} file(s) (parsed_kinds: {parsed_kinds}; {coverage_hint})",
             req.kinds.join(", ")
         );
+        return Ok(out);
+    }
+
+    if req.kind_summary {
+        let mut ranked_kinds: Vec<(&str, usize)> = scoped_kind_counts.into_iter().collect();
+        ranked_kinds.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+        let kind_totals: Vec<String> = ranked_kinds
+            .iter()
+            .take(8)
+            .map(|(k, c)| format!("{k}={c}"))
+            .collect();
+        let body_budget = output_limit.min(12_288).saturating_sub(out.len() + 256);
+        let mut used = 0usize;
+        let rows: Vec<String> = by_file
+            .iter()
+            .map(|(path, entry)| format_kind_summary_file_row(path, entry))
+            .take_while(|row| {
+                if used + row.len() <= body_budget {
+                    used += row.len();
+                    true
+                } else {
+                    false
+                }
+            })
+            .collect();
+        let returned_files = rows.len();
+        let truncated = returned_files < total_files;
+        let _ = writeln!(
+            out,
+            "projection: kind-summary\nkind_totals: {}\nreturned: {returned_files}\ntruncated: {truncated}",
+            if kind_totals.is_empty() {
+                "none".to_owned()
+            } else {
+                kind_totals.join(", ")
+            }
+        );
+        rows.iter().for_each(|r| out.push_str(r));
+        if truncated {
+            let _ = writeln!(
+                out,
+                "  ... (+{} more file(s); narrow path-prefix: or call (file-outline \"<path>\" projection: \"callable-skeleton\"))",
+                total_files.saturating_sub(returned_files)
+            );
+        }
         return Ok(out);
     }
 

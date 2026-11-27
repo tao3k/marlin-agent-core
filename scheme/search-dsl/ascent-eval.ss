@@ -216,28 +216,61 @@
               needles))))
     (else '())))
 
+;;; Orthography-normalized identifier key: lowercases and strips `_` and `-`
+;;; so `"read-only"`, `"read_only"`, `"ReadOnly"`, and `"readonly"` match
+;;; uniformly across Rust snake_case, CamelCase, and Gerbil Scheme kebab-case.
+(def (normalize-ident-key s)
+  (let* ((down (string-downcase s))
+         (n (string-length down)))
+    (call-with-output-string
+      (lambda (port)
+        (let loop ((i 0))
+          (when (< i n)
+            (let ((ch (string-ref down i)))
+              (unless (or (char=? ch #\_) (char=? ch #\-))
+                (write-char ch port)))
+            (loop (+ i 1))))))))
+
 (def (materialize-derived-name-edb-rows rel-name all-names pred-lits)
   (case rel-name
     ((name_contains)
      (let ((needles (if (vector? pred-lits) (vector-ref pred-lits 2) '())))
        (apply append
          (map (lambda (needle)
-                (let ((needle-lc (string-downcase needle)))
+                (let* ((needle-lc (string-downcase needle))
+                       (needle-norm (normalize-ident-key needle))
+                       (use-norm? (and (>= (string-length needle-norm) 3)
+                                       (not (string=? needle-norm needle-lc)))))
                   (filter-map
                     (lambda (nm)
-                      (and (string-contains (string-downcase nm) needle-lc)
-                           (list nm needle)))
+                      (let ((nm-lc (string-downcase nm)))
+                        (and (or (string-contains nm-lc needle-lc)
+                                 (and (>= (string-length needle-norm) 3)
+                                      (or use-norm?
+                                          (string-contains nm-lc "_")
+                                          (string-contains nm-lc "-"))
+                                      (string-contains (normalize-ident-key nm-lc) needle-norm)))
+                             (list nm needle))))
                     all-names)))
               needles))))
     ((name_has_prefix)
      (let ((prefixes (if (vector? pred-lits) (vector-ref pred-lits 3) '())))
        (apply append
          (map (lambda (pfx)
-                (let ((pfx-lc (string-downcase pfx)))
+                (let* ((pfx-lc (string-downcase pfx))
+                       (pfx-norm (normalize-ident-key pfx))
+                       (use-norm? (and (>= (string-length pfx-norm) 3)
+                                       (not (string=? pfx-norm pfx-lc)))))
                   (filter-map
                     (lambda (nm)
-                      (and (string-prefix? pfx-lc (string-downcase nm))
-                           (list nm pfx)))
+                      (let ((nm-lc (string-downcase nm)))
+                        (and (or (string-prefix? pfx-lc nm-lc)
+                                 (and (>= (string-length pfx-norm) 3)
+                                      (or use-norm?
+                                          (string-contains nm-lc "_")
+                                          (string-contains nm-lc "-"))
+                                      (string-prefix? pfx-norm (normalize-ident-key nm-lc))))
+                             (list nm pfx))))
                     all-names)))
               prefixes))))
     (else '())))

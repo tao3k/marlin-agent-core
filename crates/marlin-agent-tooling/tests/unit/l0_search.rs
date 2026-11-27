@@ -22,7 +22,7 @@ use marlin_agent_tooling::{ResidentSearchToolHandler, SharedSearchIndexSlot};
 #[tokio::test(flavor = "current_thread")]
 async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let files: [(&str, &str); 4] = [
+    let files: [(&str, &str); 5] = [
         (
             "crates/core/Cargo.toml",
             "[package]\nname = \"core\"\nversion = \"0.1.0\"\n",
@@ -34,6 +34,10 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
         (
             "crates/core/tests/engine_test.rs",
             "pub struct SearchEngineTestFixture;\nfn test_run_engine() {}\n",
+        ),
+        (
+            "crates/modes/src/lib.rs",
+            "pub enum EngineMode {\n    Fast,\n    Safe,\n}\n",
         ),
         (
             "scheme/agent-testing/governance.ss",
@@ -395,5 +399,36 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
             && multi_sym.contains("=== symbol: SearchEngine @")
             && multi_sym.contains("=== symbol: run_engine @"),
         "expected both symbols fetched in one multi-symbol read-file call: {multi_sym}"
+    );
+
+    // 17. RAM-accurate `enum` disambiguation on unhydrated Rust files (coarse resident-index `type` -> `enum`).
+    let ModelToolOutcome::Completed(unhydrated_enum) = run(
+        "c16",
+        "(file-outline \"crates/modes/src/\" lang: \"rust\" kind: \"enum\")",
+    )
+    .await
+    else {
+        panic!("expected Completed for unhydrated Rust enum outline");
+    };
+    assert!(
+        unhydrated_enum.contains("[enum] EngineMode"),
+        "expected RAM-refined enum symbol on unhydrated file: {unhydrated_enum}"
+    );
+
+    // 18. `(file-outline ... projection: "kind-summary")` emits compact per-file kind inventory + kind_totals.
+    let ModelToolOutcome::Completed(kind_summary) = run(
+        "c17",
+        "(file-outline \"crates/\" projection: \"kind-summary\" exclude-tests?: #t)",
+    )
+    .await
+    else {
+        panic!("expected Completed for kind-summary outline");
+    };
+    assert!(
+        kind_summary.contains("projection: kind-summary")
+            && kind_summary.contains("kind_totals:")
+            && kind_summary.contains("struct(1): SearchEngine")
+            && kind_summary.contains("enum(1): EngineMode"),
+        "expected compact kind-summary inventory across hydrated + unhydrated files: {kind_summary}"
     );
 }
