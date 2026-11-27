@@ -10,6 +10,7 @@
         ArtifactKindsContract
         ArtifactDomainContract
         ArtifactCollectionContract
+        ArtifactWorkspaceLayoutContract
         ArtifactCatalogContract
         ArtifactProjection
         ArtifactsContract)
@@ -60,6 +61,16 @@
           contract-id: [String]
           allowed-kinds: [SymbolListType]))
 
+(def ArtifactWorkspaceLayoutContract
+  (Record session-db: [String]
+          context-db: [String]
+          search-dir: [String]
+          process-ledger-suffix: [String]
+          project-prefix: [String]
+          session-prefix: [String]
+          default-session: [String]
+          default-agent-key: [Symbol]))
+
 (def ArtifactCatalogContract
   (Record identity: [String]
           project: [String]
@@ -68,7 +79,8 @@
           organization: [ArtifactOrganizationContract]
           domains: [PooObjectType]
           collections: [PooObjectType]
-          kinds: [ArtifactKindsContract]))
+          kinds: [ArtifactKindsContract]
+          workspace-layout: [ArtifactWorkspaceLayoutContract]))
 
 (def ArtifactProjection (.cc Type. .element?: vector?))
 
@@ -83,5 +95,6 @@
                plan-artifact-directory: [(Fun PooObjectType <- ArtifactCatalogContract Top)]
                materialize-artifact-directory!: [(Fun PooObjectType <- ArtifactCatalogContract Top String)]
                validate-artifact-directory: [(Fun PooObjectType <- String)]
+               project-workspace-layout: [(Fun ArtifactProjection <- ArtifactCatalogContract)]
                exchange: [(Fun ArtifactProjection <- Top)])
        identity: 'marlin/artifacts))

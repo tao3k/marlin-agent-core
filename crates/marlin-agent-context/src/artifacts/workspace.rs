@@ -104,6 +104,17 @@ impl WorkspaceArtifacts {
         &self.root
     }
 
+    pub fn is_development_mode(&self) -> bool {
+        #[cfg(unix)]
+        {
+            self.enrollment.is_none()
+        }
+        #[cfg(not(unix))]
+        {
+            true
+        }
+    }
+
     /// Compare the observed artifact producer with the admitted checkout.
     pub fn matches_checkout(&self, checkout: &CommittedCheckout) -> bool {
         self.context.common_directory() == checkout.owner
@@ -331,7 +342,7 @@ impl ProjectionContents {
     }
 }
 
-fn ensure_directory(path: &Path) -> io::Result<()> {
+pub(super) fn ensure_directory(path: &Path) -> io::Result<()> {
     match fs::create_dir(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {

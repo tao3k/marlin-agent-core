@@ -94,7 +94,7 @@ async fn spawn_local_openai_http_server(
                     (
                         "200 OK",
                         format!(
-                            "{{\"id\":\"aot-chat-1\",\"choices\":[{{\"message\":{{\"role\":\"assistant\",\"content\":\"{reply}\"}}}}]}}"
+                            "{{\"id\":\"aot-chat-1\",\"model\":\"{expected_mod}\",\"choices\":[{{\"index\":0,\"message\":{{\"role\":\"assistant\",\"content\":\"{reply}\"}},\"finish_reason\":\"stop\"}}]}}"
                         ),
                     )
                 } else {
@@ -1555,42 +1555,33 @@ async fn linked_aot_bitemporal_derivation_dag_and_context_declassification_survi
         "private->external flow must synthesize external-scope unless-declassified Cedar policy: {gov_flow_denied}"
     );
 
-    // 2b. Live compiled-Cedar probe BEFORE declassification: even verified human `alice`
-    //     with fresh MFA step-up MUST be denied on `webhook-out` (`Marlin::Scope::"external"`).
-    let scope_deny_cmd = run_ctl_json(
+    // 2b. Synchronous 1-shot compiled-Cedar probe BEFORE declassification (`probe-cedar --expect deny`):
+    //     even verified human `alice` with fresh MFA step-up MUST be denied on `webhook-out`
+    //     (`Marlin::Scope::"external"`).
+    let scope_deny_probe = run_ctl_json(
         &ctl_bin,
         &ep1,
         bearer_token,
         &[
-            "gov",
-            "check-cedar",
+            "probe-cedar",
             "alice",
             "rearm_breaker",
             "webhook-out",
             "true",
+            "--expect",
+            "deny",
         ],
     )
     .await;
-    assert_eq!(scope_deny_cmd["admitted"], true);
-    let gov_scope_deny = poll_ctl_governance(
-        &ctl_bin,
-        &ep1,
-        bearer_token,
-        "cedar-scope-deny-before-declassify",
-        |g| {
-            g["last_cedar_probe"]["resource"] == "webhook-out"
-                && g["last_cedar_probe"]["decision"] == "deny"
-        },
-    )
-    .await;
+    assert_eq!(scope_deny_probe["decision"], "deny");
     assert!(
-        gov_scope_deny["last_cedar_probe"]["matched_policy_ids"]
+        scope_deny_probe["matched_policy_ids"]
             .as_array()
             .is_some_and(|arr| {
                 arr.iter()
                     .any(|id| id == "marlin.ascent.forbid.scope.external-unless-declassified")
             }),
-        "compiled-Cedar scope probe must cite external-unless-declassified forbid policy: {gov_scope_deny}"
+        "compiled-Cedar scope probe must cite external-unless-declassified forbid policy: {scope_deny_probe}"
     );
 
     // 3. Declassify `payroll-csv`: clears ASCENT rejection_reasons while preserving the
@@ -1634,42 +1625,32 @@ async fn linked_aot_bitemporal_derivation_dag_and_context_declassification_survi
     })
     .await;
 
-    // 3b. Live compiled-Cedar probe AFTER declassification: `alice` with fresh MFA step-up
-    //     is now allowed on `webhook-out` via `marlin.permit.verified-human-governance`.
-    let scope_allow_cmd = run_ctl_json(
+    // 3b. Synchronous 1-shot compiled-Cedar probe AFTER declassification (`probe-cedar --expect allow`):
+    //     `alice` with fresh MFA step-up is now allowed on `webhook-out`.
+    let scope_allow_probe = run_ctl_json(
         &ctl_bin,
         &ep1,
         bearer_token,
         &[
-            "gov",
-            "check-cedar",
+            "probe-cedar",
             "alice",
             "rearm_breaker",
             "webhook-out",
             "true",
+            "--expect",
+            "allow",
         ],
     )
     .await;
-    assert_eq!(scope_allow_cmd["admitted"], true);
-    let gov_scope_allow = poll_ctl_governance(
-        &ctl_bin,
-        &ep1,
-        bearer_token,
-        "cedar-scope-allow-after-declassify",
-        |g| {
-            g["last_cedar_probe"]["resource"] == "webhook-out"
-                && g["last_cedar_probe"]["decision"] == "allow"
-        },
-    )
-    .await;
+    assert_eq!(scope_allow_probe["decision"], "allow");
     assert!(
-        gov_scope_allow["last_cedar_probe"]["matched_policy_ids"]
+        scope_allow_probe["matched_policy_ids"]
             .as_array()
             .is_some_and(|arr| {
                 arr.iter()
                     .any(|id| id == "marlin.permit.verified-human-governance")
             }),
-        "compiled-Cedar probe after declassification must allow via verified-human policy: {gov_scope_allow}"
+        "compiled-Cedar probe after declassification must allow via verified-human policy: {scope_allow_probe}"
     );
 
     stop_host(child1).await;
@@ -1716,7 +1697,45 @@ async fn linked_aot_bitemporal_derivation_dag_and_context_declassification_survi
     );
     let ep2 = format!("http://{addr2}");
 
-    // 4. Send ONLY `gov retract token-cert-v1` (ZERO register-derivation sent on Boot #2!).
+    // 4a. Post-restart scope + declassification persistence check via 1-shot `probe-cedar`:
+    //     positive `--expect allow` succeeds; mismatched `--expect deny` MUST exit non-zero.
+    let boot2_probe = run_ctl_json(
+        &ctl_bin,
+        &ep2,
+        bearer_token,
+        &[
+            "probe-cedar",
+            "alice",
+            "rearm_breaker",
+            "webhook-out",
+            "true",
+            "--expect",
+            "allow",
+        ],
+    )
+    .await;
+    assert_eq!(boot2_probe["decision"], "allow");
+    let boot2_mismatch = Command::new(&ctl_bin)
+        .env("MARLIN_BRIDGE_ENDPOINT", &ep2)
+        .env("MARLIN_BRIDGE_TOKEN", bearer_token)
+        .args([
+            "probe-cedar",
+            "alice",
+            "rearm_breaker",
+            "webhook-out",
+            "true",
+            "--expect",
+            "deny",
+        ])
+        .output()
+        .await
+        .expect("run mismatched probe-cedar --expect deny");
+    assert!(
+        !boot2_mismatch.status.success(),
+        "probe-cedar --expect deny must exit non-zero when actual decision is allow"
+    );
+
+    // 4b. Send ONLY `gov retract token-cert-v1` (ZERO register-derivation sent on Boot #2!).
     let retract_resp = run_ctl_json(
         &ctl_bin,
         &ep2,

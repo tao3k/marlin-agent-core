@@ -264,7 +264,11 @@ fn org_governance_ledger_and_governed_context_capsule_enforce_detour_and_two_zon
         .unwrap();
     shared_ledger.poison_channel_context(&channel_id).unwrap();
     let handle = shared_ledger
-        .mint_channel_handle(&alice, &channel_id, ContextHandleId::new("h-bridge-1").unwrap())
+        .mint_channel_handle(
+            &alice,
+            &channel_id,
+            ContextHandleId::new("h-bridge-1").unwrap(),
+        )
         .unwrap();
 
     let scoped = assemble_scoped_two_zone_gateway_messages(
@@ -282,7 +286,11 @@ fn org_governance_ledger_and_governed_context_capsule_enforce_detour_and_two_zon
     assert_eq!(scoped.bundle_receipt.redacted_entry_ids, vec![priv_id]);
     assert!(scoped.bundle_receipt.tainted);
     assert!(scoped.messages[1].content.contains("shared-channel-brief"));
-    assert!(!scoped.messages[1].content.contains("TOP-SECRET-KEY-MATERIAL"));
+    assert!(
+        !scoped.messages[1]
+            .content
+            .contains("TOP-SECRET-KEY-MATERIAL")
+    );
     // Zone-1 KV-Prefix System message remains completely immutable!
     assert_eq!(scoped.messages[0], messages[0]);
 }

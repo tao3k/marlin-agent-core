@@ -6,6 +6,7 @@
 
 use std::{
     collections::{BTreeMap, VecDeque},
+    io,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -18,9 +19,16 @@ use super::cleanup::{
     RuntimeCommandCleanupOutcome, RuntimeCommandCleanupReceipt, RuntimeProcessCleanupController,
     RuntimeProcessCleanupFailure, RuntimeProcessCleanupPolicy, RuntimeProcessCleanupSweep,
 };
+use super::ledger::{ManagedProcessLedgerEntry, ProcessLedgerStore, RuntimeHostRunId};
+use super::reconcile::{
+    PersistedProcessReconciliationReport, ReapSurvivedProcessRequest, SurvivedProcessObservation,
+    SurvivedProcessReapReceipt, reap_survived_entry, reconcile_persisted_ledger,
+};
+use super::shutdown::ProcessGracefulShutdownPolicy;
 use super::types::{
     RuntimeProcessHandle, RuntimeProcessKind, RuntimeProcessObservation,
-    RuntimeProcessRegistrationError, RuntimeProcessRegistrySnapshot, RuntimeProcessStatus,
+    RuntimeProcessObservationTimestampMs, RuntimeProcessRegistrationError,
+    RuntimeProcessRegistrySnapshot, RuntimeProcessStatus,
 };
 use crate::observability::{
     PROCESS_EVENT_CLEANUP_REQUESTED, PROCESS_EVENT_CLEANUP_SWEEP, PROCESS_EVENT_FAILED,
@@ -506,10 +514,13 @@ fn process_sub_agent_source(process: &RuntimeProcessObservation) -> &str {
 /// handles for child contexts.
 #[derive(Clone, Debug)]
 pub struct RuntimeProcessRegistryHandle {
+    host_run_id: RuntimeHostRunId,
     inner: Arc<Mutex<RuntimeProcessRegistry>>,
     managed_stops:
         Arc<Mutex<BTreeMap<crate::RuntimeResourceId, tokio_util::sync::CancellationToken>>>,
     managed_revision: Arc<AtomicU64>,
+    ledger: Option<Arc<dyn ProcessLedgerStore>>,
+    survived: Arc<Mutex<Vec<SurvivedProcessObservation>>>,
 }
 
 impl RuntimeProcessRegistryHandle {
@@ -519,10 +530,149 @@ impl RuntimeProcessRegistryHandle {
 
     pub fn from_registry(registry: RuntimeProcessRegistry) -> Self {
         Self {
+            host_run_id: RuntimeHostRunId::generate(),
             inner: Arc::new(Mutex::new(registry)),
             managed_stops: Arc::default(),
             managed_revision: Arc::new(AtomicU64::new(0)),
+            ledger: None,
+            survived: Arc::default(),
         }
+    }
+
+    /// Construct a registry handle backed by a durable persistent process ledger.
+    pub fn with_ledger(host_run_id: RuntimeHostRunId, ledger: Arc<dyn ProcessLedgerStore>) -> Self {
+        Self {
+            host_run_id,
+            inner: Arc::new(Mutex::new(RuntimeProcessRegistry::new())),
+            managed_stops: Arc::default(),
+            managed_revision: Arc::new(AtomicU64::new(0)),
+            ledger: Some(ledger),
+            survived: Arc::default(),
+        }
+    }
+
+    /// Unique identifier for the current Marlin host runtime boot.
+    pub fn host_run_id(&self) -> &RuntimeHostRunId {
+        &self.host_run_id
+    }
+
+    /// Optional persistent ledger attached to this runtime.
+    pub fn ledger(&self) -> Option<&Arc<dyn ProcessLedgerStore>> {
+        self.ledger.as_ref()
+    }
+
+    /// Best-effort durable ledger upsert; never blocks runtime cleanup on storage failure.
+    pub(super) fn persist_ledger_entry(&self, entry: &ManagedProcessLedgerEntry) {
+        if let Some(ledger) = &self.ledger
+            && let Err(error) = ledger.upsert(entry)
+        {
+            tracing::warn!(
+                target: TARGET_RUNTIME_PROCESS,
+                process_event = "ledger_persist_failed",
+                pid = entry.pid,
+                process_handle = entry.handle.as_str(),
+                error = %error,
+            );
+        }
+    }
+
+    /// Load all entries stored in the persistent ledger (if configured).
+    pub fn persisted_entries(&self) -> io::Result<Vec<ManagedProcessLedgerEntry>> {
+        match &self.ledger {
+            Some(ledger) => ledger.load_all(),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Inspect processes from prior Marlin host runs discovered still alive on restart.
+    pub fn survived_processes(&self) -> Vec<SurvivedProcessObservation> {
+        self.survived.lock().clone()
+    }
+
+    /// Reconcile non-terminal entries from previous host runs against the OS and
+    /// surface any surviving orphans in both the registry and `survived_processes()`.
+    pub fn reconcile_persisted_processes(
+        &self,
+        observed_at_ms: u64,
+    ) -> io::Result<PersistedProcessReconciliationReport> {
+        let Some(ledger) = &self.ledger else {
+            return Ok(PersistedProcessReconciliationReport {
+                host_run_id: Some(self.host_run_id.clone()),
+                observed_at_ms,
+                ..PersistedProcessReconciliationReport::default()
+            });
+        };
+        let report =
+            reconcile_persisted_ledger(ledger.as_ref(), &self.host_run_id, observed_at_ms)?;
+        {
+            let mut survived = self.survived.lock();
+            *survived = report.survived.clone();
+        }
+        {
+            let mut registry = self.inner.lock();
+            for item in &report.survived {
+                if registry.get(item.entry.pid).is_none() {
+                    let _ = registry.try_track(item.entry.to_orphaned_observation());
+                }
+            }
+        }
+        if !report.survived.is_empty() {
+            self.managed_revision.fetch_add(1, Ordering::Release);
+        }
+        Ok(report)
+    }
+
+    /// Gracefully reap one survived orphan process discovered after restart.
+    pub fn reap_survived_process(
+        &self,
+        pid: u32,
+        policy: &ProcessGracefulShutdownPolicy,
+        observed_at_ms: u64,
+    ) -> io::Result<Option<SurvivedProcessReapReceipt>> {
+        let candidate = {
+            let survived = self.survived.lock();
+            survived
+                .iter()
+                .find(|item| item.entry.pid == pid)
+                .map(|item| item.entry.clone())
+        };
+        let Some(entry) = candidate else {
+            return Ok(None);
+        };
+        let receipt = reap_survived_entry(ReapSurvivedProcessRequest {
+            store: self.ledger.as_deref(),
+            current_host_run_id: &self.host_run_id,
+            entry,
+            policy,
+            observed_at_ms: RuntimeProcessObservationTimestampMs::new(observed_at_ms),
+        })?;
+        if receipt.confirmed_absent {
+            self.survived.lock().retain(|item| item.entry.pid != pid);
+            let _ = self.inner.lock().remove(pid);
+            self.managed_revision.fetch_add(1, Ordering::Release);
+        }
+        Ok(Some(receipt))
+    }
+
+    /// Gracefully reap all survived orphan processes discovered after restart.
+    pub fn reap_all_survived_processes(
+        &self,
+        policy: &ProcessGracefulShutdownPolicy,
+        observed_at_ms: u64,
+    ) -> io::Result<Vec<SurvivedProcessReapReceipt>> {
+        let pids: Vec<u32> = self
+            .survived
+            .lock()
+            .iter()
+            .map(|item| item.entry.pid)
+            .collect();
+        let mut receipts = Vec::with_capacity(pids.len());
+        for pid in pids {
+            if let Some(receipt) = self.reap_survived_process(pid, policy, observed_at_ms)? {
+                receipts.push(receipt);
+            }
+        }
+        Ok(receipts)
     }
 
     pub fn track(&self, observation: RuntimeProcessObservation) {

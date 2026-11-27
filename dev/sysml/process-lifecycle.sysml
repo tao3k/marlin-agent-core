@@ -172,5 +172,32 @@ package MarlinProcessLifecycle {
     allocation admissionOwnership allocate atomicShutdownAdmission to managedProcess;
     allocation admissionEvidence allocate atomicShutdownAdmission to lifecycleVerification;
     allocation identityOwnership allocate resourceIdentity to managedProcess;
+    requirement <'MAR-PROC-R20'> gracefulTwoPhaseShutdown {
+        doc /* Managed process termination and Drop must never send immediate
+               SIGKILL before giving the process its configured cooperative
+               shutdown hook and SIGTERM grace window to reap its own children.
+               SIGKILL escalation occurs only after the grace period expires or
+               when explicitly requested via force_kill. */
+    }
+    requirement <'MAR-PROC-R21'> persistentProcessLedgerAndRestartReconciliation {
+        doc /* Every managed process spawned under Marlin records its host run
+               identity, PID, PGID, OS start-time fingerprint, and termination
+               stage in a crash-safe persistent ledger. On restart, Marlin
+               reconciles non-terminal prior-run entries against OS identity
+               (guarding against PID reuse), surfaces still-alive orphans, and
+               supports graceful post-restart reaping. */
+    }
+    requirement <'MAR-PROC-R22'> openTelemetryProcessLifecycleSpans {
+        doc /* Managed process lifetimes, graceful shutdown / SIGKILL
+               escalation outcomes, and post-restart orphan reconciliation emit
+               low-cardinality OpenTelemetry spans on the runtime span target
+               (marlin.runtime) so OTLP export captures process lifecycle evidence. */
+    }
+    allocation gracefulShutdownOwnership allocate gracefulTwoPhaseShutdown to managedProcess;
+    allocation persistentLedgerOwnership allocate persistentProcessLedgerAndRestartReconciliation to managedProcess;
+    allocation otelProcessSpanOwnership allocate openTelemetryProcessLifecycleSpans to managedProcess;
+    allocation gracefulShutdownEvidence allocate gracefulTwoPhaseShutdown to lifecycleVerification;
+    allocation persistentLedgerEvidence allocate persistentProcessLedgerAndRestartReconciliation to lifecycleVerification;
+    allocation otelProcessSpanEvidence allocate openTelemetryProcessLifecycleSpans to lifecycleVerification;
     allocation identityEvidence allocate resourceIdentity to lifecycleVerification;
 }

@@ -289,4 +289,16 @@
             (check (vector-ref p2 1) => (vector patch-digest receipt-digest))
             (check (vector-ref p3 1) => (vector patch-digest receipt-digest work-digest))
             (check (vector-ref restored 0) => (vector-ref p3 0))
-            (check (vector-ref restored 1) => (vector patch-digest receipt-digest work-digest))))))))
+            (check (vector-ref restored 1) => (vector patch-digest receipt-digest work-digest)))))
+
+    (test-case "artifacts-exchange projects declarative workspace storage and session layout"
+      (let* ((exchange (.get Artifacts exchange))
+             (layout (exchange (vector 'workspace-layout))))
+        (check (vector-length layout) => 7)
+        (check (vector-ref layout 0) => "session.db")
+        (check (vector-ref layout 1) => "context.db")
+        (check (vector-ref layout 2) => "search")
+        (check (vector-ref layout 3) => ".processes.json")
+        (check (vector-ref layout 4) => "project:marlin-agent-core")
+        (check (vector-ref layout 5) => "session:default")
+        (check (vector-ref layout 6) => "agent/host-operator"))))))

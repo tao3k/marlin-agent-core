@@ -186,7 +186,9 @@ pub enum ContextScopeRejection {
     DuplicateEntry(ContextEntryId),
     #[error("context channel not found: {0}")]
     ChannelNotFound(ContextChannelId),
-    #[error("cross-tenant access denied: actor tenant {actor_tenant} != resource tenant {resource_tenant}")]
+    #[error(
+        "cross-tenant access denied: actor tenant {actor_tenant} != resource tenant {resource_tenant}"
+    )]
     CrossTenantDenied {
         actor_tenant: ContextTenantId,
         resource_tenant: ContextTenantId,
@@ -208,7 +210,9 @@ pub enum ContextScopeRejection {
         channel_id: ContextChannelId,
         principal_id: ContextPrincipalId,
     },
-    #[error("stale access handle epoch {handle_epoch:?} != current channel epoch {current_epoch:?}")]
+    #[error(
+        "stale access handle epoch {handle_epoch:?} != current channel epoch {current_epoch:?}"
+    )]
     StaleHandleEpoch {
         handle_epoch: ContextAclEpoch,
         current_epoch: ContextAclEpoch,
@@ -225,16 +229,22 @@ pub enum ContextScopeRejection {
         entry_id: ContextEntryId,
         actor_id: ContextPrincipalId,
     },
-    #[error("confidential entry {0} requires explicit owner declassification before promotion or egress")]
+    #[error(
+        "confidential entry {0} requires explicit owner declassification before promotion or egress"
+    )]
     DeclassificationRequired(ContextEntryId),
     #[error("invalid scope transition from {from:?} to {to:?}")]
     InvalidScopeTransition {
         from: SharedContextScope,
         to: SharedContextScope,
     },
-    #[error("tainted shared context in channel {0} requires verified human approval before tool execution")]
+    #[error(
+        "tainted shared context in channel {0} requires verified human approval before tool execution"
+    )]
     TaintedContextRequiresHumanGate(ContextChannelId),
-    #[error("scope exfiltration blocked: entry {entry_id} ({entry_scope:?}) cannot flow into broader target scope {target_scope:?}")]
+    #[error(
+        "scope exfiltration blocked: entry {entry_id} ({entry_scope:?}) cannot flow into broader target scope {target_scope:?}"
+    )]
     PromptExfiltrationBlocked {
         entry_id: ContextEntryId,
         entry_scope: SharedContextScope,
@@ -580,18 +590,18 @@ impl SharedContextGovernanceLedger {
                 }
             }
             SharedContextScope::Channel => {
-                let channel_id = entry
-                    .channel_id
-                    .as_ref()
-                    .ok_or_else(|| ContextScopeRejection::ChannelHandleRequired(entry_id.clone()))?;
+                let channel_id = entry.channel_id.as_ref().ok_or_else(|| {
+                    ContextScopeRejection::ChannelHandleRequired(entry_id.clone())
+                })?;
                 let channel = self
                     .channels
                     .get(channel_id)
                     .ok_or_else(|| ContextScopeRejection::ChannelNotFound(channel_id.clone()))?;
                 channel_tainted = channel.tainted;
 
-                let access_handle = handle
-                    .ok_or_else(|| ContextScopeRejection::ChannelHandleRequired(entry_id.clone()))?;
+                let access_handle = handle.ok_or_else(|| {
+                    ContextScopeRejection::ChannelHandleRequired(entry_id.clone())
+                })?;
                 if &access_handle.tenant_id != actor.tenant_id()
                     || &access_handle.principal_id != effective_id
                     || &access_handle.channel_id != channel_id

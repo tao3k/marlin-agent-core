@@ -32,5 +32,8 @@ libc.workspace = true
 
 [dev-dependencies]
 asp-rust.workspace = true
+marlin-agent-runtime.workspace = true
 opentelemetry-proto = { version = "0.31", default-features = false, features = ["gen-tonic-messages", "trace"] }
 prost = "0.14"
+tempfile.workspace = true
+tokio.workspace = true

@@ -23,6 +23,10 @@ pub const SPAN_RUNTIME_TOOL: &str = "runtime.tool";
 pub const SPAN_RUNTIME_SUB_AGENT: &str = "runtime.sub_agent";
 /// Tracing span name for hook runtime calls.
 pub const SPAN_RUNTIME_HOOK: &str = "runtime.hook";
+/// Tracing span name covering one managed OS process lifecycle.
+pub const SPAN_RUNTIME_PROCESS: &str = "runtime.process";
+/// Tracing span name for boot-time reconciliation of persisted OS processes.
+pub const SPAN_RUNTIME_PROCESS_RECONCILE: &str = "runtime.process.reconcile";
 /// Tracing span name for kernel provider node execution.
 pub const SPAN_AGENT_PROVIDER: &str = "agent.provider";
 /// Tracing span name for kernel tool node execution.
@@ -91,6 +95,20 @@ pub const FIELD_EVENT_COUNT: &str = "event_count";
 pub const FIELD_OBSERVED_AT_MS: &str = "observed_at_ms";
 /// Tracing field key for an OS process identifier.
 pub const FIELD_PROCESS_ID: &str = "pid";
+/// Tracing field key for a Unix process group identifier.
+pub const FIELD_PROCESS_GROUP_ID: &str = "pgid";
+/// Tracing field key for the Marlin host boot run identifier.
+pub const FIELD_HOST_RUN_ID: &str = "host_run_id";
+/// Tracing field key for the process termination lifecycle stage.
+pub const FIELD_TERMINATION_STAGE: &str = "termination_stage";
+/// Tracing field key for whether graceful shutdown escalated to SIGKILL.
+pub const FIELD_ESCALATED_TO_SIGKILL: &str = "escalated_to_sigkill";
+/// Tracing field key for whether a persisted process survived Marlin restart.
+pub const FIELD_ORPHAN_ALIVE: &str = "orphan_alive";
+/// Tracing field key for surviving descendant process count observed on restart.
+pub const FIELD_SURVIVING_DESCENDANTS: &str = "surviving_descendants";
+/// Tracing field key for an observed OS exit code.
+pub const FIELD_EXIT_CODE: &str = "exit_code";
 /// Tracing field key for a runtime process event classifier.
 pub const FIELD_PROCESS_EVENT: &str = "process_event";
 /// Tracing field key for a runtime process handle.

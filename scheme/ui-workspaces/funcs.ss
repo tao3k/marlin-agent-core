@@ -54,8 +54,8 @@
 (def (clamp-split-ratio ratio)
   (cond
     ((not (number? ratio)) 0.50)
-    ((< ratio 0.20) 0.20)
-    ((> ratio 0.80) 0.80)
+    ((< ratio 0.15) 0.15)
+    ((> ratio 0.85) 0.85)
     (else ratio)))
 
 (def (valid-side side)
@@ -157,15 +157,30 @@
                                   new-right)))))
     (else node)))
 
+;;; Count consecutive pane spans along the same split axis (Ghostty / tmux /
+;;; Emacs window-combination-resize proportional auto-balance weighting).
+(def (tree-axis-weight node dir)
+  (cond
+    ((not node) 0)
+    ((leaf-node? node) 1)
+    ((and (split-node? node) (eq? (.get node direction) dir))
+     (+ (tree-axis-weight (.get node first) dir)
+        (tree-axis-weight (.get node second) dir)))
+    (else 1)))
+
 (def (tree-balance node)
   (cond
     ((not node) #f)
     ((leaf-node? node) node)
     ((split-node? node)
-     (make-window-split (.get node direction)
-                        0.50
-                        (tree-balance (.get node first))
-                        (tree-balance (.get node second))))
+     (let* ((dir (.get node direction))
+            (left (tree-balance (.get node first)))
+            (right (tree-balance (.get node second)))
+            (w1 (tree-axis-weight left dir))
+            (w2 (tree-axis-weight right dir))
+            (total (+ w1 w2))
+            (ratio (if (> total 0) (/ (exact->inexact w1) (exact->inexact total)) 0.50)))
+       (make-window-split dir ratio left right)))
     (else node)))
 
 ;;; Adjust the ratio of the innermost split containing target-id.
@@ -527,20 +542,22 @@
   (marlin-ws-window-number state (.get (active-workspace state) focused-window-id)))
 
 ;;; Split the focused window vertically (left | right) or horizontally (top / bottom),
-;;; pushing the previous layout to this workspace's winner-mode undo stack.
+;;; defaulting the new pane to the focused window's current buffer (Emacs /
+;;; Ghostty / tmux behavior) and auto-balancing split proportions across the axis.
 (def (marlin-ws-split-window state direction secondary-buffer)
   (let* ((ws (active-workspace state))
          (focus-id (.get ws focused-window-id))
          (focus-leaf (marlin-ws-focused-window state))
          (buf (if (and (string? secondary-buffer) (> (string-length secondary-buffer) 0))
                   secondary-buffer
-                  (default-secondary-buffer (.get focus-leaf buffer))))
+                  (.get focus-leaf buffer)))
          (next-seq (+ (.get ws next-window-seq) 1))
          (new-id (string-append "w" (number->string next-seq)))
          (new-leaf (make-window-leaf new-id buf #f))
-         (next-tree (tree-map-leaf (.get ws window-tree) focus-id
-                                   (lambda (leaf)
-                                     (make-window-split direction 0.50 leaf new-leaf))))
+         (raw-tree (tree-map-leaf (.get ws window-tree) focus-id
+                                  (lambda (leaf)
+                                    (make-window-split direction 0.50 leaf new-leaf))))
+         (next-tree (tree-balance raw-tree))
          (next-bufs (append-unique (.get ws buffers) buf))
          (updated (workspace-with-tree ws next-tree new-id next-seq next-bufs #t)))
     (make-state (.get state active-id)
@@ -586,7 +603,7 @@
             state)
         (let* ((focus-id (.get ws focused-window-id))
                (cur-idx (index-of-first (lambda (w) (equal? (.get w id) focus-id)) leaves))
-               (next-tree (tree-delete-leaf (.get ws window-tree) focus-id))
+               (next-tree (tree-balance (tree-delete-leaf (.get ws window-tree) focus-id)))
                (next-leaves (tree-leaves next-tree))
                (next-idx (min cur-idx (- (length next-leaves) 1)))
                (next-focus (.get (list-ref next-leaves (max 0 next-idx)) id))

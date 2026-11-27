@@ -133,4 +133,26 @@
              (tree-proj ((.get ui-ws project-window-tree) s9)))
         (check-equal? (vector-ref ((.get ui-ws project-state) s12) 1) "main")
         (check-equal? (vector-ref tree-proj 0) 'window-tree)
-        (check-equal? (vector-ref tree-proj 2) 3)))))
+        (check-equal? (vector-ref tree-proj 2) 3)))
+
+    (test-case "Ghostty/tmux auto-balance splits current window 50/50 and equalizes 3-way columns"
+      (let* ((s0 ((.get ui-ws make-state)))
+             ;; Default startup: single workspace with *Dashboard* + *conversation*.
+             (_ (check-equal? ((.get ui-ws workspace-buffers) s0) '("*Dashboard*" "*conversation*")))
+             (s1 ((.get ui-ws open-buffer) s0 "*conversation*"))
+             ;; Splitting with empty secondary splits the focused *conversation* window 50/50!
+             (s2 ((.get ui-ws split-window) s1 'vertical ""))
+             (_ (check-equal? (map (lambda (w) (.get w buffer)) ((.get ui-ws window-list) s2))
+                              '("*conversation*" "*conversation*")))
+             (root2 (.get (car (.get s2 workspaces)) window-tree))
+             (_ (check-equal? (.get root2 ratio) 0.5))
+             ;; Third vertical split auto-equalizes root to 1/3 (~0.3333) and right subtree to 0.5!
+             (s3 ((.get ui-ws split-window) s2 'vertical ""))
+             (root3 (.get (car (.get s3 workspaces)) window-tree))
+             (r3 (.get root3 ratio))
+             (_ (check-equal? (and (> r3 0.33) (< r3 0.34)) #t))
+             ;; Deleting one pane re-balances remaining two back to exact 50/50!
+             (s4 ((.get ui-ws delete-window) s3))
+             (root4 (.get (car (.get s4 workspaces)) window-tree)))
+        (check-equal? ((.get ui-ws window-count) s4) 2)
+        (check-equal? (.get root4 ratio) 0.5)))))

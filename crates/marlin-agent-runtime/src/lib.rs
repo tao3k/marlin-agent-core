@@ -70,10 +70,15 @@ pub use model_tooling::{
     ShellToolDeclarationRequest, ShellToolHandler,
 };
 pub use process::{
-    AsyncManagedChildProcess, ManagedChildProcessSpec, ManagedChildStdin,
-    RuntimeProcessCleanupController, RuntimeProcessCleanupSweep,
-    RuntimeProcessContainmentRequirement, RuntimeProcessExitStatus, RuntimeProcessLiveness,
-    RuntimeProcessOutput, RuntimeProcessRegistryHandle, RuntimeProcessTerminator,
+    AsyncManagedChildProcess, FileProcessLedgerStore, InMemoryProcessLedgerStore,
+    ManagedChildProcessSpec, ManagedChildStdin, ManagedChildStdout, ManagedProcessLedgerEntry,
+    ManagedProcessLedgerRecordRequest, PersistedProcessReconciliationReport,
+    ProcessGracefulShutdownDurationMs, ProcessGracefulShutdownPolicy, ProcessGroupId,
+    ProcessLedgerStore, ProcessShutdownHook, ProcessStartTimeSeconds, ProcessTerminationStage,
+    ReapSurvivedProcessRequest, RuntimeHostRunId, RuntimeProcessCleanupController,
+    RuntimeProcessCleanupSweep, RuntimeProcessContainmentRequirement, RuntimeProcessExitStatus,
+    RuntimeProcessLiveness, RuntimeProcessOutput, RuntimeProcessRegistryHandle,
+    RuntimeProcessTerminator, SurvivedProcessObservation, SurvivedProcessReapReceipt,
     SysinfoRuntimeProcessController,
 };
 pub use process_executor::ManagedProcessExecutor;

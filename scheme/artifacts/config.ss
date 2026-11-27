@@ -18,4 +18,5 @@
         plan-artifact-directory: artifacts-plan-artifact-directory
         materialize-artifact-directory!: artifacts-materialize-artifact-directory!
         validate-artifact-directory: artifacts-validate-artifact-directory
+        project-workspace-layout: artifacts-project-workspace-layout
         exchange: artifacts-exchange)))

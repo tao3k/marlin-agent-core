@@ -178,8 +178,8 @@ impl<'a> JsonParser<'a> {
                     {
                         end += 1;
                     }
-                    let slice = std::str::from_utf8(&self.bytes[start..end])
-                        .map_err(|e| e.to_string())?;
+                    let slice =
+                        std::str::from_utf8(&self.bytes[start..end]).map_err(|e| e.to_string())?;
                     out.push_str(slice);
                     self.pos = end;
                     let _ = byte;
@@ -327,10 +327,8 @@ fn generate_itf_traces(
         .duration_since(UNIX_EPOCH)
         .expect("clock after epoch")
         .as_nanos();
-    let out_dir = env::temp_dir().join(format!(
-        "marlin-context-mbt-{}-{nanos}",
-        std::process::id()
-    ));
+    let out_dir =
+        env::temp_dir().join(format!("marlin-context-mbt-{}-{nanos}", std::process::id()));
     fs::create_dir_all(&out_dir).expect("create temp ITF dir");
 
     let output = Command::new("bun")
@@ -532,8 +530,7 @@ fn mbt_upstream_shared_context_governance_refines_rust_ledger() {
             let private_leak = h_bool(next, "privateLeak") && !h_bool(prev, "privateLeak");
             let unauth_promote =
                 h_bool(next, "unauthorizedPromote") && !h_bool(prev, "unauthorizedPromote");
-            let revoked_read =
-                h_bool(next, "revokedReadLeak") && !h_bool(prev, "revokedReadLeak");
+            let revoked_read = h_bool(next, "revokedReadLeak") && !h_bool(prev, "revokedReadLeak");
             let taint_hijack =
                 h_bool(next, "taintedToolHijack") && !h_bool(prev, "taintedToolHijack");
 
@@ -548,7 +545,9 @@ fn mbt_upstream_shared_context_governance_refines_rust_ledger() {
                 ));
                 let err_no_declass = ledger
                     .promote_scope(&owner, &entry_id, SharedContextScope::Channel, false)
-                    .expect_err("Rust ledger must reject confidential promotion without declassification");
+                    .expect_err(
+                        "Rust ledger must reject confidential promotion without declassification",
+                    );
                 assert!(matches!(
                     err_no_declass,
                     ContextScopeRejection::DeclassificationRequired(_)
@@ -562,7 +561,10 @@ fn mbt_upstream_shared_context_governance_refines_rust_ledger() {
                 let err = ledger
                     .read_entry(&peer, &entry_id, peer_handle.as_ref())
                     .expect_err("Rust ledger must block private-scope leak");
-                assert!(matches!(err, ContextScopeRejection::PrivateScopeDenied { .. }));
+                assert!(matches!(
+                    err,
+                    ContextScopeRejection::PrivateScopeDenied { .. }
+                ));
                 countermodels_refused += 1;
                 break;
             }
@@ -607,7 +609,10 @@ fn mbt_upstream_shared_context_governance_refines_rust_ledger() {
                 let handle = ledger
                     .mint_channel_handle(&peer, &channel_id, hid)
                     .unwrap_or_else(|e| panic!("safe mint handle failed in {trace_name}: {e}"));
-                assert_eq!(handle.acl_epoch.get() as i64, h_i64(next, "peerHandleEpoch"));
+                assert_eq!(
+                    handle.acl_epoch.get() as i64,
+                    h_i64(next, "peerHandleEpoch")
+                );
                 peer_handle = Some(handle);
             } else if prev_member && !next_member {
                 let epoch = ledger
@@ -734,22 +739,23 @@ fn mbt_marlin_backend_shared_context_overlay_refines_rust_ledger() {
             let private_leak = h_bool(next, "privateLeak") && !h_bool(prev, "privateLeak");
             let unauth_promote =
                 h_bool(next, "unauthorizedPromote") && !h_bool(prev, "unauthorizedPromote");
-            let revoked_leak =
-                h_bool(next, "revokedReadLeak") && !h_bool(prev, "revokedReadLeak");
+            let revoked_leak = h_bool(next, "revokedReadLeak") && !h_bool(prev, "revokedReadLeak");
             let taint_hijack =
                 h_bool(next, "taintedToolHijack") && !h_bool(prev, "taintedToolHijack");
             let cross_tenant_leak =
                 h_bool(next, "crossTenantLeak") && !h_bool(prev, "crossTenantLeak");
             let dm_outsider_leak =
                 h_bool(next, "dmOutsiderLeak") && !h_bool(prev, "dmOutsiderLeak");
-            let exfil_leak =
-                h_bool(next, "exfiltrationLeak") && !h_bool(prev, "exfiltrationLeak");
+            let exfil_leak = h_bool(next, "exfiltrationLeak") && !h_bool(prev, "exfiltrationLeak");
 
             if private_leak {
                 let err = ledger
                     .read_entry(&bob, &entry_id, bob_handle.as_ref())
                     .expect_err("overlay must refuse private-scope leak");
-                assert!(matches!(err, ContextScopeRejection::PrivateScopeDenied { .. }));
+                assert!(matches!(
+                    err,
+                    ContextScopeRejection::PrivateScopeDenied { .. }
+                ));
                 countermodels_refused += 1;
                 break;
             }
@@ -791,7 +797,10 @@ fn mbt_marlin_backend_shared_context_overlay_refines_rust_ledger() {
                 let err = ledger
                     .read_entry(&mallory_tenant_b, &entry_id, None)
                     .expect_err("overlay must refuse cross-tenant read");
-                assert!(matches!(err, ContextScopeRejection::CrossTenantDenied { .. }));
+                assert!(matches!(
+                    err,
+                    ContextScopeRejection::CrossTenantDenied { .. }
+                ));
                 countermodels_refused += 1;
                 break;
             }
@@ -827,13 +836,20 @@ fn mbt_marlin_backend_shared_context_overlay_refines_rust_ledger() {
             if !h_bool(prev, "dmShared") && h_bool(next, "dmShared") {
                 let explicit = h_bool(next, "entryDeclassified");
                 ledger
-                    .promote_scope(&alice, &entry_id, SharedContextScope::DirectMessage, explicit)
+                    .promote_scope(
+                        &alice,
+                        &entry_id,
+                        SharedContextScope::DirectMessage,
+                        explicit,
+                    )
                     .unwrap_or_else(|e| panic!("overlay DM promote failed in {trace_name}: {e}"));
             } else if h_i64(prev, "entryScope") == 0 && h_i64(next, "entryScope") == 1 {
                 let explicit = h_bool(next, "entryDeclassified");
                 ledger
                     .promote_scope(&alice, &entry_id, SharedContextScope::Channel, explicit)
-                    .unwrap_or_else(|e| panic!("overlay Channel promote failed in {trace_name}: {e}"));
+                    .unwrap_or_else(|e| {
+                        panic!("overlay Channel promote failed in {trace_name}: {e}")
+                    });
             } else if !h_bool(prev, "peerHandleIssued") && h_bool(next, "peerHandleIssued") {
                 handle_seq += 1;
                 let hid = ContextHandleId::new(format!("ov-handle-{handle_seq}")).unwrap();
@@ -973,7 +989,12 @@ fn five_scope_bundle_redacts_narrower_entries_and_forbids_agent_promotion() {
             Ok(ledger.assemble_prompt_bundle(
                 &alice,
                 SharedContextScope::Channel,
-                &[priv_id.clone(), dm_id.clone(), chan_id.clone(), ws_id.clone()],
+                &[
+                    priv_id.clone(),
+                    dm_id.clone(),
+                    chan_id.clone(),
+                    ws_id.clone(),
+                ],
                 Some(&handle),
             ))
         })

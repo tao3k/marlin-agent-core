@@ -4,11 +4,16 @@
 
 //! Runtime context and execution identity ownership.
 
+use std::future::Future;
+use std::time::Duration;
+
 use super::{
     AgentSessionContext, CancellationToken, ContextNamespace, ContextVisibility, GraphId, RunId,
-    RuntimeEnvironment, RuntimeEvent, RuntimeEventSendError, RuntimeEventSink, SessionId,
-    SessionIsolationReceipt, SessionKind, SubAgentContextPolicy, SubAgentContextVisibility,
+    RuntimeEnvironment, RuntimeEvent, RuntimeEventSendError, RuntimeEventSink, RuntimeOperationId,
+    RuntimeTask, SessionId, SessionIsolationReceipt, SessionKind, SubAgentContextPolicy,
+    SubAgentContextVisibility,
 };
+use crate::observability;
 use marlin_agent_gitops::working_copy::{WorkingCopyActiveBinding, WorkingCopyIsolationReceipt};
 
 /// Per-call runtime context passed into provider, tool, and sub-agent work.
@@ -170,6 +175,37 @@ impl RuntimeContext {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancellation.is_cancelled()
+    }
+
+    /// Run blocking work under this context's tracked runtime session and tracing span.
+    pub fn spawn_blocking<F, T>(&self, operation: F) -> RuntimeTask<T>
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        let span = observability::runtime_task_span(observability::RUNTIME_KIND_BLOCKING);
+        let task_guard = match self.task_tracker.admit(
+            self.session.session_id(),
+            RuntimeOperationId::new("task.blocking"),
+        ) {
+            Ok(guard) => guard,
+            Err(error) => return RuntimeTask::rejected(error),
+        };
+        RuntimeTask::new(
+            task_guard.id().clone(),
+            tokio::task::spawn_blocking(move || {
+                let _task_guard = task_guard;
+                span.in_scope(operation)
+            }),
+        )
+    }
+
+    /// Bound an async operation by `duration` through the runtime boundary.
+    pub fn timeout<F>(&self, duration: Duration, future: F) -> tokio::time::Timeout<F>
+    where
+        F: Future,
+    {
+        tokio::time::timeout(duration, future)
     }
 
     pub async fn emit(&self, event: RuntimeEvent) -> Result<(), RuntimeEventSendError> {

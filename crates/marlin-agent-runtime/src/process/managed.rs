@@ -12,22 +12,35 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     task::{Context, Poll},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(unix)]
 use process_wrap::tokio::ProcessGroup;
 use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
-use tokio::process::{ChildStdin as AsyncChildStdin, Command as AsyncCommand};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, ReadBuf};
+use tokio::process::{
+    ChildStdin as AsyncChildStdin, ChildStdout as AsyncChildStdout, Command as AsyncCommand,
+};
 use tokio::sync::OwnedSemaphorePermit;
 
+use super::ledger::{ManagedProcessLedgerEntry, ManagedProcessLedgerRecordRequest, ProcessGroupId};
+use super::managed_reaper::{
+    GracefulTerminationContext, finalize_ledger_and_span, run_graceful_termination,
+    terminal_stage_for_exit,
+};
+use super::reconcile::sample_os_start_time_secs;
 use super::registry::RuntimeProcessRegistryHandle;
+use super::shutdown::{
+    ProcessGracefulShutdownPolicy, ProcessShutdownHook, ProcessTerminationStage,
+    wait_for_process_group_exit,
+};
 use super::types::{
     RuntimeCommandObservation, RuntimeProcessExitStatus, RuntimeProcessHandle, RuntimeProcessKind,
-    RuntimeProcessObservation, RuntimeProcessOutput,
+    RuntimeProcessObservation, RuntimeProcessObservationTimestampMs, RuntimeProcessOutput,
 };
 use super::watchdog::{ProcessCommandWatchdog, ProcessWatchdog, ProcessWatchdogReport};
+use crate::observability::{SPAN_RUNTIME_PROCESS, TARGET_RUNTIME_SPAN};
 use crate::tokio_runtime::{
     RuntimeAdmissionError, RuntimeContext, RuntimeOperationId, RuntimeResourceId, RuntimeTaskGuard,
 };
@@ -42,6 +55,7 @@ pub enum RuntimeProcessContainmentRequirement {
     EnforcedDescendantTree,
 }
 
+/// Named spawn request for a runtime-owned child process.
 /// Default upper bound retained per pipe (`stdout`/`stderr`) by `wait_with_output` (SM20).
 /// Excess bytes are still drained to EOF into a fixed scratch buffer so the child never deadlocks.
 pub const DEFAULT_MAX_CAPTURED_PIPE_BYTES: usize = 16 * 1024 * 1024;
@@ -72,8 +86,7 @@ async fn read_pipe_bounded_drain<R: AsyncRead + Unpin>(
     Ok(bytes)
 }
 
-/// Named spawn request for a runtime-owned child process.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ManagedChildProcessSpec {
     pub kind: RuntimeProcessKind,
     pub handle: RuntimeProcessHandle,
@@ -81,6 +94,8 @@ pub struct ManagedChildProcessSpec {
     pub command: Option<RuntimeCommandObservation>,
     pub started_at_ms: Option<u64>,
     pub containment: RuntimeProcessContainmentRequirement,
+    pub graceful_shutdown: ProcessGracefulShutdownPolicy,
+    pub shutdown_hook: Option<ProcessShutdownHook>,
 }
 
 impl ManagedChildProcessSpec {
@@ -93,6 +108,8 @@ impl ManagedChildProcessSpec {
             command: None,
             started_at_ms: None,
             containment: RuntimeProcessContainmentRequirement::default(),
+            graceful_shutdown: ProcessGracefulShutdownPolicy::default(),
+            shutdown_hook: None,
         }
     }
 
@@ -115,6 +132,19 @@ impl ManagedChildProcessSpec {
         self.started_at_ms = Some(started_at_ms);
         self
     }
+
+    /// Configure the graceful two-phase shutdown policy (`SIGTERM` grace period
+    /// before escalating to `SIGKILL`).
+    pub fn with_graceful_shutdown(mut self, policy: ProcessGracefulShutdownPolicy) -> Self {
+        self.graceful_shutdown = policy;
+        self
+    }
+
+    /// Attach a cooperative shutdown hook invoked before `SIGTERM` / `SIGKILL`.
+    pub fn with_shutdown_hook(mut self, hook: ProcessShutdownHook) -> Self {
+        self.shutdown_hook = Some(hook);
+        self
+    }
 }
 
 /// Runtime-owned async child process wrapper backed by Tokio and process-wrap.
@@ -123,15 +153,19 @@ pub struct AsyncManagedChildProcess {
     child: Option<Box<dyn ChildWrapper>>,
     registry: RuntimeProcessRegistryHandle,
     pid: u32,
+    pgid: Option<ProcessGroupId>,
     completed: bool,
     permit: ProcessPermit,
     identity: RuntimeResourceId,
     stop: tokio_util::sync::CancellationToken,
     runtime: tokio::runtime::Handle,
+    shutdown_policy: ProcessGracefulShutdownPolicy,
+    shutdown_hook: Option<ProcessShutdownHook>,
+    ledger_entry: ManagedProcessLedgerEntry,
+    lifecycle_span: tracing::Span,
+    spawned_at: Instant,
 }
 
-// Shared with every pipe handed out or drained by the runtime. The last
-// reference releases capacity only after process cleanup was confirmed.
 #[derive(Debug)]
 struct ProcessLease {
     permit: Option<OwnedSemaphorePermit>,
@@ -176,6 +210,12 @@ pub struct ManagedChildStdin {
     pipe: LeasedPipe<AsyncChildStdin>,
 }
 
+/// An owned stdout reader that retains its process quota until dropped.
+#[derive(Debug)]
+pub struct ManagedChildStdout {
+    pipe: LeasedPipe<AsyncChildStdout>,
+}
+
 /// Failure while collecting bounded stdout from a managed child.
 #[derive(Debug)]
 pub enum ManagedStdoutError {
@@ -208,6 +248,16 @@ impl AsyncWrite for ManagedChildStdin {
     }
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.pipe.inner).poll_shutdown(cx)
+    }
+}
+
+impl AsyncRead for ManagedChildStdout {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.pipe.inner).poll_read(cx, buf)
     }
 }
 
@@ -275,11 +325,7 @@ impl AsyncManagedChildProcess {
                 .as_mut()
                 .expect("managed child process must own a child");
             if let Err(error) = child.start_kill() {
-                // The group may disappear between output EOF and the signal;
-                // only accept that race if the direct child is actually reaped.
-                match tokio::time::timeout(std::time::Duration::from_millis(100), child.wait())
-                    .await
-                {
+                match tokio::time::timeout(Duration::from_millis(100), child.wait()).await {
                     Ok(Ok(_)) => {}
                     _ => return Err(ManagedStdoutError::Io(error)),
                 }
@@ -402,6 +448,11 @@ impl AsyncManagedChildProcess {
                 "process-wrap child did not expose a process id",
             )
         })?;
+        #[cfg(unix)]
+        let pgid = Some(ProcessGroupId::new(pid));
+        #[cfg(not(unix))]
+        let pgid = None;
+
         let registry = context.process_registry();
         let started_at_ms = spec.started_at_ms.unwrap_or_else(current_time_millis);
         let mut observation = RuntimeProcessObservation::new(pid, spec.kind, spec.owner_reference)
@@ -411,24 +462,73 @@ impl AsyncManagedChildProcess {
         if let Some(command) = spec.command {
             observation = observation.with_command(command);
         }
+
+        let graceful_timeout = spec.graceful_shutdown.graceful_timeout_duration_ms();
+        let ledger_entry =
+            ManagedProcessLedgerEntry::from_request(ManagedProcessLedgerRecordRequest {
+                host_run_id: registry.host_run_id().clone(),
+                host_pid: std::process::id(),
+                observation: &observation,
+                pgid,
+                os_start_time_secs: sample_os_start_time_secs(pid),
+                graceful_timeout,
+                observed_at_ms: RuntimeProcessObservationTimestampMs::new(started_at_ms),
+            });
+        let lifecycle_span = tracing::info_span!(
+            target: TARGET_RUNTIME_SPAN,
+            SPAN_RUNTIME_PROCESS,
+            host_run_id = registry.host_run_id().as_str(),
+            pid,
+            pgid = pgid.map(ProcessGroupId::as_u32).unwrap_or(pid),
+            process_kind = ?observation.kind,
+            process_handle = observation.handle.as_str(),
+            owner_reference = observation.owner_reference.as_str(),
+            session_id = identity.session().as_str(),
+            operation_id = identity.operation().as_str(),
+            generation = identity.generation().get(),
+            graceful_timeout_ms = graceful_timeout.as_millis(),
+            termination_stage = ProcessTerminationStage::Running.as_str(),
+            escalated_to_sigkill = false,
+            exit_code = tracing::field::Empty,
+            duration_ms = tracing::field::Empty,
+        );
+
         let stop = tokio_util::sync::CancellationToken::new();
         let registration = registry.track_managed(observation, stop.clone());
         let process = Self {
             child: Some(child),
-            registry,
+            registry: registry.clone(),
             pid,
+            pgid,
             completed: false,
             permit,
             identity,
             stop,
             runtime,
+            shutdown_policy: spec.graceful_shutdown,
+            shutdown_hook: spec.shutdown_hook,
+            ledger_entry: ledger_entry.clone(),
+            lifecycle_span,
+            spawned_at: Instant::now(),
         };
         registration.map_err(|error| io::Error::new(io::ErrorKind::AlreadyExists, error))?;
+        registry.persist_ledger_entry(&ledger_entry);
         Ok(process)
     }
 
     pub fn resource_id(&self) -> &RuntimeResourceId {
         &self.identity
+    }
+
+    /// Unix process group ID owning this child and its same-group descendants.
+    pub fn pgid(&self) -> Option<ProcessGroupId> {
+        self.pgid
+    }
+
+    /// Attach or replace the cooperative shutdown hook after bootstrap (for
+    /// example, once a child server announces its ephemeral loopback endpoint).
+    pub fn set_shutdown_hook(&mut self, hook: ProcessShutdownHook) {
+        self.shutdown_hook = Some(hook);
     }
 
     /// Capture this generation for a watchdog without transferring cleanup authority.
@@ -478,6 +578,17 @@ impl AsyncManagedChildProcess {
         })
     }
 
+    /// Take an owned leased stdout reader for streaming long-running processes.
+    pub fn take_stdout(&mut self) -> Option<ManagedChildStdout> {
+        let inner = self.child.as_mut()?.stdout().take()?;
+        Some(ManagedChildStdout {
+            pipe: LeasedPipe {
+                inner,
+                _lease: self.permit.0.clone(),
+            },
+        })
+    }
+
     pub fn request_cleanup(&self) {
         self.request_cleanup_observed_at(current_time_millis());
     }
@@ -512,7 +623,7 @@ impl AsyncManagedChildProcess {
             .await
             .map(RuntimeProcessExitStatus::from);
         let status = self.confirm_process_group_exit(status).await;
-        self.record_terminal_status(&status, observed_at_ms);
+        self.record_terminal_status(&status, observed_at_ms, false);
         status
     }
 
@@ -549,11 +660,11 @@ impl AsyncManagedChildProcess {
         tokio::select! {
             biased;
             () = stop.cancelled() => Err(stop_requested()),
-            output = self.read_output(observed_at_ms, max_output_bytes) => output,
+            output = self.read_bounded_output(observed_at_ms, max_output_bytes) => output,
         }
     }
 
-    async fn read_output(
+    async fn read_bounded_output(
         &mut self,
         observed_at_ms: u64,
         max_output_bytes: usize,
@@ -575,14 +686,14 @@ impl AsyncManagedChildProcess {
             if let Some(stream) = &mut stdout {
                 read_pipe_bounded_drain(&mut stream.inner, max_output_bytes).await
             } else {
-                Ok::<_, io::Error>(Vec::new())
+                Ok(Vec::new())
             }
         };
         let read_stderr = async {
             if let Some(stream) = &mut stderr {
                 read_pipe_bounded_drain(&mut stream.inner, max_output_bytes).await
             } else {
-                Ok::<_, io::Error>(Vec::new())
+                Ok(Vec::new())
             }
         };
         let output = tokio::try_join!(child.wait(), read_stdout, read_stderr).map(
@@ -592,7 +703,6 @@ impl AsyncManagedChildProcess {
                 stderr,
             },
         );
-        // Close owned read ends before the permit can be returned.
         drop(stdout);
         drop(stderr);
         let output = match output {
@@ -603,29 +713,72 @@ impl AsyncManagedChildProcess {
         output
     }
 
+    /// Gracefully shut down this managed process using its configured
+    /// cooperative hook -> `SIGTERM` -> grace timeout -> `SIGKILL` escalation policy.
+    pub async fn shutdown_gracefully(self) -> io::Result<RuntimeProcessExitStatus> {
+        self.shutdown_gracefully_observed_at(current_time_millis())
+            .await
+    }
+
+    /// Gracefully shut down this managed process with an explicit observation timestamp.
+    pub async fn shutdown_gracefully_observed_at(
+        mut self,
+        observed_at_ms: u64,
+    ) -> io::Result<RuntimeProcessExitStatus> {
+        self.request_cleanup_observed_at(observed_at_ms);
+        let mut ctx = GracefulTerminationContext {
+            registry: self.registry.clone(),
+            pid: self.pid,
+            pgid: self.pgid,
+            policy: self.shutdown_policy,
+            hook: self.shutdown_hook.take(),
+            ledger_entry: self.ledger_entry.clone(),
+            span: self.lifecycle_span.clone(),
+            spawned_at: self.spawned_at,
+        };
+        let child = self
+            .child
+            .as_mut()
+            .expect("managed child process must own a child");
+        let outcome = run_graceful_termination(child, &mut ctx, observed_at_ms).await;
+        self.ledger_entry = ctx.ledger_entry;
+        match outcome {
+            Ok(done) => {
+                let status = Ok(done.status);
+                self.record_terminal_status_with_stage(
+                    &status,
+                    observed_at_ms,
+                    done.termination_stage,
+                    done.escalated_to_sigkill,
+                );
+                status
+            }
+            Err(error) => {
+                self.registry
+                    .request_cleanup_for(&self.identity, observed_at_ms);
+                Err(error)
+            }
+        }
+    }
+
+    /// Terminate this managed process respecting its configured graceful shutdown policy.
     pub async fn kill(self) -> io::Result<RuntimeProcessExitStatus> {
         self.kill_observed_at(current_time_millis()).await
     }
 
     pub async fn kill_observed_at(
-        mut self,
+        self,
         observed_at_ms: u64,
     ) -> io::Result<RuntimeProcessExitStatus> {
-        self.request_cleanup_observed_at(observed_at_ms);
-        self.child
-            .as_mut()
-            .expect("managed child process must own a child")
-            .start_kill()?;
-        let status = self
-            .child
-            .as_mut()
-            .expect("managed child process must own a child")
-            .wait()
+        self.shutdown_gracefully_observed_at(observed_at_ms).await
+    }
+
+    /// Explicitly bypass the grace period and deliver immediate `SIGKILL` to the process group.
+    pub async fn force_kill(mut self) -> io::Result<RuntimeProcessExitStatus> {
+        self.shutdown_policy = ProcessGracefulShutdownPolicy::immediate_kill();
+        self.shutdown_hook = None;
+        self.shutdown_gracefully_observed_at(current_time_millis())
             .await
-            .map(RuntimeProcessExitStatus::from);
-        let status = self.confirm_process_group_exit(status).await;
-        self.record_terminal_status(&status, observed_at_ms);
-        status
     }
 
     async fn confirm_process_group_exit<T>(&self, result: io::Result<T>) -> io::Result<T> {
@@ -638,18 +791,39 @@ impl AsyncManagedChildProcess {
         &mut self,
         status: &io::Result<RuntimeProcessExitStatus>,
         observed_at_ms: u64,
+        escalated_to_sigkill: bool,
+    ) {
+        let stage = match status {
+            Ok(exit) => terminal_stage_for_exit(exit, escalated_to_sigkill),
+            Err(_) => ProcessTerminationStage::Running,
+        };
+        self.record_terminal_status_with_stage(status, observed_at_ms, stage, escalated_to_sigkill);
+    }
+
+    fn record_terminal_status_with_stage(
+        &mut self,
+        status: &io::Result<RuntimeProcessExitStatus>,
+        observed_at_ms: u64,
+        stage: ProcessTerminationStage,
+        escalated_to_sigkill: bool,
     ) {
         match status {
-            Ok(exit_status) if exit_status.success() => {
-                self.registry
-                    .complete_managed(&self.identity, true, observed_at_ms);
-                self.completed = true;
-                self.child = None;
-                self.permit.release();
-            }
-            Ok(_) => {
-                self.registry
-                    .complete_managed(&self.identity, false, observed_at_ms);
+            Ok(exit_status) => {
+                finalize_ledger_and_span(
+                    &self.registry,
+                    &mut self.ledger_entry,
+                    &self.lifecycle_span,
+                    self.spawned_at,
+                    exit_status,
+                    stage,
+                    escalated_to_sigkill,
+                    observed_at_ms,
+                );
+                self.registry.complete_managed(
+                    &self.identity,
+                    exit_status.success(),
+                    observed_at_ms,
+                );
                 self.completed = true;
                 self.child = None;
                 self.permit.release();
@@ -667,16 +841,23 @@ impl AsyncManagedChildProcess {
         observed_at_ms: u64,
     ) {
         match output {
-            Ok(output) if output.status.success() => {
-                self.registry
-                    .complete_managed(&self.identity, true, observed_at_ms);
-                self.completed = true;
-                self.child = None;
-                self.permit.release();
-            }
-            Ok(_) => {
-                self.registry
-                    .complete_managed(&self.identity, false, observed_at_ms);
+            Ok(output) => {
+                let stage = terminal_stage_for_exit(&output.status, false);
+                finalize_ledger_and_span(
+                    &self.registry,
+                    &mut self.ledger_entry,
+                    &self.lifecycle_span,
+                    self.spawned_at,
+                    &output.status,
+                    stage,
+                    false,
+                    observed_at_ms,
+                );
+                self.registry.complete_managed(
+                    &self.identity,
+                    output.status.success(),
+                    observed_at_ms,
+                );
                 self.completed = true;
                 self.child = None;
                 self.permit.release();
@@ -696,29 +877,46 @@ fn stop_requested() -> io::Error {
 impl Drop for AsyncManagedChildProcess {
     fn drop(&mut self) {
         if !self.completed {
-            self.registry
-                .request_cleanup_for(&self.identity, current_time_millis());
+            let now_ms = current_time_millis();
+            self.registry.request_cleanup_for(&self.identity, now_ms);
             if let Some(mut child) = self.child.take() {
-                // A completed wait may already have reaped the child while
-                // output pipes were still draining; avoid signalling a reused PID.
-                if child.id().is_some() {
-                    let _ = child.start_kill();
-                }
                 let mut permit = std::mem::replace(&mut self.permit, ProcessPermit(None));
                 let registry = self.registry.clone();
-                let pid = self.pid;
                 let identity = self.identity.clone();
+                let mut ctx = GracefulTerminationContext {
+                    registry: self.registry.clone(),
+                    pid: self.pid,
+                    pgid: self.pgid,
+                    policy: self.shutdown_policy,
+                    hook: self.shutdown_hook.take(),
+                    ledger_entry: self.ledger_entry.clone(),
+                    span: self.lifecycle_span.clone(),
+                    spawned_at: self.spawned_at,
+                };
+                // Never deliver immediate SIGKILL in Drop: hand ownership to the
+                // runtime reaper (while holding ProcessLease so Runtime shutdown
+                // awaits clean completion) to run cooperative hook -> SIGTERM ->
+                // grace window -> optional SIGKILL escalation.
                 self.runtime.spawn(async move {
-                    if let Ok(status) = child.wait().await {
-                        if wait_for_process_group_exit(pid).await.is_err() {
-                            return;
-                        }
-                        // Close the wrapper's pipe ends before releasing the lease.
+                    if let Ok(outcome) =
+                        run_graceful_termination(&mut child, &mut ctx, now_ms).await
+                    {
                         drop(child);
+                        let completed_at = current_time_millis();
+                        finalize_ledger_and_span(
+                            &registry,
+                            &mut ctx.ledger_entry,
+                            &ctx.span,
+                            ctx.spawned_at,
+                            &outcome.status,
+                            outcome.termination_stage,
+                            outcome.escalated_to_sigkill,
+                            completed_at,
+                        );
                         registry.complete_managed(
                             &identity,
-                            status.success(),
-                            current_time_millis(),
+                            outcome.status.success(),
+                            completed_at,
                         );
                         permit.release();
                     }
@@ -726,32 +924,6 @@ impl Drop for AsyncManagedChildProcess {
             }
         }
     }
-}
-
-// Unix process groups are the containment boundary supplied by process-wrap.
-// An unknown probe result fails closed; escaped descendants are outside it.
-#[cfg(unix)]
-async fn wait_for_process_group_exit(pid: u32) -> io::Result<()> {
-    let pgid = i32::try_from(pid)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid process group"))?;
-    loop {
-        // SAFETY: signal 0 does not signal processes; negative PID probes the group.
-        if unsafe { libc::kill(-pgid, 0) } == -1 {
-            let error = io::Error::last_os_error();
-            if error.raw_os_error() == Some(libc::ESRCH) {
-                return Ok(());
-            }
-            if error.raw_os_error() != Some(libc::EPERM) {
-                return Err(error);
-            }
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    }
-}
-
-#[cfg(not(unix))]
-async fn wait_for_process_group_exit(_pid: u32) -> io::Result<()> {
-    Ok(())
 }
 
 fn current_time_millis() -> u64 {

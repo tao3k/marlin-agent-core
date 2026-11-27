@@ -240,6 +240,20 @@ impl RuntimeProcessLiveness for SysinfoRuntimeProcessController {
 
 impl RuntimeProcessTerminator for SysinfoRuntimeProcessController {
     fn request_termination(&mut self, pid: u32) -> Result<bool, String> {
+        // Request graceful termination (`SIGTERM`) first so target processes
+        // can clean up their own children before any force escalation.
+        let Some(process) = self.refresh_process(pid) else {
+            return Ok(false);
+        };
+        Ok(process
+            .kill_with(sysinfo::Signal::Term)
+            .unwrap_or_else(|| process.kill()))
+    }
+}
+
+impl SysinfoRuntimeProcessController {
+    /// Escalate directly to `SIGKILL` for a process that ignored graceful termination.
+    pub fn force_kill(&mut self, pid: u32) -> Result<bool, String> {
         Ok(self
             .refresh_process(pid)
             .map(sysinfo::Process::kill)

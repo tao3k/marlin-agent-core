@@ -12,8 +12,6 @@ pub mod gerbil;
 pub mod gerbil_org;
 /// Structural Org `:ID:` region leases and concurrent multi-agent subtree mediation.
 pub mod governance;
-/// Authoritative 5-Scope Shared Context Governance, ACL-epoch revocation, and multi-party taint gating.
-pub mod shared_scope;
 /// Bridges `OrgGovernanceLedger` subtree mediation with `marlin-agent-graph`
 /// `GovernedContextCapsule`, Scoped Detours, and Two-Zone KV-Prefix prompt assembly.
 #[cfg(feature = "org-memory")]
@@ -23,6 +21,8 @@ pub mod governed_bridge;
 pub mod org;
 mod request;
 mod scope;
+/// Authoritative 5-Scope Shared Context Governance, ACL-epoch revocation, and multi-party taint gating.
+pub mod shared_scope;
 
 pub use request::{ContextAdmissionRequest, ContextScope, ContextSession, ContextTurn};
 pub use scope::{

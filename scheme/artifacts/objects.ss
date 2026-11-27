@@ -11,6 +11,7 @@
         ArtifactKind.
         ArtifactDomain.
         ArtifactCollection.
+        ArtifactWorkspaceLayout.
         ArtifactCatalog.
         ArtifactPrototypes
         DefaultArtifactRoles
@@ -19,6 +20,7 @@
         DefaultArtifactDomains
         DefaultArtifactCollections
         ArtifactKinds
+        DefaultArtifactWorkspaceLayout
         DefaultArtifactCatalog)
 
 (.def ArtifactRole.
@@ -230,6 +232,18 @@
       review-required?: #f
       contract-id: "context.evidence-source.v1"))
 
+(.def ArtifactWorkspaceLayout.
+  session-db: "session.db"
+  context-db: "context.db"
+  search-dir: "search"
+  process-ledger-suffix: ".processes.json"
+  project-prefix: "project:"
+  session-prefix: "session:"
+  default-session: "default"
+  default-agent-key: 'host-operator)
+
+(.def (DefaultArtifactWorkspaceLayout @ ArtifactWorkspaceLayout.))
+
 (.def ArtifactCatalog.
   identity: "marlin-gitops-artifacts"
   project: "marlin-agent-core"
@@ -238,7 +252,8 @@
   organization: DefaultArtifactOrganization
   domains: DefaultArtifactDomains
   collections: DefaultArtifactCollections
-  kinds: ArtifactKinds)
+  kinds: ArtifactKinds
+  workspace-layout: DefaultArtifactWorkspaceLayout)
 
 (.def (DefaultArtifactCatalog @ ArtifactCatalog.))
 
@@ -249,4 +264,5 @@
   kind: ArtifactKind.
   domain: ArtifactDomain.
   collection: ArtifactCollection.
+  workspace-layout: ArtifactWorkspaceLayout.
   catalog: ArtifactCatalog.)

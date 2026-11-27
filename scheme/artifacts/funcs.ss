@@ -21,6 +21,7 @@
         artifacts-plan-artifact-directory
         artifacts-materialize-artifact-directory!
         artifacts-validate-artifact-directory
+        artifacts-project-workspace-layout
         artifacts-exchange)
 
 (def (nonempty-text? v)
@@ -701,6 +702,31 @@
 (def artifacts-materialize-artifact-directory! materialize-artifact-directory!)
 (def artifacts-validate-artifact-directory validate-artifact-directory)
 
+(def (artifacts-project-workspace-layout catalog)
+  (unless (object? catalog)
+    (error "Workspace layout projection requires a POO ArtifactCatalog"))
+  (let* ((org (.get catalog organization))
+         (_admitted (admit-organization! org))
+         (layout (.get catalog workspace-layout))
+         (session-db (.get layout session-db))
+         (context-db (.get layout context-db))
+         (search-dir (.get layout search-dir))
+         (ledger-suffix (.get layout process-ledger-suffix))
+         (project-id (string-append (.get layout project-prefix) (.get catalog project)))
+         (default-session-id (string-append (.get layout session-prefix) (.get layout default-session)))
+         (agent-key (.get layout default-agent-key))
+         (agents (.get org agents)))
+    (unless (and (symbol? agent-key) (.slot? agents agent-key))
+      (error "Workspace layout default-agent-key is undeclared in Organization" agent-key))
+    (let ((agent-id (.get (.ref agents agent-key) identity)))
+      (vector session-db
+              context-db
+              search-dir
+              ledger-suffix
+              project-id
+              default-session-id
+              agent-id))))
+
 (def (artifacts-exchange request)
   (def (with-journal path action)
     (def journal ((.get LabDurableJournal open) path))
@@ -708,6 +734,10 @@
       (lambda () ((.get LabDurableJournal verify!) journal) (action journal))
       (lambda () ((.get LabDurableJournal close!) journal))))
   (match request
+    (#('workspace-layout)
+     (artifacts-project-workspace-layout DefaultArtifactCatalog))
+    (#('workspace-layout catalog)
+     (artifacts-project-workspace-layout catalog))
     (#('restore path)
      (with-journal path (cut recover-context <> DefaultArtifactCatalog)))
     (#('restore path catalog)

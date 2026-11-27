@@ -73,6 +73,8 @@ pub struct TokioAgentRuntimeBuildRequest {
     event_buffer: usize,
     process_limit: Option<std::num::NonZeroUsize>,
     process_budget: Option<(RuntimeProcessBudget, Arc<dyn ProcessMemorySampler>)>,
+    host_run_id: Option<crate::process::RuntimeHostRunId>,
+    process_ledger: Option<Arc<dyn crate::process::ProcessLedgerStore>>,
     cancellation: CancellationToken,
     environment: RuntimeEnvironment,
     project_envrc: Option<crate::ProjectEnvrcDiscovery>,
@@ -91,12 +93,36 @@ impl TokioAgentRuntimeBuildRequest {
             event_buffer,
             process_limit: None,
             process_budget: None,
+            host_run_id: None,
+            process_ledger: None,
             cancellation: CancellationToken::new(),
             environment: RuntimeEnvironment::default(),
             project_envrc: None,
             session,
             runtime_snapshot,
         }
+    }
+
+    /// Attach a custom persistent ledger store for durable process tracking and
+    /// post-restart orphan reconciliation.
+    pub fn with_process_ledger(
+        mut self,
+        ledger: Arc<dyn crate::process::ProcessLedgerStore>,
+    ) -> Self {
+        self.process_ledger = Some(ledger);
+        self
+    }
+
+    /// Persist managed processes to a crash-safe JSON ledger file at `path`.
+    pub fn with_process_ledger_path(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.process_ledger = Some(Arc::new(crate::process::FileProcessLedgerStore::new(path)));
+        self
+    }
+
+    /// Pin an explicit host boot run identifier for this runtime instance.
+    pub fn with_host_run_id(mut self, host_run_id: crate::process::RuntimeHostRunId) -> Self {
+        self.host_run_id = Some(host_run_id);
+        self
     }
 
     /// Limits managed child admissions shared across all child contexts.
@@ -207,6 +233,15 @@ impl TokioAgentRuntime {
         request: TokioAgentRuntimeBuildRequest,
     ) -> (Self, RuntimeEventStream) {
         let (events, stream) = RuntimeEventSink::channel(request.event_buffer);
+        let host_run_id = request
+            .host_run_id
+            .unwrap_or_else(crate::process::RuntimeHostRunId::generate);
+        let process_registry = match request.process_ledger {
+            Some(ledger) => {
+                crate::process::RuntimeProcessRegistryHandle::with_ledger(host_run_id, ledger)
+            }
+            None => crate::process::RuntimeProcessRegistryHandle::new(),
+        };
         (
             Self {
                 cancellation: request.cancellation,
@@ -216,7 +251,7 @@ impl TokioAgentRuntime {
                 execution: None,
                 session: request.session,
                 graph_loop_runs: crate::GraphLoopRunRegistryHandle::new(),
-                process_registry: crate::process::RuntimeProcessRegistryHandle::new(),
+                process_registry,
                 process_quota: request
                     .process_limit
                     .map(|limit| Arc::new(tokio::sync::Semaphore::new(limit.get()))),
@@ -226,6 +261,23 @@ impl TokioAgentRuntime {
             },
             stream,
         )
+    }
+
+    /// Unique identifier for this Marlin host runtime boot.
+    pub fn host_run_id(&self) -> &crate::process::RuntimeHostRunId {
+        self.process_registry.host_run_id()
+    }
+
+    /// Reconcile any non-terminal processes left in the persistent ledger from
+    /// previous host runs against live OS state.
+    pub fn reconcile_persisted_processes(
+        &self,
+    ) -> std::io::Result<crate::process::PersistedProcessReconciliationReport> {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+            .unwrap_or_default();
+        self.process_registry.reconcile_persisted_processes(now_ms)
     }
 
     pub fn project_envrc(&self) -> Option<crate::ProjectEnvrc> {

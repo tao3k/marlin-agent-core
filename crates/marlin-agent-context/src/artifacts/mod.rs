@@ -4,9 +4,11 @@
 
 //! Git-derived workspace and durable artifact I/O.
 
+mod layout;
 mod restore;
 mod workspace;
 
+pub use layout::WorkspaceArtifactLayout;
 pub use restore::{ArtifactRestore, ArtifactRestoreDraft, VerifiedArtifactRestore};
 #[cfg(feature = "artifacts")]
 pub use workspace::ArtifactKind;

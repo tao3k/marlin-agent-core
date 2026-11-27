@@ -77,6 +77,10 @@ impl ModelToolDeclaration {
         &self.argument
     }
 
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
     pub fn output_limit(&self) -> usize {
         self.output_limit
     }
@@ -112,7 +116,7 @@ impl ModelToolDeclaration {
         output_limit: usize,
     ) -> Result<Self, &'static str> {
         if description.trim().is_empty()
-            || description.len() > 256
+            || description.len() > 4096
             || argument.is_empty()
             || argument.len() > 64
             || !argument

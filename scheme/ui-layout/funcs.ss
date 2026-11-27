@@ -40,8 +40,7 @@
   (def (transcript-list source)
     (ui-list source source (ui-size-cells 0) row-template))
   (ui-choice
-    (list (list 'review (transcript-list 'review))
-          (list 'workspace (transcript-list 'workspace))
+    (list (list 'workspace (transcript-list 'workspace))
           (list 'messages (transcript-list 'messages))
           (list 'static (ui-panel #f panel-field named-panel-title (ui-slot 'selected-buffer)))
           (list 'runtime (ui-panel #f panel-field runtime-panel-title (ui-slot 'runtime-policy)))
@@ -115,6 +114,13 @@
                            (ui-size-min (ui-size-binding 'command-count)
                                         (ui-size-min (ui-size-binding 'command-limit)
                                                      candidate-budget))))))
+(def review-details-size
+  (size-choice
+    (list (list 'review
+                (ui-size-min (ui-size-binding 'review-detail-rows)
+                             (ui-size-min (ui-size-cells 6)
+                                          (ui-size-subtract candidate-budget
+                                                            (ui-size-binding 'review-count))))))))
 (def extension-size
   (size-choice
     (list (list 'extensions-enabled
@@ -125,18 +131,26 @@
   (let (name (car slot))
     (ui-sized-with
       (case name ((transcript) (ui-size-flex 1)) ((candidates) candidate-size)
+        ((review-details) review-details-size)
         ((extensions) extension-size) ((editor) editor-size) ((modeline) modeline-size)
         ((minibuffer) footer-size) (else (ui-size-binding name)))
-      (ui-region (frame-region-id name) (and (cadr slot) (ui-scroll-target (cadr slot) (caddr slot)))
+      (ui-region (if (eq? name 'review-details) 'review-details (frame-region-id name))
+                 (and (cadr slot) (ui-scroll-target (cadr slot) (caddr slot)))
                  (case name
                    ((transcript) (main-view transcript-value))
+                   ((review-details)
+                    (ui-list 'review 'review (ui-size-cells 0)
+                      (ui-template 'none
+                        (list (list 'binding (.ref transcript-value 'role-tone)
+                                    (.ref transcript-value 'role-bold) 'role-text)
+                              '(binding normal #f body-text)))))
                    ((extensions) extension-view)
                    ((editor) minibuffer-editor)
                    ((candidates) marlin-ui-candidate-templates)
                    ((modeline) modeline-value)
                    ((minibuffer) minibuffer-status)
                    (else (ui-text '())))))))
-;;; The hover region encloses exactly the editor, candidates and status row.
+;;; The hover region encloses exactly the editor, inline review Ask summary, candidates and status row.
 (def (marlin-ui-layout-policy-for modeline-value transcript-value tab-bar)
   (let (region (lambda (slot) (frame-region modeline-value transcript-value slot)))
     (seal-object!
@@ -147,6 +161,7 @@
                         (ui-rows (map region '((transcript transcript 3) (extensions #f 0))))
                         (region '(modeline #f 0))
                         (ui-region (frame-region-id 'minibuffer-hover) #f
-                          (ui-rows (map region '((editor #f 0) (candidates candidates 1)
+                          (ui-rows (map region '((editor #f 0) (review-details #f 0)
+                                                 (candidates candidates 1)
                                                  (minibuffer #f 0))))))))
             UiLayoutBase.))))

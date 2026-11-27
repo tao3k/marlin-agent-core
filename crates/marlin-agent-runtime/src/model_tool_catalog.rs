@@ -8,17 +8,20 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Write as _,
     sync::Arc,
+    time::Instant,
 };
 
 use marlin_agent_protocol::{
-    ModelGatewayCompletionOptions, ModelToolCall, ModelToolCallId, ModelToolDefinition,
+    AgentEvent, ModelGatewayCompletionOptions, ModelToolCall, ModelToolCallId, ModelToolDefinition,
     ModelToolName,
 };
 use marlin_agent_sessions::ConversationToolExecutionClaim;
 use ring::digest::{Context as Sha256Context, SHA256};
+use tracing::Instrument;
 
 use crate::{
     ModelToolDeclaration, ModelToolGovernance, RuntimeContext, ShellToolHandler, ToolRuntime,
+    observability::{RUNTIME_KIND_TOOL, TARGET_RUNTIME_SPAN},
 };
 use std::path::PathBuf;
 
@@ -49,6 +52,10 @@ pub struct ModelToolCatalog {
 
 /// The exact handler-backed tool set offered for one model request. Retain
 /// this value until the provider's terminal response has been admitted.
+///
+/// B11 anti-rug-pull invariant: freezes a FIPS 180-4 SHA-256 schema digest for
+/// every offered tool definition so post-pinning description or parameter schema
+/// mutations are mechanically refused via [`ModelToolOffer::verify_pinned_schema`].
 pub struct ModelToolOffer {
     entries: Vec<Entry>,
     index: HashMap<ModelToolName, usize>,
@@ -120,7 +127,6 @@ pub fn schema_digest_for_definition(definition: &ModelToolDefinition) -> String 
     out
 }
 
-
 impl ModelToolCatalog {
     pub fn new() -> Self {
         Self::default()
@@ -157,7 +163,7 @@ impl ModelToolCatalog {
         self.register(declaration, handler)
     }
 
-    /// Freeze the handlers and definitions for one provider request.
+    /// Freeze the handlers, definitions, and B11 SHA-256 schema digests for one provider request.
     pub fn offer(&self) -> ModelToolOffer {
         let pinned_schema_digests = self
             .entries
@@ -200,20 +206,76 @@ impl ModelToolOffer {
         self.admit_calls(&calls)?;
         let mut outcomes = Vec::with_capacity(calls.len());
         for call in calls {
-            let position = self
-                .index
-                .get(&call.name)
-                .ok_or(ModelToolCatalogError::UnregisteredTool)?;
-            let id = call.id.clone();
-            outcomes.push((
-                id,
-                self.entries[*position]
-                    .handler
-                    .run_tool(call, context.child_context())
-                    .await,
-            ));
+            outcomes.push(self.execute_single_call(call, &context).await?);
         }
         Ok(outcomes)
+    }
+
+    async fn execute_single_call(
+        &self,
+        call: ModelToolCall,
+        context: &RuntimeContext,
+    ) -> Result<(ModelToolCallId, ModelToolOutcome), ModelToolCatalogError> {
+        let position = self
+            .index
+            .get(&call.name)
+            .ok_or(ModelToolCatalogError::UnregisteredTool)?;
+        let id = call.id.clone();
+        let tool_name = call.name.as_str().to_owned();
+        let args_json = match serde_json::to_string(&call.arguments) {
+            Ok(serialized) => serialized,
+            Err(err) => format!("<unserializable-arguments:{err}>"),
+        };
+        let args_preview = compact_tool_preview(&args_json, 140);
+        let span = tracing::info_span!(
+            target: TARGET_RUNTIME_SPAN,
+            "runtime.tool.execute",
+            runtime_kind = RUNTIME_KIND_TOOL,
+            tool.name = tool_name.as_str(),
+            tool.call_id = id.as_str(),
+            tool.status = tracing::field::Empty,
+            tool.duration_ms = tracing::field::Empty,
+        );
+        let _ = context
+            .emit(AgentEvent::new(
+                "runtime.tool.start",
+                format!("{tool_name} [{}] {args_preview}", id.as_str()),
+            ))
+            .await;
+        let started = Instant::now();
+        let outcome = self.entries[*position]
+            .handler
+            .run_tool(call, context.child_context())
+            .instrument(span.clone())
+            .await;
+        let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let (status, detail_preview) = match &outcome {
+            ModelToolOutcome::Completed(output) => ("completed", compact_tool_preview(output, 160)),
+            ModelToolOutcome::Failed(error) => ("failed", compact_tool_preview(error, 160)),
+        };
+        span.record("tool.status", status);
+        span.record("tool.duration_ms", elapsed_ms);
+        span.in_scope(|| {
+            tracing::info!(
+                target: TARGET_RUNTIME_SPAN,
+                runtime_kind = RUNTIME_KIND_TOOL,
+                tool.name = tool_name.as_str(),
+                tool.call_id = id.as_str(),
+                tool.status = status,
+                tool.duration_ms = elapsed_ms,
+                "model tool execution finished"
+            );
+        });
+        let _ = context
+            .emit(AgentEvent::new(
+                "runtime.tool.finish",
+                format!(
+                    "{tool_name} [{}] {status} ({elapsed_ms}ms) · {detail_preview}",
+                    id.as_str()
+                ),
+            ))
+            .await;
+        Ok((id, outcome))
     }
     /// Return Scheme's admitted governance for this offered tool. The value
     /// still requires a durable user decision and one-shot execution claim.
@@ -305,4 +367,32 @@ impl ModelToolOffer {
         }
         Ok(())
     }
+}
+
+fn compact_tool_preview(raw: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    let mut chars = 0usize;
+    let mut prev_space = false;
+    for ch in raw.chars() {
+        let mapped = if ch.is_control() || ch.is_whitespace() {
+            ' '
+        } else {
+            ch
+        };
+        if mapped == ' ' {
+            if prev_space || out.is_empty() {
+                continue;
+            }
+            prev_space = true;
+        } else {
+            prev_space = false;
+        }
+        if chars >= max_chars {
+            out.push('…');
+            break;
+        }
+        out.push(mapped);
+        chars += 1;
+    }
+    out.trim_end().to_owned()
 }
