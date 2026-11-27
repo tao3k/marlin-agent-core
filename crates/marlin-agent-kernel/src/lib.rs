@@ -9,11 +9,13 @@ mod controller;
 mod driver;
 pub mod context_distillation;
 pub mod execution_breaker;
+pub mod geo_residency_sovereignty;
 pub mod governance_admission;
 pub mod governance_cedar;
 pub mod governance_plane;
 pub mod key_rotation_shredding;
 pub mod model_weight_attestation;
+pub mod post_quantum_agility;
 pub mod supply_chain_provenance;
 pub mod transparency_log;
 mod loop_machine;
@@ -66,6 +68,10 @@ pub use context_distillation::{
     ContextDistillationGate, ContextDistillationReceipt, ContextDistillationRejection,
     ContextSegment, DistilledContextPacket, EpistemicIntegrity, SecrecyClass,
 };
+pub use geo_residency_sovereignty::{
+    CrossBorderPermit, GeoPlacementClaim, GeoPlacementReceipt, GeoResidencyRejection,
+    GeoResidencySovereigntyGate,
+};
 pub use key_rotation_shredding::{
     CryptoOpReceipt, CryptoRewrapClaim, CryptoShredTombstone, CryptoWriteClaim,
     KeyRotationReceipt, KeyRotationRejection, KeyRotationShreddingGate,
@@ -73,6 +79,10 @@ pub use key_rotation_shredding::{
 pub use model_weight_attestation::{
     ModelInferenceAdmissionReceipt, ModelInferenceClaim, ModelWeightAttestationGate,
     ModelWeightGovernancePolicy, ModelWeightRejection, compute_shard_merkle_root,
+};
+pub use post_quantum_agility::{
+    CryptoSuite, HybridEnvelopeAdmissionReceipt, HybridSignatureEnvelope, PostQuantumAgilityGate,
+    PostQuantumRejection,
 };
 pub use supply_chain_provenance::{
     SupplyChainAdmissionReceipt, SupplyChainBuildClaim, SupplyChainDependencySpec,
