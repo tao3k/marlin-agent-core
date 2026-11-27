@@ -28,5 +28,8 @@ mod managed_executor;
 #[cfg(unix)]
 mod graceful_and_ledger;
 
+#[cfg(unix)]
+mod sm37_process_signal_ledger_fanout;
+
 #[cfg(target_os = "macos")]
 mod owner_trace;

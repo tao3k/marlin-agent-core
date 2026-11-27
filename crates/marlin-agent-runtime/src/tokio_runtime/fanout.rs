@@ -4,10 +4,16 @@
 
 //! Schedule sub-agents with bounded parallelism and per-worktree receipts.
 
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
-use tokio::task::{JoinError, JoinSet};
+use tokio::task::{Id as TaskId, JoinError, JoinSet};
 use tracing::Instrument;
+
+/// Hard upper bound on concurrent working-copy sub-agent fanout tasks.
+pub const MAX_WORKING_COPY_FANOUT_PARALLELISM: usize = 64;
 
 use super::TokioAgentRuntime;
 use crate::{
@@ -63,7 +69,7 @@ impl TokioAgentRuntime {
         policy
             .max_parallelism()
             .unwrap_or_else(|| item_count.max(1))
-            .max(1)
+            .clamp(1, MAX_WORKING_COPY_FANOUT_PARALLELISM)
     }
 
     async fn run_sub_agent_fanout_with_policy<A>(
@@ -89,6 +95,7 @@ where
     sub_agent: Arc<A>,
     pending: VecDeque<(usize, WorkingCopySubAgentFanoutItem<A::Input>)>,
     tasks: JoinSet<(usize, A::Output)>,
+    active_indices: HashMap<TaskId, usize>,
     outputs: Vec<(usize, A::Output)>,
     receipt: RuntimeFanoutReceipt,
     policy: RuntimeFanoutJoinPolicy,
@@ -112,6 +119,7 @@ where
             sub_agent,
             pending: fanout.into_iter().enumerate().collect(),
             tasks: JoinSet::new(),
+            active_indices: HashMap::new(),
             outputs: Vec::new(),
             receipt: RuntimeFanoutReceipt::new(policy.clone()),
             policy,
@@ -155,24 +163,31 @@ where
                     .push_task_receipt(RuntimeFanoutTaskReceipt::cancelled_before_start(index));
                 continue;
             };
-            self.tasks.spawn(
+            let handle = self.tasks.spawn(
                 async move {
                     let _guard = guard;
                     (index, sub_agent.run_sub_agent(input, context).await)
                 }
                 .instrument(observability::runtime_sub_agent_span()),
             );
+            self.active_indices.insert(handle.id(), index);
         }
     }
 
     async fn record_next_join(&mut self) -> WorkingCopyFanoutStep {
-        let Some(joined) = self.tasks.join_next().await else {
+        let Some(joined) = self.tasks.join_next_with_id().await else {
             return WorkingCopyFanoutStep::Continue;
         };
 
         match joined {
-            Ok((index, output)) => self.record_completed_task(index, output),
-            Err(error) => self.record_join_error(error),
+            Ok((task_id, (index, output))) => {
+                self.active_indices.remove(&task_id);
+                self.record_completed_task(index, output)
+            }
+            Err(error) => {
+                let input_index = self.active_indices.remove(&error.id());
+                self.record_join_error(input_index, error).await
+            }
         }
     }
 
@@ -183,18 +198,27 @@ where
         WorkingCopyFanoutStep::Continue
     }
 
-    fn record_join_error(&mut self, error: JoinError) -> WorkingCopyFanoutStep {
-        self.receipt
-            .push_task_receipt(RuntimeFanoutTaskReceipt::join_error(error.to_string()));
+    async fn record_join_error(
+        &mut self,
+        input_index: Option<usize>,
+        error: JoinError,
+    ) -> WorkingCopyFanoutStep {
+        let receipt = match input_index {
+            Some(index) => RuntimeFanoutTaskReceipt::join_error_for_input(index, error.to_string()),
+            None => RuntimeFanoutTaskReceipt::join_error(error.to_string()),
+        };
+        self.receipt.push_task_receipt(receipt);
         if !self.policy.cancel_on_first_error() {
             return WorkingCopyFanoutStep::Continue;
         }
 
-        WorkingCopyFanoutStep::Cancelled(self.cancel_remaining_work())
+        WorkingCopyFanoutStep::Cancelled(self.cancel_remaining_work().await)
     }
 
-    fn cancel_remaining_work(&mut self) -> RuntimeFanoutReceipt {
+    async fn cancel_remaining_work(&mut self) -> RuntimeFanoutReceipt {
         self.tasks.abort_all();
+        while self.tasks.join_next_with_id().await.is_some() {}
+        self.active_indices.clear();
         while let Some((index, _)) = self.pending.pop_front() {
             self.receipt
                 .push_task_receipt(RuntimeFanoutTaskReceipt::cancelled_before_start(index));

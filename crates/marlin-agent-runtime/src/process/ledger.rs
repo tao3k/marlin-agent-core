@@ -243,9 +243,26 @@ impl InMemoryProcessLedgerStore {
 
 impl ProcessLedgerStore for InMemoryProcessLedgerStore {
     fn upsert(&self, entry: &ManagedProcessLedgerEntry) -> io::Result<()> {
-        self.entries
-            .lock()
-            .insert(entry.ledger_key(), entry.clone());
+        let mut guard = self.entries.lock();
+        let key = entry.ledger_key();
+        guard.insert(key.clone(), entry.clone());
+        if guard.len() > MAX_IN_MEMORY_LEDGER_ENTRIES {
+            let evict_key = guard
+                .iter()
+                .filter(|(k, v)| *k != &key && !v.is_non_terminal())
+                .min_by_key(|(_, v)| v.last_observed_at_ms)
+                .map(|(k, _)| k.clone())
+                .or_else(|| {
+                    guard
+                        .iter()
+                        .filter(|(k, _)| *k != &key)
+                        .min_by_key(|(_, v)| v.last_observed_at_ms)
+                        .map(|(k, _)| k.clone())
+                });
+            if let Some(evict_key) = evict_key {
+                guard.remove(&evict_key);
+            }
+        }
         Ok(())
     }
 
@@ -261,7 +278,62 @@ struct FileLedgerSnapshot {
 }
 
 const FILE_LEDGER_SCHEMA_VERSION: u32 = 1;
+const MAX_LEDGER_FILE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_ACTIVE_LEDGER_ENTRIES: usize = 1024;
 const MAX_TERMINAL_LEDGER_ENTRIES: usize = 512;
+const MAX_IN_MEMORY_LEDGER_ENTRIES: usize = MAX_ACTIVE_LEDGER_ENTRIES + MAX_TERMINAL_LEDGER_ENTRIES;
+
+fn is_macos_system_symlink(path: &Path) -> bool {
+    cfg!(target_os = "macos")
+        && matches!(
+            path.to_str(),
+            Some("/var") | Some("/tmp") | Some("/etc")
+        )
+}
+
+fn verify_ledger_path_no_symlinks(path: &Path) -> io::Result<()> {
+    let mut prefix = PathBuf::new();
+    for component in path.components() {
+        prefix.push(component.as_os_str());
+        if is_macos_system_symlink(&prefix) {
+            continue;
+        }
+        match fs::symlink_metadata(&prefix) {
+            Ok(meta) => {
+                if meta.file_type().is_symlink() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!(
+                            "refusing symlink in process ledger path {}",
+                            prefix.display()
+                        ),
+                    ));
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+fn open_no_follow(path: &Path) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = options.open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("process ledger path is not a regular file: {}", path.display()),
+        ));
+    }
+    Ok(file)
+}
 
 /// Crash-safe file-backed process ledger using exclusive file locking and atomic
 /// write-fsync-rename updates so abrupt `SIGKILL` of Marlin preserves prior state.
@@ -291,22 +363,36 @@ impl FileProcessLedgerStore {
     }
 
     fn ensure_parent_dir(&self) -> io::Result<()> {
+        verify_ledger_path_no_symlinks(&self.path)?;
         if let Some(parent) = self.path.parent()
             && !parent.as_os_str().is_empty()
         {
             fs::create_dir_all(parent)?;
+            verify_ledger_path_no_symlinks(parent)?;
         }
         Ok(())
     }
 
     fn acquire_file_lock(&self) -> io::Result<FileLockGuard> {
         self.ensure_parent_dir()?;
-        let file = OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .truncate(false)
-            .open(&self.lock_path)?;
+        verify_ledger_path_no_symlinks(&self.lock_path)?;
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true).truncate(false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW);
+        }
+        let file = options.open(&self.lock_path)?;
+        if !file.metadata()?.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "process ledger lock path is not a regular file: {}",
+                    self.lock_path.display()
+                ),
+            ));
+        }
         #[cfg(unix)]
         {
             use std::os::fd::AsRawFd;
@@ -321,11 +407,24 @@ impl FileProcessLedgerStore {
     fn read_snapshot_unlocked(
         &self,
     ) -> io::Result<BTreeMap<(RuntimeHostRunId, u32), ManagedProcessLedgerEntry>> {
-        if !self.path.exists() {
-            return Ok(BTreeMap::new());
-        }
+        verify_ledger_path_no_symlinks(&self.path)?;
+        let file = match open_no_follow(&self.path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+            Err(error) => return Err(error),
+        };
         let mut raw = String::new();
-        File::open(&self.path)?.read_to_string(&mut raw)?;
+        file.take((MAX_LEDGER_FILE_BYTES + 1) as u64)
+            .read_to_string(&mut raw)?;
+        if raw.len() > MAX_LEDGER_FILE_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "process ledger {} exceeds {MAX_LEDGER_FILE_BYTES} bytes",
+                    self.path.display()
+                ),
+            ));
+        }
         if raw.trim().is_empty() {
             return Ok(BTreeMap::new());
         }
@@ -335,6 +434,15 @@ impl FileProcessLedgerStore {
                 format!("corrupt process ledger {}: {error}", self.path.display()),
             )
         })?;
+        if snapshot.schema_version != FILE_LEDGER_SCHEMA_VERSION {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "unsupported process ledger schema_version {} (expected {FILE_LEDGER_SCHEMA_VERSION})",
+                    snapshot.schema_version
+                ),
+            ));
+        }
         Ok(snapshot
             .entries
             .into_iter()
@@ -351,6 +459,10 @@ impl FileProcessLedgerStore {
             .values()
             .cloned()
             .partition(ManagedProcessLedgerEntry::is_non_terminal);
+        if active.len() > MAX_ACTIVE_LEDGER_ENTRIES {
+            active.sort_by_key(|entry| entry.last_observed_at_ms);
+            active.drain(0..(active.len() - MAX_ACTIVE_LEDGER_ENTRIES));
+        }
         if terminal.len() > MAX_TERMINAL_LEDGER_ENTRIES {
             terminal.sort_by_key(|entry| entry.last_observed_at_ms);
             terminal.drain(0..(terminal.len() - MAX_TERMINAL_LEDGER_ENTRIES));
@@ -366,14 +478,25 @@ impl FileProcessLedgerStore {
         tmp_os.push(format!(".tmp.{}.{seq}", std::process::id()));
         let tmp_path = PathBuf::from(tmp_os);
         let write_result = (|| -> io::Result<()> {
-            let mut tmp = OpenOptions::new()
-                .create_new(true)
-                .write(true)
-                .open(&tmp_path)?;
+            let mut options = OpenOptions::new();
+            options.create_new(true).write(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.custom_flags(libc::O_NOFOLLOW);
+            }
+            let mut tmp = options.open(&tmp_path)?;
             tmp.write_all(&encoded)?;
             tmp.sync_all()?;
             drop(tmp);
+            verify_ledger_path_no_symlinks(&self.path)?;
             fs::rename(&tmp_path, &self.path)?;
+            if let Some(parent) = self.path.parent()
+                && !parent.as_os_str().is_empty()
+                && let Ok(dir) = File::open(parent)
+            {
+                let _ = dir.sync_all();
+            }
             Ok(())
         })();
         if write_result.is_err() {

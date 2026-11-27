@@ -112,7 +112,7 @@ pub(super) async fn run_graceful_termination(
     }
 
     let exit = RuntimeProcessExitStatus::from(child.wait().await?);
-    wait_for_process_group_exit(ctx.pid).await?;
+    wait_for_process_group_exit(pgid_u32.unwrap_or(ctx.pid)).await?;
     let termination_stage = terminal_stage_for_exit(&exit, escalated_to_sigkill);
     Ok(GracefulTerminationOutcome {
         status: exit,
@@ -134,34 +134,38 @@ pub(super) fn terminal_stage_for_exit(
     }
 }
 
+pub(super) struct LedgerFinalization<'a> {
+    pub(super) exit: &'a RuntimeProcessExitStatus,
+    pub(super) stage: ProcessTerminationStage,
+    pub(super) escalated_to_sigkill: bool,
+    pub(super) observed_at_ms: u64,
+}
+
 pub(super) fn finalize_ledger_and_span(
     registry: &RuntimeProcessRegistryHandle,
     entry: &mut ManagedProcessLedgerEntry,
     span: &tracing::Span,
     spawned_at: Instant,
-    exit: &RuntimeProcessExitStatus,
-    stage: ProcessTerminationStage,
-    escalated_to_sigkill: bool,
-    observed_at_ms: u64,
+    finalization: LedgerFinalization<'_>,
 ) {
-    let ts = RuntimeProcessObservationTimestampMs::new(observed_at_ms);
-    entry.status = if exit.success() {
+    let ts = RuntimeProcessObservationTimestampMs::new(finalization.observed_at_ms);
+    entry.status = if finalization.exit.success() {
         RuntimeProcessStatus::Finished
     } else {
         RuntimeProcessStatus::Failed
     };
-    entry.termination_stage = stage;
+    entry.termination_stage = finalization.stage;
     entry.last_observed_at_ms = ts;
     entry.ended_at_ms = Some(ts);
-    entry.exit_code = exit.code();
-    entry.escalated_to_sigkill = escalated_to_sigkill;
+    entry.exit_code = finalization.exit.code();
+    entry.escalated_to_sigkill = finalization.escalated_to_sigkill;
     registry.persist_ledger_entry(entry);
 
     let duration_ms = u64::try_from(spawned_at.elapsed().as_millis()).unwrap_or(u64::MAX);
-    span.record("termination_stage", stage.as_str());
-    span.record("escalated_to_sigkill", escalated_to_sigkill);
+    span.record("termination_stage", finalization.stage.as_str());
+    span.record("escalated_to_sigkill", finalization.escalated_to_sigkill);
     span.record("duration_ms", duration_ms);
-    if let Some(code) = exit.code() {
+    if let Some(code) = finalization.exit.code() {
         span.record("exit_code", code);
     }
 }
@@ -209,7 +213,7 @@ async fn drain_group_after_leader_exit(
     if !policy.graceful_timeout.is_zero() {
         let _ = signal_process_group_term(pid, pgid);
         let wait_limit = policy.graceful_timeout.min(Duration::from_secs(2));
-        if tokio::time::timeout(wait_limit, wait_for_process_group_exit(pid))
+        if tokio::time::timeout(wait_limit, wait_for_process_group_exit(target_pgid))
             .await
             .is_ok()
         {
@@ -220,7 +224,7 @@ async fn drain_group_after_leader_exit(
         *escalated_to_sigkill = true;
         let _ = signal_process_group_kill(pid, pgid);
     }
-    wait_for_process_group_exit(pid).await
+    wait_for_process_group_exit(target_pgid).await
 }
 
 fn now_millis() -> u64 {

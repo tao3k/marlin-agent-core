@@ -240,6 +240,9 @@ impl RuntimeProcessLiveness for SysinfoRuntimeProcessController {
 
 impl RuntimeProcessTerminator for SysinfoRuntimeProcessController {
     fn request_termination(&mut self, pid: u32) -> Result<bool, String> {
+        if pid <= 1 || pid == std::process::id() {
+            return Err(format!("refusing to signal protected or host pid {pid}"));
+        }
         // Request graceful termination (`SIGTERM`) first so target processes
         // can clean up their own children before any force escalation.
         let Some(process) = self.refresh_process(pid) else {
@@ -254,6 +257,9 @@ impl RuntimeProcessTerminator for SysinfoRuntimeProcessController {
 impl SysinfoRuntimeProcessController {
     /// Escalate directly to `SIGKILL` for a process that ignored graceful termination.
     pub fn force_kill(&mut self, pid: u32) -> Result<bool, String> {
+        if pid <= 1 || pid == std::process::id() {
+            return Err(format!("refusing to force-kill protected or host pid {pid}"));
+        }
         Ok(self
             .refresh_process(pid)
             .map(sysinfo::Process::kill)

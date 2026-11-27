@@ -101,6 +101,19 @@ pub fn sample_os_start_time_secs(pid: u32) -> Option<ProcessStartTimeSeconds> {
 /// descendants) is still alive in the OS, checking `os_start_time_secs` to avoid
 /// PID-reuse false positives.
 pub fn probe_persisted_process(entry: &ManagedProcessLedgerEntry) -> OsProcessProbeResult {
+    if entry.pid <= 1 || entry.pid == std::process::id() {
+        return OsProcessProbeResult::default();
+    }
+    #[cfg(unix)]
+    if super::shutdown::validate_signalable_unix_target(
+        entry.pid,
+        entry.pgid.map(ProcessGroupId::as_u32),
+    )
+    .is_err()
+    {
+        return OsProcessProbeResult::default();
+    }
+
     let mut system = sysinfo::System::new();
     system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
@@ -174,6 +187,14 @@ pub fn reap_survived_entry(
         observed_at_ms,
     } = request;
     let pgid_u32 = entry.pgid.map(ProcessGroupId::as_u32);
+    if entry.pid <= 1 || entry.pid == std::process::id() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("refusing to reap protected or host pid {}", entry.pid),
+        ));
+    }
+    #[cfg(unix)]
+    super::shutdown::validate_signalable_unix_target(entry.pid, pgid_u32)?;
     let span = tracing::info_span!(
         target: TARGET_RUNTIME_SPAN,
         "runtime.process.reap_orphan",
@@ -221,7 +242,7 @@ fn matches_recorded_start_time(
             let current = proc_info.start_time();
             current > 0 && current.abs_diff(expected.as_u64()) <= 1
         }
-        None => true,
+        None => false,
     }
 }
 
@@ -239,7 +260,7 @@ fn is_matching_descendant(
         return None;
     }
     let raw_pid = candidate_pid.as_u32();
-    if raw_pid == entry.pid {
+    if raw_pid <= 1 || raw_pid == entry.pid || raw_pid == std::process::id() {
         return None;
     }
     let parent_matches = leader_matches && proc_info.parent() == Some(leader_sys_pid);
@@ -251,9 +272,16 @@ fn process_in_group(raw_pid: u32, pgid: Option<ProcessGroupId>) -> bool {
     #[cfg(unix)]
     {
         pgid.is_some_and(|expected| {
+            let expected_u32 = expected.as_u32();
+            if super::shutdown::validate_unix_pgid(expected_u32).is_err() {
+                return false;
+            }
+            let Ok(raw_pid_i32) = libc::pid_t::try_from(raw_pid) else {
+                return false;
+            };
             // SAFETY: getpgid is read-only and returns -1 on error.
-            let candidate_pgid = unsafe { libc::getpgid(raw_pid as libc::pid_t) };
-            candidate_pgid > 0 && candidate_pgid as u32 == expected.as_u32()
+            let candidate_pgid = unsafe { libc::getpgid(raw_pid_i32) };
+            candidate_pgid > 1 && candidate_pgid as u32 == expected_u32
         })
     }
     #[cfg(not(unix))]

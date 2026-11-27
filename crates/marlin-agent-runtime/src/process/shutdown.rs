@@ -141,11 +141,14 @@ impl Default for ProcessGracefulShutdownPolicy {
     }
 }
 
+type ShutdownCallback =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = io::Result<()>> + Send>> + Send + Sync>;
+
 /// Optional cooperative shutdown callback invoked before `SIGTERM` / `SIGKILL`.
 #[derive(Clone)]
 pub struct ProcessShutdownHook {
     label: &'static str,
-    callback: Arc<dyn Fn() -> Pin<Box<dyn Future<Output = io::Result<()>> + Send>> + Send + Sync>,
+    callback: ShutdownCallback,
 }
 
 impl ProcessShutdownHook {
@@ -247,13 +250,49 @@ pub fn signal_process_group_kill(pid: u32, pgid: Option<u32>) -> io::Result<Sign
     }
 }
 
+#[cfg(unix)]
+pub(super) fn current_host_pgid() -> Option<u32> {
+    // SAFETY: getpgrp takes no arguments and returns the current process group id.
+    let pgid = unsafe { libc::getpgrp() };
+    u32::try_from(pgid).ok().filter(|&value| value > 1)
+}
+
+#[cfg(unix)]
+pub(super) fn validate_unix_pgid(pgid: u32) -> io::Result<libc::pid_t> {
+    if pgid <= 1 || current_host_pgid() == Some(pgid) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("refusing to target protected or host process group id {pgid}"),
+        ));
+    }
+    i32::try_from(pgid)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid process group id"))
+}
+
+#[cfg(unix)]
+pub(super) fn validate_signalable_unix_target(
+    pid: u32,
+    pgid: Option<u32>,
+) -> io::Result<(libc::pid_t, libc::pid_t)> {
+    if pid <= 1 || pid == std::process::id() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("refusing to signal protected or host process id {pid}"),
+        ));
+    }
+    let pid_i32 = i32::try_from(pid)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid process id"))?;
+    let target_pgid = pgid.unwrap_or(pid);
+    let pgid_i32 = validate_unix_pgid(target_pgid)?;
+    Ok((pid_i32, pgid_i32))
+}
+
 /// Probe whether any process remains in the Unix process group `pgid`.
 pub fn is_process_group_alive(pgid: u32) -> io::Result<bool> {
     #[cfg(unix)]
     {
-        let pgid_i32 = i32::try_from(pgid)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid process group id"))?;
-        // SAFETY: signal 0 probes existence without delivering a signal.
+        let pgid_i32 = validate_unix_pgid(pgid)?;
+        // SAFETY: signal 0 probes existence without delivering a signal; pgid_i32 > 1.
         if unsafe { libc::kill(-pgid_i32, 0) } == 0 {
             return Ok(true);
         }
@@ -272,14 +311,13 @@ pub fn is_process_group_alive(pgid: u32) -> io::Result<bool> {
 }
 
 /// Wait until a Unix process group is observed absent (`ESRCH`).
-pub(super) async fn wait_for_process_group_exit(pid: u32) -> io::Result<()> {
+pub(super) async fn wait_for_process_group_exit(pgid: u32) -> io::Result<()> {
     #[cfg(unix)]
     {
-        let pgid = i32::try_from(pid)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid process group"))?;
+        let pgid_i32 = validate_unix_pgid(pgid)?;
         loop {
-            // SAFETY: signal 0 does not signal processes; negative PID probes the group.
-            if unsafe { libc::kill(-pgid, 0) } == -1 {
+            // SAFETY: signal 0 does not signal processes; validated pgid_i32 > 1 probes the group.
+            if unsafe { libc::kill(-pgid_i32, 0) } == -1 {
                 let error = io::Error::last_os_error();
                 if error.raw_os_error() == Some(libc::ESRCH) {
                     return Ok(());
@@ -293,7 +331,7 @@ pub(super) async fn wait_for_process_group_exit(pid: u32) -> io::Result<()> {
     }
     #[cfg(not(unix))]
     {
-        let _ = pid;
+        let _ = pgid;
         Ok(())
     }
 }
@@ -304,18 +342,14 @@ fn signal_unix_target(
     pgid: Option<u32>,
     signal: libc::c_int,
 ) -> io::Result<SignalDeliveryOutcome> {
-    let target_pgid = pgid.unwrap_or(pid);
-    let pgid_i32 = i32::try_from(target_pgid)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid process group id"))?;
-    // SAFETY: sending a signal to negative pgid targets the process group.
+    let (pid_i32, pgid_i32) = validate_signalable_unix_target(pid, pgid)?;
+    // SAFETY: validated pgid_i32 > 1 and != host pgid targets only the child process group.
     if unsafe { libc::kill(-pgid_i32, signal) } == 0 {
         return Ok(SignalDeliveryOutcome::Delivered);
     }
     let group_error = io::Error::last_os_error();
     if group_error.raw_os_error() == Some(libc::ESRCH) {
-        let pid_i32 = i32::try_from(pid)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid process id"))?;
-        // SAFETY: sending a signal to positive pid targets only that process.
+        // SAFETY: validated pid_i32 > 1 and != host pid targets only that process.
         if unsafe { libc::kill(pid_i32, signal) } == 0 {
             return Ok(SignalDeliveryOutcome::Delivered);
         }

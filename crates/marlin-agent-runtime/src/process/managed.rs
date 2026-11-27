@@ -26,7 +26,8 @@ use tokio::sync::OwnedSemaphorePermit;
 
 use super::ledger::{ManagedProcessLedgerEntry, ManagedProcessLedgerRecordRequest, ProcessGroupId};
 use super::managed_reaper::{
-    GracefulTerminationContext, finalize_ledger_and_span, run_graceful_termination,
+    GracefulTerminationContext, LedgerFinalization, finalize_ledger_and_span,
+    run_graceful_termination,
     terminal_stage_for_exit,
 };
 use super::reconcile::sample_os_start_time_secs;
@@ -814,10 +815,12 @@ impl AsyncManagedChildProcess {
                     &mut self.ledger_entry,
                     &self.lifecycle_span,
                     self.spawned_at,
-                    exit_status,
-                    stage,
-                    escalated_to_sigkill,
-                    observed_at_ms,
+                    LedgerFinalization {
+                        exit: exit_status,
+                        stage,
+                        escalated_to_sigkill,
+                        observed_at_ms,
+                    },
                 );
                 self.registry.complete_managed(
                     &self.identity,
@@ -848,10 +851,12 @@ impl AsyncManagedChildProcess {
                     &mut self.ledger_entry,
                     &self.lifecycle_span,
                     self.spawned_at,
-                    &output.status,
-                    stage,
-                    false,
-                    observed_at_ms,
+                    LedgerFinalization {
+                        exit: &output.status,
+                        stage,
+                        escalated_to_sigkill: false,
+                        observed_at_ms,
+                    },
                 );
                 self.registry.complete_managed(
                     &self.identity,
@@ -908,10 +913,12 @@ impl Drop for AsyncManagedChildProcess {
                             &mut ctx.ledger_entry,
                             &ctx.span,
                             ctx.spawned_at,
-                            &outcome.status,
-                            outcome.termination_stage,
-                            outcome.escalated_to_sigkill,
-                            completed_at,
+                            LedgerFinalization {
+                                exit: &outcome.status,
+                                stage: outcome.termination_stage,
+                                escalated_to_sigkill: outcome.escalated_to_sigkill,
+                                observed_at_ms: completed_at,
+                            },
                         );
                         registry.complete_managed(
                             &identity,
