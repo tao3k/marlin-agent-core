@@ -208,9 +208,10 @@ pub(super) fn run(
                 &mut metrics,
             );
         }
-        let retirement = vm.close();
-        let context_service_closed = retirement.is_ok();
-        let mailbox = retirement.unwrap_or_default();
+        let (context_service_closed, mailbox) = match vm.close() {
+            Ok(mailbox) => (true, mailbox),
+            Err(_) => (false, Default::default()),
+        };
         drop(vm);
         drop(runtime);
         Some(DeckRuntimeShutdownReceipt {

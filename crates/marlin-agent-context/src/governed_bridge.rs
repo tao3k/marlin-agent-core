@@ -126,8 +126,7 @@ pub fn commit_governed_org_subtree<V: SubtreeSemanticVerifier>(
 
     let committed_source = ledger
         .snapshot(&source_id)
-        .map(|snap| snap.source.as_str())
-        .unwrap_or("");
+        .map_or("", |snap| snap.source.as_str());
     let next_digest = compute_kv_prefix_digest(&format!(
         "source={}:gen={}:body={}",
         source_id.as_str(),

@@ -445,8 +445,7 @@ impl AgentStorage for InMemoryAgentStorage {
                     &proposal.project_id == request.project_id()
                         && request
                             .memory_key()
-                            .map(|memory_key| &proposal.memory_key == memory_key)
-                            .unwrap_or(true)
+                            .is_none_or(|memory_key| &proposal.memory_key == memory_key)
                 })
                 .filter(|proposal| {
                     request.cursor().is_none_or(|cursor| {

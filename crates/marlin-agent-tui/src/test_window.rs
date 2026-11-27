@@ -98,7 +98,7 @@ pub fn run(
                 region.area.y,
                 region.area.width,
                 region.area.height,
-                region.scroll_step().unwrap_or(0),
+                region.scroll_step().map_or(0, |step| step),
             ] {
                 fields.push(runtime.scalar_object(SchemeScalar::Fixnum(value as isize))?);
             }
