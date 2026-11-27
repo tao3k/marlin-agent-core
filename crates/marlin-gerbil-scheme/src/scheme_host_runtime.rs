@@ -1067,12 +1067,7 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let _ = &dynamic_scheme_dir;
     let bind_addr = env::var("MARLIN_BRIDGE_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_owned());
-    let token = env::var("MARLIN_BRIDGE_TOKEN").unwrap_or_default();
-    let expected_header: Option<Arc<str>> = if token.is_empty() {
-        None
-    } else {
-        Some(Arc::from(format!("Bearer {token}")))
-    };
+    let expected_header = resolve_bridge_auth_header(&bind_addr, env::var("MARLIN_BRIDGE_TOKEN"))?;
     let turso_path = env::var("MARLIN_BRIDGE_TURSO_PATH")
         .ok()
         .map(|p| p.trim().to_owned())
@@ -1887,10 +1882,90 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
     }
 }
 
+fn is_loopback_bind_addr(bind_addr: &str) -> bool {
+    let trimmed = bind_addr.trim();
+    if let Ok(sock) = trimmed.parse::<std::net::SocketAddr>() {
+        return sock.ip().is_loopback();
+    }
+    let host = if let Some(rest) = trimmed.strip_prefix('[') {
+        rest.split(']').next().unwrap_or("")
+    } else {
+        trimmed.split(':').next().unwrap_or("")
+    };
+    host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" || host == "::1"
+}
+
+fn resolve_bridge_auth_header(
+    bind_addr: &str,
+    token_env: Result<String, env::VarError>,
+) -> Result<Option<Arc<str>>, String> {
+    match token_env {
+        Ok(raw) => {
+            let token = raw.trim();
+            if token.is_empty() {
+                if is_loopback_bind_addr(bind_addr) {
+                    Ok(None)
+                } else {
+                    Err(format!(
+                        "refusing to bind non-loopback address {bind_addr:?} with empty MARLIN_BRIDGE_TOKEN"
+                    ))
+                }
+            } else {
+                Ok(Some(Arc::from(format!("Bearer {token}"))))
+            }
+        }
+        Err(env::VarError::NotPresent) => {
+            if is_loopback_bind_addr(bind_addr) {
+                Ok(None)
+            } else {
+                Err(format!(
+                    "refusing to bind non-loopback address {bind_addr:?} without MARLIN_BRIDGE_TOKEN"
+                ))
+            }
+        }
+        Err(env::VarError::NotUnicode(_)) => {
+            Err("MARLIN_BRIDGE_TOKEN contains invalid UTF-8".to_owned())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{parse_detour_mode, parse_scheme_ui_command};
+    use super::{parse_detour_mode, parse_scheme_ui_command, resolve_bridge_auth_header};
     use marlin_agent_graph::DetourMode;
+    use std::ffi::OsString;
+
+    #[test]
+    fn resolve_bridge_auth_header_fails_closed_on_non_loopback_and_invalid_utf8() {
+        assert_eq!(
+            resolve_bridge_auth_header("127.0.0.1:0", Err(std::env::VarError::NotPresent)),
+            Ok(None)
+        );
+        assert_eq!(
+            resolve_bridge_auth_header("[::1]:8080", Err(std::env::VarError::NotPresent)),
+            Ok(None)
+        );
+        assert!(
+            resolve_bridge_auth_header("0.0.0.0:8080", Err(std::env::VarError::NotPresent))
+                .is_err()
+        );
+        assert!(
+            resolve_bridge_auth_header("0.0.0.0:8080", Ok("   ".to_owned())).is_err()
+        );
+        assert!(
+            resolve_bridge_auth_header(
+                "127.0.0.1:0",
+                Err(std::env::VarError::NotUnicode(OsString::from("bad")))
+            )
+            .is_err()
+        );
+        assert_eq!(
+            resolve_bridge_auth_header("0.0.0.0:8080", Ok("secret-tok".to_owned()))
+                .unwrap()
+                .as_deref(),
+            Some("Bearer secret-tok")
+        );
+    }
 
     #[test]
     fn parse_detour_mode_maps_scheme_symbols() {

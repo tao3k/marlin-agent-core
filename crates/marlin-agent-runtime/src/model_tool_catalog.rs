@@ -5,7 +5,8 @@
 //! Runtime-owned model tool registrations and offer admission.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
+    fmt::Write as _,
     sync::Arc,
 };
 
@@ -14,6 +15,7 @@ use marlin_agent_protocol::{
     ModelToolName,
 };
 use marlin_agent_sessions::ConversationToolExecutionClaim;
+use ring::digest::{Context as Sha256Context, SHA256};
 
 use crate::{
     ModelToolDeclaration, ModelToolGovernance, RuntimeContext, ShellToolHandler, ToolRuntime,
@@ -50,6 +52,7 @@ pub struct ModelToolCatalog {
 pub struct ModelToolOffer {
     entries: Vec<Entry>,
     index: HashMap<ModelToolName, usize>,
+    pinned_schema_digests: BTreeMap<String, String>,
 }
 
 /// Rejection at the runtime offer boundary.
@@ -58,7 +61,65 @@ pub enum ModelToolCatalogError {
     DuplicateName,
     InvalidCallSet,
     UnregisteredTool,
+    SchemaRugPullDetected,
 }
+
+/// Computes a canonical SHA-256 digest (`sha256:<64 hex>`) binding a tool's
+/// name, description, and JSON parameter schema (B11 anti-rug-pull pin).
+pub fn schema_digest_for_definition(definition: &ModelToolDefinition) -> String {
+    fn feed_canonical_json(ctx: &mut Sha256Context, value: &serde_json::Value) {
+        match value {
+            serde_json::Value::Null => ctx.update(b"null"),
+            serde_json::Value::Bool(b) => ctx.update(if *b { b"true" } else { b"false" }),
+            serde_json::Value::Number(n) => ctx.update(n.to_string().as_bytes()),
+            serde_json::Value::String(s) => {
+                ctx.update(b"s:");
+                ctx.update(&(s.len() as u64).to_be_bytes());
+                ctx.update(s.as_bytes());
+            }
+            serde_json::Value::Array(items) => {
+                ctx.update(b"[");
+                for item in items {
+                    feed_canonical_json(ctx, item);
+                    ctx.update(b",");
+                }
+                ctx.update(b"]");
+            }
+            serde_json::Value::Object(map) => {
+                ctx.update(b"{");
+                let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+                keys.sort_unstable();
+                for key in keys {
+                    ctx.update(b"k:");
+                    ctx.update(&(key.len() as u64).to_be_bytes());
+                    ctx.update(key.as_bytes());
+                    ctx.update(b"=");
+                    feed_canonical_json(ctx, &map[key]);
+                    ctx.update(b";");
+                }
+                ctx.update(b"}");
+            }
+        }
+    }
+
+    let mut ctx = Sha256Context::new(&SHA256);
+    ctx.update(b"marlin-tool-schema-v1\0");
+    ctx.update(&(definition.name.as_str().len() as u64).to_be_bytes());
+    ctx.update(definition.name.as_str().as_bytes());
+    ctx.update(b"\0");
+    ctx.update(&(definition.description.len() as u64).to_be_bytes());
+    ctx.update(definition.description.as_bytes());
+    ctx.update(b"\0");
+    feed_canonical_json(&mut ctx, &definition.parameters);
+    let digest = ctx.finish();
+    let mut out = String::with_capacity(7 + 64);
+    out.push_str("sha256:");
+    for byte in digest.as_ref() {
+        let _ = write!(&mut out, "{byte:02x}");
+    }
+    out
+}
+
 
 impl ModelToolCatalog {
     pub fn new() -> Self {
@@ -98,6 +159,16 @@ impl ModelToolCatalog {
 
     /// Freeze the handlers and definitions for one provider request.
     pub fn offer(&self) -> ModelToolOffer {
+        let pinned_schema_digests = self
+            .entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.definition.name.as_str().to_owned(),
+                    schema_digest_for_definition(&entry.definition),
+                )
+            })
+            .collect();
         ModelToolOffer {
             entries: self.entries.clone(),
             index: self
@@ -106,6 +177,7 @@ impl ModelToolCatalog {
                 .enumerate()
                 .map(|(position, entry)| (entry.definition.name.clone(), position))
                 .collect(),
+            pinned_schema_digests,
         }
     }
 
@@ -167,6 +239,27 @@ impl ModelToolOffer {
         }
     }
 
+    /// Stable pinned SHA-256 schema digest map frozen at offer creation (B11).
+    pub fn pinned_schema_digests(&self) -> &BTreeMap<String, String> {
+        &self.pinned_schema_digests
+    }
+
+    /// B11 anti-rug-pull gate: verifies that an observed tool definition matches
+    /// the exact SHA-256 schema digest pinned when this offer was frozen.
+    pub fn verify_pinned_schema(
+        &self,
+        observed: &ModelToolDefinition,
+    ) -> Result<(), ModelToolCatalogError> {
+        let Some(expected_digest) = self.pinned_schema_digests.get(observed.name.as_str()) else {
+            return Err(ModelToolCatalogError::UnregisteredTool);
+        };
+        let observed_digest = schema_digest_for_definition(observed);
+        if observed_digest != *expected_digest {
+            return Err(ModelToolCatalogError::SchemaRugPullDetected);
+        }
+        Ok(())
+    }
+
     /// Check that a request carries this exact offer without cloning schemas.
     pub fn matches_definitions(&self, tools: Option<&[ModelToolDefinition]>) -> bool {
         match tools {
@@ -176,7 +269,9 @@ impl ModelToolOffer {
                     && tools
                         .iter()
                         .zip(&self.entries)
-                        .all(|(tool, entry)| tool == &entry.definition)
+                        .all(|(tool, entry)| {
+                            tool == &entry.definition && self.verify_pinned_schema(tool).is_ok()
+                        })
             }
         }
     }

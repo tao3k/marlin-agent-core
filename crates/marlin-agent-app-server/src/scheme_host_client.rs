@@ -64,11 +64,14 @@ pub struct FleetAuditCapsuleView {
 
 impl FleetAuditCapsuleView {
     fn from_record(rec: &GraphRecordView) -> Result<Self, String> {
-        let parse_usize = |k: &str| -> usize {
-            rec.facets
-                .get(k)
-                .and_then(|v| v.parse::<usize>().ok())
-                .unwrap_or(0)
+        let parse_usize = |k: &str| -> Result<usize, String> {
+            match rec.facets.get(k) {
+                None => Ok(0),
+                Some(raw) => raw
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|err| format!("invalid fleet audit facet {k:?}={raw:?}: {err}")),
+            }
         };
         let parse_bool = |k: &str| -> bool {
             rec.facets
@@ -80,11 +83,11 @@ impl FleetAuditCapsuleView {
             record_id: rec.record_id.clone(),
             kind: rec.kind.clone(),
             summary: rec.summary.clone(),
-            active_actor_count: parse_usize("active_actor_count"),
-            archived_actor_count: parse_usize("archived_actor_count"),
-            peek_count: parse_usize("peek_count"),
-            total_active_defeaters: parse_usize("total_active_defeaters"),
-            total_human_inbox_items: parse_usize("total_human_inbox_items"),
+            active_actor_count: parse_usize("active_actor_count")?,
+            archived_actor_count: parse_usize("archived_actor_count")?,
+            peek_count: parse_usize("peek_count")?,
+            total_active_defeaters: parse_usize("total_active_defeaters")?,
+            total_human_inbox_items: parse_usize("total_human_inbox_items")?,
             disclosure_level: rec
                 .facets
                 .get("disclosure_level")
@@ -150,12 +153,15 @@ pub struct GovernanceAuthoritySnapshotView {
 }
 
 impl GovernanceAuthoritySnapshotView {
-    fn from_record(rec: &GraphRecordView) -> Self {
-        let parse_u64 = |k: &str| -> u64 {
-            rec.facets
-                .get(k)
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(0)
+    fn from_record(rec: &GraphRecordView) -> Result<Self, String> {
+        let parse_u64 = |k: &str| -> Result<u64, String> {
+            match rec.facets.get(k) {
+                None => Ok(0),
+                Some(raw) => raw
+                    .trim()
+                    .parse::<u64>()
+                    .map_err(|err| format!("invalid governance numeric facet {k:?}={raw:?}: {err}")),
+            }
         };
         let parse_bool = |k: &str| -> bool {
             rec.facets
@@ -178,17 +184,17 @@ impl GovernanceAuthoritySnapshotView {
                 .filter(|v| v.starts_with('{') && v.ends_with('}'))
                 .map(str::to_owned)
         };
-        Self {
+        Ok(Self {
             record_id: rec.record_id.clone(),
             summary: rec.summary.clone(),
             admitted: parse_bool("admitted"),
-            revocation_epoch: parse_u64("revocation_epoch"),
-            policy_revision: parse_u64("policy_revision"),
+            revocation_epoch: parse_u64("revocation_epoch")?,
+            policy_revision: parse_u64("policy_revision")?,
             breaker_tripped: parse_bool("breaker_tripped"),
-            breaker_trip_epoch: parse_u64("breaker_trip_epoch"),
-            breaker_budget_used: parse_u64("breaker_budget_used"),
-            breaker_budget_limit: parse_u64("breaker_budget_limit"),
-            breaker_active_leases: parse_u64("breaker_active_leases"),
+            breaker_trip_epoch: parse_u64("breaker_trip_epoch")?,
+            breaker_budget_used: parse_u64("breaker_budget_used")?,
+            breaker_budget_limit: parse_u64("breaker_budget_limit")?,
+            breaker_active_leases: parse_u64("breaker_active_leases")?,
             rearm_gate_id: get_str("rearm_gate_id"),
             assessment_digest: get_str("assessment_digest"),
             taint_proof_digest: get_str("taint_proof_digest"),
@@ -206,7 +212,7 @@ impl GovernanceAuthoritySnapshotView {
             fact_taint_sanitizers_json: get_json_array("fact_taint_sanitizers_json"),
             last_cedar_probe_json: get_json_object("last_cedar_probe_json"),
             last_event_note: get_str("last_event_note"),
-        }
+        })
     }
 
     /// Serializes this governance snapshot as an RFC 8259 JSON object without external serde deps.
@@ -662,10 +668,15 @@ impl MarlinSchemeHostClient {
         project_id: impl Into<String>,
     ) -> Result<Option<GovernanceAuthoritySnapshotView>, Status> {
         let records = self.query_project_graph_records(project_id).await?;
-        Ok(records
+        let Some(rec) = records
             .iter()
             .find(|r| r.kind == "scheme.governance.authority_snapshot")
-            .map(GovernanceAuthoritySnapshotView::from_record))
+        else {
+            return Ok(None);
+        };
+        let view = GovernanceAuthoritySnapshotView::from_record(rec)
+            .map_err(|err| Status::internal(format!("decode governance authority snapshot: {err}")))?;
+        Ok(Some(view))
     }
 
     /// Opens a live `UiWorkbenchService` session snapshot for the given client target.
@@ -709,10 +720,15 @@ impl MarlinSchemeHostClient {
                 })?),
                 None => None,
             };
-        let governance = records
+        let governance = match records
             .iter()
             .find(|r| r.kind == "scheme.governance.authority_snapshot")
-            .map(GovernanceAuthoritySnapshotView::from_record);
+        {
+            Some(rec) => Some(GovernanceAuthoritySnapshotView::from_record(rec).map_err(
+                |err| Status::internal(format!("decode governance authority snapshot: {err}")),
+            )?),
+            None => None,
+        };
         Ok(HostStatusSnapshot {
             tabs,
             audit,
@@ -879,8 +895,19 @@ mod tests {
             end_line: None,
             facets: gov_facets,
         };
-        let gov = GovernanceAuthoritySnapshotView::from_record(&gov_rec);
+        let gov = GovernanceAuthoritySnapshotView::from_record(&gov_rec)
+            .expect("valid governance snapshot facets must parse");
         assert!(!gov.admitted);
+
+        // Fail-closed negative control: malformed numeric governance facet MUST NOT collapse to 0.
+        let mut corrupt_gov_rec = gov_rec.clone();
+        corrupt_gov_rec
+            .facets
+            .insert("revocation_epoch".to_owned(), "tampered-not-u64".to_owned());
+        assert!(
+            GovernanceAuthoritySnapshotView::from_record(&corrupt_gov_rec).is_err(),
+            "malformed revocation_epoch facet must fail closed instead of collapsing to 0"
+        );
         assert!(gov.breaker_tripped);
         assert_eq!(gov.rearm_gate_id, "gov-rearm-epoch-1");
         assert_eq!(gov.fact_taint_sources_json, "[\"in\"]");
