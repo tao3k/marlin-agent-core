@@ -4,6 +4,9 @@
 
 //! One OS thread owns the VM; Tokio workers never enter Scheme.
 
+#[cfg(test)]
+use super::config::{DEFAULT_MAX_ACTIVE_MODULES, DEFAULT_MAX_ACTIVE_TIMERS};
+use super::config::MAX_TIMER_DELAY_US;
 use super::vm::{Completion, DeckVm, MessageId};
 use super::{
     DeckMailboxMetrics, DeckModuleInstanceId, DeckRuntimeConfig, DeckRuntimeMetrics,
@@ -35,7 +38,10 @@ pub(super) fn run(
     let mut observed_processors = 0;
     let mut pending = VecDeque::new();
     let mut active = HashMap::new();
-    let mut control = Controls::new();
+    let mut control = Controls::with_limits(
+        usize::from(config.max_active_modules.get()),
+        usize::from(config.max_active_timers.get()),
+    );
     #[cfg(feature = "context-profiling")]
     let mut trace = Vec::new();
     #[cfg(feature = "context-profiling")]
@@ -268,15 +274,23 @@ struct TimerSlot {
 struct Controls {
     next_module: u64,
     next_timer: u64,
+    max_active_modules: usize,
+    max_active_timers: usize,
     modules: HashSet<DeckModuleInstanceId>,
     timers: HashMap<DeckTimerId, TimerSlot>,
     retiring: Vec<Arc<super::ModuleState>>,
 }
 impl Controls {
+    #[cfg(test)]
     fn new() -> Self {
+        Self::with_limits(DEFAULT_MAX_ACTIVE_MODULES, DEFAULT_MAX_ACTIVE_TIMERS)
+    }
+    fn with_limits(max_active_modules: usize, max_active_timers: usize) -> Self {
         Self {
             next_module: 2,
             next_timer: 1,
+            max_active_modules: max_active_modules.max(1),
+            max_active_timers: max_active_timers.max(1),
             modules: HashSet::from([DeckModuleInstanceId(std::num::NonZeroU64::MIN)]),
             timers: HashMap::new(),
             retiring: Vec::new(),
@@ -371,6 +385,10 @@ fn receive(
             if reply.is_closed() {
                 return Ok(());
             }
+            if control.modules.len() >= control.max_active_modules {
+                let _ = reply.send(Err(DeckRuntimeRejection::Backpressure));
+                return Ok(());
+            }
             let id = DeckModuleInstanceId(
                 std::num::NonZeroU64::new(control.next_module)
                     .ok_or(DeckRuntimeRejection::InvalidProjection)?,
@@ -401,6 +419,14 @@ fn receive(
         } => {
             if !control.modules.contains(&module) {
                 let _ = reply.send(Err(DeckRuntimeRejection::ModuleRetired));
+                return Ok(());
+            }
+            if delay_us == 0 || delay_us > MAX_TIMER_DELAY_US {
+                let _ = reply.send(Err(DeckRuntimeRejection::TimerDelay));
+                return Ok(());
+            }
+            if control.timers.len() >= control.max_active_timers {
+                let _ = reply.send(Err(DeckRuntimeRejection::Backpressure));
                 return Ok(());
             }
             let timer = DeckTimerId(

@@ -587,7 +587,21 @@ audit-g2 *args:
     echo "ERROR: agent-defense-audit CLI not found at $CLI (set DE_AGENT_DEFENSE_AUDIT_CLI)" >&2
     exit 2
   fi
-  if [ "$#" -gt 0 ]; then
-    exec bun "$CLI" "$@"
+  if [ -n "{{args}}" ]; then
+    exec bun "$CLI" {{args}}
   fi
   exec bun "$CLI" --dir crates scheme --lang=rust,scheme --exclude-tests
+
+# Run cross-language SM2-SM36 software aging & ADV-L4 confinement audit across all production Rust files.
+audit-stability *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  CLI="${DE_AGENT_STABILITY_AUDIT_CLI:-$HOME/ghq/github.com/hardenedlinux/deterministic-engineering-qnt/languages-engineering/ts/stability/aging-contrast/agent-stability-audit.ts}"
+  if [ ! -f "$CLI" ]; then
+    echo "ERROR: agent-stability-audit CLI not found at $CLI (set DE_AGENT_STABILITY_AUDIT_CLI)" >&2
+    exit 2
+  fi
+  if [ -n "{{args}}" ]; then
+    exec bun "$CLI" {{args}}
+  fi
+  exec bun "$CLI" --dir crates --lang=rust --exclude-tests

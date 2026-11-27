@@ -92,6 +92,56 @@ impl SpanExporter for ObservedExporter {
     }
 }
 
+const MAX_OTLP_ENDPOINT_BYTES: usize = 2048;
+const MAX_TELEMETRY_LABEL_BYTES: usize = 256;
+
+fn is_loopback_otlp_host(host: &str) -> bool {
+    let trimmed = host.trim_start_matches('[').trim_end_matches(']');
+    if trimmed.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    trimmed
+        .parse::<std::net::IpAddr>()
+        .is_ok_and(|ip| ip.is_loopback())
+}
+
+fn validate_telemetry_label(label: &str) -> Result<(), OpenTelemetryConfigError> {
+    if label.trim().is_empty()
+        || label.len() > MAX_TELEMETRY_LABEL_BYTES
+        || label.chars().any(char::is_control)
+    {
+        return Err(OpenTelemetryConfigError::InvalidEndpoint);
+    }
+    Ok(())
+}
+
+fn validate_otlp_endpoint(traces_endpoint: &str) -> Result<(), OpenTelemetryConfigError> {
+    if traces_endpoint.is_empty()
+        || traces_endpoint.len() > MAX_OTLP_ENDPOINT_BYTES
+        || traces_endpoint
+            .chars()
+            .any(|c| c.is_control() || c.is_whitespace() || matches!(c, '?' | '#' | '@'))
+        || traces_endpoint.to_ascii_lowercase().contains("%40")
+    {
+        return Err(OpenTelemetryConfigError::InvalidEndpoint);
+    }
+    let endpoint = traces_endpoint
+        .parse::<http::Uri>()
+        .map_err(|_| OpenTelemetryConfigError::InvalidEndpoint)?;
+    let Some(authority) = endpoint.authority() else {
+        return Err(OpenTelemetryConfigError::InvalidEndpoint);
+    };
+    let host = authority.host();
+    if host.is_empty() || authority.as_str().contains('@') {
+        return Err(OpenTelemetryConfigError::InvalidEndpoint);
+    }
+    match endpoint.scheme_str() {
+        Some("https") => Ok(()),
+        Some("http") if is_loopback_otlp_host(host) => Ok(()),
+        _ => Err(OpenTelemetryConfigError::InvalidEndpoint),
+    }
+}
+
 impl OpenTelemetry {
     /// Connect an OTLP/HTTP protobuf traces endpoint using the SDK's blocking client.
     pub fn otlp_http(
@@ -99,16 +149,9 @@ impl OpenTelemetry {
         span_target: TraceTarget,
         traces_endpoint: &str,
     ) -> Result<Self, OpenTelemetryConfigError> {
-        let endpoint = traces_endpoint
-            .parse::<http::Uri>()
-            .map_err(|_| OpenTelemetryConfigError::InvalidEndpoint)?;
-        if !matches!(endpoint.scheme_str(), Some("http" | "https"))
-            || endpoint
-                .authority()
-                .is_none_or(|host| host.as_str().contains('@'))
-        {
-            return Err(OpenTelemetryConfigError::InvalidEndpoint);
-        }
+        validate_telemetry_label(service_name.0)?;
+        validate_telemetry_label(span_target.0)?;
+        validate_otlp_endpoint(traces_endpoint)?;
         let exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_http()
             .with_endpoint(traces_endpoint)

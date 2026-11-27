@@ -40,6 +40,28 @@ jobs:
             --lang=rust,scheme \
             --exclude-tests
 
+  stability-adv-l4-audit:
+    name: SM2-SM36 Software Aging & ADV-L4 Confinement Audit (Rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Checkout standalone agent-stability-audit CLI
+        uses: actions/checkout@v6
+        with:
+          repository: hardenedlinux/deterministic-engineering
+          ref: docs/quint-threat-library
+          path: .ci/de
+          sparse-checkout: |
+            languages-engineering/ts/stability/aging-contrast
+      - uses: oven-sh/setup-bun@v2
+      - name: Audit all production Rust files (zero SM2-SM36 findings)
+        run: |
+          bun .ci/de/languages-engineering/ts/stability/aging-contrast/agent-stability-audit.ts \
+            --dir crates \
+            --lang=rust \
+            --exclude-tests
+
   quint-threat-overlays:
     name: Quint 19-Overlay Formal Threat Typecheck
     runs-on: ubuntu-latest

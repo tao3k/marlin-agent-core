@@ -85,6 +85,18 @@ impl HostObserver {
     /// Subscribe to an existing process. A failed registration yields an error,
     /// without asserting exit or attaching to another PID.
     pub fn attach(pid: u32, pulses: UnixDatagram, timeout: Duration) -> io::Result<Self> {
+        if pid == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "host observer PID must be nonzero",
+            ));
+        }
+        if timeout.is_zero() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "host observer timeout must be nonzero",
+            ));
+        }
         // SAFETY: kqueue has no arguments and returns a new owned descriptor.
         let fd = unsafe { libc::kqueue() };
         if fd < 0 {
@@ -172,6 +184,11 @@ impl HostObserver {
                 let mut pulse = [0; 10];
                 match pulses.recv(&mut pulse) {
                     Ok(9) if matches!(pulse[0], 1 | 2) => {
+                        let timestamp = u64::from_le_bytes(pulse[1..9].try_into().unwrap());
+                        let now = monotonic_ns();
+                        if timestamp == 0 || timestamp > now {
+                            continue;
+                        }
                         let index = (pulse[0] - 1) as usize;
                         let clock = &mut self.clocks[index];
                         if clock.last.is_none() {
@@ -179,7 +196,6 @@ impl HostObserver {
                                 [HostHeartbeatSource::Tui, HostHeartbeatSource::Tokio][index],
                             ));
                         }
-                        let timestamp = u64::from_le_bytes(pulse[1..9].try_into().unwrap());
                         clock.last = Some(clock.last.unwrap_or(0).max(timestamp));
                     }
                     Ok(_) => continue,

@@ -44,6 +44,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 pub use config::DeckRuntimeConfig;
+use config::{MAX_ACTIVE_MODULES_LIMIT, MAX_ACTIVE_TIMERS_LIMIT};
 pub use receipt::{
     DeckMailboxMetrics, DeckRuntimeMetrics, DeckRuntimeShutdownReceipt, DeckRuntimeStopReason,
 };
@@ -53,6 +54,10 @@ pub use receipt::{
 pub enum DeckRuntimeStartupError {
     #[error("Deck batch capacity must be between 1 and {CONTEXT_BATCH_MAX_ROWS}")]
     BatchCapacity,
+    #[error(
+        "Deck module/timer limits must be within 1..={MAX_ACTIVE_MODULES_LIMIT} modules and 1..={MAX_ACTIVE_TIMERS_LIMIT} timers"
+    )]
+    ControlCapacity,
     #[error("cannot start Deck VM owner: {0}")]
     Owner(#[from] std::io::Error),
     #[error("Deck VM startup failed: {0}")]
@@ -148,6 +153,11 @@ impl DeckRuntime {
     pub fn start(config: DeckRuntimeConfig) -> Result<Self, DeckRuntimeStartupError> {
         if usize::from(config.batch_capacity.get()) > CONTEXT_BATCH_MAX_ROWS {
             return Err(DeckRuntimeStartupError::BatchCapacity);
+        }
+        if usize::from(config.max_active_modules.get()) > MAX_ACTIVE_MODULES_LIMIT
+            || usize::from(config.max_active_timers.get()) > MAX_ACTIVE_TIMERS_LIMIT
+        {
+            return Err(DeckRuntimeStartupError::ControlCapacity);
         }
         let wake = Arc::new(wake::Wake::new()?);
         let worker_wake = Arc::clone(&wake);

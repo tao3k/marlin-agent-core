@@ -13,7 +13,10 @@ use marlin_agent_context::ContextAdmissionRequest;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
-use super::{DeckMailboxMetrics, DeckRuntime, DeckRuntimeRejection, Outcome, OwnerMessage};
+use super::{
+    DeckMailboxMetrics, DeckRuntime, DeckRuntimeRejection, Outcome, OwnerMessage,
+    config::MAX_TIMER_DELAY_US,
+};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct DeckModuleInstanceId(pub(super) NonZeroU64);
@@ -85,7 +88,7 @@ impl DeckContextModule {
         let microseconds = delay.as_nanos().div_ceil(1000);
         let delay_us = u64::try_from(microseconds)
             .ok()
-            .filter(|delay| *delay > 0)
+            .filter(|delay| *delay > 0 && *delay <= MAX_TIMER_DELAY_US)
             .ok_or(DeckRuntimeRejection::TimerDelay)?;
         let (reply, result) = oneshot::channel();
         self.runtime.offer(
