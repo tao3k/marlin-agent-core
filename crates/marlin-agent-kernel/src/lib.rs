@@ -12,7 +12,9 @@ pub mod execution_breaker;
 pub mod governance_admission;
 pub mod governance_cedar;
 pub mod governance_plane;
+pub mod key_rotation_shredding;
 pub mod model_weight_attestation;
+pub mod supply_chain_provenance;
 pub mod transparency_log;
 mod loop_machine;
 mod loop_program_controller;
@@ -64,9 +66,17 @@ pub use context_distillation::{
     ContextDistillationGate, ContextDistillationReceipt, ContextDistillationRejection,
     ContextSegment, DistilledContextPacket, EpistemicIntegrity, SecrecyClass,
 };
+pub use key_rotation_shredding::{
+    CryptoOpReceipt, CryptoRewrapClaim, CryptoShredTombstone, CryptoWriteClaim,
+    KeyRotationReceipt, KeyRotationRejection, KeyRotationShreddingGate,
+};
 pub use model_weight_attestation::{
     ModelInferenceAdmissionReceipt, ModelInferenceClaim, ModelWeightAttestationGate,
     ModelWeightGovernancePolicy, ModelWeightRejection, compute_shard_merkle_root,
+};
+pub use supply_chain_provenance::{
+    SupplyChainAdmissionReceipt, SupplyChainBuildClaim, SupplyChainDependencySpec,
+    SupplyChainProvenanceGate, SupplyChainRejection,
 };
 pub use transparency_log::{
     GovernanceTransparencyLog, GovernanceTreeHead, MerkleConsistencyProof, MerkleInclusionProof,
