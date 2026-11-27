@@ -11,6 +11,7 @@ pub mod confidential_enclave;
 pub mod context_distillation;
 pub mod defense_pillar_coordinator;
 pub mod execution_breaker;
+pub mod federated_arbitration_liveness;
 pub mod federated_org_reciprocity;
 pub mod geo_residency_sovereignty;
 pub mod governance_admission;
@@ -21,6 +22,7 @@ pub mod model_weight_attestation;
 pub mod post_quantum_agility;
 pub mod supply_chain_provenance;
 pub mod transparency_log;
+pub mod zk_selective_disclosure;
 mod loop_machine;
 mod loop_program_controller;
 mod loop_program_execution;
@@ -79,6 +81,10 @@ pub use defense_pillar_coordinator::{
     UnifiedDefensePillarCoordinator, UnifiedDefenseRejection, UnifiedDefenseReleaseCertificate,
     UnifiedDefenseReleaseClaim,
 };
+pub use federated_arbitration_liveness::{
+    ArbitrationClaim, ArbitrationPhase, ArbitrationReceipt, ArbitrationRejection,
+    FederatedArbitrationLivenessGate,
+};
 pub use federated_org_reciprocity::{
     BilateralTreaty, FederatedOpClaim, FederatedOpReceipt, FederatedOrgReciprocityGate,
     FederatedOrgRejection,
@@ -107,6 +113,9 @@ pub use transparency_log::{
     GovernanceTransparencyLog, GovernanceTreeHead, MerkleConsistencyProof, MerkleInclusionProof,
     SplitViewEquivocationFraudProof, TransparencyLogRejection, verify_inclusion_proof,
     verify_tree_head_progression,
+};
+pub use zk_selective_disclosure::{
+    ZkDisclosureClaim, ZkDisclosureReceipt, ZkDisclosureRejection, ZkSelectiveDisclosureGate,
 };
 #[deprecated(
     note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor); do not wire new production callers or governance gates here"

@@ -119,6 +119,29 @@ in
   git-hooks.hooks = {
     shellcheck.enable = true;
     nixfmt.enable = true;
+    agent-defense-g2 = {
+      enable = true;
+      name = "agent-defense-g2";
+      description = "Audit staged production Rust and Scheme files against G2 AI anti-defensive-programming rules";
+      entry = toString (
+        pkgs.writeShellScript "marlin-agent-core-agent-defense-g2" ''
+          set -euo pipefail
+          CLI="''${DE_AGENT_DEFENSE_AUDIT_CLI:-$HOME/ghq/github.com/hardenedlinux/deterministic-engineering-qnt/packages/agent-defense-audit/src/agent-defense-audit.ts}"
+          if [ ! -f "$CLI" ]; then
+            echo "SKIP agent-defense-g2: CLI not found at $CLI (set DE_AGENT_DEFENSE_AUDIT_CLI)" >&2
+            exit 0
+          fi
+          if ! command -v bun >/dev/null 2>&1; then
+            echo "SKIP agent-defense-g2: bun not found on PATH" >&2
+            exit 0
+          fi
+          exec bun "$CLI" "$@"
+        ''
+      );
+      files = "\\.(rs|ss)$";
+      excludes = "(^tests/|/tests/|/t/|_test\\.rs$|-test\\.ss$|^target/|/target/)";
+      pass_filenames = true;
+    };
   };
   # See full reference at https://devenv.sh/reference/options/
 }
