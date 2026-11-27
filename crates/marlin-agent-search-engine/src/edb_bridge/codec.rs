@@ -174,7 +174,15 @@ pub fn decode_edb_prefilter(
         ));
     }
     let languages = decode_string_vector(native(tuple.element(1))?, MAX_TOKENS)?;
-    let path_prefix = decode_optional_string(native(tuple.element(2))?, MAX_TEXT_BYTES)?;
+    let path_prefix = decode_optional_string(native(tuple.element(2))?, MAX_TEXT_BYTES)?
+        .and_then(|raw| {
+            let mut normalized = raw.trim().replace('\\', "/");
+            while let Some(stripped) = normalized.strip_prefix("./") {
+                normalized = stripped.to_owned();
+            }
+            let trimmed = normalized.trim_start_matches('/');
+            (!trimmed.is_empty() && trimmed != ".").then(|| trimmed.to_owned())
+        });
     let required_tokens = decode_string_vector(native(tuple.element(3))?, MAX_TOKENS)?;
     let max_files = decode_usize(native(tuple.element(4))?)?.max(1);
     let active_edb = decode_symbol_vector(native(tuple.element(5))?, 16)?;

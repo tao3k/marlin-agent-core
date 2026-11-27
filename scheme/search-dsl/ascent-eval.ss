@@ -103,15 +103,111 @@
        (or (member k +boilerplate-symbol-keys+)
            (< (string-length k) 3))))
 
+(def (collision-pair-row? row)
+  (and (pair? row)
+       (= (length row) 5)
+       (string? (car row))
+       (string? (cadr row))
+       (integer? (caddr row))
+       (string? (cadddr row))
+       (integer? (list-ref row 4))))
+
+(def (impact-scoped-row? row)
+  (and (pair? row)
+       (= (length row) 5)
+       (string? (car row))
+       (member (cadr row) '("prod" "test"))
+       (integer? (list-ref row 4))))
+
+;;; Compact quadratic `(name p1 l1 p2 l2)` collision pairs into spanning-tree
+;;; chains over unique `(path . line)` sites, ranking domain-specific symbols
+;;; ahead of boilerplate trait/stdlib names and by distinct-file count desc.
+(def (compact-collision-rows rows limit)
+  (let ((sites-by-name (make-hash-table)))
+    (for-each
+      (lambda (row)
+        (let* ((name (car row))
+               (s1 (cons (cadr row) (caddr row)))
+               (s2 (cons (cadddr row) (list-ref row 4)))
+               (tbl (or (hash-get sites-by-name name)
+                        (let ((t (make-hash-table)))
+                          (hash-put! sites-by-name name t)
+                          t))))
+          (hash-put! tbl s1 #t)
+          (hash-put! tbl s2 #t)))
+      rows)
+    (let* ((entries
+             (map (lambda (kv)
+                    (let* ((name (car kv))
+                           (sites (list-sort
+                                    (lambda (a b)
+                                      (or (string<? (car a) (car b))
+                                          (and (string=? (car a) (car b))
+                                               (< (cdr a) (cdr b)))))
+                                    (hash-keys (cdr kv)))))
+                      (list name (boilerplate-symbol-key? name) (length sites) sites)))
+                  (hash->list sites-by-name)))
+           (ranked
+             (list-sort
+               (lambda (a b)
+                 (let ((ab (cadr a)) (bb (cadr b))
+                       (ac (caddr a)) (bc (caddr b)))
+                   (cond
+                     ((and (not ab) bb) #t)
+                     ((and ab (not bb)) #f)
+                     ((> ac bc) #t)
+                     ((< ac bc) #f)
+                     (else (string<? (car a) (car b))))))
+               entries))
+           (queues
+             (filter-map
+               (lambda (entry)
+                 (let ((name (car entry))
+                       (sites (cadddr entry)))
+                   (and (>= (length sites) 2)
+                        (let ((anchor (car sites))
+                              (peers (take-rows-up-to (cdr sites) 5)))
+                          (map (lambda (peer)
+                                 (list name (car anchor) (cdr anchor) (car peer) (cdr peer)))
+                               peers)))))
+               ranked))
+           (max-rows (or limit 1000000)))
+      ;; Round-robin across spanning-tree queues preserves MAP-Elites anti-mode-collapse
+      ;; (every distinct symbol gets its first witness pair before any symbol takes a 2nd)
+      ;; while ranking domain-specific symbols ahead of boilerplate names.
+      (let loop ((cur queues) (next '()) (rem max-rows) (acc '()))
+        (cond
+          ((<= rem 0) (reverse acc))
+          ((null? cur)
+           (if (null? next)
+             (reverse acc)
+             (loop (reverse next) '() rem acc)))
+          (else
+           (let ((q (car cur)))
+             (loop (cdr cur)
+                   (if (pair? (cdr q)) (cons (cdr q) next) next)
+                   (- rem 1)
+                   (cons (car q) acc)))))))))
+
 ;;; Anti-mode-collapse Quality-Diversity / MAP-Elites niche round-robin selector:
-;;; When a query returns more rows than `limit` and each row has >= 2 columns,
-;;; partition rows by their primary semantic niche key `(car row)` and draw
-;;; round-robin across niches so no single high-frequency niche starves others.
-;;; Domain-specific symbols are prioritized ahead of ubiquitous boilerplate
-;;; trait/constructor names (`new`, `default`, `fmt`, `as_str`, `drop`, ...).
+;;; - For 5-column collision pairs `(name p1 l1 p2 l2)`, deduplicates quadratic
+;;;   pairs into domain-prioritized spanning-tree chains with full site witnesses.
+;;; - For 5-column `find-impact` rows `(role prod|test sym path line)`, preserves
+;;;   ALL production rows ahead of test-only rows so test suites never starve prod.
+;;; - Otherwise partitions by `(car row)` with domain keys before boilerplate keys.
 (def (select-diverse-rows-up-to rows limit)
   (cond
-    ((or (not limit) (<= (length rows) limit) (null? rows)) rows)
+    ((null? rows) rows)
+    ((and (collision-pair-row? (car rows))
+          (or (and limit (> (length rows) limit))
+              (> (length rows) 8)))
+     (compact-collision-rows rows limit))
+    ((or (not limit) (<= (length rows) limit)) rows)
+    ((impact-scoped-row? (car rows))
+     (let* ((prod-rows (filter (lambda (r) (equal? (cadr r) "prod")) rows))
+            (test-rows (filter (lambda (r) (not (equal? (cadr r) "prod"))) rows))
+            (ordered (append prod-rows test-rows)))
+       (take-rows-up-to ordered limit)))
     ((or (not (pair? (car rows))) (< (length (car rows)) 2))
      (take-rows-up-to rows limit))
     (else

@@ -526,4 +526,31 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
         repaired_ws.contains("crates/core/src/engine.rs") && repaired_ws.contains("repairs:"),
         "expected repaired workspace_search wrapper to match and emit repairs receipt: {repaired_ws}"
     );
+
+    // 25. `(file-outline ... name-contains:/name-all:)` filters symbols in 1 pass, and
+    // truncated `(read-file ...)` emits `remaining_symbols:` lookahead jump anchors.
+    let ModelToolOutcome::Completed(filtered_outline) = run(
+        "c25",
+        "(file-outline \"crates/\" name-all: (\"run\" \"engine\") exclude-tests?: #t)",
+    )
+    .await
+    else {
+        panic!("expected Completed for name-all filtered file-outline");
+    };
+    assert!(
+        filtered_outline.contains("run_engine") && !filtered_outline.contains("EngineMode"),
+        "expected name-all filter on file-outline to narrow to run_engine: {filtered_outline}"
+    );
+    let ModelToolOutcome::Completed(lookahead_read) = run(
+        "c26",
+        "(read-file \"crates/core/src/engine.rs\" cursor: 1 max-lines: 2)",
+    )
+    .await
+    else {
+        panic!("expected Completed for truncated read-file with symbol lookahead");
+    };
+    assert!(
+        lookahead_read.contains("remaining_symbols:") && lookahead_read.contains("run_engine"),
+        "expected remaining_symbols lookahead anchor on truncated read-file: {lookahead_read}"
+    );
 }

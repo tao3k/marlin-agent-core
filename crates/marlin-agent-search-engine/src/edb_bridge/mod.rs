@@ -8,6 +8,7 @@
 mod choice_codec;
 mod codec;
 mod render;
+mod render_groups;
 mod runner;
 mod types;
 

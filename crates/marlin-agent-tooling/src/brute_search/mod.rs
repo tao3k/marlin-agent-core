@@ -11,6 +11,7 @@
 mod execute;
 mod outline_read;
 mod parser;
+mod read_file;
 mod workspace_map;
 
 pub(crate) use execute::execute_l0_search;

@@ -343,9 +343,11 @@ pub(super) fn decode_choice_payload(
     } else {
         "SAT"
     };
+    const MAX_DISPLAY_WORLDS: usize = 4;
+    let display_truncated = choice_worlds.len() > MAX_DISPLAY_WORLDS;
     let _ = writeln!(
         rendered_text,
-        "worlds: {world_count} ({sat_label}, worlds_total_known: true, worlds_truncated: false, state-budget: {state_budget}, provenance: {provenance_on})"
+        "worlds: {world_count} ({sat_label}, worlds_total_known: true, worlds_truncated: false, display_truncated: {display_truncated}, state-budget: {state_budget}, provenance: {provenance_on})"
     );
     if let Some((slice_modules, total_scoped)) = module_slice_counts {
         let _ = writeln!(
@@ -358,14 +360,26 @@ pub(super) fn decode_choice_payload(
     }
 
     let mut rows = Vec::new();
-    for world in &choice_worlds {
+    let display_indices: Vec<usize> = if display_truncated {
+        vec![0, 1, 2, choice_worlds.len() - 1]
+    } else {
+        (0..choice_worlds.len()).collect()
+    };
+    for &idx in &display_indices {
         append_world_rows(
-            world,
+            &choice_worlds[idx],
             &known_paths,
             &file_id_map,
             ctx.output_limit,
             &mut rendered_text,
             &mut rows,
+        );
+    }
+    if display_truncated {
+        let omitted_worlds = choice_worlds.len().saturating_sub(display_indices.len());
+        let _ = writeln!(
+            rendered_text,
+            "... (+{omitted_worlds} additional SAT world(s) omitted from display; all {world_count} worlds are exhaustively summarized in `deduction_vs_branch` above)"
         );
     }
 

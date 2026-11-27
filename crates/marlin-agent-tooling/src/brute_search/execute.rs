@@ -9,11 +9,12 @@ use std::fmt::Write as _;
 
 use marlin_agent_search_engine::{WorkspaceSearchIndex, WorkspaceSearchQuery};
 
-use super::outline_read::{execute_file_outline, execute_read_file};
+use super::outline_read::execute_file_outline;
 use super::parser::{
     BruteSearchRequest, DEFAULT_BRUTE_MAX_HITS, L0FormKind, classify_l0_form, is_path_excluded,
     parse_brute_search_form,
 };
+use super::read_file::execute_read_file;
 use super::workspace_map::execute_workspace_map;
 
 fn has_line_anchor(expr: &str) -> bool {

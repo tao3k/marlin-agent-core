@@ -120,15 +120,28 @@
                 ,(if (or (string=? kind-str "") (string=? kind-str "any")) '_ kind-str)
                 _ ,name-var ,line-var)))))
 
+(def (normalize-dsl-path-prefix raw)
+  (and (string? raw)
+       (let loop ((s raw))
+         (let ((len (string-length s)))
+           (cond
+             ((and (>= len 2) (string=? (substring s 0 2) "./"))
+              (loop (substring s 2 len)))
+             ((and (>= len 1) (char=? (string-ref s 0) #\/))
+              (loop (substring s 1 len)))
+             ((or (= len 0) (string=? s ".")) #f)
+             (else s))))))
+
 (def (build-scope-clause path-prefix (scope-limit #f))
-  (cond
-    ((and (string? path-prefix) (> (string-length path-prefix) 0) scope-limit)
-     `((scope path-prefix: ,path-prefix limit: ,scope-limit)))
-    ((and (string? path-prefix) (> (string-length path-prefix) 0))
-     `((scope path-prefix: ,path-prefix)))
-    (scope-limit
-     `((scope limit: ,scope-limit)))
-    (else '())))
+  (let ((norm (normalize-dsl-path-prefix path-prefix)))
+    (cond
+      ((and norm scope-limit)
+       `((scope path-prefix: ,norm limit: ,scope-limit)))
+      (norm
+       `((scope path-prefix: ,norm)))
+      (scope-limit
+       `((scope limit: ,scope-limit)))
+      (else '()))))
 
 (def (build-path-filter-atoms path-vars exclude-tests? exclude-prefixes path-contains)
   (apply append
