@@ -106,7 +106,10 @@ fn grouped_impact_renderer_orders_prod_before_test_and_summarizes_roles() {
     ];
     assert!(is_impact_row_shape(&rows));
     let (summary, lines) = render_grouped_impact_lines(&rows, 4096);
-    assert_eq!(summary, "prod(2: def=1, caller=1) | test(1: ref=1)");
+    assert_eq!(
+        summary,
+        "prod(2: def=1, caller=1) | test(1: ref=1)\naffected_layers: crates/a(2)"
+    );
     let joined = lines.join("");
     let prod_pos = joined.find("[PROD]").expect("PROD section");
     let test_pos = joined.find("[TEST]").expect("TEST section");

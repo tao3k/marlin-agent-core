@@ -73,7 +73,7 @@
     (let* ((ordered (map (lambda (n) (hash-ref relations n)) (reverse order)))
            (active-edb (filter (lambda (n) (hash-get needed n)) +edb-relation-names+))
            (program (gerbil-ascent-program
-                      ordered pruned-rules 100000 100000 100000 +edb-relation-names+)))
+                      ordered pruned-rules 262144 262144 262144 +edb-relation-names+)))
       (values program active-edb))))
 
 (def (select-query-output-relation query-part)

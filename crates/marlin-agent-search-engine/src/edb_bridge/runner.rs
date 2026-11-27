@@ -5,12 +5,12 @@
 //! Linked AOT and compiled-package execution runners for Marlin's Scheme
 //! `:gerbil-ascent` / Dusa / `:gerbil-parser` Search DSL.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 #[cfg(not(feature = "linked-ui"))]
 use std::sync::{Arc, RwLock};
 
-#[cfg(not(feature = "linked-ui"))]
-use agent_semantic_search::WorkspaceSearchIndex;
+use agent_semantic_search::{WorkspaceEdbPrefilter, WorkspaceEdbSnapshot, WorkspaceSearchIndex};
 use gerbil_scheme::GerbilRuntime;
 #[cfg(not(feature = "linked-ui"))]
 use gerbil_scheme::{IdentifierKind, RootedSchemeObject};
@@ -19,12 +19,72 @@ use super::codec::{
     collect_symbol_ref_rows, decode_edb_prefilter, decode_rooted_search_dsl_result_with_context,
     decode_search_dsl_completions, encode_edb_snapshot_with_refs, make_string, make_vector, native,
 };
-use super::types::SearchDslDecodeContext;
+use super::types::{OwnedWorkspaceEdbPrefilter, SearchDslDecodeContext};
 use super::{
     SearchDslCompletionEntry, SearchDslExecutionRequest, SearchDslLinkedExports, SearchDslRunner,
     SearchDslStructuredResult, SearchDslStructuredRunner,
 };
 use crate::SearchPlanProjectionError;
+
+fn project_snapshot_for_prefilter(
+    index: &WorkspaceSearchIndex,
+    prefilter: &OwnedWorkspaceEdbPrefilter,
+) -> WorkspaceEdbSnapshot {
+    if !prefilter.required_tokens.is_empty() || prefilter.any_tokens.is_empty() {
+        return index.project_prefiltered_edb(&prefilter.as_prefilter());
+    }
+    let mut merged: Option<WorkspaceEdbSnapshot> = None;
+    let mut seen_files: HashSet<u32> = HashSet::new();
+    let mut seen_entities: HashSet<String> = HashSet::new();
+    let mut seen_edges: HashSet<(String, String, String, String, usize)> = HashSet::new();
+
+    for token in &prefilter.any_tokens {
+        let single = WorkspaceEdbPrefilter {
+            languages: &prefilter.languages,
+            documents: &prefilter.documents,
+            path_prefix: prefilter.path_prefix.as_deref(),
+            extension: prefilter.extension.as_deref(),
+            required_tokens: std::slice::from_ref(token),
+            max_files: prefilter.max_files,
+            max_facts: prefilter.max_facts,
+        };
+        let sub = index.project_prefiltered_edb(&single);
+        let acc = merged.get_or_insert_with(|| WorkspaceEdbSnapshot {
+            generation_digest: sub.generation_digest.clone(),
+            elapsed_micros: 0,
+            indexed_files: sub.indexed_files,
+            candidate_files: 0,
+            files: Vec::new(),
+            entities: Vec::new(),
+            edges: Vec::new(),
+        });
+        acc.elapsed_micros = acc.elapsed_micros.saturating_add(sub.elapsed_micros);
+        for f in sub.files {
+            if seen_files.insert(f.file_id) {
+                acc.files.push(f);
+            }
+        }
+        acc.candidate_files = acc.files.len();
+        for e in sub.entities {
+            if seen_entities.insert(e.entity_id.clone()) {
+                acc.entities.push(e);
+            }
+        }
+        for edge in sub.edges {
+            let key = (
+                edge.src.clone(),
+                edge.dst.clone(),
+                edge.relation.clone(),
+                edge.path.clone(),
+                edge.line,
+            );
+            if seen_edges.insert(key) {
+                acc.edges.push(edge);
+            }
+        }
+    }
+    merged.unwrap_or_else(|| index.project_prefiltered_edb(&prefilter.as_prefilter()))
+}
 
 /// Execute a native `:gerbil-ascent` query through AOT-linked C-ABI exports
 /// and return the full structured [`SearchDslStructuredResult`].
@@ -40,9 +100,7 @@ pub unsafe fn execute_linked_search_dsl_structured(
     let query_obj = make_string(runtime, request.query)?;
     let prefilter_obj = native(compile_fn.call(&query_obj).into_result())?;
     let owned_prefilter = decode_edb_prefilter(prefilter_obj)?;
-    let snapshot = request
-        .index
-        .project_prefiltered_edb(&owned_prefilter.as_prefilter());
+    let snapshot = project_snapshot_for_prefilter(request.index, &owned_prefilter);
     let symbol_refs = if owned_prefilter.hydration.includes_symbol_refs() {
         collect_symbol_ref_rows(request.index, &snapshot, &owned_prefilter)
     } else {
@@ -150,9 +208,7 @@ fn execute_with_bound_package_exports(
     let query_obj = make_string(runtime, request.query)?;
     let prefilter_obj = native(runtime.call_rooted(compile_fn, &query_obj))?;
     let owned_prefilter = decode_edb_prefilter(prefilter_obj)?;
-    let snapshot = request
-        .index
-        .project_prefiltered_edb(&owned_prefilter.as_prefilter());
+    let snapshot = project_snapshot_for_prefilter(request.index, &owned_prefilter);
     let symbol_refs = if owned_prefilter.hydration.includes_symbol_refs() {
         collect_symbol_ref_rows(request.index, &snapshot, &owned_prefilter)
     } else {

@@ -98,12 +98,18 @@
                      "(ascent-fragment
                         (relation answer ((path string?) (line integer?)))
                         ((answer path line) <-- (file f \"rust\" \"crates/foo/src/lib.rs\") (rust_fn id f \"open_or_build_cached\" line)))")))
-        (check (vector-length pref) => 6)
+        (check (vector-length pref) => 7)
         (check (vector-ref pref 0) => 'search-edb-prefilter)
         (check (vector-ref pref 1) => #("rust"))
         (check (vector-ref pref 2) => "crates/foo/src/lib.rs")
         (check (vector-ref pref 3) => #("open_or_build_cached"))
-        (check (>= (vector-ref pref 4) 1024) => #t)))
+        (check (>= (vector-ref pref 4) 1024) => #t)
+        (check (vector-ref pref 6) => #())
+        (let ((multi-pref (compile-search-dsl-prefilter
+                            "(find-impact (\"SymA\" \"SymB\") limit: 80)")))
+          (check (vector-length multi-pref) => 7)
+          (check (vector-ref multi-pref 3) => #())
+          (check (vector-ref multi-pref 6) => #("SymA" "SymB")))))
 
     (test-case "Ascent supports (limit N), ((limit N)) unwrap repair, impl_trait, and rejects illegal clauses clearly"
       (let ((limited (evaluate-search-dsl-over-edb

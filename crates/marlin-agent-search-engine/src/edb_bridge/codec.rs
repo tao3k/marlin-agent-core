@@ -163,7 +163,7 @@ pub fn decode_edb_prefilter(
         let msg = decode_string(native(tuple.element(1))?, MAX_TEXT_BYTES)?;
         return Err(SearchPlanProjectionError::Validation(msg.trim().to_owned()));
     }
-    if tuple.len() != 6 {
+    if tuple.len() != 6 && tuple.len() != 7 {
         return Err(SearchPlanProjectionError::Invalid(
             "search-edb-prefilter arity",
         ));
@@ -186,6 +186,11 @@ pub fn decode_edb_prefilter(
     let required_tokens = decode_string_vector(native(tuple.element(3))?, MAX_TOKENS)?;
     let max_files = decode_usize(native(tuple.element(4))?)?.max(1);
     let active_edb = decode_symbol_vector(native(tuple.element(5))?, 16)?;
+    let any_tokens = if tuple.len() == 7 {
+        decode_string_vector(native(tuple.element(6))?, MAX_TOKENS)?
+    } else {
+        Vec::new()
+    };
     let hydration = EdbHydrationMask::from_active_relations(&active_edb);
     Ok(OwnedWorkspaceEdbPrefilter {
         languages,
@@ -193,6 +198,7 @@ pub fn decode_edb_prefilter(
         path_prefix,
         extension: None,
         required_tokens,
+        any_tokens,
         max_files,
         max_facts: DEFAULT_MAX_EDB_FACTS,
         hydration,
@@ -277,13 +283,20 @@ pub(crate) fn collect_symbol_ref_rows(
     prefilter: &OwnedWorkspaceEdbPrefilter,
 ) -> Vec<(String, String, usize)> {
     const MAX_SYMBOL_REF_ROWS: usize = 2048;
-    if prefilter.required_tokens.is_empty() || snapshot.files.is_empty() {
+    if (prefilter.required_tokens.is_empty() && prefilter.any_tokens.is_empty())
+        || snapshot.files.is_empty()
+    {
         return Vec::new();
     }
     let allowed_paths: HashSet<&str> = snapshot.files.iter().map(|f| f.path.as_str()).collect();
     let max_hits = snapshot.files.len().clamp(32, 512);
     let mut rows = Vec::new();
-    for token in prefilter.required_tokens.iter().filter(|t| t.len() >= 3) {
+    for token in prefilter
+        .required_tokens
+        .iter()
+        .chain(prefilter.any_tokens.iter())
+        .filter(|t| t.len() >= 3)
+    {
         let remaining = MAX_SYMBOL_REF_ROWS.saturating_sub(rows.len());
         if remaining == 0 {
             break;

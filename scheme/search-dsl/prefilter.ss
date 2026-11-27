@@ -283,26 +283,36 @@
 
 (def (extract-form-prefilter-hints form registry)
   (if (not (and (pair? form) (memq (car form) '(ascent ascent-fragment))))
-    (walk-form-hints form registry '() #f '() #t)
+    (let-values (((l p t) (walk-form-hints form registry '() #f '() #t)))
+      (values l p t '()))
     (let* ((clauses (cdr form))
            (rules (filter ascent-rule-form? clauses))
            (non-rules (filter (lambda (c) (not (ascent-rule-form? c))) clauses)))
       (if (<= (length rules) 1)
         (let ((single-file? (<= (count-positive-file-atoms form) 1)))
-          (walk-form-hints form registry '() #f '() single-file?))
+          (let-values (((l p t) (walk-form-hints form registry '() #f '() single-file?)))
+            (values l p t '())))
         (let-values (((top-langs top-prefix top-tokens)
                       (walk-form-hints non-rules registry '() #f '() #t)))
           (let loop ((rs rules)
                      (union-langs top-langs)
                      (all-have-lang? #t)
                      (shared-prefix 'unset)
-                     (common-tokens 'unset))
+                     (common-tokens 'unset)
+                     (union-tokens '())
+                     (all-have-token? #t))
             (if (null? rs)
-              (let ((final-langs (if all-have-lang? union-langs '()))
-                    (final-prefix (or top-prefix (and (string? shared-prefix) shared-prefix)))
-                    (final-tokens (append top-tokens
-                                          (if (list? common-tokens) common-tokens '()))))
-                (values final-langs final-prefix final-tokens))
+              (let* ((final-langs (if all-have-lang? union-langs '()))
+                     (final-prefix (or top-prefix (and (string? shared-prefix) shared-prefix)))
+                     (final-tokens (append top-tokens
+                                           (if (list? common-tokens) common-tokens '())))
+                     (any-tokens (if (and (null? final-tokens)
+                                          all-have-token?
+                                          (pair? union-tokens)
+                                          (<= (length union-tokens) 12))
+                                   union-tokens
+                                   '())))
+                (values final-langs final-prefix final-tokens any-tokens))
               (let-values (((rl rp rt)
                             (walk-form-hints (car rs) registry '() #f '()
                                              (<= (count-positive-file-atoms (car rs)) 1))))
@@ -319,19 +329,25 @@
                        (next-tokens
                          (if (eq? common-tokens 'unset)
                            rt
-                           (intersect-string-lists common-tokens rt))))
-                  (loop (cdr rs) next-langs next-all-lang? next-prefix next-tokens))))))))))
+                           (intersect-string-lists common-tokens rt)))
+                       (next-all-tok? (and all-have-token? (pair? rt)))
+                       (next-union-toks (if next-all-tok?
+                                          (foldl (lambda (x acc) (append-unique acc x)) union-tokens rt)
+                                          '())))
+                  (loop (cdr rs) next-langs next-all-lang? next-prefix next-tokens
+                        next-union-toks next-all-tok?))))))))))
 
 ;;; Compile any native `:gerbil-ascent` query (after automatic safe AST repair)
-;;; into a zero-regex rooted Rust Open EDB prefilter 6-vector:
-;;;   #(search-edb-prefilter languages-vec path-prefix tokens-vec max-files active-edb-vec)
+;;; into a zero-regex rooted Rust Open EDB prefilter 7-vector:
+;;;   #(search-edb-prefilter languages-vec path-prefix tokens-vec max-files active-edb-vec any-tokens-vec)
 (def (compile-search-dsl-prefilter text (registry SearchLanguageRegistryValue))
   (let-values (((form _repairs) (repair-and-read-ascent-query text registry)))
-    (let-values (((langs path-prefix tokens) (extract-form-prefilter-hints form registry)))
+    (let-values (((langs path-prefix tokens any-tokens) (extract-form-prefilter-hints form registry)))
       (let ((active-edb (compute-active-edb-for-form form registry)))
         (vector 'search-edb-prefilter
                 (list->vector langs)
                 path-prefix
                 (list->vector tokens)
                 +default-max-files+
-                (list->vector active-edb))))))
+                (list->vector active-edb)
+                (list->vector any-tokens))))))

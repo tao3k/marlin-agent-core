@@ -58,7 +58,8 @@ pub(super) fn format_snapshot_header(
         Some(pf)
             if pf.path_prefix.is_some()
                 || !pf.languages.is_empty()
-                || !pf.required_tokens.is_empty() =>
+                || !pf.required_tokens.is_empty()
+                || !pf.any_tokens.is_empty() =>
         {
             let mut parts = Vec::new();
             if let Some(prefix) = pf.path_prefix.as_deref() {
@@ -69,6 +70,8 @@ pub(super) fn format_snapshot_header(
             }
             if !pf.required_tokens.is_empty() {
                 parts.push(format!("tokens={}", pf.required_tokens.len()));
+            } else if !pf.any_tokens.is_empty() {
+                parts.push(format!("any_tokens={}", pf.any_tokens.len()));
             }
             format!(
                 "scoped ({}; scoped_files: {matched_files}, native_ast_files: {native_ast_files}/{matched_files} [{hydrated_pct}%], facts: {facts_projected}, facts_truncated: {facts_truncated})",
@@ -240,7 +243,12 @@ fn append_nearest_symbol_recovery(
     let (Some(idx), Some(pf)) = (index, prefilter) else {
         return;
     };
-    let Some(raw_token) = pf.required_tokens.first().map(String::as_str) else {
+    let Some(raw_token) = pf
+        .required_tokens
+        .first()
+        .or_else(|| pf.any_tokens.first())
+        .map(String::as_str)
+    else {
         return;
     };
     let stems = split_identifier_stems(raw_token);

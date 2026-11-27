@@ -218,8 +218,17 @@ fn format_impact_file_entry(path: &str, by_role: &ImpactRoleSites<'_>) -> String
     format!("  - {path}: {}\n", role_segments.join("; "))
 }
 
+fn impact_layer_key(path: &str) -> String {
+    let mut parts = path.split('/');
+    match (parts.next(), parts.next()) {
+        (Some(a), Some(b)) => format!("{a}/{b}"),
+        (Some(a), None) => a.to_owned(),
+        _ => path.to_owned(),
+    }
+}
+
 /// Group `find-impact` `(role, scope, symbol, path, line)` rows into a
-/// production-first blast-radius summary and per-file role lines.
+/// production-first blast-radius summary, affected-crate/layer matrix, and per-file role lines.
 pub(super) fn render_grouped_impact_lines(
     rows: &[SearchDslStructuredRow],
     body_budget: usize,
@@ -228,6 +237,7 @@ pub(super) fn render_grouped_impact_lines(
     let mut test_counts: HashMap<&str, usize> = HashMap::new();
     let mut prod_files: ImpactFilesByRole<'_> = BTreeMap::new();
     let mut test_files: ImpactFilesByRole<'_> = BTreeMap::new();
+    let mut prod_layers: BTreeMap<String, usize> = BTreeMap::new();
 
     rows.iter().for_each(|row| {
         let role = row.cells[0].as_str();
@@ -253,9 +263,21 @@ pub(super) fn render_grouped_impact_lines(
                 .insert((line, sym));
         }
     });
+    for path in prod_files.keys() {
+        *prod_layers.entry(impact_layer_key(path)).or_insert(0) += 1;
+    }
+    let layer_rollup = if prod_layers.is_empty() {
+        String::new()
+    } else {
+        let parts: Vec<String> = prod_layers
+            .iter()
+            .map(|(layer, file_cnt)| format!("{layer}({file_cnt})"))
+            .collect();
+        format!("\naffected_layers: {}", parts.join(", "))
+    };
 
     let summary = format!(
-        "prod({}) | test({})",
+        "prod({}) | test({}){layer_rollup}",
         format_scope_role_counts(&prod_counts),
         format_scope_role_counts(&test_counts),
     );

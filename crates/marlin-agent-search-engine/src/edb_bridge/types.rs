@@ -73,6 +73,7 @@ pub struct OwnedWorkspaceEdbPrefilter {
     pub path_prefix: Option<String>,
     pub extension: Option<String>,
     pub required_tokens: Vec<String>,
+    pub any_tokens: Vec<String>,
     pub max_files: usize,
     pub max_facts: usize,
     pub hydration: EdbHydrationMask,

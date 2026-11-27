@@ -553,4 +553,35 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
         lookahead_read.contains("remaining_symbols:") && lookahead_read.contains("run_engine"),
         "expected remaining_symbols lookahead anchor on truncated read-file: {lookahead_read}"
     );
+
+    // 26. Broad `(brute-search ...)` ranks production files ahead of tests when exclude-tests? is #f,
+    // and zero-hit stem fallback surfaces nearest production symbols from the RAM index.
+    let ModelToolOutcome::Completed(prod_first_brute) =
+        run("c27", "(brute-search \"SearchEngine\" limit: 20)").await
+    else {
+        panic!("expected Completed for prod-first brute-search");
+    };
+    let prod_idx = prod_first_brute
+        .find("crates/core/src/engine.rs")
+        .expect("prod engine.rs hit");
+    if let Some(test_idx) = prod_first_brute.find("tests/") {
+        assert!(
+            prod_idx < test_idx,
+            "expected production source hit before tests/ hit: {prod_first_brute}"
+        );
+    }
+    let ModelToolOutcome::Completed(zero_hit_nearest) = run(
+        "c28",
+        "(brute-search \"EngineMode.*MissingToken|NoSuchEngineMode\" limit: 10)",
+    )
+    .await
+    else {
+        panic!("expected Completed for zero-hit nearest symbol diagnostic");
+    };
+    assert!(
+        zero_hit_nearest.contains("live stem_hits:")
+            && zero_hit_nearest.contains("nearest_symbols:")
+            && zero_hit_nearest.contains("EngineMode"),
+        "expected L0 zero-hit nearest_symbols recovery: {zero_hit_nearest}"
+    );
 }

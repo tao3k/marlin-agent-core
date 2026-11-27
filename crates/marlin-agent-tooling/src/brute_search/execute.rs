@@ -7,12 +7,14 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
-use marlin_agent_search_engine::{WorkspaceSearchIndex, WorkspaceSearchQuery};
+use marlin_agent_search_engine::{
+    WorkspaceEdbPrefilter, WorkspaceSearchIndex, WorkspaceSearchQuery,
+};
 
 use super::outline_read::execute_file_outline;
 use super::parser::{
     BruteSearchRequest, DEFAULT_BRUTE_MAX_HITS, L0FormKind, classify_l0_form, is_path_excluded,
-    parse_brute_search_form,
+    is_test_path, parse_brute_search_form,
 };
 use super::read_file::execute_read_file;
 use super::workspace_map::execute_workspace_map;
@@ -102,6 +104,7 @@ fn format_hit_block(
     index: &WorkspaceSearchIndex,
     hit: &marlin_agent_search_engine::WorkspaceSearchHit,
     effective_context: usize,
+    max_matches_per_file: usize,
 ) -> String {
     let lang = hit.language.as_deref().unwrap_or("file");
     let axes = hit.matched_axes.join("+");
@@ -132,26 +135,40 @@ fn format_hit_block(
         return block;
     }
 
+    let total_file_matches = hit.line_matches.len();
     let header_loc = hit
         .line_matches
         .first()
         .map_or_else(|| format!("@{}", hit.path), |m| format!("@{}:{}", hit.path, m.line_number));
     let _ = writeln!(
         block,
-        "  - {header_loc}  [{lang} · {axes} · {} match(es)]",
-        hit.line_matches.len()
+        "  - {header_loc}  [{lang} · {axes} · {total_file_matches} match(es)]"
     );
     if effective_context == 0 {
-        for m in &hit.line_matches {
+        for m in hit.line_matches.iter().take(max_matches_per_file) {
             let _ = writeln!(block, "      L{}: {}", m.line_number, m.line_text.trim_end());
+        }
+        if total_file_matches > max_matches_per_file {
+            let _ = writeln!(
+                block,
+                "      ... (+{} more in {}; inspect via (file-outline \"{}\" projection: \"callable-skeleton\"))",
+                total_file_matches - max_matches_per_file,
+                hit.path,
+                hit.path
+            );
         }
         return block;
     }
 
     let match_lines: BTreeSet<usize> = hit.line_matches.iter().map(|m| m.line_number).collect();
+    let shown_match_lines: Vec<usize> = match_lines
+        .iter()
+        .copied()
+        .take(max_matches_per_file)
+        .collect();
     let mut emitted: BTreeSet<usize> = BTreeSet::new();
     let mut last_emitted: Option<usize> = None;
-    for &line_num in &match_lines {
+    for &line_num in &shown_match_lines {
         let ctx_lines = index.live_file_context(&hit.path, line_num, effective_context);
         for ctx in ctx_lines {
             if !emitted.insert(ctx.line_number) {
@@ -175,6 +192,14 @@ fn format_hit_block(
             );
             last_emitted = Some(ctx.line_number);
         }
+    }
+    if match_lines.len() > shown_match_lines.len() {
+        let _ = writeln!(
+            block,
+            "      ... (+{} more match line(s) in {})",
+            match_lines.len() - shown_match_lines.len(),
+            hit.path
+        );
     }
     block
 }
@@ -366,14 +391,43 @@ fn format_brute_zero_hit_diagnostic(
             }
         }
         if !stem_matches.is_empty() {
+            stem_matches.sort_unstable_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
             let summary = stem_matches
                 .iter()
                 .map(|(s, c)| format!("\"{s}\"={c} files"))
                 .collect::<Vec<_>>()
                 .join(", ");
             let best_stem = &stem_matches[0].0;
+            let best_lc = best_stem.to_ascii_lowercase();
+            let probe_edb = index.project_prefiltered_edb(&WorkspaceEdbPrefilter {
+                languages: &req.languages,
+                documents: &[],
+                path_prefix: req.path_prefix.as_deref(),
+                extension: None,
+                required_tokens: std::slice::from_ref(best_stem),
+                max_files: 16,
+                max_facts: 2048,
+            });
+            let mut seen_syms = BTreeSet::new();
+            let nearest: Vec<String> = probe_edb
+                .entities
+                .iter()
+                .filter(|e| {
+                    e.kind != "import"
+                        && !is_test_path(&e.path)
+                        && e.name.to_ascii_lowercase().contains(&best_lc)
+                        && seen_syms.insert(e.name.clone())
+                })
+                .take(5)
+                .map(|e| format!("{} [{}] ({}:L{})", e.name, e.kind, e.path, e.line))
+                .collect();
+            let nearest_clause = if nearest.is_empty() {
+                String::new()
+            } else {
+                format!("; nearest_symbols: {}", nearest.join(", "))
+            };
             hints.push(format!(
-                "live stem_hits: {summary}; try (brute-search \"{best_stem}\" exclude-tests?: #t) or (find-symbols name-contains: \"{best_stem}\" lang: \"any\" exclude-tests?: #t)"
+                "live stem_hits: {summary}{nearest_clause}; try (brute-search \"{best_stem}\" exclude-tests?: #t) or (find-symbols name-contains: \"{best_stem}\" lang: \"any\" exclude-tests?: #t)"
             ));
         }
     }
@@ -412,6 +466,21 @@ fn summarize_brute_hit_dirs(
     )
 }
 
+fn brute_path_priority(path: &str) -> u8 {
+    let lc = path.to_ascii_lowercase();
+    if is_test_path(&lc) || lc.contains("test-case-") {
+        2
+    } else if lc.starts_with("docs/")
+        || lc.starts_with("dev/")
+        || lc.ends_with(".org")
+        || lc.ends_with(".md")
+    {
+        1
+    } else {
+        0
+    }
+}
+
 fn execute_brute_search_only(
     index: &WorkspaceSearchIndex,
     raw_query: &str,
@@ -430,7 +499,7 @@ fn execute_brute_search_only(
     let query_context = req.context_lines.unwrap_or(1);
     let has_exclusions = !req.exclude_path_prefixes.is_empty() || req.exclude_tests;
     let fetch_limit = if !has_exclusions {
-        req.max_hits
+        req.max_hits.saturating_mul(2).clamp(32, 256)
     } else {
         req.max_hits.saturating_mul(4).clamp(64, 512)
     };
@@ -455,17 +524,27 @@ fn execute_brute_search_only(
             .filter(|h| is_path_excluded(&h.path, &req.exclude_path_prefixes, req.exclude_tests))
             .count()
     };
-    let filtered_hits: Vec<&marlin_agent_search_engine::WorkspaceSearchHit> = report
+    let mut filtered_hits: Vec<&marlin_agent_search_engine::WorkspaceSearchHit> = report
         .hits
         .iter()
         .filter(|h| !is_path_excluded(&h.path, &req.exclude_path_prefixes, req.exclude_tests))
-        .take(req.max_hits)
         .collect();
+    // Rank production source files ahead of docs and tests so broad scans never let
+    // noisy fixture/test files consume the entire output budget before real code appears.
+    filtered_hits.sort_by_key(|h| brute_path_priority(&h.path));
+    filtered_hits.truncate(req.max_hits);
 
     let default_context = usize::from(
         !req.pattern.is_empty() && !filtered_hits.is_empty() && filtered_hits.len() <= 3,
     );
     let effective_context = req.context_lines.unwrap_or(default_context);
+    let max_matches_per_file = if filtered_hits.len() > 6 {
+        3
+    } else if filtered_hits.len() > 2 {
+        6
+    } else {
+        16
+    };
 
     let header_reserve = 384usize;
     let footer_reserve = 192usize;
@@ -480,7 +559,7 @@ fn execute_brute_search_only(
     let mut body_bytes = 0usize;
     let rendered_blocks: Vec<String> = filtered_hits
         .iter()
-        .map(|hit| format_hit_block(index, hit, effective_context))
+        .map(|hit| format_hit_block(index, hit, effective_context, max_matches_per_file))
         .take_while(|block| {
             if body_bytes + block.len() <= body_budget {
                 body_bytes += block.len();
