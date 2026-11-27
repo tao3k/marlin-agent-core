@@ -5,8 +5,11 @@
 //! Executes working-copy isolation plans through injectable provider commands.
 
 use std::{
+    collections::HashMap,
     io::ErrorKind,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
+    process::{ExitStatus, Stdio},
+    time::Duration,
 };
 
 use super::{
@@ -17,13 +20,115 @@ use super::{
     WorkingCopyIsolationPlanStep, WorkingCopyIsolationProvider, WorkingCopyIsolationReceipt,
     WorkingCopyIsolationRequest, WorkingCopyParallelIsolationReceipt,
     WorkingCopyRepositoryDiscoveryPath, WorkspaceProjectGitHubRepository, WorkspaceProjectId,
+    command_projection::is_valid_branch_name,
 };
-use crate::{DISABLED_HOOKS, GIT_REPOSITORY_OVERRIDES, GitOperations, GitReadError};
+use crate::{
+    DISABLED_FSMONITOR, DISABLED_HOOKS, GIT_REPOSITORY_OVERRIDES, GitOperations, GitReadError,
+    read::{MAX_OUTPUT_BYTES, NULL_DEVICE},
+};
 use async_trait::async_trait;
 use serde::Deserialize;
 use thiserror::Error;
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::task::JoinSet;
+
+const PROVIDER_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+const PROBE_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
+const PROBE_MAX_OUTPUT_BYTES: usize = 64 * 1024;
+
+struct BoundedCommandOutput {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+enum BoundedCommandError {
+    NotFound(std::io::Error),
+    Io(std::io::Error),
+    OutputLimit(usize),
+    Timeout(Duration),
+}
+
+async fn read_bounded_stream<R: tokio::io::AsyncRead + Unpin>(
+    stream: R,
+    limit: usize,
+) -> Result<Vec<u8>, std::io::Error> {
+    let cap = limit.saturating_add(1);
+    let mut bytes = Vec::new();
+    stream.take(cap as u64).read_to_end(&mut bytes).await?;
+    Ok(bytes)
+}
+
+async fn run_bounded_command(
+    mut command: Command,
+    timeout: Duration,
+    max_output_bytes: usize,
+) -> Result<BoundedCommandOutput, BoundedCommandError> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let operation = async move {
+        let mut child = command.spawn().map_err(|error| {
+            if error.kind() == ErrorKind::NotFound {
+                BoundedCommandError::NotFound(error)
+            } else {
+                BoundedCommandError::Io(error)
+            }
+        })?;
+        let stdout_pipe = child.stdout.take().ok_or_else(|| {
+            BoundedCommandError::Io(std::io::Error::other("stdout pipe unavailable"))
+        })?;
+        let stderr_pipe = child.stderr.take().ok_or_else(|| {
+            BoundedCommandError::Io(std::io::Error::other("stderr pipe unavailable"))
+        })?;
+        let (stdout, stderr) = tokio::try_join!(
+            read_bounded_stream(stdout_pipe, max_output_bytes),
+            read_bounded_stream(stderr_pipe, max_output_bytes),
+        )
+        .map_err(BoundedCommandError::Io)?;
+        if stdout.len() > max_output_bytes || stderr.len() > max_output_bytes {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(BoundedCommandError::OutputLimit(max_output_bytes));
+        }
+        let status = child.wait().await.map_err(BoundedCommandError::Io)?;
+        Ok(BoundedCommandOutput {
+            status,
+            stdout,
+            stderr,
+        })
+    };
+    tokio::time::timeout(timeout, operation)
+        .await
+        .map_err(|_| BoundedCommandError::Timeout(timeout))?
+}
+
+fn map_bounded_error(
+    executable: &str,
+    error: BoundedCommandError,
+) -> WorkingCopyIsolationDriverError {
+    match error {
+        BoundedCommandError::NotFound(err) | BoundedCommandError::Io(err) => {
+            WorkingCopyIsolationDriverError::CommandIo {
+                command: executable.to_owned(),
+                message: err.to_string(),
+            }
+        }
+        BoundedCommandError::OutputLimit(limit) => {
+            WorkingCopyIsolationDriverError::CommandOutputLimit {
+                command: executable.to_owned(),
+                limit,
+            }
+        }
+        BoundedCommandError::Timeout(timeout) => WorkingCopyIsolationDriverError::CommandTimeout {
+            command: executable.to_owned(),
+            timeout,
+        },
+    }
+}
 
 /// Result of applying working-copy isolation.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -88,7 +193,7 @@ pub struct WorkingCopyProviderExecutableProbe {
 impl WorkingCopyProviderExecutableProbe {
     fn from_output(
         program: WorkingCopyCommandProgram,
-        output: std::process::Output,
+        output: BoundedCommandOutput,
     ) -> Result<Self, WorkingCopyIsolationDriverError> {
         let executable = program.executable().to_owned();
         let stdout = String::from_utf8(output.stdout).map_err(|error| {
@@ -150,18 +255,18 @@ impl WorkingCopyProviderExecutableProbeCommand {
 
     fn command(&self) -> Command {
         let mut command = Command::new(&self.executable);
+        confine_git_environment(&mut command);
         command.arg("--version");
         command
     }
 
-    async fn run(&self) -> Result<std::process::Output, std::io::Error> {
-        let mut command = self.command();
-        command.output().await
+    async fn run(&self) -> Result<BoundedCommandOutput, BoundedCommandError> {
+        run_bounded_command(self.command(), PROBE_COMMAND_TIMEOUT, PROBE_MAX_OUTPUT_BYTES).await
     }
 
     fn into_probe(
         self,
-        output: std::process::Output,
+        output: BoundedCommandOutput,
     ) -> Result<WorkingCopyProviderExecutableProbe, WorkingCopyIsolationDriverError> {
         WorkingCopyProviderExecutableProbe::from_output(self.program, output)
     }
@@ -233,14 +338,11 @@ impl ProcessWorkingCopyCommandRunner {
         if urls.is_empty() || !urls.iter().all(|url| expected.matches_fetch_url(url)) {
             return Err(deny());
         }
-        let config = provider_command("wt", root)
-            .args(["config", "show", "--format", "json"])
-            .output()
+        let mut wt_config = provider_command("wt", root);
+        wt_config.args(["config", "show", "--format", "json"]);
+        let config = run_bounded_command(wt_config, PROVIDER_COMMAND_TIMEOUT, MAX_OUTPUT_BYTES)
             .await
-            .map_err(|error| WorkingCopyIsolationDriverError::CommandIo {
-                command: "wt".into(),
-                message: error.to_string(),
-            })?;
+            .map_err(|error| map_bounded_error("wt", error))?;
         if !config.status.success() {
             return Err(deny());
         }
@@ -258,16 +360,14 @@ impl ProcessWorkingCopyCommandRunner {
         {
             return Err(deny());
         }
-        let default = provider_command("gh", root)
+        let mut gh_default = provider_command("gh", root);
+        gh_default
             .env("GH_HOST", "github.com")
             .env("GH_PROMPT_DISABLED", "1")
-            .args(["repo", "set-default", "--view"])
-            .output()
+            .args(["repo", "set-default", "--view"]);
+        let default = run_bounded_command(gh_default, PROVIDER_COMMAND_TIMEOUT, MAX_OUTPUT_BYTES)
             .await
-            .map_err(|error| WorkingCopyIsolationDriverError::CommandIo {
-                command: "gh".into(),
-                message: error.to_string(),
-            })?;
+            .map_err(|error| map_bounded_error("gh", error))?;
         let slug = std::str::from_utf8(&default.stdout)
             .map_err(|_| deny())?
             .trim();
@@ -286,13 +386,10 @@ impl ProcessWorkingCopyCommandRunner {
         let probe_command = WorkingCopyProviderExecutableProbeCommand::new(program);
         match probe_command.run().await {
             Ok(output) => probe_command.into_probe(output),
-            Err(error) if error.kind() == ErrorKind::NotFound => {
+            Err(BoundedCommandError::NotFound(error)) => {
                 Ok(probe_command.missing(error.to_string()))
             }
-            Err(error) => Err(WorkingCopyIsolationDriverError::CommandIo {
-                command: probe_command.executable().to_owned(),
-                message: error.to_string(),
-            }),
+            Err(error) => Err(map_bounded_error(probe_command.executable(), error)),
         }
     }
 }
@@ -303,12 +400,16 @@ impl WorkingCopyCommandRunner for ProcessWorkingCopyCommandRunner {
         &self,
         invocation: &WorkingCopyCommandInvocation,
     ) -> Result<WorkingCopyCommandOutput, WorkingCopyIsolationDriverError> {
-        let mut command =
-            provider_command(invocation.program.executable(), &invocation.git_toplevel);
-        if invocation.program == WorkingCopyCommandProgram::Worktrunk {
-            // Worktrunk's --no-hooks covers its own hooks. Pass Git's override
-            // to the Git subprocesses that Worktrunk launches.
-            command.env("GIT_CONFIG_PARAMETERS", format!("'{DISABLED_HOOKS}'"));
+        let executable = invocation.program.executable();
+        let mut command = provider_command(executable, &invocation.git_toplevel);
+        // Enforce dual-layer hook and fsmonitor lockdown for both direct Git
+        // commands and child Git processes spawned by Worktrunk.
+        command.env(
+            "GIT_CONFIG_PARAMETERS",
+            format!("'{DISABLED_HOOKS}' '{DISABLED_FSMONITOR}'"),
+        );
+        if invocation.program == WorkingCopyCommandProgram::Git {
+            command.args(["-c", DISABLED_HOOKS, "-c", DISABLED_FSMONITOR]);
         }
         if let Some(repository) = &invocation.github_repository {
             Self::verify_pull_request_repository(&invocation.git_toplevel, repository).await?;
@@ -316,27 +417,23 @@ impl WorkingCopyCommandRunner for ProcessWorkingCopyCommandRunner {
                 .env("GH_HOST", "github.com")
                 .env("GH_PROMPT_DISABLED", "1");
         }
-        let output = command
-            .args(&invocation.args)
-            .output()
+        command.args(&invocation.args);
+        let output = run_bounded_command(command, PROVIDER_COMMAND_TIMEOUT, MAX_OUTPUT_BYTES)
             .await
-            .map_err(|error| WorkingCopyIsolationDriverError::CommandIo {
-                command: invocation.program.executable().to_owned(),
-                message: error.to_string(),
-            })?;
+            .map_err(|error| map_bounded_error(executable, error))?;
 
         Ok(WorkingCopyCommandOutput {
             success: output.status.success(),
             status_code: output.status.code(),
             stdout: String::from_utf8(output.stdout).map_err(|error| {
                 WorkingCopyIsolationDriverError::CommandOutput {
-                    command: invocation.program.executable().to_owned(),
+                    command: executable.to_owned(),
                     message: error.to_string(),
                 }
             })?,
             stderr: String::from_utf8(output.stderr).map_err(|error| {
                 WorkingCopyIsolationDriverError::CommandOutput {
-                    command: invocation.program.executable().to_owned(),
+                    command: executable.to_owned(),
                     message: error.to_string(),
                 }
             })?,
@@ -347,10 +444,22 @@ impl WorkingCopyCommandRunner for ProcessWorkingCopyCommandRunner {
 fn provider_command(executable: &str, root: &WorkingCopyGitTopLevel) -> Command {
     let mut command = Command::new(executable);
     command.current_dir(root.as_path());
+    confine_git_environment(&mut command);
+    command
+}
+
+fn confine_git_environment(command: &mut Command) {
     for name in GIT_REPOSITORY_OVERRIDES {
         command.env_remove(name);
     }
     command
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", NULL_DEVICE)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env(
+            "GIT_CONFIG_PARAMETERS",
+            format!("'{DISABLED_HOOKS}' '{DISABLED_FSMONITOR}'"),
+        );
 }
 
 /// Driver that compiles isolation requests and executes provider commands.
@@ -465,6 +574,7 @@ where
         let effective_parallelism = max_parallelism.max(1);
         let mut pending = requests.into_iter();
         let mut tasks = JoinSet::new();
+        let mut in_flight: HashMap<tokio::task::Id, WorkingCopyIsolationRequest> = HashMap::new();
         let mut receipts = Vec::new();
 
         loop {
@@ -472,14 +582,35 @@ where
                 let Some(request) = pending.next() else {
                     break;
                 };
+                let request_meta = request.clone();
                 let driver = self.clone();
-                tasks.spawn(async move { driver.isolate(request).await.receipt });
+                let handle = tasks.spawn(async move { driver.isolate(request).await.receipt });
+                in_flight.insert(handle.id(), request_meta);
             }
 
-            let Some(joined) = tasks.join_next().await else {
+            let Some(joined) = tasks.join_next_with_id().await else {
                 break;
             };
-            receipts.push(joined.expect("working-copy isolation task should not panic"));
+            match joined {
+                Ok((task_id, receipt)) => {
+                    in_flight.remove(&task_id);
+                    receipts.push(receipt);
+                }
+                Err(join_error) => {
+                    let task_id = join_error.id();
+                    if let Some(failed_request) = in_flight.remove(&task_id) {
+                        let reason = if join_error.is_panic() {
+                            "working-copy isolation worker panicked".to_owned()
+                        } else {
+                            format!("working-copy isolation worker aborted: {join_error}")
+                        };
+                        receipts.push(WorkingCopyIsolationReceipt::rejected(
+                            &failed_request,
+                            reason,
+                        ));
+                    }
+                }
+            }
         }
 
         WorkingCopyParallelIsolationResult {
@@ -649,8 +780,24 @@ fn resolve_working_copy(
         }
         worktree
     };
-    if !worktree.path.is_absolute() {
-        return Err("Worktrunk did not report an absolute working-copy path".to_owned());
+    if !worktree.path.is_absolute()
+        || !worktree
+            .path
+            .components()
+            .any(|component| matches!(component, Component::Normal(_)))
+        || worktree
+            .path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err("Worktrunk did not report a confined absolute working-copy path".to_owned());
+    }
+    if worktree
+        .branch
+        .as_ref()
+        .is_some_and(|branch| !is_valid_branch_name(branch.as_str()))
+    {
+        return Err("Worktrunk reported an invalid working-copy branch".to_owned());
     }
 
     working_copy.path = worktree.path;
@@ -697,6 +844,10 @@ pub enum WorkingCopyIsolationDriverError {
     CommandIo { command: String, message: String },
     #[error("working-copy command {command} output is not utf8: {message}")]
     CommandOutput { command: String, message: String },
+    #[error("working-copy command {command} exceeded output limit of {limit} bytes")]
+    CommandOutputLimit { command: String, limit: usize },
+    #[error("working-copy command {command} timed out after {timeout:?}")]
+    CommandTimeout { command: String, timeout: Duration },
     #[error("Worktrunk GitHub checkout could not verify the requested repository {expected}")]
     PullRequestRepositoryMismatch { expected: String },
     #[error(transparent)]

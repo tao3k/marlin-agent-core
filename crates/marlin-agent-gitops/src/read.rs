@@ -14,14 +14,17 @@ use tokio::{
 
 pub(crate) const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const NULL_DEVICE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
 /// Process-local Git configuration for operations that must not run repository hooks.
 pub const DISABLED_HOOKS: &str = if cfg!(windows) {
     "core.hooksPath=NUL"
 } else {
     "core.hooksPath=/dev/null"
 };
+/// Process-local Git configuration disabling repository-configured fsmonitor helpers.
+pub const DISABLED_FSMONITOR: &str = "core.fsmonitor=false";
 
-/// Inherited Git environment that can redirect repository or index selection.
+/// Inherited Git environment that can redirect repository, index, config, or command execution.
 pub const GIT_REPOSITORY_OVERRIDES: &[&str] = &[
     "GIT_DIR",
     "GIT_COMMON_DIR",
@@ -33,6 +36,25 @@ pub const GIT_REPOSITORY_OVERRIDES: &[&str] = &[
     "GIT_CONFIG",
     "GIT_CONFIG_COUNT",
     "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
+    "GIT_CONFIG_NOSYSTEM",
+    "GIT_EXEC_PATH",
+    "GIT_TEMPLATE_DIR",
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+    "GIT_EXTERNAL_DIFF",
+    "GIT_ASKPASS",
+    "SSH_ASKPASS",
+    "GIT_PAGER",
+    "GIT_EDITOR",
+    "GIT_SEQUENCE_EDITOR",
+    "GIT_ATTR_SOURCE",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_GRAFT_FILE",
+    "GIT_NAMESPACE",
+    "GIT_SHALLOW_FILE",
 ];
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -86,6 +108,7 @@ impl LocalExecutor {
     ) -> Result<BoundedProcessOutput, ProcessExecutionError> {
         let timeout = request.timeout;
         let operation = async move {
+            let is_git_program = request.program == std::ffi::OsStr::new("git");
             let mut command = Command::new(request.program);
             if request.environment == marlin_agent_protocol::ProcessEnvironmentPolicy::Clean {
                 command.env_clear();
@@ -107,6 +130,12 @@ impl LocalExecutor {
                 .kill_on_drop(true);
             for name in request.remove_environment {
                 command.env_remove(name);
+            }
+            if is_git_program {
+                command
+                    .env("GIT_CONFIG_NOSYSTEM", "1")
+                    .env("GIT_CONFIG_GLOBAL", NULL_DEVICE)
+                    .env("GIT_TERMINAL_PROMPT", "0");
             }
             let mut child = command.spawn().map_err(ProcessExecutionError::Io)?;
             if let Some(input) = input {
@@ -171,7 +200,7 @@ fn git_request(path: &Path, args: &[OsString]) -> BoundedProcessRequest {
         "-c",
         DISABLED_HOOKS,
         "-c",
-        "core.fsmonitor=false",
+        DISABLED_FSMONITOR,
     ]
     .into_iter()
     .map(Into::into)

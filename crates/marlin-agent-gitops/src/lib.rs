@@ -26,7 +26,7 @@ pub use blob_locator::{GitBlobId, GitBlobLocator};
 pub use diff::{
     GitDiff, GitDiffRequest, GitDiffScope, GitRepositoryPath, InvalidGitRepositoryPath,
 };
-pub use read::{DISABLED_HOOKS, GIT_REPOSITORY_OVERRIDES, GitReadError};
+pub use read::{DISABLED_FSMONITOR, DISABLED_HOOKS, GIT_REPOSITORY_OVERRIDES, GitReadError};
 pub use repository::{
     CommittedCheckout, ContextDocument, GitCheckoutRef, GitCommitId, GitContext, GitOperations,
 };

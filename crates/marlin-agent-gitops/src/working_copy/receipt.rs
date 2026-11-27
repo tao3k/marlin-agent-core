@@ -421,13 +421,17 @@ impl WorkingCopyRetentionPolicy {
                 if index < self.max_retained {
                     WorkingCopyRetentionActionReceipt::keep(working_copy, "within retention limit")
                 } else if self.snapshot_before_remove {
-                    let snapshot_path =
-                        snapshot_root.join(format!("{}.patch", working_copy.id.as_str()));
-                    WorkingCopyRetentionActionReceipt::snapshot_and_remove(
-                        working_copy,
-                        snapshot_path,
-                        "exceeds retention limit",
-                    )
+                    match confined_snapshot_path(&snapshot_root, working_copy.id.as_str()) {
+                        Some(snapshot_path) => WorkingCopyRetentionActionReceipt::snapshot_and_remove(
+                            working_copy,
+                            snapshot_path,
+                            "exceeds retention limit",
+                        ),
+                        None => WorkingCopyRetentionActionReceipt::keep(
+                            working_copy,
+                            "unsafe working-copy id rejected for confined snapshot path",
+                        ),
+                    }
                 } else {
                     WorkingCopyRetentionActionReceipt::remove(
                         working_copy,
@@ -443,6 +447,25 @@ impl WorkingCopyRetentionPolicy {
             actions,
         )
     }
+}
+
+fn confined_snapshot_path(snapshot_root: &std::path::Path, id: &str) -> Option<PathBuf> {
+    if id.is_empty()
+        || id.len() > 128
+        || matches!(id, "." | "..")
+        || id.starts_with('-')
+        || id.contains("..")
+        || id
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace() || matches!(ch, '/' | '\\'))
+    {
+        return None;
+    }
+    let candidate = snapshot_root.join(format!("{id}.patch"));
+    if candidate.parent() != Some(snapshot_root) {
+        return None;
+    }
+    Some(candidate)
 }
 
 /// Lightweight benchmark receipt for agent working-copy fanout.
