@@ -187,7 +187,7 @@
         title: "Tabulated-List"
         parent: 'marlin-special-mode
         read-only: #t
-        display-action: 'popup-bottom
+        display-action: 'reuse-window
         dedicated: #f
         local-keymap: (list
                         (.o key: "RET" command: "cmd:table-select" label: "Open selected row" exit: #t))
@@ -426,6 +426,7 @@
     (.o prefix: "feature:webisland" major-mode: 'marlin-workflow-mode creatable: #f create-label: "Workflow Canvas" create-action: "feature:webisland")
     (.o prefix: "*Dashboard*" major-mode: 'marlin-dashboard-mode creatable: #t create-label: "Dashboard (*Dashboard*)" create-action: "buffer:*Dashboard*")
     (.o prefix: "*Sessions*" major-mode: 'marlin-tabulated-mode creatable: #t create-label: "Sessions (*Sessions*)" create-action: "buffer:*Sessions*")
+    (.o prefix: "*Ibuffer*" major-mode: 'marlin-tabulated-mode creatable: #t create-label: "Ibuffer (*Ibuffer* by Major Mode)" create-action: "cmd:ibuffer")
     (.o prefix: "*Targets*" major-mode: 'marlin-tabulated-mode creatable: #t create-label: "Targets (*Targets*)" create-action: "buffer:*Targets*")
     (.o prefix: "*Processes*" major-mode: 'marlin-tabulated-mode creatable: #t create-label: "Processes (*Processes*)" create-action: "buffer:*Processes*")
     (.o prefix: "*Models*" major-mode: 'marlin-tabulated-mode creatable: #t create-label: "Models (*Models*)" create-action: "buffer:*Models*")
