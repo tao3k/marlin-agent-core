@@ -8,13 +8,21 @@ use std::{
     collections::BTreeSet,
     error::Error,
     fmt::{self, Display, Formatter},
-    fs, io,
+    fs::File,
+    io::{self, Read},
     path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
 
 use crate::{HookAgentScope, RunId, RuntimeEnvironmentActivationPolicy};
+
+/// Maximum `TOML` sub-agent spawn configuration file size accepted from disk (256 KiB).
+pub const MAX_SUB_AGENT_CONFIG_BYTES: usize = 256 * 1024;
+
+const MAX_SUB_AGENT_DEPTH: u32 = 16;
+const MAX_SUB_AGENT_ID_BYTES: usize = 128;
+const MAX_SCHEME_IDENTIFIER_BYTES: usize = 256;
 
 /// Source that caused a sub-agent to run.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -212,6 +220,10 @@ pub enum SubAgentSpawnConfigError {
         path: PathBuf,
         source: io::Error,
     },
+    ConfigTooLarge {
+        path: PathBuf,
+        limit: usize,
+    },
     Toml(toml::de::Error),
     EmptyProfileField {
         profile_id: Option<SubAgentSpawnProfileId>,
@@ -219,6 +231,10 @@ pub enum SubAgentSpawnConfigError {
     },
     DuplicateProfileId {
         profile_id: SubAgentSpawnProfileId,
+    },
+    InvalidPolicy {
+        profile_id: SubAgentSpawnProfileId,
+        reason: String,
     },
 }
 
@@ -456,10 +472,23 @@ impl SubAgentSpawnConfigSet {
 
     pub fn from_toml_path(path: impl AsRef<Path>) -> Result<Self, SubAgentSpawnConfigError> {
         let path = path.as_ref();
-        let source = fs::read_to_string(path).map_err(|source| SubAgentSpawnConfigError::Io {
+        let file = File::open(path).map_err(|source| SubAgentSpawnConfigError::Io {
             path: path.to_path_buf(),
             source,
         })?;
+        let mut source = String::new();
+        file.take((MAX_SUB_AGENT_CONFIG_BYTES + 1) as u64)
+            .read_to_string(&mut source)
+            .map_err(|source| SubAgentSpawnConfigError::Io {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        if source.len() > MAX_SUB_AGENT_CONFIG_BYTES {
+            return Err(SubAgentSpawnConfigError::ConfigTooLarge {
+                path: path.to_path_buf(),
+                limit: MAX_SUB_AGENT_CONFIG_BYTES,
+            });
+        }
         Self::from_toml_str(&source)
     }
 
@@ -617,6 +646,13 @@ impl Display for SubAgentSpawnConfigError {
                     path.display()
                 )
             }
+            Self::ConfigTooLarge { path, limit } => {
+                write!(
+                    formatter,
+                    "sub-agent spawn config `{}` exceeds maximum allowed size of {limit} bytes",
+                    path.display()
+                )
+            }
             Self::Toml(error) => write!(
                 formatter,
                 "failed to parse sub-agent spawn profile TOML: {error}"
@@ -637,6 +673,12 @@ impl Display for SubAgentSpawnConfigError {
                     "duplicate sub-agent spawn profile `{profile_id}`"
                 )
             }
+            Self::InvalidPolicy { profile_id, reason } => {
+                write!(
+                    formatter,
+                    "invalid sub-agent spawn profile `{profile_id}` policy: {reason}"
+                )
+            }
         }
     }
 }
@@ -646,7 +688,10 @@ impl Error for SubAgentSpawnConfigError {
         match self {
             Self::Io { source, .. } => Some(source),
             Self::Toml(error) => Some(error),
-            Self::EmptyProfileField { .. } | Self::DuplicateProfileId { .. } => None,
+            Self::ConfigTooLarge { .. }
+            | Self::EmptyProfileField { .. }
+            | Self::DuplicateProfileId { .. }
+            | Self::InvalidPolicy { .. } => None,
         }
     }
 }
@@ -663,12 +708,112 @@ fn validate_unique_profiles(
             Some(&profile.profile_id),
         )?;
         validate_text_field("role", &profile.role, Some(&profile.profile_id))?;
+        validate_sub_agent_policy(profile)?;
         if !seen.insert(profile.profile_id.clone()) {
             return Err(SubAgentSpawnConfigError::DuplicateProfileId {
                 profile_id: profile.profile_id.clone(),
             });
         }
     }
+    Ok(())
+}
+
+fn validate_sub_agent_policy(
+    profile: &SubAgentSpawnConfig,
+) -> Result<(), SubAgentSpawnConfigError> {
+    let id = profile.profile_id.as_str();
+    if id != id.trim()
+        || id.len() > MAX_SUB_AGENT_ID_BYTES
+        || id.contains("..")
+        || id
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace() || matches!(ch, '/' | '\\'))
+    {
+        return Err(SubAgentSpawnConfigError::InvalidPolicy {
+            profile_id: profile.profile_id.clone(),
+            reason: "profile_id must be <= 128 bytes without whitespace, control chars, or path traversal".to_owned(),
+        });
+    }
+
+    let perms = &profile.policy.permissions;
+    if perms.read_only && perms.workspace_write {
+        return Err(SubAgentSpawnConfigError::InvalidPolicy {
+            profile_id: profile.profile_id.clone(),
+            reason: "contradictory permissions: `read_only = true` cannot combine with `workspace_write = true`".to_owned(),
+        });
+    }
+
+    let perf = &profile.policy.performance;
+    if perf.max_concurrency == Some(0) {
+        return Err(SubAgentSpawnConfigError::InvalidPolicy {
+            profile_id: profile.profile_id.clone(),
+            reason: "`max_concurrency` must be >= 1 when specified".to_owned(),
+        });
+    }
+    if perf.timeout_ms == Some(0) {
+        return Err(SubAgentSpawnConfigError::InvalidPolicy {
+            profile_id: profile.profile_id.clone(),
+            reason: "`timeout_ms` must be >= 1 when specified".to_owned(),
+        });
+    }
+    if perf.token_budget == Some(0) {
+        return Err(SubAgentSpawnConfigError::InvalidPolicy {
+            profile_id: profile.profile_id.clone(),
+            reason: "`token_budget` must be >= 1 when specified".to_owned(),
+        });
+    }
+    if perf
+        .max_depth
+        .is_some_and(|depth| depth > MAX_SUB_AGENT_DEPTH)
+    {
+        return Err(SubAgentSpawnConfigError::InvalidPolicy {
+            profile_id: profile.profile_id.clone(),
+            reason: format!("`max_depth` exceeds maximum bound {MAX_SUB_AGENT_DEPTH}"),
+        });
+    }
+    if perms.descendant_spawn && !matches!(perf.max_depth, Some(1..=MAX_SUB_AGENT_DEPTH)) {
+        return Err(SubAgentSpawnConfigError::InvalidPolicy {
+            profile_id: profile.profile_id.clone(),
+            reason: format!(
+                "`descendant_spawn = true` requires explicit `max_depth` in 1..={MAX_SUB_AGENT_DEPTH}"
+            ),
+        });
+    }
+
+    if let SubAgentSpawnStrategy::Scheme {
+        module, procedure, ..
+    } = &profile.strategy
+    {
+        if module.is_empty()
+            || module != module.trim()
+            || module.len() > MAX_SCHEME_IDENTIFIER_BYTES
+            || module.starts_with('/')
+            || module.contains("..")
+            || module
+                .chars()
+                .any(|ch| ch.is_control() || ch.is_whitespace() || ch == '\\')
+        {
+            return Err(SubAgentSpawnConfigError::InvalidPolicy {
+                profile_id: profile.profile_id.clone(),
+                reason: format!("invalid Scheme strategy module `{module}`"),
+            });
+        }
+        if let Some(proc_name) = procedure
+            && (proc_name.is_empty()
+                || proc_name != proc_name.trim()
+                || proc_name.len() > MAX_SCHEME_IDENTIFIER_BYTES
+                || proc_name.contains("..")
+                || proc_name
+                    .chars()
+                    .any(|ch| ch.is_control() || ch.is_whitespace() || matches!(ch, '/' | '\\')))
+        {
+            return Err(SubAgentSpawnConfigError::InvalidPolicy {
+                profile_id: profile.profile_id.clone(),
+                reason: format!("invalid Scheme strategy procedure `{proc_name}`"),
+            });
+        }
+    }
+
     Ok(())
 }
 

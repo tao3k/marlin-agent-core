@@ -86,19 +86,27 @@ pub struct RuntimeSandboxPolicy {
 /// Environment variable used to bind host execution to a Marlin runtime session.
 pub const MARLIN_SESSION_ID_ENV_VAR: &str = "MARLIN_SESSION_ID";
 
+const MAX_RUNTIME_SESSION_ID_BYTES: usize = 256;
+
 /// Stable runtime session id visible in the resolved runtime snapshot.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct RuntimeSessionId(String);
 
 impl RuntimeSessionId {
     pub fn new(id: impl Into<String>) -> Self {
-        Self::try_new(id).expect("runtime session id must not be empty")
+        Self::try_new(id).expect("runtime session id must not be empty or malformed")
     }
 
     pub fn try_new(id: impl Into<String>) -> Option<Self> {
         let id = id.into();
+        if id.chars().any(|ch| ch.is_control() || ch == '\\') {
+            return None;
+        }
         let trimmed = id.trim();
-        if trimmed.is_empty() {
+        if trimmed.is_empty()
+            || trimmed.len() > MAX_RUNTIME_SESSION_ID_BYTES
+            || trimmed.contains("..")
+        {
             None
         } else {
             Some(Self(trimmed.to_owned()))
@@ -107,6 +115,20 @@ impl RuntimeSessionId {
 
     pub fn as_str(&self) -> &str {
         self.0.as_str()
+    }
+}
+
+impl<'de> Deserialize<'de> for RuntimeSessionId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        Self::try_new(raw).ok_or_else(|| {
+            serde::de::Error::custom(
+                "runtime session id must be non-empty, <= 256 bytes, and contain no control characters, backslashes, or `..` traversal",
+            )
+        })
     }
 }
 

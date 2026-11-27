@@ -7,21 +7,27 @@
 use std::{
     error::Error,
     fmt::{self, Display, Formatter},
-    fs, io,
+    fs::File,
+    io::{self, Read},
     path::{Path, PathBuf},
 };
 
 use marlin_agent_protocol::{
     HookAgentScope, HookConfigurationReloadReceipt, HookConfigurationVersion, HookPolicyExtension,
-    HookPolicyMode, HookScope, HookSource, HookTrustStatus,
+    HookPolicyExtensionKind, HookPolicyMode, HookScope, HookSource, HookTrustStatus,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{HookDispatchPolicy, HookDispatcher, HookRegistration, HookRegistry};
 
+/// Maximum `TOML` hook configuration file size accepted from disk (256 KiB).
+pub const MAX_HOOK_CONFIG_BYTES: usize = 256 * 1024;
+
+const MAX_EXTENSION_IDENTIFIER_BYTES: usize = 256;
+
 /// Hook configuration envelope loaded from `TOML`.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct HookConfigurationEnvelope {
     pub version: Option<HookConfigurationVersion>,
     pub policy: HookPolicyConfiguration,
@@ -44,16 +50,31 @@ impl HookConfigurationEnvelope {
 
     /// Loads a hook configuration envelope from a `TOML` string.
     pub fn from_toml_str(source: &str) -> Result<Self, HookConfigurationError> {
-        toml::from_str(source).map_err(HookConfigurationError::Toml)
+        let envelope: Self = toml::from_str(source).map_err(HookConfigurationError::Toml)?;
+        validate_policy_extension(&envelope.policy.extension)?;
+        Ok(envelope)
     }
 
     /// Loads a hook configuration envelope from a `TOML` file.
     pub fn from_toml_path(path: impl AsRef<Path>) -> Result<Self, HookConfigurationError> {
         let path = path.as_ref();
-        let source = fs::read_to_string(path).map_err(|source| HookConfigurationError::Io {
+        let file = File::open(path).map_err(|source| HookConfigurationError::Io {
             path: path.to_path_buf(),
             source,
         })?;
+        let mut source = String::new();
+        file.take((MAX_HOOK_CONFIG_BYTES + 1) as u64)
+            .read_to_string(&mut source)
+            .map_err(|source| HookConfigurationError::Io {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        if source.len() > MAX_HOOK_CONFIG_BYTES {
+            return Err(HookConfigurationError::ConfigTooLarge {
+                path: path.to_path_buf(),
+                limit: MAX_HOOK_CONFIG_BYTES,
+            });
+        }
         Self::from_toml_str(&source)
     }
 
@@ -88,7 +109,7 @@ impl HookConfigurationEnvelope {
 
 /// Hook dispatch policy configuration.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct HookPolicyConfiguration {
     pub mode: HookPolicyMode,
     pub extension: HookPolicyExtension,
@@ -126,7 +147,7 @@ impl Default for HookPolicyConfiguration {
 
 /// Defaults assigned to registrations created from configuration.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct HookRegistrationDefaults {
     pub scope: HookScope,
     pub agent_scope: HookAgentScope,
@@ -175,7 +196,9 @@ impl Default for HookRegistrationDefaults {
 #[derive(Debug)]
 pub enum HookConfigurationError {
     Io { path: PathBuf, source: io::Error },
+    ConfigTooLarge { path: PathBuf, limit: usize },
     Toml(toml::de::Error),
+    InvalidExtension { reason: String },
 }
 
 impl Display for HookConfigurationError {
@@ -188,7 +211,17 @@ impl Display for HookConfigurationError {
                     path.display()
                 )
             }
+            Self::ConfigTooLarge { path, limit } => {
+                write!(
+                    formatter,
+                    "hook config `{}` exceeds maximum allowed size of {limit} bytes",
+                    path.display()
+                )
+            }
             Self::Toml(error) => write!(formatter, "failed to parse hook `TOML`: {error}"),
+            Self::InvalidExtension { reason } => {
+                write!(formatter, "invalid hook policy extension: {reason}")
+            }
         }
     }
 }
@@ -198,6 +231,71 @@ impl Error for HookConfigurationError {
         match self {
             Self::Io { source, .. } => Some(source),
             Self::Toml(error) => Some(error),
+            Self::ConfigTooLarge { .. } | Self::InvalidExtension { .. } => None,
         }
     }
+}
+
+fn validate_policy_extension(
+    extension: &HookPolicyExtension,
+) -> Result<(), HookConfigurationError> {
+    match extension.kind {
+        HookPolicyExtensionKind::None => {
+            if extension.module.is_some() || extension.procedure.is_some() {
+                return Err(HookConfigurationError::InvalidExtension {
+                    reason:
+                        "policy extension kind `None` must not declare `module` or `procedure`"
+                            .to_owned(),
+                });
+            }
+        }
+        HookPolicyExtensionKind::GerbilScheme => {
+            let Some(module) = extension.module.as_ref() else {
+                return Err(HookConfigurationError::InvalidExtension {
+                    reason: "GerbilScheme policy extension requires a `module`".to_owned(),
+                });
+            };
+            let Some(procedure) = extension.procedure.as_ref() else {
+                return Err(HookConfigurationError::InvalidExtension {
+                    reason: "GerbilScheme policy extension requires a `procedure`".to_owned(),
+                });
+            };
+            validate_extension_module(module.as_str())?;
+            validate_extension_procedure(procedure.as_str())?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_extension_module(module: &str) -> Result<(), HookConfigurationError> {
+    if module.is_empty()
+        || module != module.trim()
+        || module.len() > MAX_EXTENSION_IDENTIFIER_BYTES
+        || module.starts_with('/')
+        || module.contains("..")
+        || module
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace() || ch == '\\')
+    {
+        return Err(HookConfigurationError::InvalidExtension {
+            reason: format!("invalid GerbilScheme module path `{module}`"),
+        });
+    }
+    Ok(())
+}
+
+fn validate_extension_procedure(procedure: &str) -> Result<(), HookConfigurationError> {
+    if procedure.is_empty()
+        || procedure != procedure.trim()
+        || procedure.len() > MAX_EXTENSION_IDENTIFIER_BYTES
+        || procedure.contains("..")
+        || procedure
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace() || matches!(ch, '/' | '\\'))
+    {
+        return Err(HookConfigurationError::InvalidExtension {
+            reason: format!("invalid GerbilScheme procedure name `{procedure}`"),
+        });
+    }
+    Ok(())
 }

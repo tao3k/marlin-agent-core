@@ -6,3 +6,5 @@
 mod config;
 #[path = "unit/hooks/mod.rs"]
 mod hooks;
+#[path = "unit/sm33_hook_policy_confinement.rs"]
+mod sm33_hook_policy_confinement;

@@ -13,5 +13,6 @@ mod model_gateway;
 mod project_runtime;
 mod runtime_environment;
 mod scenario;
+mod sm33_protocol_contract_confinement;
 mod sub_agent;
 mod trace;

@@ -224,6 +224,9 @@ pub(crate) fn apply_dynamic_policy_actions(
     }
 }
 
+/// Maximum byte length accepted for a dynamic invocation rewrite payload (64 KiB).
+const MAX_DYNAMIC_REWRITE_BYTES: usize = 64 * 1024;
+
 fn apply_dynamic_decision_action(
     decisions: &mut [HookPolicyDecisionReceipt],
     action: &HookPolicyDynamicAction,
@@ -233,6 +236,14 @@ fn apply_dynamic_decision_action(
     let mut matched_hook_id = None;
     let mut matched = false;
     for decision in decisions.iter_mut() {
+        // Rust trust-floor rejections are immutable; extension Defer/Deny actions must never mask them.
+        if matches!(
+            decision.reason,
+            HookPolicyDecisionReason::UntrustedRejected
+                | HookPolicyDecisionReason::ModifiedRejected
+        ) {
+            continue;
+        }
         if dynamic_action_targets_decision(action, decision, &effect) {
             if matched_hook_id.is_none() {
                 matched_hook_id = Some(decision.hook_id.clone());
@@ -308,7 +319,19 @@ fn apply_dynamic_rewrite_action(
         );
     };
 
-    *message = Some(replacement.as_str().to_owned());
+    let replacement_text = replacement.as_str();
+    if replacement_text.len() > MAX_DYNAMIC_REWRITE_BYTES || replacement_text.contains('\0') {
+        return dynamic_action_receipt(
+            action,
+            HookPolicyDynamicActionApplicationStatus::Failed,
+            HookPolicyDynamicActionApplicationEffect::Noop,
+            HookPolicyDynamicActionApplicationReason::UnsupportedTarget,
+            None,
+            None,
+        );
+    }
+
+    *message = Some(replacement_text.to_owned());
     dynamic_action_receipt(
         action,
         HookPolicyDynamicActionApplicationStatus::Applied,
