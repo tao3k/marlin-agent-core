@@ -236,17 +236,88 @@
                (cons (make-edge-row scheme-fn "ffi_binds" c-sym path line)
                      (unbox edges-box))))))))))
 
+(def (infer-scheme-module-role path)
+  (let* ((slash-pos
+           (let loop ((i (- (string-length path) 1)))
+             (cond ((< i 0) -1)
+                   ((char=? (string-ref path i) #\/) i)
+                   (else (loop (- i 1))))))
+         (base (substring path (+ slash-pos 1) (string-length path))))
+    (cond
+      ((string=? base "interface.ss") "interface")
+      ((string=? base "objects.ss") "objects")
+      ((string=? base "funcs.ss") "funcs")
+      ((string=? base "config.ss") "config")
+      ((string=? base "types.ss") "types")
+      ((string=? base "syntax.ss") "syntax")
+      (else #f))))
+
+(def (collect-scheme-export-names forms)
+  (let ((exported (make-hash-table)))
+    (for-each
+      (lambda (entry)
+        (let ((form (cdr entry)))
+          (when (and (pair? form) (eq? (car form) 'export))
+            (for-each
+              (lambda (spec)
+                (cond
+                  ((symbol? spec)
+                   (hash-put! exported (symbol->string spec) #t))
+                  ((and (pair? spec) (eq? (car spec) 'rename-out))
+                   (for-each
+                     (lambda (pair-spec)
+                       (when (and (pair? pair-spec) (symbol? (car pair-spec)))
+                         (hash-put! exported (symbol->string (car pair-spec)) #t)))
+                     (cdr spec)))))
+              (cdr form)))))
+      forms)
+    exported))
+
+(def (decorate-scheme-entity-attrs name base-attrs exported-tbl role)
+  (let* ((a1 (if (and exported-tbl (hash-get exported-tbl name))
+               (cons (cons "exported" "true") base-attrs)
+               base-attrs))
+         (a2 (if role
+               (cons (cons "moduleRole" role) a1)
+               a1)))
+    a2))
+
 ;;; Extract native Open EDB `(values entities-list edges-list)` from a Gerbil Scheme file.
 (def (extract-scheme-open-edb-facts path source)
   (let ((entities-box (box '()))
-        (edges-box (box '())))
+        (edges-box (box '()))
+        (role (infer-scheme-module-role path)))
     (with-catch
       (lambda (_) #f)
       (lambda ()
-        (for-each
-          (lambda (entry)
-            (walk-scheme-form path (car entry) (cdr entry) entities-box edges-box))
-          (read-scheme-forms-with-lines source))))
+        (let* ((forms (read-scheme-forms-with-lines source))
+               (exported-tbl (collect-scheme-export-names forms)))
+          (for-each
+            (lambda (entry)
+              (walk-scheme-form path (car entry) (cdr entry) entities-box edges-box))
+            forms)
+          (when (or role (> (hash-length exported-tbl) 0))
+            (set-box! entities-box
+              (map (lambda (row)
+                     (let* ((name (vector-ref row 2))
+                            (old-vec (vector-ref row 7))
+                            (old-alist
+                              (let loop ((i 0) (acc '()))
+                                (if (= i (vector-length old-vec))
+                                  (reverse acc)
+                                  (let ((kv (vector-ref old-vec i)))
+                                    (loop (+ i 1)
+                                          (cons (cons (vector-ref kv 0) (vector-ref kv 1)) acc))))))
+                            (new-alist (decorate-scheme-entity-attrs name old-alist exported-tbl role)))
+                       (vector (vector-ref row 0)
+                               (vector-ref row 1)
+                               name
+                               (vector-ref row 3)
+                               (vector-ref row 4)
+                               (vector-ref row 5)
+                               (vector-ref row 6)
+                               (list->vector (map (lambda (kv) (vector (car kv) (cdr kv))) new-alist)))))
+                   (unbox entities-box)))))))
     (values (reverse (unbox entities-box)) (reverse (unbox edges-box)))))
 
 ;;; ============================================================================

@@ -10,7 +10,6 @@
 //! - `AgentHarnessEvidenceGraph` projection
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -40,11 +39,12 @@ use tokio_stream::StreamExt;
 use tracing::Instrument;
 use tracing::instrument::WithSubscriber;
 
-use crate::{
-    AgentHarnessEvidenceGraph, AgentHarnessEvidenceGraphEdge, AgentHarnessEvidenceGraphEdgeKind,
-    AgentHarnessEvidenceGraphNode, AgentHarnessEvidenceGraphNodeKind, TraceRecorder,
-};
+use crate::{AgentHarnessEvidenceGraph, TraceRecorder};
 
+use super::artifacts::{
+    ScenarioEvidenceGraphInputs, TrajectoryBuilder, build_reflection_message,
+    build_scenario_evidence_graph, parse_scenario_reflection,
+};
 use super::config::{LiveEvalBudget, LiveWeaverRoute};
 use super::governance::{CompiledHarnessGovernanceGate, GovernanceDecisionReceipt};
 use super::report::{
@@ -485,7 +485,19 @@ impl LiveWeaverEvalSession {
             }
 
             messages.push(assistant_msg);
+
+            struct PlannedToolCall {
+                call: marlin_agent_protocol::ModelToolCall,
+                call_id_str: String,
+                tool_name: String,
+                argument: String,
+                tier: QueryTierKind,
+                gov_receipt: GovernanceDecisionReceipt,
+                gov_ev: String,
+            }
+
             let mut round_tool_events = Vec::with_capacity(requested_calls.len());
+            let mut planned: Vec<PlannedToolCall> = Vec::with_capacity(requested_calls.len());
             for call in requested_calls {
                 if budget_hit_note.is_some() {
                     let msg = "Tool call skipped: max_tool_calls budget reached; synthesize your final answer now.".to_owned();
@@ -534,109 +546,180 @@ impl LiveWeaverEvalSession {
                     ),
                 );
                 governance_receipts.push(gov_receipt.clone());
-
-                let call_started = Instant::now();
-                let (status, result_body, receipt, preview, exec_kind) = if !gov_receipt.permitted {
-                    let actionable_denial =
-                        super::governance::format_actionable_denial_message(
-                            &gov_receipt.reason,
-                            &tool_name,
-                            &argument,
-                        );
-                    (
-                        "denied",
-                        actionable_denial.clone(),
-                        ParsedSearchReceipt::default(),
-                        actionable_denial,
-                        TrajectoryEventKind::ToolDenied,
-                    )
-                } else if let Some(handler) = self.search_handlers.get(tool_name.as_str()) {
-                    let exec_span = tracing::info_span!(
-                        "runtime.tool.execute",
-                        tool.name = tool_name.as_str(),
-                        tool.call_id = call_id_str.as_str(),
-                        tool.tier = tier.as_str(),
-                    );
-                    match handler
-                        .run_tool(call.clone(), self.runtime_owner.context())
-                        .instrument(exec_span)
-                        .await
-                    {
-                        ModelToolOutcome::Completed(body) => {
-                            let receipt = parse_search_receipt(&body);
-                            // Skip noisy hash/timing boilerplate so both the report and the
-                            // post-run reflection turn always see status, combinatorics,
-                            // partial witnesses, repairs, canonical_query, and diagnostics.
-                            let preview = body
-                                .lines()
-                                .filter(|line| {
-                                    !line.starts_with("generation:")
-                                        && !line.starts_with("elapsed_us:")
-                                        && !line.starts_with("indexed_files:")
-                                })
-                                .take(14)
-                                .collect::<Vec<_>>()
-                                .join(" | ");
-                            (
-                                "completed",
-                                body,
-                                receipt,
-                                preview,
-                                TrajectoryEventKind::ToolSearchCompleted,
-                            )
-                        }
-                        ModelToolOutcome::Failed(err) => {
-                            let msg = format!("{tool_name} error: {err}");
-                            (
-                                "failed",
-                                msg,
-                                ParsedSearchReceipt::default(),
-                                err,
-                                TrajectoryEventKind::ToolSearchFailed,
-                            )
-                        }
-                    }
-                } else {
-                    let denied = format!(
-                        "Fail-closed harness refused unimplemented tool `{tool_name}` even after policy check."
-                    );
-                    (
-                        "denied",
-                        denied.clone(),
-                        ParsedSearchReceipt::default(),
-                        denied,
-                        TrajectoryEventKind::ToolDenied,
-                    )
-                };
-
-                let elapsed_ms =
-                    u64::try_from(call_started.elapsed().as_millis()).unwrap_or(u64::MAX);
-                let tool_ev = trajectory.push(
-                    exec_kind,
-                    vec![gov_ev],
-                    format!("tool={tool_name} status={status} ms={elapsed_ms}"),
-                );
-                round_tool_events.push(tool_ev);
-
-                let output_bytes = result_body.len();
-                tool_calls.push(ToolCallTelemetry {
-                    round,
-                    call_id: call_id_str,
+                planned.push(PlannedToolCall {
+                    call,
+                    call_id_str,
                     tool_name,
                     argument,
                     tier,
-                    status,
-                    elapsed_ms,
-                    output_bytes,
-                    receipt,
-                    governance: gov_receipt,
-                    error_or_preview: preview,
+                    gov_receipt,
+                    gov_ev,
                 });
-                messages.push(tool_gateway_message(call.id, result_body));
 
                 if total_calls >= max_tool_calls {
                     budget_hit_note = Some(format!("reached max_tool_calls budget ({max_tool_calls})"));
                 }
+            }
+
+            struct ConcurrentToolOutcome {
+                elapsed_ms: u64,
+                status: &'static str,
+                body: String,
+                receipt: ParsedSearchReceipt,
+                preview: String,
+                exec_kind: TrajectoryEventKind,
+            }
+
+            // Execute all Cedar-permitted read-only search calls in this turn CONCURRENTLY
+            // (preserving deterministic original call order when reassembling results/DAG).
+            let mut join_set = tokio::task::JoinSet::new();
+            for (idx, item) in planned.iter().enumerate() {
+                if !item.gov_receipt.permitted {
+                    let actionable_denial = super::governance::format_actionable_denial_message(
+                        &item.gov_receipt.reason,
+                        &item.tool_name,
+                        &item.argument,
+                    );
+                    join_set.spawn(async move {
+                        (
+                            idx,
+                            ConcurrentToolOutcome {
+                                elapsed_ms: 0,
+                                status: "denied",
+                                body: actionable_denial.clone(),
+                                receipt: ParsedSearchReceipt::default(),
+                                preview: actionable_denial,
+                                exec_kind: TrajectoryEventKind::ToolDenied,
+                            },
+                        )
+                    });
+                } else if let Some(handler) = self.search_handlers.get(item.tool_name.as_str()) {
+                    let handler = Arc::clone(handler);
+                    let call = item.call.clone();
+                    let rt_ctx = self.runtime_owner.context();
+                    let tool_name = item.tool_name.clone();
+                    let call_id_str = item.call_id_str.clone();
+                    let tier_str = item.tier.as_str();
+                    let dispatch = tracing::dispatcher::get_default(|d| d.clone());
+                    join_set.spawn(
+                        async move {
+                            let call_started = Instant::now();
+                            let exec_span = tracing::info_span!(
+                                "runtime.tool.execute",
+                                tool.name = tool_name.as_str(),
+                                tool.call_id = call_id_str.as_str(),
+                                tool.tier = tier_str,
+                            );
+                            let outcome = handler
+                                .run_tool(call, rt_ctx)
+                                .instrument(exec_span)
+                                .await;
+                            let elapsed_ms =
+                                u64::try_from(call_started.elapsed().as_millis()).unwrap_or(u64::MAX);
+                            let res = match outcome {
+                                ModelToolOutcome::Completed(body) => {
+                                    let receipt = parse_search_receipt(&body);
+                                    let preview = body
+                                        .lines()
+                                        .filter(|line| {
+                                            !line.starts_with("generation:")
+                                                && !line.starts_with("elapsed_us:")
+                                                && !line.starts_with("indexed_files:")
+                                        })
+                                        .take(14)
+                                        .collect::<Vec<_>>()
+                                        .join(" | ");
+                                    ConcurrentToolOutcome {
+                                        elapsed_ms,
+                                        status: "completed",
+                                        body,
+                                        receipt,
+                                        preview,
+                                        exec_kind: TrajectoryEventKind::ToolSearchCompleted,
+                                    }
+                                }
+                                ModelToolOutcome::Failed(err) => {
+                                    let msg = format!("{tool_name} error: {err}");
+                                    ConcurrentToolOutcome {
+                                        elapsed_ms,
+                                        status: "failed",
+                                        body: msg,
+                                        receipt: ParsedSearchReceipt::default(),
+                                        preview: err,
+                                        exec_kind: TrajectoryEventKind::ToolSearchFailed,
+                                    }
+                                }
+                            };
+                            (idx, res)
+                        }
+                        .with_subscriber(dispatch),
+                    );
+                } else {
+                    let denied = format!(
+                        "Fail-closed harness refused unimplemented tool `{}` even after policy check.",
+                        item.tool_name
+                    );
+                    join_set.spawn(async move {
+                        (
+                            idx,
+                            ConcurrentToolOutcome {
+                                elapsed_ms: 0,
+                                status: "denied",
+                                body: denied.clone(),
+                                receipt: ParsedSearchReceipt::default(),
+                                preview: denied,
+                                exec_kind: TrajectoryEventKind::ToolDenied,
+                            },
+                        )
+                    });
+                }
+            }
+
+            let mut completed_results: Vec<Option<ConcurrentToolOutcome>> =
+                (0..planned.len()).map(|_| None).collect();
+            while let Some(joined) = join_set.join_next().await {
+                if let Ok((idx, outcome)) = joined {
+                    completed_results[idx] = Some(outcome);
+                }
+            }
+
+            for (item, outcome) in planned.into_iter().zip(completed_results) {
+                let outcome = outcome.unwrap_or_else(|| {
+                    let msg = format!("{} error: concurrent search task panicked", item.tool_name);
+                    ConcurrentToolOutcome {
+                        elapsed_ms: 0,
+                        status: "failed",
+                        body: msg.clone(),
+                        receipt: ParsedSearchReceipt::default(),
+                        preview: msg,
+                        exec_kind: TrajectoryEventKind::ToolSearchFailed,
+                    }
+                });
+                let tool_ev = trajectory.push(
+                    outcome.exec_kind,
+                    vec![item.gov_ev],
+                    format!(
+                        "tool={} status={} ms={}",
+                        item.tool_name, outcome.status, outcome.elapsed_ms
+                    ),
+                );
+                round_tool_events.push(tool_ev);
+
+                let output_bytes = outcome.body.len();
+                tool_calls.push(ToolCallTelemetry {
+                    round,
+                    call_id: item.call_id_str,
+                    tool_name: item.tool_name,
+                    argument: item.argument,
+                    tier: item.tier,
+                    status: outcome.status,
+                    elapsed_ms: outcome.elapsed_ms,
+                    output_bytes,
+                    receipt: outcome.receipt,
+                    governance: item.gov_receipt,
+                    error_or_preview: outcome.preview,
+                });
+                messages.push(tool_gateway_message(item.call.id, outcome.body));
             }
 
             if !round_tool_events.is_empty() {
@@ -678,16 +761,16 @@ impl LiveWeaverEvalSession {
         };
 
         let telemetry_spans = recorder.spans();
-        let evidence_graph = build_scenario_evidence_graph(
+        let evidence_graph = build_scenario_evidence_graph(&ScenarioEvidenceGraphInputs {
             scenario,
-            &governance_receipts,
-            &tool_calls,
-            &temporal_causality,
-            &telemetry_spans,
-            &gaps,
+            governance_receipts: &governance_receipts,
+            tool_calls: &tool_calls,
+            temporal: &temporal_causality,
+            spans: &telemetry_spans,
+            gaps: &gaps,
             matched_checkpoints,
-            scenario.checkpoints.len(),
-        );
+            total_checkpoints: scenario.checkpoints.len(),
+        });
 
         Ok(LiveScenarioReport {
             scenario_id: scenario.id.clone(),
@@ -760,309 +843,6 @@ impl LiveWeaverEvalSession {
             },
         }
     }
-}
-
-fn build_reflection_message(
-    scenario: &ProjectedHarnessScenario,
-    offered_definitions: &[ModelToolDefinition],
-    rounds_used: usize,
-    tool_calls: &[ToolCallTelemetry],
-    gaps: &[DetectedGap],
-) -> String {
-    let mut ledger = String::new();
-    let _ = writeln!(
-        ledger,
-        "Perform a rigorous, honest post-mortem reflection on your own Search DSL usage below. Base every claim strictly on the declared tool catalog and observed tool call log; NEVER claim a capability is missing if it was already offered in the declared tools below. Output ONLY a single valid JSON object matching the schema at the end.\n"
-    );
-    let _ = writeln!(ledger, "Declared Tools Available During This Run:");
-    for def in offered_definitions {
-        let first_line = def.description.lines().next().unwrap_or("");
-        let _ = writeln!(ledger, "- `{}`: {}", def.name.as_str(), first_line);
-    }
-    let _ = writeln!(ledger, "\nScenario `{}` — {}", scenario.id, scenario.title);
-    let _ = writeln!(ledger, "User message: {}", scenario.message);
-    let _ = writeln!(
-        ledger,
-        "Observed execution: rounds={rounds_used} (target<={}), total_tool_calls={}",
-        scenario.target_max_rounds,
-        tool_calls.len()
-    );
-    let _ = writeln!(ledger, "\nObserved Tool Calls (chronological):");
-    for (idx, tc) in tool_calls.iter().enumerate() {
-        let _ = writeln!(
-            ledger,
-            "{}. R{} `{}` [{}] status={} gov={} count={:?} repairs={:?}\n   query: {}\n   output_or_error: {}",
-            idx + 1,
-            tc.round,
-            tc.tool_name,
-            tc.tier.as_str(),
-            tc.status,
-            tc.governance.cedar_decision,
-            tc.receipt.total_count,
-            tc.receipt.repairs,
-            tc.argument,
-            tc.error_or_preview.chars().take(900).collect::<String>(),
-        );
-    }
-    let _ = writeln!(ledger, "\nObserved Automated Gaps:");
-    if gaps.is_empty() {
-        let _ = writeln!(ledger, "- none");
-    } else {
-        for g in gaps {
-            let _ = writeln!(ledger, "- [{}] {}", g.code, g.detail);
-        }
-    }
-    let _ = write!(
-        ledger,
-        "\nNow reflect critically in English on:\n\
-1. Every failed query, auto-repaired query, 0-hit query, or multi-round inefficiency above: WHY did you write it that way, and did the Search DSL / repair hook / diagnostic help you fix it immediately?\n\
-2. Systemic Search DSL, repair-hook, diagnostic, or EDB schema design improvements (NOT tiny one-off patches) that would let a fast model write complex L0/L1/L2 queries right on Turn 1 and finish in <=4 rounds.\n\n\
-Return ONLY valid JSON with this exact schema:\n\
-{{\n\
-  \"overall_assessment\": \"1-3 sentences summarizing DSL ergonomics & self-repair experience\",\n\
-  \"items\": [\n\
-    {{\n\
-      \"round\": 1,\n\
-      \"tier\": \"L0-Brute | L1-Ascent | L2-Dusa | Bash\",\n\
-      \"symptom\": \"concise description of the error, auto-repair, or 0-hit\",\n\
-      \"why_i_wrote_it_wrong\": \"honest root cause of why you generated that syntax/query\",\n\
-      \"attribution\": \"tool_doc_gap | dsl_syntax_ergonomics | repair_hook_gap | edb_schema_or_coverage_gap | model_mistake\",\n\
-      \"proposed_improvement\": \"concrete DSL grammar, repair pass, diagnostic, or schema improvement\"\n\
-    }}\n\
-  ],\n\
-  \"top_dsl_design_recommendations\": [\"systemic design recommendation 1\", \"recommendation 2\"]\n\
-}}\n"
-    );
-    ledger
-}
-
-fn parse_scenario_reflection(raw: String, reflection_ms: u64) -> ScenarioReflection {
-    let trimmed = raw.trim();
-    let unfenced = if let Some(after_open) = trimmed.strip_prefix("```") {
-        let body = after_open
-            .split_once('\n')
-            .map_or(after_open, |(_, rest)| rest);
-        body.trim().trim_end_matches("```").trim()
-    } else {
-        trimmed
-    };
-    let candidate = if unfenced.starts_with('{') && unfenced.ends_with('}') {
-        unfenced
-    } else if let (Some(start), Some(end)) = (unfenced.find('{'), unfenced.rfind('}'))
-        && start < end
-    {
-        &unfenced[start..=end]
-    } else {
-        unfenced
-    };
-
-    match serde_json::from_str::<ScenarioReflection>(candidate) {
-        Ok(mut parsed) => {
-            parsed.raw_response = raw;
-            parsed.parsed_structured = true;
-            parsed.reflection_ms = reflection_ms;
-            parsed
-        }
-        Err(_) => ScenarioReflection {
-            overall_assessment: "Model returned non-JSON reflection (preserved verbatim below)."
-                .to_owned(),
-            raw_response: raw,
-            parsed_structured: false,
-            reflection_ms,
-            ..ScenarioReflection::default()
-        },
-    }
-}
-
-struct TrajectoryBuilder {
-    started: Instant,
-    next_pos: usize,
-    last_time_pos: usize,
-    events: Vec<TrajectoryEvent>,
-}
-
-impl TrajectoryBuilder {
-    fn new(started: Instant) -> Self {
-        Self {
-            started,
-            next_pos: 1,
-            last_time_pos: 0,
-            events: Vec::new(),
-        }
-    }
-
-    fn push(
-        &mut self,
-        kind: TrajectoryEventKind,
-        parent_ids: Vec<String>,
-        detail: String,
-    ) -> String {
-        let pos = self.next_pos;
-        self.next_pos += 1;
-        let elapsed_ms = usize::try_from(self.started.elapsed().as_millis()).unwrap_or(usize::MAX);
-        // Keep bi-temporal valid/knowledge coordinates strictly monotonic.
-        let coord = elapsed_ms.max(self.last_time_pos + 1);
-        self.last_time_pos = coord;
-        let event_id = format!("ev-{pos}");
-        self.events.push(TrajectoryEvent {
-            event_id: event_id.clone(),
-            kind,
-            logical_pos: pos,
-            parent_ids,
-            valid_pos: coord,
-            knowledge_pos: coord,
-            detail,
-        });
-        event_id
-    }
-
-    fn into_events(self) -> Vec<TrajectoryEvent> {
-        self.events
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn build_scenario_evidence_graph(
-    scenario: &ProjectedHarnessScenario,
-    governance_receipts: &[GovernanceDecisionReceipt],
-    tool_calls: &[ToolCallTelemetry],
-    temporal: &TemporalCausalityVerdict,
-    spans: &[AgentTraceSpanRecord],
-    gaps: &[DetectedGap],
-    matched_checkpoints: usize,
-    total_checkpoints: usize,
-) -> AgentHarnessEvidenceGraph {
-    let intent_id = format!("intent:{}", scenario.id);
-    let gov_id = format!("governance:{}", scenario.governance.policy_id);
-    let causal_id = format!("temporal-causality:{}", scenario.id);
-    let telemetry_id = format!("telemetry:{}", scenario.id);
-    let gt_id = format!("ground-truth:{}", scenario.id);
-
-    let denied_writes = governance_receipts
-        .iter()
-        .filter(|r| !r.permitted && r.is_write)
-        .count();
-    let permitted_writes = governance_receipts
-        .iter()
-        .filter(|r| r.permitted && r.is_write)
-        .count();
-
-    let mut nodes = vec![
-        AgentHarnessEvidenceGraphNode::present(
-            &intent_id,
-            AgentHarnessEvidenceGraphNodeKind::HumanIntent,
-            scenario.title.clone(),
-        )
-        .with_detail(format!("scenario_id={}", scenario.id)),
-        AgentHarnessEvidenceGraphNode::present(
-            &gov_id,
-            AgentHarnessEvidenceGraphNodeKind::ReviewJudgment,
-            format!("Cedar governance `{}`", scenario.governance.policy_id),
-        )
-        .with_detail(format!(
-            "write_allowed={}, total_evals={}, denied_writes={denied_writes}, permitted_writes={permitted_writes}",
-            scenario.governance.write_allowed,
-            governance_receipts.len(),
-        )),
-        if temporal.admitted {
-            AgentHarnessEvidenceGraphNode::present(
-                &causal_id,
-                AgentHarnessEvidenceGraphNodeKind::ProofResult,
-                "Bi-Temporal Causality Trajectory Proof",
-            )
-            .with_detail(format!(
-                "status={} replay={} events={} digest={}",
-                temporal.temporal_status,
-                temporal.replay_status,
-                temporal.causal_event_count,
-                temporal.proof_digest,
-            ))
-        } else {
-            AgentHarnessEvidenceGraphNode::missing(
-                &causal_id,
-                AgentHarnessEvidenceGraphNodeKind::Counterexample,
-                "Bi-Temporal Causality Trajectory Violation",
-            )
-            .with_detail(format!(
-                "status={} replay={} forbidden={:?}",
-                temporal.temporal_status, temporal.replay_status, temporal.forbidden_hits,
-            ))
-        },
-        AgentHarnessEvidenceGraphNode::present(
-            &telemetry_id,
-            AgentHarnessEvidenceGraphNodeKind::EvidenceFact,
-            "OTel TraceRecorder Spans",
-        )
-        .with_detail(format!(
-            "spans={} tool_calls={}",
-            spans.len(),
-            tool_calls.len()
-        )),
-        if matched_checkpoints == total_checkpoints {
-            AgentHarnessEvidenceGraphNode::present(
-                &gt_id,
-                AgentHarnessEvidenceGraphNodeKind::TestBehavior,
-                "Ground-Truth Checkpoints",
-            )
-            .with_detail(format!("{matched_checkpoints}/{total_checkpoints} matched"))
-        } else {
-            AgentHarnessEvidenceGraphNode::missing(
-                &gt_id,
-                AgentHarnessEvidenceGraphNodeKind::Counterexample,
-                "Ground-Truth Checkpoints Incomplete",
-            )
-            .with_detail(format!("{matched_checkpoints}/{total_checkpoints} matched"))
-        },
-    ];
-
-    let mut edges = vec![
-        AgentHarnessEvidenceGraphEdge::new(
-            &intent_id,
-            &gov_id,
-            AgentHarnessEvidenceGraphEdgeKind::Requires,
-        ),
-        AgentHarnessEvidenceGraphEdge::new(
-            &gov_id,
-            &causal_id,
-            AgentHarnessEvidenceGraphEdgeKind::Proves,
-        ),
-        AgentHarnessEvidenceGraphEdge::new(
-            &telemetry_id,
-            &intent_id,
-            AgentHarnessEvidenceGraphEdgeKind::Observes,
-        ),
-        AgentHarnessEvidenceGraphEdge::new(
-            &gt_id,
-            &intent_id,
-            if matched_checkpoints == total_checkpoints {
-                AgentHarnessEvidenceGraphEdgeKind::Supports
-            } else {
-                AgentHarnessEvidenceGraphEdgeKind::Refutes
-            },
-        ),
-    ];
-
-    for (idx, gap) in gaps.iter().enumerate() {
-        let gap_node_id = format!("gap:{}:{idx}", scenario.id);
-        nodes.push(
-            AgentHarnessEvidenceGraphNode::missing(
-                &gap_node_id,
-                AgentHarnessEvidenceGraphNodeKind::Counterexample,
-                gap.code,
-            )
-            .with_detail(gap.detail.clone()),
-        );
-        edges.push(AgentHarnessEvidenceGraphEdge::new(
-            &gap_node_id,
-            &intent_id,
-            AgentHarnessEvidenceGraphEdgeKind::Refutes,
-        ));
-    }
-
-    let mut graph = AgentHarnessEvidenceGraph::new(format!("live-weaver:{}", scenario.id));
-    graph.nodes = nodes;
-    graph.edges = edges;
-    graph
 }
 
 async fn collect_streaming_turn<G: ModelStreamingGateway>(

@@ -316,7 +316,7 @@ pub fn format_actionable_denial_message(
         || lower.contains(" ls ")
         || lower.contains("tree")
     {
-        "workspace_search: (file-outline \"crates/\" lang: \"rust\" kind: \"struct\" exclude-tests?: #t limit: 80) or (brute-search \"\" path-prefix: \"crates/\" limit: 40)"
+        "workspace_search: (workspace-map \"\" depth: 2) or (file-outline \"crates/\" lang: \"rust\" kind: \"struct\" exclude-tests?: #t limit: 80)"
             .to_owned()
     } else if lower.contains("rg ") || lower.contains("grep ") {
         "workspace_search: (brute-search \"<pattern>\" exclude-tests?: #t limit: 40) or structural_query: (find-symbols name-contains: \"<stem>\" lang: \"any\" exclude-tests?: #t)"

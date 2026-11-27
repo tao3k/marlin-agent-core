@@ -108,6 +108,7 @@
     ((calls_edge) "calls_edge(src_id, dst_id, path, line)")
     ((calls_symbol calls-symbol) "calls_symbol(caller_name, callee_name, path, line)")
     ((implements_edge) "implements_edge(src_id, dst_id, path, line)")
+    ((ffi_binds_edge ffi-binds-edge) "ffi_binds_edge(scheme_fn, c_sym, path, line)")
     ((entity_locator entity-locator) "entity_locator(id, locator)")
     ((depends_on depends-on) "depends_on(src_id, dst_id)")
     ((ref-at) "ref-at(callsite, name)")
@@ -147,6 +148,7 @@
     ((contains_edge) '((parent src) (child dst) (path) (line)))
     ((imports_edge calls_edge implements_edge) '((src from) (dst to) (path) (line)))
     ((calls_symbol calls-symbol) '((caller caller_name src) (callee callee_name dst) (path) (line)))
+    ((ffi_binds_edge ffi-binds-edge) '((scheme_fn src) (c_sym dst) (path) (line)))
     ((entity_locator) '((id) (loc locator)))
     ((depends_on) '((src from) (dst to)))
     (else

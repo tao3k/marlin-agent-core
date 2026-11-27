@@ -14,6 +14,7 @@ use super::parser::{
     BruteSearchRequest, DEFAULT_BRUTE_MAX_HITS, L0FormKind, classify_l0_form, is_path_excluded,
     parse_brute_search_form,
 };
+use super::workspace_map::execute_workspace_map;
 
 fn has_line_anchor(expr: &str) -> bool {
     expr.chars()
@@ -466,8 +467,15 @@ fn execute_brute_search_only(
     let effective_context = req.context_lines.unwrap_or(default_context);
 
     let header_reserve = 384usize;
-    let footer_reserve = 128usize;
-    let body_budget = output_limit.saturating_sub(header_reserve + footer_reserve);
+    let footer_reserve = 192usize;
+    // Keep brute-search output compact by default (~24KB max unless caller explicitly
+    // asks for large limit/context) so truncated broad scans never flood LLM context.
+    let effective_limit = if req.max_hits <= 48 && req.context_lines.unwrap_or(0) <= 4 {
+        output_limit.min(24_576)
+    } else {
+        output_limit
+    };
+    let body_budget = effective_limit.saturating_sub(header_reserve + footer_reserve);
     let mut body_bytes = 0usize;
     let rendered_blocks: Vec<String> = filtered_hits
         .iter()
@@ -507,7 +515,12 @@ fn execute_brute_search_only(
             req.exclude_tests, req.exclude_path_prefixes
         );
     }
-    if truncated && let Some(top_dirs) = summarize_brute_hit_dirs(&filtered_hits) {
+    let top_dirs_opt = if truncated {
+        summarize_brute_hit_dirs(&filtered_hits)
+    } else {
+        None
+    };
+    if let Some(top_dirs) = top_dirs_opt.as_deref() {
         let _ = writeln!(out, "top_dirs: {top_dirs}");
     }
     if !repairs.is_empty() {
@@ -527,28 +540,50 @@ fn execute_brute_search_only(
         out.push_str(&block);
     }
     if returned_hits < total_hits {
-        let _ = writeln!(
-            out,
-            "  ... (+{} omitted; next_query: narrow path-prefix: to one crate from top_dirs, add exclude-tests?: #t, or use `structural_query` (find-impact ...) / (find-symbols ...))",
-            total_hits - returned_hits
-        );
+        let scoped_suggestion = top_dirs_opt
+            .as_deref()
+            .and_then(|dirs| dirs.split('(').next())
+            .map(str::trim)
+            .filter(|dir| !dir.is_empty())
+            .map(|top_dir| {
+                format!(
+                    "(brute-search \"{effective_pattern}\" path-prefix: \"{top_dir}/\" exclude-tests?: #t limit: 24)"
+                )
+            });
+        match scoped_suggestion {
+            Some(next_q) => {
+                let _ = writeln!(
+                    out,
+                    "  ... (+{} omitted; next_query: {next_q} or use `structural_query` (find-impact ...) / (find-symbols name-all: (...)))",
+                    total_hits - returned_hits
+                );
+            }
+            None => {
+                let _ = writeln!(
+                    out,
+                    "  ... (+{} omitted; next_query: narrow path-prefix: to one crate from top_dirs, add exclude-tests?: #t, or use `structural_query` (find-impact ...) / (find-symbols ...))",
+                    total_hits - returned_hits
+                );
+            }
+        }
     }
     Ok(out)
 }
 
-/// Execute any L0 pure-Rust RAM fast-path query (`brute-search`, `file-outline`,
-/// or `read-file`) directly against `index` (zero Gerbil VM lock).
+/// Execute any L0 pure-Rust RAM fast-path query (`workspace-map`, `brute-search`,
+/// `file-outline`, or `read-file`) directly against `index` (zero Gerbil VM lock).
 pub(crate) fn execute_l0_search(
     index: &WorkspaceSearchIndex,
     raw_query: &str,
     output_limit: usize,
 ) -> Result<String, String> {
     match classify_l0_form(raw_query) {
+        Some(L0FormKind::WorkspaceMap) => execute_workspace_map(index, raw_query, output_limit),
         Some(L0FormKind::BruteSearch) => execute_brute_search_only(index, raw_query, output_limit),
         Some(L0FormKind::FileOutline) => execute_file_outline(index, raw_query, output_limit),
         Some(L0FormKind::ReadFile) => execute_read_file(index, raw_query, output_limit),
         None => Err(
-            "expected an L0 form: (brute-search ...), (file-outline ...), or (read-file ...)"
+            "expected an L0 form: (workspace-map ...), (brute-search ...), (file-outline ...), or (read-file ...)"
                 .to_owned(),
         ),
     }

@@ -22,8 +22,9 @@ use marlin_agent_runtime::{
     ModelToolDeclaration, ModelToolOutcome, RuntimeContext, RuntimeFuture, ToolRuntime,
 };
 use marlin_agent_search_engine::{
-    SearchDslRunner, WorkspaceIndexConfig, WorkspaceSearchIndex, default_workspace_edb_cache_path,
-    default_workspace_snapshot_path, hydrate_workspace_open_edb_org_and_cache,
+    AspForwardingEndpoint, AspScopedHydrationRequest, SearchDslRunner, WorkspaceIndexConfig,
+    WorkspaceSearchIndex, default_workspace_edb_cache_path, default_workspace_snapshot_path,
+    hydrate_workspace_open_edb_org_and_cache, hydrate_workspace_scoped_via_asp_http,
     open_or_build_workspace_index_safe, save_workspace_snapshot_atomic,
 };
 
@@ -70,6 +71,7 @@ pub struct SharedSearchIndexSlot {
     open_lock: Arc<Mutex<()>>,
     dsl_runner: Arc<RwLock<Option<SearchDslRunner>>>,
     async_dsl_runner: Arc<RwLock<Option<AsyncSearchDslRunner>>>,
+    asp_endpoint: Arc<RwLock<Option<AspForwardingEndpoint>>>,
     sync_coordinator: Arc<DebouncedSyncCoordinator>,
     query_cache: Arc<SingleFlightQueryCache>,
     counters: Arc<SchedulerCounters>,
@@ -82,6 +84,7 @@ impl Default for SharedSearchIndexSlot {
             open_lock: Arc::new(Mutex::new(())),
             dsl_runner: Arc::new(RwLock::new(None)),
             async_dsl_runner: Arc::new(RwLock::new(None)),
+            asp_endpoint: Arc::new(RwLock::new(None)),
             sync_coordinator: Arc::new(DebouncedSyncCoordinator::new(DEFAULT_SYNC_DEBOUNCE)),
             query_cache: Arc::new(SingleFlightQueryCache::new(DEFAULT_QUERY_CACHE_CAPACITY)),
             counters: Arc::new(SchedulerCounters::default()),
@@ -120,6 +123,7 @@ impl SharedSearchIndexSlot {
             open_lock: Arc::new(Mutex::new(())),
             dsl_runner: Arc::new(RwLock::new(None)),
             async_dsl_runner: Arc::new(RwLock::new(None)),
+            asp_endpoint: Arc::new(RwLock::new(None)),
             sync_coordinator: Arc::new(DebouncedSyncCoordinator::new(debounce)),
             query_cache: Arc::new(SingleFlightQueryCache::new(DEFAULT_QUERY_CACHE_CAPACITY)),
             counters: Arc::new(SchedulerCounters::default()),
@@ -158,6 +162,25 @@ impl SharedSearchIndexSlot {
         if let Ok(mut guard) = self.async_dsl_runner.write() {
             *guard = Some(runner);
         }
+    }
+
+    /// Attach an ASP HTTP forwarding gateway endpoint for on-demand scoped AST
+    /// hydration when L1/L2 structural queries target partially hydrated crates.
+    pub fn attach_asp_endpoint(&self, endpoint: AspForwardingEndpoint) {
+        if let Ok(mut guard) = self.asp_endpoint.write() {
+            *guard = Some(endpoint);
+        }
+    }
+
+    /// Resolve the active ASP forwarding endpoint (explicitly attached or from env).
+    #[must_use]
+    pub fn asp_endpoint(&self) -> Option<AspForwardingEndpoint> {
+        if let Ok(guard) = self.asp_endpoint.read()
+            && let Some(existing) = guard.as_ref()
+        {
+            return Some(existing.clone());
+        }
+        AspForwardingEndpoint::from_env()
     }
 
     /// Snapshot scheduler concurrency, cache, and single-flight telemetry.
@@ -382,6 +405,52 @@ impl ToolRuntime for ResidentSearchToolHandler {
     }
 }
 
+fn extract_query_path_prefix(raw_query: &str) -> Option<String> {
+    for kw in ["path-prefix:", "scope:", "prefix:"] {
+        if let Some(pos) = raw_query.find(kw) {
+            let rest = raw_query[pos + kw.len()..].trim_start();
+            if let Some(after_quote) = rest.strip_prefix('"')
+                && let Some(end_quote) = after_quote.find('"')
+            {
+                let prefix = after_quote[..end_quote].trim();
+                if !prefix.is_empty() {
+                    return Some(prefix.to_owned());
+                }
+            }
+        }
+    }
+    None
+}
+
+async fn maybe_hydrate_scoped_asp(
+    context: &RuntimeContext,
+    slot: &SharedSearchIndexSlot,
+    workspace: &Path,
+    shared: &SharedWorkspaceSearchIndex,
+    trimmed: &str,
+) {
+    let Some(endpoint) = slot.asp_endpoint() else {
+        return;
+    };
+    let Some(prefix) = extract_query_path_prefix(trimmed) else {
+        return;
+    };
+    let shared_clone = Arc::clone(shared);
+    let cache_path = default_workspace_edb_cache_path(workspace);
+    let _ = context
+        .spawn_blocking(move || {
+            let req = AspScopedHydrationRequest {
+                endpoint: &endpoint,
+                cache_path: &cache_path,
+                path_prefix: &prefix,
+                max_files: 64,
+            };
+            let _ = hydrate_workspace_scoped_via_asp_http(&req, &shared_clone);
+        })
+        .join()
+        .await;
+}
+
 async fn execute_resident_search_tool_async(
     context: RuntimeContext,
     workspace: PathBuf,
@@ -394,7 +463,7 @@ async fn execute_resident_search_tool_async(
     let trimmed = raw_query.trim().to_owned();
     if trimmed.is_empty() {
         return Err(format!(
-            "{tool_name} requires a non-empty S-expression query: (brute-search ...), (file-outline ...), (read-file ...), (ascent-fragment ...), or (search-choice-program ...)"
+            "{tool_name} requires a non-empty S-expression query: (workspace-map ...), (brute-search ...), (file-outline ...), (read-file ...), (ascent-fragment ...), or (search-choice-program ...)"
         ));
     }
 
@@ -408,6 +477,10 @@ async fn execute_resident_search_tool_async(
         .join()
         .await
         .map_err(|err| format!("resident search index open failed: {err}"))?;
+
+    if tier != SearchQueryTier::BruteForce {
+        maybe_hydrate_scoped_asp(&context, &slot, &workspace, &shared, &trimmed).await;
+    }
 
     let generation = shared
         .read()

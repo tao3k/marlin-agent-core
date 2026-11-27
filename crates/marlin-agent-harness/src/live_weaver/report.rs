@@ -57,6 +57,9 @@ pub fn classify_tool_call(tool_name: &str, argument: &str) -> QueryTierKind {
     };
     let head = body.strip_prefix('(').map(str::trim_start).unwrap_or(body);
     if head.starts_with("brute-search")
+        || head.starts_with("workspace-map")
+        || head.starts_with("dir-map")
+        || head.starts_with("repo-map")
         || head.starts_with("file-outline")
         || head.starts_with("outline")
         || head.starts_with("read-file")
@@ -75,6 +78,7 @@ pub fn classify_tool_call(tool_name: &str, argument: &str) -> QueryTierKind {
         || head.starts_with("find-callers")
         || head.starts_with("find-impls")
         || head.starts_with("find-symbols")
+        || head.starts_with("trace-path")
         || head.starts_with('(')
         || tool_name == "structural_query"
     {
@@ -110,6 +114,8 @@ pub fn parse_search_receipt(output: &str) -> ParsedSearchReceipt {
             parsed.total_count = v.trim().parse::<usize>().ok();
         } else if let Some(v) = line.strip_prefix("hits:") {
             parsed.total_count = v.trim().parse::<usize>().ok();
+        } else if let Some(v) = line.strip_prefix("dirs:") {
+            parsed.total_count = parsed.total_count.or_else(|| v.trim().parse::<usize>().ok());
         } else if let Some(v) = line.strip_prefix("worlds:") {
             parsed.total_count = v
                 .split_whitespace()

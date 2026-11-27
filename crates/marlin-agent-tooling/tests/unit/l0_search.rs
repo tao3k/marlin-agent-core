@@ -349,4 +349,51 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
         zero_kind.contains("parsed_kinds:") && zero_kind.contains("next_query: (file-outline \"crates/core/src/engine.rs\""),
         "expected parsed_kinds histogram and actionable next_query on 0-hit kind filter: {zero_kind}"
     );
+
+    // 14. `(workspace-map ...)` produces a compact Turn-1 crate/directory bird's-eye topology summary.
+    let ModelToolOutcome::Completed(ws_map) = run(
+        "c13",
+        "(workspace-map \"\" depth: 2 exclude-tests?: #t limit: 16)",
+    )
+    .await
+    else {
+        panic!("expected Completed for workspace-map");
+    };
+    assert!(
+        ws_map.contains("mode: workspace-map")
+            && ws_map.contains("crates/core/")
+            && ws_map.contains("next_query:"),
+        "expected compact workspace-map bird's-eye view: {ws_map}"
+    );
+
+    // 15. `(file-outline ... projection: "callable-skeleton")` emits Lstart..Lend spans + folded signatures.
+    let ModelToolOutcome::Completed(skeleton) = run(
+        "c14",
+        "(file-outline \"crates/core/src/engine.rs\" projection: \"callable-skeleton\")",
+    )
+    .await
+    else {
+        panic!("expected Completed for callable-skeleton outline");
+    };
+    assert!(
+        skeleton.contains("SearchEngine :: pub struct SearchEngine")
+            && skeleton.contains("run_engine :: pub fn run_engine"),
+        "expected callable-skeleton folded signatures: {skeleton}"
+    );
+
+    // 16. Multi-symbol `(read-file ... symbols: ("SearchEngine" "run_engine"))` fetches both in one RAM call.
+    let ModelToolOutcome::Completed(multi_sym) = run(
+        "c15",
+        "(read-file \"crates/core/src/engine.rs\" symbols: (\"SearchEngine\" \"run_engine\") context: 16)",
+    )
+    .await
+    else {
+        panic!("expected Completed for multi-symbol read-file");
+    };
+    assert!(
+        multi_sym.contains("resolved_symbols: 2/2")
+            && multi_sym.contains("=== symbol: SearchEngine @")
+            && multi_sym.contains("=== symbol: run_engine @"),
+        "expected both symbols fetched in one multi-symbol read-file call: {multi_sym}"
+    );
 }

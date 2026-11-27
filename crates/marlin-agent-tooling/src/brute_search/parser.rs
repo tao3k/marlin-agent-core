@@ -40,6 +40,18 @@ pub(crate) struct FileOutlineRequest {
     pub(crate) exclude_tests: bool,
     pub(crate) max_symbols: usize,
     pub(crate) max_per_file: Option<usize>,
+    pub(crate) skeleton: bool,
+    pub(crate) wrapped_bare_form: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct WorkspaceMapRequest {
+    pub(crate) path_prefix: Option<String>,
+    pub(crate) languages: Vec<String>,
+    pub(crate) exclude_path_prefixes: Vec<String>,
+    pub(crate) exclude_tests: bool,
+    pub(crate) depth: usize,
+    pub(crate) max_dirs: usize,
     pub(crate) wrapped_bare_form: bool,
 }
 
@@ -48,7 +60,7 @@ pub(crate) struct ReadFileRequest {
     pub(crate) path: String,
     pub(crate) start_line: usize,
     pub(crate) end_line: usize,
-    pub(crate) symbol: Option<String>,
+    pub(crate) symbols: Vec<String>,
     pub(crate) symbol_context: usize,
     pub(crate) wrapped_bare_form: bool,
 }
@@ -58,6 +70,7 @@ pub(crate) enum L0FormKind {
     BruteSearch,
     FileOutline,
     ReadFile,
+    WorkspaceMap,
 }
 
 pub(crate) fn classify_l0_form(raw_query: &str) -> Option<L0FormKind> {
@@ -80,6 +93,8 @@ pub(crate) fn classify_l0_form(raw_query: &str) -> Option<L0FormKind> {
         Some(L0FormKind::FileOutline)
     } else if matches_head("read-file-range") || matches_head("read-file") {
         Some(L0FormKind::ReadFile)
+    } else if matches_head("workspace-map") || matches_head("dir-map") || matches_head("repo-map") {
+        Some(L0FormKind::WorkspaceMap)
     } else {
         None
     }
@@ -410,6 +425,7 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
         exclude_tests: false,
         max_symbols: DEFAULT_OUTLINE_MAX_SYMBOLS,
         max_per_file: None,
+        skeleton: false,
         wrapped_bare_form,
     };
     let mut idx = 1usize;
@@ -480,9 +496,27 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
                     req.exclude_tests = parse_bool_atom(val)?;
                     idx += 2;
                 }
+                "projection" | "view" => {
+                    let Some(SexpAtom::Text(val)) = atoms.get(idx + 1) else {
+                        return Err(format!("missing value for `{kw}:` in (file-outline ...)"));
+                    };
+                    let lc = val.trim().to_ascii_lowercase();
+                    req.skeleton = matches!(
+                        lc.as_str(),
+                        "callable-skeleton" | "skeleton" | "signatures" | "signature"
+                    );
+                    idx += 2;
+                }
+                "skeleton?" | "skeleton" => {
+                    let Some(SexpAtom::Text(val)) = atoms.get(idx + 1) else {
+                        return Err(format!("missing value for `{kw}:` in (file-outline ...)"));
+                    };
+                    req.skeleton = parse_bool_atom(val)?;
+                    idx += 2;
+                }
                 other => {
                     return Err(format!(
-                        "unknown keyword `{other}:` in (file-outline ...); allowed: path-prefix:, exclude-tests?:, exclude-path-prefix:, lang:, kind:, limit:, max-per-file:"
+                        "unknown keyword `{other}:` in (file-outline ...); allowed: path-prefix:, exclude-tests?:, exclude-path-prefix:, lang:, kind:, projection:, skeleton?:, limit:, max-per-file:"
                     ));
                 }
             },
@@ -504,6 +538,89 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
     Ok(req)
 }
 
+pub(crate) fn parse_workspace_map_form(raw_query: &str) -> Result<WorkspaceMapRequest, String> {
+    let (atoms, wrapped_bare_form) = tokenize_l0_form(raw_query)?;
+    let mut req = WorkspaceMapRequest {
+        path_prefix: None,
+        languages: Vec::new(),
+        exclude_path_prefixes: Vec::new(),
+        exclude_tests: true,
+        depth: 2,
+        max_dirs: 32,
+        wrapped_bare_form,
+    };
+    let mut idx = 1usize;
+    while idx < atoms.len() {
+        match &atoms[idx] {
+            SexpAtom::Keyword(kw) => match kw.as_str() {
+                "lang" | "language" => {
+                    let (vals, next) = consume_string_or_list(&atoms, idx, kw)?;
+                    let concrete: Vec<String> = vals
+                        .into_iter()
+                        .filter(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "any" | "all" | "*"))
+                        .collect();
+                    push_unique_nonempty(&mut req.languages, concrete);
+                    idx = next;
+                }
+                "exclude-path-prefix" | "exclude-prefix" | "exclude" | "not-path" => {
+                    let (vals, next) = consume_string_or_list(&atoms, idx, kw)?;
+                    push_unique_nonempty(&mut req.exclude_path_prefixes, vals);
+                    idx = next;
+                }
+                "path-prefix" | "prefix" | "scope" | "path" => {
+                    let Some(SexpAtom::Text(val)) = atoms.get(idx + 1) else {
+                        return Err(format!("missing value for `{kw}:` in (workspace-map ...)"));
+                    };
+                    if !val.is_empty() {
+                        req.path_prefix = Some(val.clone());
+                    }
+                    idx += 2;
+                }
+                "depth" => {
+                    let Some(SexpAtom::Text(val)) = atoms.get(idx + 1) else {
+                        return Err("missing value for `depth:` in (workspace-map ...)".to_owned());
+                    };
+                    let parsed = val
+                        .parse::<usize>()
+                        .map_err(|_| format!("invalid integer `{val}` for `depth:`"))?;
+                    req.depth = parsed.clamp(1, 4);
+                    idx += 2;
+                }
+                "limit" | "max-dirs" => {
+                    let Some(SexpAtom::Text(val)) = atoms.get(idx + 1) else {
+                        return Err(format!("missing value for `{kw}:` in (workspace-map ...)"));
+                    };
+                    let parsed = val
+                        .parse::<usize>()
+                        .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
+                    req.max_dirs = parsed.clamp(1, 128);
+                    idx += 2;
+                }
+                "exclude-tests?" | "exclude-tests" | "prod-only?" | "prod-only" => {
+                    let Some(SexpAtom::Text(val)) = atoms.get(idx + 1) else {
+                        return Err(format!("missing value for `{kw}:` in (workspace-map ...)"));
+                    };
+                    req.exclude_tests = parse_bool_atom(val)?;
+                    idx += 2;
+                }
+                other => {
+                    return Err(format!(
+                        "unknown keyword `{other}:` in (workspace-map ...); allowed: path-prefix:, lang:, exclude-tests?:, exclude-path-prefix:, depth:, limit:"
+                    ));
+                }
+            },
+            SexpAtom::Text(text) => {
+                if req.path_prefix.is_none() && !text.is_empty() {
+                    req.path_prefix = Some(text.clone());
+                }
+                idx += 1;
+            }
+            SexpAtom::ListStart | SexpAtom::ListEnd => idx += 1,
+        }
+    }
+    Ok(req)
+}
+
 pub(crate) fn parse_read_file_form(raw_query: &str) -> Result<ReadFileRequest, String> {
     let (atoms, wrapped_bare_form) = tokenize_l0_form(raw_query)?;
     let mut path = String::new();
@@ -512,59 +629,61 @@ pub(crate) fn parse_read_file_form(raw_query: &str) -> Result<ReadFileRequest, S
     let mut line_count: Option<usize> = None;
     let mut around_line: Option<usize> = None;
     let mut around_context: Option<usize> = None;
-    let mut symbol_name: Option<String> = None;
+    let mut symbols: Vec<String> = Vec::new();
     let mut idx = 1usize;
     while idx < atoms.len() {
         match &atoms[idx] {
-            SexpAtom::Keyword(kw) => {
-                let Some(SexpAtom::Text(val)) = atoms.get(idx + 1) else {
-                    return Err(format!("missing value for `{kw}:` in (read-file ...)"));
-                };
-                match kw.as_str() {
-                    "path" | "file" => path = val.clone(),
-                    "symbol" | "sym" | "def" => {
-                        if !val.is_empty() {
-                            symbol_name = Some(val.clone());
+            SexpAtom::Keyword(kw) => match kw.as_str() {
+                "symbol" | "symbols" | "sym" | "def" => {
+                    let (vals, next) = consume_string_or_list(&atoms, idx, kw)?;
+                    push_unique_nonempty(&mut symbols, vals);
+                    idx = next;
+                }
+                _ => {
+                    let Some(SexpAtom::Text(val)) = atoms.get(idx + 1) else {
+                        return Err(format!("missing value for `{kw}:` in (read-file ...)"));
+                    };
+                    match kw.as_str() {
+                        "path" | "file" => path = val.clone(),
+                        "start" | "start-line" | "from" | "line" => {
+                            let parsed = val
+                                .parse::<usize>()
+                                .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
+                            start_line = Some(parsed.max(1));
+                        }
+                        "end" | "end-line" | "to" => {
+                            let parsed = val
+                                .parse::<usize>()
+                                .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
+                            end_line = Some(parsed.max(1));
+                        }
+                        "around" | "around-line" | "focus" => {
+                            let parsed = val
+                                .parse::<usize>()
+                                .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
+                            around_line = Some(parsed.max(1));
+                        }
+                        "context" | "ctx" | "radius" => {
+                            let parsed = val
+                                .parse::<usize>()
+                                .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
+                            around_context = Some(parsed.min(MAX_READ_LINES / 2));
+                        }
+                        "lines" | "limit" | "count" => {
+                            let parsed = val
+                                .parse::<usize>()
+                                .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
+                            line_count = Some(parsed.clamp(1, MAX_READ_LINES));
+                        }
+                        other => {
+                            return Err(format!(
+                                "unknown keyword `{other}:` in (read-file ...); allowed: path:, symbol:, symbols:, start:, end:, around:, context:, lines:"
+                            ));
                         }
                     }
-                    "start" | "start-line" | "from" | "line" => {
-                        let parsed = val
-                            .parse::<usize>()
-                            .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
-                        start_line = Some(parsed.max(1));
-                    }
-                    "end" | "end-line" | "to" => {
-                        let parsed = val
-                            .parse::<usize>()
-                            .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
-                        end_line = Some(parsed.max(1));
-                    }
-                    "around" | "around-line" | "focus" => {
-                        let parsed = val
-                            .parse::<usize>()
-                            .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
-                        around_line = Some(parsed.max(1));
-                    }
-                    "context" | "ctx" | "radius" => {
-                        let parsed = val
-                            .parse::<usize>()
-                            .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
-                        around_context = Some(parsed.min(MAX_READ_LINES / 2));
-                    }
-                    "lines" | "limit" | "count" => {
-                        let parsed = val
-                            .parse::<usize>()
-                            .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
-                        line_count = Some(parsed.clamp(1, MAX_READ_LINES));
-                    }
-                    other => {
-                        return Err(format!(
-                            "unknown keyword `{other}:` in (read-file ...); allowed: path:, symbol:, start:, end:, around:, context:, lines:"
-                        ));
-                    }
+                    idx += 2;
                 }
-                idx += 2;
-            }
+            },
             SexpAtom::Text(text) => {
                 if path.is_empty() {
                     path = text.clone();
@@ -608,7 +727,7 @@ pub(crate) fn parse_read_file_form(raw_query: &str) -> Result<ReadFileRequest, S
         path: path.replace('\\', "/"),
         start_line: start,
         end_line: requested_end.min(max_end),
-        symbol: symbol_name,
+        symbols,
         symbol_context: around_context.unwrap_or(30),
         wrapped_bare_form,
     })

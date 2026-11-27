@@ -36,9 +36,9 @@ pub use schema_completions::{
     project_provider_catalog_completions, project_provider_envelope_completions,
 };
 pub use sync::{
-    AspChunkedHydrationRequest, hydrate_workspace_chunked_via_asp_http,
-    hydrate_workspace_pending_via_asp_http, register_linked_dynamic_language_descriptor,
-    sync_linked_asp_provider_descriptors,
+    AspChunkedHydrationRequest, AspScopedHydrationRequest, hydrate_workspace_chunked_via_asp_http,
+    hydrate_workspace_pending_via_asp_http, hydrate_workspace_scoped_via_asp_http,
+    register_linked_dynamic_language_descriptor, sync_linked_asp_provider_descriptors,
 };
 #[cfg(not(feature = "linked-ui"))]
 pub use sync::{

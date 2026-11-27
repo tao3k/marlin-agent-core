@@ -16,6 +16,7 @@
 //! - Full OTel-compatible `TraceRecorder` telemetry, causal `TrajectoryEvent` DAG,
 //!   Bi-Temporal Causality proof digest, `AgentHarnessEvidenceGraph`, and Markdown reports.
 
+mod artifacts;
 pub mod config;
 pub mod governance;
 pub mod report;

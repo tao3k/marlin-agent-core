@@ -34,12 +34,12 @@
 (def +max-trim-parens-repair+ 4)
 
 (def +high-level-l1-heads+
-  '(find-collisions find-callers find-impls find-symbols find-impact))
+  '(find-collisions find-callers find-impls find-symbols find-impact trace-path))
 (def +high-level-l2-heads+
   '(solve-placement solve-resolve))
 (def +admitted-top-heads+
   '(ascent ascent-fragment relational-choice-program search-choice-program search-selector
-    find-collisions find-callers find-impls find-symbols find-impact solve-placement solve-resolve))
+    find-collisions find-callers find-impls find-symbols find-impact trace-path solve-placement solve-resolve))
 
 (def +closed-column-predicates+ '(symbol? integer? exact-integer? boolean? string?))
 (def +numeric-guard-ops+ '(< <= > >= = + - * /))

@@ -66,6 +66,183 @@ fn suggest_nearby_paths(index: &WorkspaceSearchIndex, query_path: &str) -> Vec<S
     probe.hits.into_iter().map(|h| h.path).collect()
 }
 
+#[derive(Default)]
+struct DelimScanState {
+    brace_depth: i32,
+    paren_depth: i32,
+    saw_delim: bool,
+}
+
+fn scan_line_delimiters(line: &str, state: &mut DelimScanState) {
+    let mut in_str = false;
+    let mut esc = false;
+    for ch in line.chars() {
+        if esc {
+            esc = false;
+            continue;
+        }
+        if ch == '\\' && in_str {
+            esc = true;
+            continue;
+        }
+        if ch == '"' {
+            in_str = !in_str;
+            continue;
+        }
+        if in_str {
+            continue;
+        }
+        match ch {
+            '{' => {
+                state.brace_depth += 1;
+                state.saw_delim = true;
+            }
+            '}' => state.brace_depth -= 1,
+            '(' => {
+                state.paren_depth += 1;
+                if state.brace_depth == 0 && line.starts_with('(') {
+                    state.saw_delim = true;
+                }
+            }
+            ')' => state.paren_depth -= 1,
+            _ => {}
+        }
+    }
+}
+
+fn format_skeleton_signature(
+    index: &WorkspaceSearchIndex,
+    path: &str,
+    line: usize,
+) -> (Option<usize>, Option<String>) {
+    let window = index.live_file_context(path, line.saturating_add(40), 42);
+    if window.is_empty() {
+        return (None, None);
+    }
+    let mut sig = String::new();
+    let mut sig_lines = 0usize;
+    let mut delim = DelimScanState::default();
+    let mut end_line: Option<usize> = None;
+
+    for row in window.iter().filter(|r| r.line_number >= line) {
+        let trimmed = row.text.trim();
+        if sig_lines < 3 && sig.len() < 140 {
+            if !sig.is_empty() {
+                sig.push(' ');
+            }
+            sig.push_str(trimmed);
+            sig_lines += 1;
+            if trimmed.contains('{') || trimmed.ends_with(';') || trimmed.ends_with(':') {
+                sig_lines = 3;
+            }
+        }
+        scan_line_delimiters(trimmed, &mut delim);
+        if (delim.saw_delim && delim.brace_depth <= 0 && delim.paren_depth <= 0)
+            || (!delim.saw_delim && trimmed.ends_with(';'))
+        {
+            end_line = Some(row.line_number);
+            break;
+        }
+    }
+    let clean_sig = (!sig.is_empty()).then(|| {
+        let collapsed = sig.split_whitespace().collect::<Vec<_>>().join(" ");
+        if collapsed.len() > 140 {
+            format!("{}…", &collapsed[..collapsed.floor_char_boundary(139)])
+        } else {
+            collapsed
+        }
+    });
+    (end_line, clean_sig)
+}
+
+fn format_outline_symbol_row(
+    index: &WorkspaceSearchIndex,
+    path: &str,
+    line: usize,
+    kind: &str,
+    name: &str,
+    use_skeleton: bool,
+) -> String {
+    if !use_skeleton {
+        return format!("      L{line:<4} [{kind}] {name}\n");
+    }
+    let (end_line, sig) = format_skeleton_signature(index, path, line);
+    let span_label = match end_line {
+        Some(end) if end > line => format!("L{line}..L{end}"),
+        _ => format!("L{line}"),
+    };
+    match sig {
+        Some(s) => format!("      {span_label:<10} [{kind}] {name} :: {s}\n"),
+        None => format!("      {span_label:<10} [{kind}] {name}\n"),
+    }
+}
+
+struct OutlineRenderConfig {
+    max_symbols: usize,
+    per_file_cap: Option<usize>,
+    use_skeleton: bool,
+    body_budget: usize,
+}
+
+fn append_outline_file_block(
+    index: &WorkspaceSearchIndex,
+    path: &str,
+    mut entry: OutlineFileEntry<'_>,
+    cfg: &OutlineRenderConfig,
+    emitted_symbols: &mut usize,
+    body: &mut String,
+) -> bool {
+    let lang = entry.language;
+    entry
+        .symbols
+        .sort_unstable_by_key(|(line, _, name)| (*line, *name));
+    entry
+        .symbols
+        .dedup_by(|a, b| a.0 == b.0 && a.1 == b.1 && a.2 == b.2);
+    let file_total = entry.symbols.len();
+    let file_hdr = format!("  - @{path}  [{lang} · {file_total} symbol(s)]\n");
+    if body.len() + file_hdr.len() > cfg.body_budget {
+        return true;
+    }
+    body.push_str(&file_hdr);
+    let remaining_global = cfg.max_symbols.saturating_sub(*emitted_symbols);
+    let allowed = cfg
+        .per_file_cap
+        .map_or(remaining_global, |cap| cap.min(remaining_global));
+    let mut cur_len = body.len();
+    let mut budget_hit = false;
+    let rows: Vec<String> = entry
+        .symbols
+        .into_iter()
+        .take(allowed)
+        .map(|(line, kind, name)| {
+            format_outline_symbol_row(index, path, line, kind, name, cfg.use_skeleton)
+        })
+        .take_while(|row| {
+            if cur_len + row.len() <= cfg.body_budget {
+                cur_len += row.len();
+                true
+            } else {
+                budget_hit = true;
+                false
+            }
+        })
+        .collect();
+    let emitted_in_file = rows.len();
+    rows.iter().for_each(|row| body.push_str(row));
+    *emitted_symbols += emitted_in_file;
+    if emitted_in_file < file_total {
+        let note = format!(
+            "      ... (+{} more in {path}; call (file-outline \"{path}\") for full file)\n",
+            file_total - emitted_in_file
+        );
+        if body.len() + note.len() <= cfg.body_budget {
+            body.push_str(&note);
+        }
+    }
+    budget_hit || *emitted_symbols >= cfg.max_symbols
+}
+
 pub(super) fn execute_file_outline(
     index: &WorkspaceSearchIndex,
     raw_query: &str,
@@ -79,7 +256,7 @@ pub(super) fn execute_file_outline(
         extension: None,
         required_tokens: &[],
         max_files: 256,
-        max_facts: 32_768,
+        max_facts: 131_072,
     };
     let snapshot = index.project_prefiltered_edb(&prefilter);
 
@@ -204,57 +381,32 @@ pub(super) fn execute_file_outline(
         (total_files > 1 && total_symbols > req.max_symbols)
             .then(|| (req.max_symbols / total_files).max(6))
     });
-    let body_budget = output_limit.saturating_sub(out.len() + 220);
+    let render_cfg = OutlineRenderConfig {
+        max_symbols: req.max_symbols,
+        per_file_cap,
+        use_skeleton: req.skeleton || total_files == 1,
+        body_budget: output_limit.saturating_sub(out.len() + 220),
+    };
     let mut emitted_symbols = 0usize;
     let mut body = String::new();
     let mut omitted_dirs: BTreeSet<String> = BTreeSet::new();
     let mut stopped = false;
-    for (path, mut entry) in by_file {
+    for (path, entry) in by_file {
         if stopped {
             omitted_dirs.insert(top_two_segments(path));
             continue;
         }
-        let lang = entry.language;
-        entry
-            .symbols
-            .sort_unstable_by_key(|(line, _, name)| (*line, *name));
-        entry
-            .symbols
-            .dedup_by(|a, b| a.0 == b.0 && a.1 == b.1 && a.2 == b.2);
-        let file_total = entry.symbols.len();
-        let file_hdr = format!("  - @{path}  [{lang} · {file_total} symbol(s)]\n");
-        if body.len() + file_hdr.len() > body_budget {
-            omitted_dirs.insert(top_two_segments(path));
-            stopped = true;
-            continue;
-        }
-        body.push_str(&file_hdr);
-        let mut emitted_in_file = 0usize;
-        for (line, kind, name) in entry.symbols {
-            if emitted_symbols >= req.max_symbols
-                || per_file_cap.is_some_and(|cap| emitted_in_file >= cap)
-            {
-                break;
+        if append_outline_file_block(
+            index,
+            path,
+            entry,
+            &render_cfg,
+            &mut emitted_symbols,
+            &mut body,
+        ) {
+            if emitted_symbols == 0 || body.len() >= render_cfg.body_budget {
+                omitted_dirs.insert(top_two_segments(path));
             }
-            let row = format!("      L{line:<4} [{kind}] {name}\n");
-            if body.len() + row.len() > body_budget {
-                stopped = true;
-                break;
-            }
-            body.push_str(&row);
-            emitted_symbols += 1;
-            emitted_in_file += 1;
-        }
-        if emitted_in_file < file_total {
-            let note = format!(
-                "      ... (+{} more in {path}; call (file-outline \"{path}\") for full file)\n",
-                file_total - emitted_in_file
-            );
-            if body.len() + note.len() <= body_budget {
-                body.push_str(&note);
-            }
-        }
-        if emitted_symbols >= req.max_symbols {
             stopped = true;
         }
     }
@@ -351,13 +503,145 @@ fn resolve_symbol_anchor_in_file(
     Err(file_symbols)
 }
 
+struct SymbolSliceBudget {
+    symbol_context: usize,
+    body_budget: usize,
+}
+
+fn append_symbol_slice(
+    index: &WorkspaceSearchIndex,
+    path: &str,
+    sym: &str,
+    anchor_line: usize,
+    budget: &SymbolSliceBudget,
+    body: &mut String,
+    total_lines: &mut usize,
+) -> bool {
+    let before = (budget.symbol_context / 4).max(3);
+    let after = budget.symbol_context.clamp(16, 80);
+    let start = anchor_line.saturating_sub(before).max(1);
+    let end = anchor_line.saturating_add(after);
+    let span = end.saturating_sub(start);
+    let slice: Vec<_> = index
+        .live_file_context(path, start.saturating_add(span / 2), (span / 2).saturating_add(1))
+        .into_iter()
+        .filter(|l| l.line_number >= start && l.line_number <= end)
+        .collect();
+    let actual_end = slice.last().map_or(start, |l| l.line_number);
+    let header = format!("=== symbol: {sym} @ L{anchor_line} (L{start}..=L{actual_end}) ===\n");
+    if body.len() + header.len() > budget.body_budget {
+        return true;
+    }
+    body.push_str(&header);
+    let mut cur_len = body.len();
+    let mut overflow = false;
+    let formatted: Vec<String> = slice
+        .iter()
+        .map(|line| format!("L{}: {}\n", line.line_number, line.text.trim_end()))
+        .take_while(|row| {
+            if cur_len + row.len() <= budget.body_budget {
+                cur_len += row.len();
+                true
+            } else {
+                overflow = true;
+                false
+            }
+        })
+        .collect();
+    *total_lines += formatted.len();
+    formatted.iter().for_each(|row| body.push_str(row));
+    overflow
+}
+
+fn execute_read_file_multi_symbols(
+    index: &WorkspaceSearchIndex,
+    req: &super::parser::ReadFileRequest,
+    output_limit: usize,
+) -> Result<String, String> {
+    if index.live_file_context(&req.path, 1, 0).is_empty() {
+        let suggestions = suggest_nearby_paths(index, &req.path);
+        let hint = if suggestions.is_empty() {
+            "list workspace structure with (workspace-map \"\" depth: 2)".to_owned()
+        } else {
+            format!("did you mean: {}", suggestions.join(", "))
+        };
+        return Err(format!(
+            "read-file: path `{}` not found in resident workspace index ({hint})",
+            req.path
+        ));
+    }
+
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "generation: {}\nindexed_files: {}\nmode: read-file (L0 pure-Rust zero-I/O RAM multi-symbol reader)\npath: {}\nsymbols_requested: {}",
+        index.generation_digest().as_str(),
+        index.file_count(),
+        req.path,
+        req.symbols.len(),
+    );
+    if req.wrapped_bare_form {
+        let _ = writeln!(out, "repairs: wrap-read-file-parens");
+    }
+
+    let slice_budget = SymbolSliceBudget {
+        symbol_context: req.symbol_context,
+        body_budget: output_limit.saturating_sub(out.len() + 192),
+    };
+    let mut body = String::new();
+    let mut total_lines = 0usize;
+    let mut resolved_count = 0usize;
+    let mut missing = Vec::new();
+    let mut truncated = false;
+
+    for sym in &req.symbols {
+        match resolve_symbol_anchor_in_file(index, &req.path, sym) {
+            Ok(anchor_line) => {
+                resolved_count += 1;
+                if append_symbol_slice(
+                    index,
+                    &req.path,
+                    sym,
+                    anchor_line,
+                    &slice_budget,
+                    &mut body,
+                    &mut total_lines,
+                ) {
+                    truncated = true;
+                    break;
+                }
+            }
+            Err(_) => missing.push(sym.as_str()),
+        }
+    }
+    let _ = writeln!(
+        out,
+        "hits: {total_lines}\nresolved_symbols: {resolved_count}/{}\nreturned: {total_lines}\ntruncated: {truncated}",
+        req.symbols.len()
+    );
+    if !missing.is_empty() {
+        let _ = writeln!(
+            out,
+            "missing_symbols: {} (inspect with (file-outline \"{}\" projection: \"callable-skeleton\"))",
+            missing.join(", "),
+            req.path
+        );
+    }
+    out.push_str(&body);
+    Ok(out)
+}
+
 pub(super) fn execute_read_file(
     index: &WorkspaceSearchIndex,
     raw_query: &str,
     output_limit: usize,
 ) -> Result<String, String> {
     let req = parse_read_file_form(raw_query)?;
-    let (eff_start, eff_end, symbol_anchor_line) = if let Some(sym) = req.symbol.as_deref() {
+    if req.symbols.len() > 1 {
+        return execute_read_file_multi_symbols(index, &req, output_limit);
+    }
+    let single_symbol = req.symbols.first().map(String::as_str);
+    let (eff_start, eff_end, symbol_anchor_line) = if let Some(sym) = single_symbol {
         match resolve_symbol_anchor_in_file(index, &req.path, sym) {
             Ok(anchor_line) => {
                 let before = (req.symbol_context / 3).max(5);
@@ -427,7 +711,7 @@ pub(super) fn execute_read_file(
         actual_end,
         slice.len(),
     );
-    if let (Some(sym), Some(anchor_line)) = (req.symbol.as_deref(), symbol_anchor_line) {
+    if let (Some(sym), Some(anchor_line)) = (single_symbol, symbol_anchor_line) {
         let _ = writeln!(out, "symbol_anchor: {sym} @ L{anchor_line}");
     }
     if has_more {

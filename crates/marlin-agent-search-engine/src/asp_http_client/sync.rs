@@ -656,11 +656,16 @@ fn collect_ranked_pending_files(
     Ok(pending)
 }
 
+struct ChunkHydrationTarget<'a> {
+    endpoint: &'a AspForwardingEndpoint,
+    cache_path: &'a Path,
+    aliases: &'a BTreeMap<String, String>,
+    schemas_by_lang: &'a BTreeMap<&'a str, &'a TargetedJsonSchemaDocument>,
+}
+
 fn hydrate_single_chunk(
-    request: &AspChunkedHydrationRequest<'_>,
+    target: &ChunkHydrationTarget<'_>,
     shared_index: &std::sync::RwLock<WorkspaceSearchIndex>,
-    aliases: &BTreeMap<String, String>,
-    schemas_by_lang: &BTreeMap<&str, &TargetedJsonSchemaDocument>,
     chunk: &[agent_semantic_search::WorkspaceOpenEdbPendingFile],
     persist_cache: bool,
     receipt: &mut AspHttpHydrationReceipt,
@@ -679,7 +684,7 @@ fn hydrate_single_chunk(
         return;
     };
     let Ok((200, resp_body)) = http_loopback_request(
-        request.endpoint,
+        target.endpoint,
         "POST",
         "/v1/open-edb/inspect-files",
         Some(&encoded),
@@ -699,7 +704,9 @@ fn hydrate_single_chunk(
     let normalized_batches: Vec<WorkspaceOpenEdbIngestBatch> = wire
         .batches
         .into_iter()
-        .map(|batch| normalize_and_validate_batch(batch, aliases, schemas_by_lang, receipt))
+        .map(|batch| {
+            normalize_and_validate_batch(batch, target.aliases, target.schemas_by_lang, receipt)
+        })
         .collect();
     if let Ok(mut guard) = shared_index.write() {
         for batch in normalized_batches {
@@ -707,7 +714,7 @@ fn hydrate_single_chunk(
             receipt.http_ingested_entities += ing.ingested_entities;
         }
         if persist_cache && receipt.http_ingested_entities > 0 {
-            receipt.cache_saved = guard.save_open_edb_cache(request.cache_path).is_ok();
+            receipt.cache_saved = guard.save_open_edb_cache(target.cache_path).is_ok();
         }
     }
 }
@@ -722,6 +729,12 @@ fn hydrate_pending_chunks(
     mut on_progress: impl FnMut(usize, usize),
 ) {
     let schemas_by_lang = targeted_schemas_by_language(catalog, aliases);
+    let target = ChunkHydrationTarget {
+        endpoint: request.endpoint,
+        cache_path: request.cache_path,
+        aliases,
+        schemas_by_lang: &schemas_by_lang,
+    };
     let step = request.policy.chunk_size().max(1);
     let total = pending.len();
     let mut processed = 0usize;
@@ -729,17 +742,63 @@ fn hydrate_pending_chunks(
         processed = processed.saturating_add(chunk.len());
         let remaining = total.saturating_sub(processed);
         let persist_cache = chunk_idx % 4 == 3 || remaining == 0;
-        hydrate_single_chunk(
-            request,
-            shared_index,
-            aliases,
-            &schemas_by_lang,
-            chunk,
-            persist_cache,
-            receipt,
-        );
+        hydrate_single_chunk(&target, shared_index, chunk, persist_cache, receipt);
         on_progress(receipt.http_ingested_entities, remaining);
     }
+}
+
+/// Typed request envelope for on-demand scoped ASP Open EDB hydration targeting
+/// one bounded `path_prefix` (e.g. a crate or module slice).
+pub struct AspScopedHydrationRequest<'a> {
+    pub endpoint: &'a AspForwardingEndpoint,
+    pub cache_path: &'a Path,
+    pub path_prefix: &'a str,
+    pub max_files: usize,
+}
+
+/// On-demand scoped ASP Open EDB hydration for a bounded `path_prefix`
+/// (e.g. a single crate/module targeted by an LLM L1/L2 structural query).
+/// Inspects only unhydrated files matching `path_prefix` (capped at `max_files`)
+/// without holding the index write lock across HTTP I/O, then persists the
+/// updated BLAKE3 cache.
+pub fn hydrate_workspace_scoped_via_asp_http(
+    request: &AspScopedHydrationRequest<'_>,
+    shared_index: &std::sync::RwLock<WorkspaceSearchIndex>,
+) -> Result<AspHttpHydrationReceipt, SearchPlanProjectionError> {
+    let started = Instant::now();
+    let mut receipt = AspHttpHydrationReceipt::default();
+    let trimmed = request.path_prefix.trim();
+    if trimmed.is_empty() || request.max_files == 0 {
+        return Ok(receipt);
+    }
+    let catalog = fetch_asp_provider_catalog(request.endpoint)?;
+    receipt.providers_discovered = catalog.providers.len();
+    let aliases = provider_language_aliases(&catalog);
+    let supported_langs = supported_languages_from_catalog(&catalog, &aliases);
+    let lang_refs: Vec<&str> = supported_langs.iter().map(String::as_str).collect();
+    let scoped_pending: Vec<_> = {
+        let guard = shared_index.read().map_err(|_| {
+            SearchPlanProjectionError::Native("workspace index lock poisoned".to_owned())
+        })?;
+        guard
+            .live_files_needing_open_edb(&lang_refs, 2048)
+            .into_iter()
+            .filter(|file| file.path.starts_with(trimmed))
+            .take(request.max_files)
+            .collect()
+    };
+    if !scoped_pending.is_empty() {
+        let schemas_by_lang = targeted_schemas_by_language(&catalog, &aliases);
+        let target = ChunkHydrationTarget {
+            endpoint: request.endpoint,
+            cache_path: request.cache_path,
+            aliases: &aliases,
+            schemas_by_lang: &schemas_by_lang,
+        };
+        hydrate_single_chunk(&target, shared_index, &scoped_pending, true, &mut receipt);
+    }
+    receipt.total_elapsed_micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+    Ok(receipt)
 }
 
 /// Progressive, lock-free-I/O chunked ASP Open EDB hydration over a shared

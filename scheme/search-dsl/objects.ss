@@ -102,6 +102,8 @@
       ((src string?) (dst string?) (path string?) (line integer?)))
     (relation impl_trait
       ((type_name string?) (trait_name string?) (path string?) (line integer?)))
+    (relation ffi_binds_edge
+      ((scheme_fn string?) (c_sym string?) (path string?) (line integer?)))
     (relation entity_locator
       ((id string?) (locator string?)))
     (relation depends_on
@@ -151,6 +153,8 @@
      <-- (entity id f _ _ _ name line) (attr id "implements" trait_name) (file f _ path))
     ((impl_trait name trait_name path line)
      <-- (entity id f _ _ _ name line) (attr id "trait" trait_name) (file f _ path))
+    ((ffi_binds_edge scheme_fn c_sym path line)
+     <-- (edge scheme_fn c_sym "ffi_binds" path line))
     ((entity_locator id loc) <-- (attr id "locator" loc))
     ((verified_tier mod level) <-- (attr mod "verified_tier" level))
     ((verified_resolution callsite target) <-- (attr callsite "verified_resolution" target))
@@ -158,6 +162,7 @@
     ((depends_on src dst) <-- (edge src dst "imports" _ _))
     ((depends_on src dst) <-- (edge src dst "calls" _ _))
     ((depends_on src dst) <-- (edge src dst "implements" _ _))
+    ((depends_on src dst) <-- (edge src dst "ffi_binds" _ _))
     ((depends_on src dst) <-- (depends_on src mid) (depends_on mid dst))))
 
 (.def BaseSearchLanguageFragment.
@@ -208,6 +213,18 @@
      "ascent"
      "Find all types implementing a trait or interface"
      "(find-impls \"TraitName\" path-prefix: \"crates/\" exclude-tests?: #t limit: 40)")
+    ("(trace-path ...)"
+     "ascent"
+     "(trace-path from: \"CallerFn\" to: \"TargetFn\" path-prefix: \"crates/\" exclude-tests?: #t limit: 40)"
+     "ascent"
+     "Multi-hop call/impl/FFI/import subgraph connecting `from:` to `to:` in one query"
+     "(trace-path from: \"CallerFn\" to: \"TargetFn\" path-prefix: \"crates/\" exclude-tests?: #t limit: 40)")
+    ("(workspace-map ...)"
+     "parser"
+     "(workspace-map \"crates/\" depth: 2 exclude-tests?: #t limit: 32)"
+     "l0-ram"
+     "Zero-I/O RAM topology bird's-eye map (files, languages, AST %, entries, key types)"
+     "(workspace-map \"crates/\" depth: 2 exclude-tests?: #t limit: 32)")
     ("(brute-search ...)"
      "parser"
      "(brute-search \"pattern\" lang: \"rust\" path-prefix: \"crates/\" exclude-tests?: #t context: 2 limit: 32)"
@@ -310,6 +327,7 @@
       (calls_symbol    "graph"      "calls_symbol" _ "Symbol-level call graph edge (caller_name, callee_name, path, line)")
       (implements_edge "graph"      "implements"   _ "Trait/interface implementation edge (src, dst, path, line)")
       (impl_trait      "graph"      "impl_trait"   _ "Trait/interface implementation relation (type_name, trait_name, path, line)")
+      (ffi_binds_edge  "graph"      "ffi_binds"    _ "Cross-language FFI c-define binding edge (scheme_fn, c_sym, path, line)")
       (entity_locator      "graph-pair" "locator"             _ "Authoritative AST patch locator for an entity (id, locator)")
       (verified_tier       "graph-pair" "verified_tier"       _ "Admitted M1 Scenario B architecture tier evidence (mod, level)")
       (verified_resolution "graph-pair" "verified_resolution" _ "Admitted M1 Scenario B callsite disambiguation evidence (callsite, target)")

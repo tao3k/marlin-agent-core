@@ -15,6 +15,7 @@
         (only-in :marlin-agent-core/search-dsl/syntax
                  relational-choice-program)
         (only-in :marlin-agent-core/search-dsl/extract
+                 extract-scheme-open-edb-facts
                  extract-open-edb-facts-batch)
         (only-in :marlin-agent-core/search-dsl/objects
                  SearchLanguageRegistryValue)
@@ -1190,5 +1191,106 @@
                     (member "\"callable-skeleton\"" yuanxu-proto-forms)
                     (member "exclude-tests?:" yuanxu-proto-forms)
                     (member "#t" yuanxu-proto-forms)
+                    #t)
+               => #t)))
+
+    (test-case "LLM-ASP P0: name-all AND pushdown, special facet filtering, Scheme special attrs, FFI impact, and trace-path"
+      (let* ((scheme-src "(export eval-query)\n(def (eval-query q) (helper-fn q))\n(def (helper-fn q) q)\n(c-define (eval-query q) (int) int \"marlin_eval_query\" \"\" (eval-query q))\n")
+             (_scheme-facts
+               (let-values (((ents edges)
+                             (extract-scheme-open-edb-facts "scheme/search-dsl/funcs.ss" scheme-src)))
+                 (cons ents edges)))
+             (scheme-ents (car _scheme-facts))
+             (eval-ent (find (lambda (v) (string=? (vector-ref v 2) "eval-query")) scheme-ents))
+             (eval-attrs (if eval-ent (vector->list (vector-ref eval-ent 7)) '()))
+             (helper-ent (find (lambda (v) (string=? (vector-ref v 2) "helper-fn")) scheme-ents))
+             (helper-attrs (if helper-ent (vector->list (vector-ref helper-ent 7)) '()))
+             (edb
+               '((file
+                   (1 "rust" "crates/bridge/src/runner.rs")
+                   (2 "scheme" "scheme/search-dsl/funcs.ss")
+                   (3 "scheme" "scheme/c-abi/search-dsl.ss"))
+                 (entity
+                   ("e1" 1 "rust" "struct" "struct_item" "SearchExecutionRequest" 10)
+                   ("e2" 1 "rust" "struct" "struct_item" "GraphLoopRequest" 25)
+                   ("e3" 1 "rust" "function" "fn_item" "execute_search_dsl" 40)
+                   ("e4" 1 "rust" "function" "fn_item" "invoke_c_abi" 70)
+                   ("e5" 2 "scheme" "function" "def_proc" "eval-query" 2)
+                   ("e6" 2 "scheme" "function" "def_proc" "helper-fn" 3)
+                   ("e7" 3 "scheme" "function" "c_define" "marlin_eval_query" 4))
+                 (edge
+                   ("e3" "e4" "calls" "crates/bridge/src/runner.rs" 48)
+                   ("e4" "e7" "calls" "crates/bridge/src/runner.rs" 75)
+                   ("eval-query" "marlin_eval_query" "ffi_binds" "scheme/c-abi/search-dsl.ss" 4)
+                   ("e5" "e6" "calls" "scheme/search-dsl/funcs.ss" 2))
+                 (attr
+                   ("e1" "visibility" "pub")
+                   ("e3" "visibility" "pub")
+                   ("e3" "async" "true")
+                   ("e5" "exported" "true")
+                   ("e5" "moduleRole" "funcs")
+                   ("e6" "moduleRole" "funcs"))
+                 (symbol_ref)))
+             ;; 1) `name-all:` AND semantics + Rust trigram prefilter pushdown
+             (and-pref
+               (compile-search-dsl-prefilter
+                 "(find-symbols name-all: (\"search\" \"request\") lang: \"rust\" limit: 20)"
+                 SearchLanguageRegistryValue))
+             (or-pref
+               (compile-search-dsl-prefilter
+                 "(find-symbols name-contains: (\"search\" \"request\") lang: \"rust\" limit: 20)"
+                 SearchLanguageRegistryValue))
+             (and-res
+               (evaluate-search-dsl-over-edb
+                 "(find-symbols name-all: (\"search\" \"request\") lang: \"rust\" limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             ;; 2) ASP `special:` facet filtering over Open EDB `attr`
+             (rust-special-res
+               (evaluate-search-dsl-over-edb
+                 "(find-symbols lang: \"rust\" kind: \"fn\" special: ((visibility \"pub\") (async #t)) limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             (scheme-special-res
+               (evaluate-search-dsl-over-edb
+                 "(find-symbols lang: \"scheme\" special: ((exported #t) (moduleRole \"funcs\")) limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             ;; 3) Cross-language `ffi` edges inside `find-impact`
+             (ffi-impact-res
+               (evaluate-search-dsl-over-edb
+                 "(find-impact \"marlin_eval_query\" limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             ;; 4) Multi-hop `(trace-path from: ... to: ...)` crossing Rust calls -> FFI -> Scheme
+             (trace-res
+               (evaluate-search-dsl-over-edb
+                 "(trace-path from: \"execute_search_dsl\" to: \"helper-fn\" limit: 20)"
+                 edb SearchLanguageRegistryValue)))
+        ;; Scheme extractor emits ASP `exported` + `moduleRole` special attrs
+        (check (and (member #("exported" "true") eval-attrs)
+                    (member #("moduleRole" "funcs") eval-attrs)
+                    (not (member #("exported" "true") helper-attrs))
+                    (member #("moduleRole" "funcs") helper-attrs)
+                    #t)
+               => #t)
+        ;; Prefilter pushes BOTH `name-all:` tokens into `required_tokens`, but skips OR branches
+        (check (vector-ref and-pref 3) => #("search" "request"))
+        (check (vector-ref or-pref 3) => #())
+        ;; `name-all:` matches ONLY `SearchExecutionRequest` (NOT `GraphLoopRequest`)
+        (check (vector-ref and-res 3) => '(("SearchExecutionRequest" "crates/bridge/src/runner.rs" 10)))
+        ;; `special:` facet filters Rust `pub async` fn and Scheme exported `funcs` fn
+        (check (vector-ref rust-special-res 3) => '(("execute_search_dsl" "crates/bridge/src/runner.rs" 40)))
+        (check (vector-ref scheme-special-res 3) => '(("eval-query" "scheme/search-dsl/funcs.ss" 2)))
+        ;; `find-impact` includes cross-language `"ffi"` C-ABI binding
+        (check (and (member '("ffi" "prod" "eval-query" "scheme/c-abi/search-dsl.ss" 4)
+                            (vector-ref ffi-impact-res 3))
+                    #t)
+               => #t)
+        ;; `trace-path` discovers the complete cross-language call + FFI chain in 1 query!
+        (check (and (member '("calls" "execute_search_dsl" "invoke_c_abi" "crates/bridge/src/runner.rs" 48)
+                            (vector-ref trace-res 3))
+                    (member '("calls" "invoke_c_abi" "marlin_eval_query" "crates/bridge/src/runner.rs" 75)
+                            (vector-ref trace-res 3))
+                    (member '("ffi" "marlin_eval_query" "eval-query" "scheme/c-abi/search-dsl.ss" 4)
+                            (vector-ref trace-res 3))
+                    (member '("calls" "eval-query" "helper-fn" "scheme/search-dsl/funcs.ss" 2)
+                            (vector-ref trace-res 3))
                     #t)
                => #t)))))
