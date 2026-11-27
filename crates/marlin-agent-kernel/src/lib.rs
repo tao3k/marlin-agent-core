@@ -7,11 +7,13 @@
 mod adapters;
 mod controller;
 mod driver;
+pub mod context_distillation;
 pub mod execution_breaker;
 pub mod governance_admission;
 pub mod governance_cedar;
 pub mod governance_plane;
 pub mod model_weight_attestation;
+pub mod transparency_log;
 mod loop_machine;
 mod loop_program_controller;
 mod loop_program_execution;
@@ -58,9 +60,18 @@ pub use governance_plane::{
     GovernanceTenantId, MultiTenantIsolationFence, PrivilegedHumanReceipt, SodProposalRecord,
     TenantExecutionTicket, TenantExecutionTicketId, TenantOutboxEntry, TenantOutboxEntryId,
 };
+pub use context_distillation::{
+    ContextDistillationGate, ContextDistillationReceipt, ContextDistillationRejection,
+    ContextSegment, DistilledContextPacket, EpistemicIntegrity, SecrecyClass,
+};
 pub use model_weight_attestation::{
     ModelInferenceAdmissionReceipt, ModelInferenceClaim, ModelWeightAttestationGate,
     ModelWeightGovernancePolicy, ModelWeightRejection, compute_shard_merkle_root,
+};
+pub use transparency_log::{
+    GovernanceTransparencyLog, GovernanceTreeHead, MerkleConsistencyProof, MerkleInclusionProof,
+    SplitViewEquivocationFraudProof, TransparencyLogRejection, verify_inclusion_proof,
+    verify_tree_head_progression,
 };
 pub use loop_machine::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,
