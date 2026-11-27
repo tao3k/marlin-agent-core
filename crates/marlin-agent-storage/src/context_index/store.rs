@@ -141,6 +141,17 @@ impl TursoContextIndex {
             transaction.rollback().await.map_err(backend)?;
             return Ok(ContextIndexUpdate::Superseded);
         }
+        if revision.sequence == cursor.applied && cursor.applied == cursor.frontier {
+            let outcome = if revision.receipt == cursor.receipt
+                && existing_cuts_match(&transaction, repo, cuts).await?
+            {
+                ContextIndexUpdate::Replayed
+            } else {
+                ContextIndexUpdate::Conflict
+            };
+            transaction.rollback().await.map_err(backend)?;
+            return Ok(outcome);
+        }
         if revision.sequence == cursor.applied && revision.receipt != cursor.receipt {
             transaction.rollback().await.map_err(backend)?;
             return Ok(ContextIndexUpdate::Conflict);
@@ -184,7 +195,12 @@ async fn apply_change(
         });
     }
     let frontier = cursor.frontier.max(seq);
-    if seq != cursor.applied + 1 {
+    let expected_next = cursor.applied.checked_add(1).ok_or_else(|| {
+        StorageError::Backend {
+            message: "context owner cursor sequence overflow".to_owned(),
+        }
+    })?;
+    if seq != expected_next {
         write_cursor(connection, repo, cursor.applied, frontier, &cursor.receipt).await?;
         return Ok(ContextIndexUpdate::Gap {
             cursor: cursor.applied,
@@ -294,6 +310,43 @@ async fn write_cut(
             .map_err(backend)?;
     }
     Ok(())
+}
+
+async fn existing_cuts_match(
+    connection: &turso::Connection,
+    repo: &str,
+    cuts: &[ContextCut],
+) -> StorageResult<bool> {
+    let mut expected = std::collections::BTreeSet::new();
+    for cut in cuts {
+        for entry in &cut.entries {
+            expected.insert((
+                cut.key.as_str().to_owned(),
+                entry.git.path.as_str().to_owned(),
+                entry.git.commit.as_str().to_owned(),
+                entry.git.blob.as_str().to_owned(),
+                i64::from(entry.generation),
+            ));
+        }
+    }
+    let mut rows = connection
+        .query(
+            "SELECT cut, path, tip, blob, generation FROM context_locators WHERE repo = ?1",
+            (repo,),
+        )
+        .await
+        .map_err(backend)?;
+    let mut existing = std::collections::BTreeSet::new();
+    while let Some(row) = rows.next().await.map_err(backend)? {
+        existing.insert((
+            row.get::<String>(0).map_err(backend)?,
+            row.get::<String>(1).map_err(backend)?,
+            row.get::<String>(2).map_err(backend)?,
+            row.get::<String>(3).map_err(backend)?,
+            row.get::<i64>(4).map_err(backend)?,
+        ));
+    }
+    Ok(existing == expected)
 }
 
 fn validate_inventory(cuts: &[ContextCut]) -> StorageResult<()> {

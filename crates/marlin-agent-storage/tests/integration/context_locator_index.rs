@@ -385,3 +385,53 @@ async fn index_recovers_owner_gaps_and_retires_only_the_observed_cut() {
         );
     }
 }
+
+#[tokio::test]
+async fn sm31_adv_l4_rebuild_refuses_divergent_overwrite_of_finalized_revision() {
+    let temporary = tempfile::tempdir().unwrap();
+    let home = temporary.path();
+    let a = home.join("a");
+    let a_owner = enroll(home, &a, "index.org").await;
+    let a_file = GitRepositoryPath::new("index.org").unwrap();
+    let (_, a1) = capture(&a, &a_file, 1).await;
+
+    let db = home.join("marlin-ai/sm31-index.db");
+    let index = TursoContextIndex::open(&db).await.unwrap();
+    assert_eq!(
+        index
+            .apply(
+                a_owner.instance(),
+                &revision(1),
+                ContextCutChange::Publish(&a1)
+            )
+            .await
+            .unwrap(),
+        ContextIndexUpdate::Applied,
+    );
+
+    // Hostile same-(sequence, receipt) rebuild with divergent empty cuts MUST be refused as Conflict
+    // and MUST NOT wipe already-published context_locators.
+    assert_eq!(
+        index
+            .rebuild(a_owner.instance(), &revision(1), &[])
+            .await
+            .unwrap(),
+        ContextIndexUpdate::Conflict,
+    );
+    assert_eq!(
+        index
+            .lookup(a_owner.instance(), &a1.key, &a_file)
+            .await
+            .unwrap(),
+        ContextIndexRead::Current(a1.entries[0].clone()),
+    );
+
+    // Exact idempotent replay with identical cuts MUST return Replayed cleanly.
+    assert_eq!(
+        index
+            .rebuild(a_owner.instance(), &revision(1), std::slice::from_ref(&a1))
+            .await
+            .unwrap(),
+        ContextIndexUpdate::Replayed,
+    );
+}

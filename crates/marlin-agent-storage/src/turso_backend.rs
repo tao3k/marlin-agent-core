@@ -41,12 +41,47 @@ pub struct TursoSyncRemoteUrl(String);
 impl TursoSyncRemoteUrl {
     pub fn new(value: impl Into<String>) -> StorageResult<Self> {
         let value = value.into();
-        if !(value.starts_with("libsql://")
-            || value.starts_with("https://")
-            || value.starts_with("http://"))
-        {
+        if value.is_empty() || value.bytes().any(|byte| byte <= 0x20 || byte == 0x7f) {
             return Err(StorageError::InvalidSyncConfiguration {
-                reason: "remote URL must use libsql, https, or http",
+                reason: "remote URL must not contain whitespace or control characters",
+            });
+        }
+        let (scheme, rest) = if let Some(rest) = value.strip_prefix("libsql://") {
+            ("libsql", rest)
+        } else if let Some(rest) = value.strip_prefix("https://") {
+            ("https", rest)
+        } else if let Some(rest) = value.strip_prefix("http://") {
+            ("http", rest)
+        } else {
+            return Err(StorageError::InvalidSyncConfiguration {
+                reason: "remote URL must use libsql, https, or loopback http",
+            });
+        };
+        let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        let authority = &rest[..authority_end];
+        if authority.is_empty() || authority.contains('@') {
+            return Err(StorageError::InvalidSyncConfiguration {
+                reason: "remote URL must have a non-empty host without embedded userinfo",
+            });
+        }
+        let host = if authority.starts_with('[') {
+            let Some(close_idx) = authority.find(']') else {
+                return Err(StorageError::InvalidSyncConfiguration {
+                    reason: "remote URL has malformed IPv6 host",
+                });
+            };
+            &authority[..=close_idx]
+        } else {
+            authority.split(':').next().unwrap_or("")
+        };
+        if host.is_empty() {
+            return Err(StorageError::InvalidSyncConfiguration {
+                reason: "remote URL host must not be empty",
+            });
+        }
+        if scheme == "http" && !is_loopback_sync_host(host) {
+            return Err(StorageError::InvalidSyncConfiguration {
+                reason: "cleartext http:// remote URL is permitted only for loopback hosts",
             });
         }
         Ok(Self(value))
@@ -55,6 +90,12 @@ impl TursoSyncRemoteUrl {
     fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+#[cfg(feature = "turso-sync")]
+fn is_loopback_sync_host(host: &str) -> bool {
+    let lower = host.to_ascii_lowercase();
+    lower == "localhost" || lower == "127.0.0.1" || lower == "[::1]"
 }
 
 #[cfg(feature = "turso-sync")]
@@ -673,6 +714,33 @@ async fn insert_visibility_receipt(
     execute_retrying(
         connection,
         "INSERT INTO visibility_receipts (
+            project_id,
+            receipt_id,
+            receipt_kind,
+            body,
+            created_at_unix_ms
+        ) VALUES (?1, ?2, ?3, ?4, ?5)",
+        || {
+            vec![
+                text_value(receipt.project_id.clone()),
+                turso::Value::Text(receipt.receipt_id.clone()),
+                turso::Value::Text(receipt.receipt_kind.clone()),
+                turso::Value::Blob(receipt.body.clone()),
+                turso::Value::Integer(receipt.created_at_unix_ms),
+            ]
+        },
+    )
+    .await?;
+    Ok(())
+}
+
+async fn insert_visibility_receipt_idempotent(
+    connection: &turso::Connection,
+    receipt: VisibilityReceipt,
+) -> StorageResult<()> {
+    execute_retrying(
+        connection,
+        "INSERT OR IGNORE INTO visibility_receipts (
             project_id,
             receipt_id,
             receipt_kind,

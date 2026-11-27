@@ -11,13 +11,18 @@ use super::{
     MemoryProposalId, MemoryProposalRecord, ProjectId, SessionId, StorageError, StorageFuture,
     TopologyEdgeId, TopologyEdgeRecord, TopologyNodeId, TursoAgentStorage,
     TursoTransactionOperation, TursoTransactionReceipt, TursoTransactionStatus, VisibilityReceipt,
-    blob_at, execute_retrying, insert_visibility_receipt, integer_at, map_turso_error, text_at,
-    text_value, u32_at,
+    blob_at, execute_retrying, insert_visibility_receipt, insert_visibility_receipt_idempotent,
+    integer_at, map_turso_error, text_at, text_value, u32_at,
 };
 
 impl AgentStorage for TursoAgentStorage {
     fn put_artifact<'a>(&'a self, record: ArtifactRecord) -> StorageFuture<'a, ArtifactPutOutcome> {
         Box::pin(async move {
+            crate::records::validate_artifact_record(&record)?;
+            let size_bytes_i64 =
+                i64::try_from(record.size_bytes).map_err(|_| StorageError::Backend {
+                    message: format!("artifact size_bytes exceeds i64: {}", record.size_bytes),
+                })?;
             let connection = self.connections.acquire().await?;
             let key_project = record.project_id.clone();
             let key_hash = record.artifact_hash.clone();
@@ -44,7 +49,7 @@ impl AgentStorage for TursoAgentStorage {
                         text_value(record.producer_agent_id.clone()),
                         text_value(record.producer_event_id.clone()),
                         turso::Value::Text(record.media_type.clone()),
-                        turso::Value::Integer(record.size_bytes as i64),
+                        turso::Value::Integer(size_bytes_i64),
                         turso::Value::Blob(record.body.clone()),
                         turso::Value::Integer(record.created_at_unix_ms),
                     ]
@@ -130,7 +135,11 @@ impl AgentStorage for TursoAgentStorage {
                 producer_agent_id: AgentId::new(text_at(&row, 4)?)?,
                 producer_event_id: EventId::new(text_at(&row, 5)?)?,
                 media_type: text_at(&row, 6)?,
-                size_bytes: integer_at(&row, 7)? as u64,
+                size_bytes: u64::try_from(integer_at(&row, 7)?).map_err(|_| {
+                    StorageError::Backend {
+                        message: "negative artifact size_bytes in storage".to_owned(),
+                    }
+                })?,
                 body: blob_at(&row, 8)?,
                 created_at_unix_ms: integer_at(&row, 9)?,
             }))
@@ -220,7 +229,7 @@ impl AgentStorage for TursoAgentStorage {
                     .await?
                     .map(|pointer| pointer.target_artifact_hash);
                 let visibility_connection = self.connections.acquire().await?;
-                insert_visibility_receipt(
+                insert_visibility_receipt_idempotent(
                     &visibility_connection,
                     VisibilityReceipt {
                         project_id: update.project_id.clone(),
@@ -248,7 +257,7 @@ impl AgentStorage for TursoAgentStorage {
                 });
             }
 
-            insert_visibility_receipt(
+            insert_visibility_receipt_idempotent(
                 &connection,
                 VisibilityReceipt {
                     project_id: update.project_id.clone(),

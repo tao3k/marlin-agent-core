@@ -76,7 +76,11 @@ pub struct ContextOwnerRevision {
 impl ContextOwnerRevision {
     pub fn new(sequence: i64, receipt: impl Into<String>) -> StorageResult<Self> {
         let receipt = receipt.into();
-        if sequence <= 0 || receipt.is_empty() || receipt.len() > 256 {
+        if sequence <= 0
+            || receipt.trim().is_empty()
+            || receipt.len() > 256
+            || receipt.bytes().any(|byte| byte < 0x20 || byte == 0x7f)
+        {
             return Err(StorageError::InvalidIdentifier {
                 kind: "Context owner revision",
             });

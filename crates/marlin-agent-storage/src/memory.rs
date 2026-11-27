@@ -262,9 +262,12 @@ fn count_overflow() -> StorageError {
     }
 }
 
+const MAX_IN_MEMORY_ARTIFACTS: usize = 65_536;
+
 impl AgentStorage for InMemoryAgentStorage {
     fn put_artifact<'a>(&'a self, record: ArtifactRecord) -> StorageFuture<'a, ArtifactPutOutcome> {
         Box::pin(ready(self.with_state(|state| {
+            crate::records::validate_artifact_record(&record)?;
             let key = (record.project_id.clone(), record.artifact_hash.clone());
             if let Some(existing) = state.artifacts.get(&key) {
                 if existing.body != record.body
@@ -280,6 +283,9 @@ impl AgentStorage for InMemoryAgentStorage {
                     inserted: false,
                     artifact: existing.clone(),
                 });
+            }
+            if state.artifacts.len() >= MAX_IN_MEMORY_ARTIFACTS {
+                let _ = state.artifacts.pop_first();
             }
             state.artifacts.insert(key, record.clone());
             Ok(ArtifactPutOutcome {

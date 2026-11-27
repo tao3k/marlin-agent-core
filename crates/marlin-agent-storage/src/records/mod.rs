@@ -7,6 +7,7 @@
 mod contract;
 mod pagination;
 
+pub(crate) use contract::validate_artifact_record;
 pub use contract::{
     AgentId, AgentStorage, ArtifactHash, ArtifactPointerKey, ArtifactPointerRecord,
     ArtifactPointerUpdate, ArtifactPutOutcome, ArtifactRecord, EventId, MemoryKey,

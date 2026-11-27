@@ -15,7 +15,16 @@ use super::contract::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u16")]
 pub struct StoragePageLimit(u16);
+
+impl TryFrom<u16> for StoragePageLimit {
+    type Error = StorageError;
+
+    fn try_from(limit: u16) -> Result<Self, Self::Error> {
+        Self::new(limit)
+    }
+}
 
 impl StoragePageLimit {
     pub const MAX: u16 = 1_000;
