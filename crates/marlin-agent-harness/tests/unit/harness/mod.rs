@@ -12,6 +12,7 @@ mod intent_case_artifact_support;
 mod intent_case_side_effect_artifact;
 mod release_visibility;
 mod runtime;
+mod sm35_artifact_confinement;
 mod sub_agent_session;
 mod test_run;
 mod three_layer;

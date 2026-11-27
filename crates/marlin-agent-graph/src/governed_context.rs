@@ -21,10 +21,10 @@ macro_rules! governed_id {
         pub struct $name(String);
 
         impl $name {
-            /// Builds a non-empty semantic identifier.
+            /// Builds a non-empty semantic identifier free of control characters.
             pub fn new(value: impl Into<String>) -> Result<Self, AgentGraphValidationError> {
                 let value = value.into();
-                if value.trim().is_empty() {
+                if value.trim().is_empty() || value.chars().any(char::is_control) {
                     return Err(AgentGraphValidationError::empty_named(stringify!($name)));
                 }
                 Ok(Self(value))
@@ -167,9 +167,25 @@ pub struct GovernedContextCapsule {
 }
 
 /// Witness proving a `GovernedContextCapsule` passed Marlin's fail-closed governance gate.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AdmittedGovernedContext {
     capsule: GovernedContextCapsule,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AdmittedGovernedContextWire {
+    capsule: GovernedContextCapsule,
+}
+
+impl<'de> Deserialize<'de> for AdmittedGovernedContext {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = AdmittedGovernedContextWire::deserialize(deserializer)?;
+        admit_governed_context_capsule(wire.capsule).map_err(serde::de::Error::custom)
+    }
 }
 
 impl AdmittedGovernedContext {

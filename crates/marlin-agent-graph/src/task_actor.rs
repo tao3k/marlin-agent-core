@@ -19,10 +19,10 @@ macro_rules! graph_engine_id {
         pub struct $name(String);
 
         impl $name {
-            /// Builds a non-empty semantic identifier.
+            /// Builds a non-empty semantic identifier free of control characters.
             pub fn new(value: impl Into<String>) -> Result<Self, AgentGraphValidationError> {
                 let value = value.into();
-                if value.trim().is_empty() {
+                if value.trim().is_empty() || value.chars().any(char::is_control) {
                     return Err(AgentGraphValidationError::empty_named(stringify!($name)));
                 }
                 Ok(Self(value))
@@ -74,8 +74,18 @@ graph_engine_id!(DispatchRequestId);
 graph_engine_id!(GraphConvergenceNodeId);
 
 /// Monotonic anti-split-brain fencing epoch (strictly >= 1).
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct FencingEpoch(u64);
+
+impl<'de> Deserialize<'de> for FencingEpoch {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = u64::deserialize(deserializer)?;
+        Self::new(raw).map_err(serde::de::Error::custom)
+    }
+}
 
 impl FencingEpoch {
     /// Creates a non-zero fencing epoch.
@@ -172,9 +182,25 @@ pub struct MarlinDispatchEnvelope {
 }
 
 /// Admitted dispatch envelope that has passed Marlin's fail-closed readiness gate.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AdmittedMarlinDispatch {
     envelope: MarlinDispatchEnvelope,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AdmittedMarlinDispatchWire {
+    envelope: MarlinDispatchEnvelope,
+}
+
+impl<'de> Deserialize<'de> for AdmittedMarlinDispatch {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = AdmittedMarlinDispatchWire::deserialize(deserializer)?;
+        admit_marlin_dispatch(wire.envelope).map_err(serde::de::Error::custom)
+    }
 }
 
 impl AdmittedMarlinDispatch {
@@ -296,6 +322,10 @@ pub enum ReceiptReconciliationReason {
     FutureFencingEpoch,
     /// Settlement attempted while anchored C4 steering branches are still pending.
     CannotSettleWithPendingSteering,
+    /// Settlement attempted on a `Detached` exploration scope.
+    DetachedScopeCannotSettle,
+    /// Actor fencing epoch reached `u64::MAX` and cannot advance monotonically.
+    FencingEpochExhausted,
 }
 
 /// Deterministic reconciliation decision preserving anti-split-brain and C4 convergence invariants.
@@ -335,32 +365,42 @@ pub fn reconcile_marlin_execution_receipt(
     if receipt.fencing_epoch > cursor.fencing_epoch {
         return reject(ReceiptReconciliationReason::FutureFencingEpoch);
     }
+    let Some(next_epoch) = cursor
+        .fencing_epoch
+        .value()
+        .checked_add(1)
+        .and_then(|v| FencingEpoch::new(v).ok())
+    else {
+        return reject(ReceiptReconciliationReason::FencingEpochExhausted);
+    };
 
     match receipt.status {
         ExecutionReceiptStatus::Ok => {
             if cursor.pending_steering_branches > 0 {
                 ReceiptReconciliationDecision {
                     accepted: true,
-                    next_epoch: cursor.fencing_epoch.next(),
+                    next_epoch,
                     next_status: TaskActorStatus::WaitingSteering,
                     reason: ReceiptReconciliationReason::AwaitingSteeringConvergence,
                 }
             } else {
                 ReceiptReconciliationDecision {
                     accepted: true,
-                    next_epoch: cursor.fencing_epoch.next(),
+                    next_epoch,
                     next_status: TaskActorStatus::Running,
                     reason: ReceiptReconciliationReason::Accepted,
                 }
             }
         }
         ExecutionReceiptStatus::Settled => {
-            if cursor.pending_steering_branches > 0 {
+            if cursor.scope_mode == TaskActorScopeMode::Detached {
+                reject(ReceiptReconciliationReason::DetachedScopeCannotSettle)
+            } else if cursor.pending_steering_branches > 0 {
                 reject(ReceiptReconciliationReason::CannotSettleWithPendingSteering)
             } else {
                 ReceiptReconciliationDecision {
                     accepted: true,
-                    next_epoch: cursor.fencing_epoch.next(),
+                    next_epoch,
                     next_status: TaskActorStatus::Settled,
                     reason: ReceiptReconciliationReason::Settled,
                 }
@@ -369,7 +409,7 @@ pub fn reconcile_marlin_execution_receipt(
         ExecutionReceiptStatus::Failed | ExecutionReceiptStatus::Rejected => {
             ReceiptReconciliationDecision {
                 accepted: true,
-                next_epoch: cursor.fencing_epoch.next(),
+                next_epoch,
                 next_status: TaskActorStatus::Failed,
                 reason: ReceiptReconciliationReason::ExecutionFailed,
             }

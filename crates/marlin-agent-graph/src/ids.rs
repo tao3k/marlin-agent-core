@@ -16,10 +16,10 @@ macro_rules! semantic_id {
         pub struct $name(String);
 
         impl $name {
-            /// Builds a non-empty semantic identifier.
+            /// Builds a non-empty semantic identifier free of control characters.
             pub fn new(value: impl Into<String>) -> Result<Self, AgentGraphValidationError> {
                 let value = value.into();
-                if value.trim().is_empty() {
+                if value.trim().is_empty() || value.chars().any(char::is_control) {
                     return Err(AgentGraphValidationError::empty(stringify!($name)));
                 }
                 Ok(Self(value))

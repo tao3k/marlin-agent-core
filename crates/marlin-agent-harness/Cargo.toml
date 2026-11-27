@@ -59,3 +59,8 @@ weaver-llm.workspace = true
 name = "live_weaver_search_eval"
 path = "tests/integration/live_weaver_search_eval.rs"
 required-features = ["live-weaver"]
+
+[[test]]
+name = "sm35_live_weaver_governance_and_config"
+path = "tests/unit/sm35_live_weaver_governance_and_config.rs"
+required-features = ["live-weaver"]

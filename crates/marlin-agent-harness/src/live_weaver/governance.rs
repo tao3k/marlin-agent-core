@@ -8,7 +8,7 @@
 //! through `marlin_agent_kernel::governance_cedar` and enforces zero-write
 //! invariants on every live model tool call (e.g. Search / Helm / ASP / Dusa).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use marlin_agent_kernel::{
     CedarContextValue, CedarEntityRef, CedarEvaluationDecision, CedarEvaluationRequest,
@@ -60,10 +60,45 @@ pub struct CompiledHarnessGovernanceGate {
 impl CompiledHarnessGovernanceGate {
     /// Compile all Scheme-projected Cedar policies fail-closed.
     pub fn compile(policy: ProjectedHarnessGovernance) -> Result<Self, String> {
+        if policy.policy_id.trim().is_empty() || policy.policy_id.chars().any(char::is_control) {
+            return Err("governance policy_id must be non-empty and free of control characters".to_owned());
+        }
+        if policy.cedar_policies.is_empty() {
+            return Err(format!(
+                "governance policy `{}` must declare at least one Cedar policy",
+                policy.policy_id
+            ));
+        }
+        if !policy.write_allowed {
+            if let Some(cap) = policy
+                .allowed_capabilities
+                .iter()
+                .find(|c| is_write_capability_label(&c.trim().to_ascii_lowercase()))
+            {
+                return Err(format!(
+                    "governance policy `{}` forbids writes but allowlists write capability `{cap}`",
+                    policy.policy_id
+                ));
+            }
+            if let Some(tool) = policy
+                .allowed_tools
+                .iter()
+                .find(|t| is_destructive_tool_name(t))
+            {
+                return Err(format!(
+                    "governance policy `{}` forbids writes but allowlists destructive tool `{tool}`",
+                    policy.policy_id
+                ));
+            }
+        }
+        let mut seen_ids = BTreeSet::new();
         let mut compiled_cedar = Vec::with_capacity(policy.cedar_policies.len());
         for spec in &policy.cedar_policies {
             let id = CedarPolicyId::new(spec.policy_id.clone())
                 .map_err(|e| format!("invalid Cedar policy id `{}`: {e}", spec.policy_id))?;
+            if !seen_ids.insert(id.as_str().to_owned()) {
+                return Err(format!("duplicate Cedar policy id `{}`", spec.policy_id));
+            }
             let synthesized = SynthesizedCedarPolicy {
                 policy_id: id,
                 source: spec.source.clone(),
@@ -124,12 +159,16 @@ impl CompiledHarnessGovernanceGate {
             };
         }
 
-        if self.policy.denied_tools.iter().any(|t| t == tool_name)
+        if self
+            .policy
+            .denied_tools
+            .iter()
+            .any(|t| t.eq_ignore_ascii_case(tool_name))
             || self
                 .policy
                 .denied_capabilities
                 .iter()
-                .any(|c| c == &capability)
+                .any(|c| c.eq_ignore_ascii_case(&capability))
         {
             let cedar_receipt = self.evaluate_cedar(scenario_id, tool_name, &capability, is_write);
             span.record("governance.decision", "deny_policy");
@@ -147,7 +186,11 @@ impl CompiledHarnessGovernanceGate {
 
         // Fail-closed Layer 2: explicit allowlists when declared.
         if !self.policy.allowed_tools.is_empty()
-            && !self.policy.allowed_tools.iter().any(|t| t == tool_name)
+            && !self
+                .policy
+                .allowed_tools
+                .iter()
+                .any(|t| t.eq_ignore_ascii_case(tool_name))
         {
             span.record("governance.decision", "deny_unlisted_tool");
             return GovernanceDecisionReceipt {
@@ -170,7 +213,7 @@ impl CompiledHarnessGovernanceGate {
                 .policy
                 .allowed_capabilities
                 .iter()
-                .any(|c| c == &capability)
+                .any(|c| c.eq_ignore_ascii_case(&capability))
         {
             span.record("governance.decision", "deny_unlisted_capability");
             return GovernanceDecisionReceipt {
@@ -262,17 +305,91 @@ impl CompiledHarnessGovernanceGate {
     }
 }
 
+fn is_write_capability_label(capability: &str) -> bool {
+    matches!(
+        capability,
+        "write" | "edit" | "mutation" | "shell" | "exec" | "filesystem" | "network" | "admin"
+    )
+}
+
+fn is_shell_tool_name(tool_name: &str) -> bool {
+    let lower = tool_name.to_ascii_lowercase();
+    lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|tok| matches!(tok, "bash" | "sh" | "shell" | "exec" | "cmd" | "command"))
+}
+
+fn is_destructive_tool_name(tool_name: &str) -> bool {
+    if tool_name.trim().is_empty() || tool_name.chars().any(char::is_control) {
+        return true;
+    }
+    let lower = tool_name.to_ascii_lowercase();
+    lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|tok| {
+            matches!(
+                tok,
+                "bash"
+                    | "sh"
+                    | "shell"
+                    | "exec"
+                    | "run"
+                    | "cmd"
+                    | "command"
+                    | "write"
+                    | "edit"
+                    | "patch"
+                    | "delete"
+                    | "del"
+                    | "rm"
+                    | "remove"
+                    | "unlink"
+                    | "mutate"
+                    | "chmod"
+                    | "chown"
+                    | "mv"
+                    | "move"
+                    | "rename"
+                    | "create"
+                    | "mkdir"
+                    | "symlink"
+                    | "install"
+                    | "deploy"
+                    | "commit"
+                    | "push"
+                    | "curl"
+                    | "wget"
+                    | "http"
+                    | "fetch"
+                    | "network"
+            )
+        })
+        || lower.contains("write")
+        || lower.contains("delete")
+        || lower.contains("mutate")
+        || lower.contains("patch")
+}
+
 fn classify_capability(tool_name: &str, declared_capability: Option<&str>) -> String {
+    if is_destructive_tool_name(tool_name) {
+        return if is_shell_tool_name(tool_name) {
+            "shell".to_owned()
+        } else {
+            "write".to_owned()
+        };
+    }
     if let Some(cap) = declared_capability {
-        return cap.to_ascii_lowercase();
+        let normalized = cap.trim().to_ascii_lowercase();
+        if normalized.is_empty() || normalized.chars().any(char::is_control) {
+            return "write".to_owned();
+        }
+        return normalized;
     }
     let lower = tool_name.to_ascii_lowercase();
     if lower.contains("search") {
         "search".to_owned()
-    } else if lower == "bash" || lower.contains("shell") || lower.contains("exec") {
-        "shell".to_owned()
     } else {
-        // Fail-closed: any write/edit/delete or unclassified tool defaults to `write`.
+        // Fail-closed: any unclassified tool defaults to `write`.
         "write".to_owned()
     }
 }
@@ -329,14 +446,5 @@ pub fn format_actionable_denial_message(
 }
 
 fn is_write_capable(tool_name: &str, capability: &str) -> bool {
-    if matches!(capability, "write" | "edit" | "mutation" | "shell") {
-        return true;
-    }
-    let lower = tool_name.to_ascii_lowercase();
-    lower == "bash"
-        || lower.contains("write")
-        || lower.contains("edit")
-        || lower.contains("patch")
-        || lower.contains("delete")
-        || lower.contains("mutate")
+    is_write_capability_label(capability) || is_destructive_tool_name(tool_name)
 }

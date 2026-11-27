@@ -6,7 +6,8 @@
 
 use std::collections::BTreeMap;
 use std::env;
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read;
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
@@ -19,6 +20,12 @@ use weaver_llm::{Client, Endpoint, Protocol};
 
 /// Default per-turn stream output cap (2 MiB) for live harness turns.
 const DEFAULT_MAX_STREAM_BYTES: usize = 2 * 1024 * 1024;
+/// Maximum TOML route file size accepted by `LiveWeaverTomlConfig::load` (256 KiB).
+pub const MAX_WEAVER_CONFIG_BYTES: usize = 256 * 1024;
+/// Maximum HTTP timeout accepted by `LiveWeaverTomlConfig` (10 minutes).
+pub const MAX_WEAVER_TIMEOUT_SECONDS: u64 = 600;
+/// Maximum per-turn stream output cap accepted by `resolve_route_with` (32 MiB).
+pub const MAX_HARNESS_STREAM_BYTES: usize = 32 * 1024 * 1024;
 
 /// Supported wire protocols in harness TOML route files.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
@@ -128,10 +135,28 @@ impl LiveEvalBudget {
 }
 
 impl LiveWeaverTomlConfig {
-    /// Load a typed TOML route file from disk.
+    /// Load a typed TOML route file from disk with symlink refusal and size cap.
     pub fn load(path: &Path) -> Result<Self, String> {
-        let raw = fs::read_to_string(path)
+        let meta = fs::symlink_metadata(path)
+            .map_err(|err| format!("cannot inspect Weaver TOML config {}: {err}", path.display()))?;
+        if meta.file_type().is_symlink() || !meta.is_file() {
+            return Err(format!(
+                "Weaver TOML config {} must be a regular non-symlink file",
+                path.display()
+            ));
+        }
+        let file = File::open(path)
+            .map_err(|err| format!("cannot open Weaver TOML config {}: {err}", path.display()))?;
+        let mut raw = String::new();
+        file.take((MAX_WEAVER_CONFIG_BYTES + 1) as u64)
+            .read_to_string(&mut raw)
             .map_err(|err| format!("cannot read Weaver TOML config {}: {err}", path.display()))?;
+        if raw.len() > MAX_WEAVER_CONFIG_BYTES {
+            return Err(format!(
+                "Weaver TOML config {} exceeds {MAX_WEAVER_CONFIG_BYTES} bytes",
+                path.display()
+            ));
+        }
         toml::from_str(&raw)
             .map_err(|err| format!("invalid Weaver TOML config {}: {err}", path.display()))
     }
@@ -154,6 +179,17 @@ impl LiveWeaverTomlConfig {
         max_stream_bytes: usize,
         read_env: impl Fn(&str) -> Option<String>,
     ) -> Result<LiveWeaverRoute, String> {
+        if self.timeout_seconds == 0 || self.timeout_seconds > MAX_WEAVER_TIMEOUT_SECONDS {
+            return Err(format!(
+                "Weaver timeout_seconds={} must be within 1..={MAX_WEAVER_TIMEOUT_SECONDS}",
+                self.timeout_seconds
+            ));
+        }
+        if max_stream_bytes == 0 || max_stream_bytes > MAX_HARNESS_STREAM_BYTES {
+            return Err(format!(
+                "Weaver max_stream_bytes={max_stream_bytes} must be within 1..={MAX_HARNESS_STREAM_BYTES}"
+            ));
+        }
         let profile = if alias == "default" {
             LiveWeaverModelProfile {
                 provider: self.provider.clone(),
@@ -176,6 +212,8 @@ impl LiveWeaverTomlConfig {
             }
             named
         };
+
+        validate_credential_env_name(&profile.credential_env)?;
 
         let protocol = profile.protocol.into_weaver_protocol();
         let options = profile
@@ -232,4 +270,47 @@ impl LiveWeaverTomlConfig {
             gateway: Arc::new(gateway),
         })
     }
+}
+
+fn validate_credential_env_name(name: &str) -> Result<(), String> {
+    if name.is_empty() || name.len() > 128 {
+        return Err("credential_env must be a non-empty ASCII environment variable name".to_owned());
+    }
+    let bytes = name.as_bytes();
+    if !(bytes[0].is_ascii_alphabetic() || bytes[0] == b'_')
+        || !bytes
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || *b == b'_')
+    {
+        return Err(format!(
+            "credential_env `{name}` contains invalid characters"
+        ));
+    }
+    let upper = name.to_ascii_uppercase();
+    let is_ambient_or_loader = matches!(
+        upper.as_str(),
+        "PATH"
+            | "HOME"
+            | "USER"
+            | "SHELL"
+            | "PWD"
+            | "TERM"
+            | "TMPDIR"
+            | "BASH_ENV"
+            | "ENV"
+            | "IFS"
+            | "PROMPT_COMMAND"
+            | "HTTP_PROXY"
+            | "HTTPS_PROXY"
+            | "NO_PROXY"
+    ) || upper.starts_with("LD_")
+        || upper.starts_with("DYLD_")
+        || upper.starts_with("SSH_")
+        || upper.starts_with("GIT_");
+    if is_ambient_or_loader {
+        return Err(format!(
+            "credential_env `{name}` references a disallowed ambient/system environment variable"
+        ));
+    }
+    Ok(())
 }
