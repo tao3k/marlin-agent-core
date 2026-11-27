@@ -54,7 +54,7 @@ fn live_runtime_repair_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
     );
 
     let edge_gateway = RuntimeEdgeModelGateway::new(
-        crate::stream::live_weaver_gateway(&provider, live_llm_timeout()),
+        live_weaver_gateway(&provider, live_llm_timeout()),
         RuntimeEdgePolicy::new()
             .with_concurrency_limit(1)
             .with_timeout_ms(live_llm_timeout().as_millis() as u64),
@@ -255,4 +255,47 @@ fn live_runtime_repair_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
         "live verifier artifact should keep repaired source as digest metadata, not raw source"
     );
     fs::remove_dir_all(&repair_workspace).expect("remove repair workspace");
+}
+
+fn live_weaver_gateway(
+    provider: &str,
+    timeout: std::time::Duration,
+) -> marlin_agent_stream::WeaverModelGateway {
+    let (protocol, url, default_key) = match provider {
+        "openai" => (
+            weaver_llm::Protocol::OpenAiResponses,
+            "https://api.openai.com/v1/responses",
+            "OPENAI_API_KEY",
+        ),
+        "anthropic" => (
+            weaver_llm::Protocol::Anthropic,
+            "https://api.anthropic.com/v1/messages",
+            "ANTHROPIC_API_KEY",
+        ),
+        "deepseek" => (
+            weaver_llm::Protocol::OpenAi,
+            "https://api.deepseek.com/chat/completions",
+            "DEEPSEEK_API_KEY",
+        ),
+        "openrouter" => (
+            weaver_llm::Protocol::OpenAi,
+            "https://openrouter.ai/api/v1/chat/completions",
+            "OPENROUTER_API_KEY",
+        ),
+        _ => panic!("no live Weaver provider binding for {provider}"),
+    };
+    let key_name = std::env::var(super::LIVE_LLM_PROVIDER_API_KEY_ENV)
+        .unwrap_or_else(|_| default_key.to_owned());
+    let key = std::env::var(&key_name).unwrap_or_else(|_| {
+        panic!(
+            "{key_name} must be set when {}=1",
+            super::LIVE_LLM_GATE_ENV
+        )
+    });
+    marlin_agent_stream::WeaverModelGateway::new(
+        weaver_llm::Client::new(timeout, 1024 * 1024).expect("Weaver client"),
+        provider.into(),
+        weaver_llm::Endpoint::new(protocol, url).expect("provider endpoint"),
+        key,
+    )
 }

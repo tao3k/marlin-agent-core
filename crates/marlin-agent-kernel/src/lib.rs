@@ -73,22 +73,37 @@ pub use transparency_log::{
     SplitViewEquivocationFraudProof, TransparencyLogRejection, verify_inclusion_proof,
     verify_tree_head_progression,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor); do not wire new production callers or governance gates here"
+)]
 pub use loop_machine::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,
     GenericLoopMachineStepIndex,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor)"
+)]
 pub use loop_program_controller::{
     LoopProgramRunReceipt, LoopProgramRunRequest, LoopProgramRunStatus,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor)"
+)]
 pub use loop_program_execution::{
     LoopProgramEventMapper, LoopProgramExecutionDriver, LoopProgramExecutionReceipt,
     LoopProgramExecutionRequest, LoopProgramExecutionStatus, LoopProgramExecutionStepReceipt,
     ReceiptDrivenLoopProgramEventMapper, ScriptedLoopProgramEventMapper,
     TerminalLoopProgramEventMapper,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor)"
+)]
 pub use loop_program_handoff::{
     LoopProgramRuntimeHandoff, LoopProgramRuntimeHandoffKind, LoopProgramRuntimeHandoffPlan,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor)"
+)]
 pub use loop_program_handoff_executor::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, DeferredLoopProgramRuntimeHandoffHandler,
     DenylistedLoopProgramToolDispatchHandler, HybridLoopProgramRuntimeHandoffExecutor,
@@ -103,6 +118,9 @@ pub use loop_program_handoff_executor::{
     RetryBudgetToolHandler, StaticLoopProgramRuntimeHandoffHandler,
     spawn_loop_program_tool_process,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor)"
+)]
 pub use loop_program_policy_matrix::{
     RuntimePolicyExperimentCaseId, RuntimePolicyExperimentCount, RuntimePolicyExperimentDigest,
     RuntimePolicyExperimentReceipt, RuntimePolicyImprovementRecommendation,
@@ -110,6 +128,9 @@ pub use loop_program_policy_matrix::{
     RuntimePolicyRecommendationPriority, RuntimePolicyRecommendationTarget,
     has_memory_recall_intent, runtime_policy_experiment_receipt,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor)"
+)]
 pub use loop_program_side_effects::{
     LoopProgramDerivedSessionPolicyStatus, LoopProgramExecutionReplayBundleReceipt,
     LoopProgramFileSandbox, LoopProgramFileWriteReceipt, LoopProgramFileWriteRequest,

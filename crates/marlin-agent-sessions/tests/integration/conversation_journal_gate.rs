@@ -2,7 +2,6 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-#![cfg(feature = "turso")]
 use marlin_agent_storage::SessionEventStore;
 
 use marlin_agent_protocol::{

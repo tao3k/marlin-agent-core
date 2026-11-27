@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
+mod cancellation_stability;
 mod dispatcher;
 mod dynamic_registry;
 mod support;

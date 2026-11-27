@@ -146,8 +146,13 @@ pub trait AtomicEffectExecutor: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = AtomicEffectReceipt> + Send + 'a>>;
 }
 
-/// Executes a batch of Scheme-emitted `AtomicEffect`s concurrently via Tokio `JoinSet`
-/// and returns raw `AtomicEffectReceipt`s in deterministic input order.
+/// Maximum concurrent atomic I/O effects dispatched simultaneously in one batch (SM19).
+pub const MAX_CONCURRENT_ATOMIC_EFFECTS: usize = 16;
+
+/// Executes a batch of Scheme-emitted `AtomicEffect`s concurrently with bounded
+/// concurrency (`MAX_CONCURRENT_ATOMIC_EFFECTS`) via Tokio `JoinSet` + `Semaphore`,
+/// returning raw `AtomicEffectReceipt`s in deterministic input order while preserving
+/// caller-owned `effect_id` correlation even if a worker panics.
 pub async fn run_atomic_effect_batch<E>(
     executor: Arc<E>,
     effects: Vec<AtomicEffect>,
@@ -156,30 +161,40 @@ where
     E: AtomicEffectExecutor + ?Sized + 'static,
 {
     let total = effects.len();
+    let caller_ids: Vec<String> = effects
+        .iter()
+        .map(|effect| effect.effect_id().to_owned())
+        .collect();
+    let permits = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_ATOMIC_EFFECTS));
     let mut join_set = tokio::task::JoinSet::new();
+    let mut ordered: Vec<Option<AtomicEffectReceipt>> = vec![None; total];
+
     for (idx, effect) in effects.into_iter().enumerate() {
+        let permit = Arc::clone(&permits)
+            .acquire_owned()
+            .await
+            .expect("atomic effect concurrency semaphore closed unexpectedly");
         let exec = Arc::clone(&executor);
-        let fallback_id = effect.effect_id().to_owned();
         join_set.spawn(async move {
+            let _permit = permit;
             let receipt = exec.execute_atomic(effect).await;
-            (idx, fallback_id, receipt)
+            (idx, receipt)
         });
     }
 
-    let mut ordered: Vec<Option<AtomicEffectReceipt>> = vec![None; total];
     while let Some(joined) = join_set.join_next().await {
-        if let Ok((idx, _id, receipt)) = joined {
+        if let Ok((idx, receipt)) = joined {
             ordered[idx] = Some(receipt);
         }
     }
 
     ordered
         .into_iter()
-        .enumerate()
-        .map(|(idx, slot)| {
+        .zip(caller_ids)
+        .map(|(slot, effect_id)| {
             slot.unwrap_or_else(|| {
                 AtomicEffectReceipt::EffectError(EffectErrorReceiptPayload {
-                    effect_id: format!("effect-{idx}"),
+                    effect_id,
                     message: "atomic effect worker terminated unexpectedly".to_owned(),
                 })
             })

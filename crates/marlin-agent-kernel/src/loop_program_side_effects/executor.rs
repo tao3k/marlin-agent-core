@@ -4,7 +4,15 @@
 
 //! Runtime executor that replays `LoopProgram` projections into owned side effects.
 
-use std::{fs, sync::Arc};
+use std::{
+    fs::{self, File, OpenOptions},
+    io::{self, Write},
+    path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 use marlin_agent_runtime::{RuntimeContext, observability};
 use tracing::Instrument;
@@ -297,7 +305,11 @@ impl LoopProgramRuntimeSideEffectExecutor {
             return LoopProgramFileWriteSideEffectReceipt::failed(request, error);
         }
 
-        if let Err(error) = fs::write(&path, request.contents.as_ref()) {
+        if let Err(diagnostic) = self.file_sandbox.resolve(&request.relative_path) {
+            return LoopProgramFileWriteSideEffectReceipt::denied(request, diagnostic);
+        }
+
+        if let Err(error) = write_file_atomically(&path, request.contents.as_ref()) {
             return LoopProgramFileWriteSideEffectReceipt::failed(request, error);
         }
 
@@ -326,4 +338,38 @@ fn has_projected_runtime_side_effects(
     execution.agent_flow_receipt.is_some()
         || !execution.tool_process_projections.is_empty()
         || !execution.memory_projections.is_empty()
+}
+
+fn write_file_atomically(path: &Path, contents: &[u8]) -> io::Result<()> {
+    static NEXT_TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".to_owned());
+    let seq = NEXT_TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp_path = parent.join(format!(
+        ".{file_name}.tmp.{}.{seq}",
+        std::process::id()
+    ));
+
+    let write_res = (|| -> io::Result<()> {
+        let mut tmp_file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)?;
+        tmp_file.write_all(contents)?;
+        tmp_file.sync_all()?;
+        drop(tmp_file);
+        fs::rename(&tmp_path, path)?;
+        if let Ok(dir) = File::open(parent) {
+            let _ = dir.sync_all();
+        }
+        Ok(())
+    })();
+
+    if write_res.is_err() {
+        let _ = fs::remove_file(&tmp_path);
+    }
+    write_res
 }

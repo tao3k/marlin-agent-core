@@ -235,3 +235,288 @@ fn signing_bytes_match_marlin_mygo_go_envelope_layout() {
         "tao3k.official".len() as u64
     );
 }
+
+#[test]
+fn sm28_adv_l4_panel_enforces_required_grants_and_revocation_closure() {
+    use marlin_agent_runtime::plugin::CapabilityId;
+
+    let seed = [28u8; 32];
+    let kp = Ed25519KeyPair::from_seed_unchecked(&seed).unwrap();
+    let trust = trust_for("tao3k.official", &kp);
+    let manifest = br#"
+id = "tao3k.grant-panel"
+version = "1.0.0"
+contract_major = 1
+
+[capabilities.read_tasks]
+kind = "projection.read"
+surface = "org.tasks"
+
+[contributions.board]
+kind = "ui-panel"
+requires = ["read_tasks"]
+
+[contributions.board.panel]
+runtime = "wasm-ui-ir"
+slot_id = "workbench.main"
+cardinality = "single"
+entry_path = "panel.wasm"
+read_scopes = ["org.tasks"]
+declared_actions = ["org.task.move"]
+"#;
+    let (att, sig) = sign_manifest(manifest, "tao3k.official", &kp);
+    let mut host = PanelPluginHost::new(trust);
+    host.install(SignedPanelRelease {
+        manifest,
+        attestation: att,
+        signature: &sig,
+    })
+    .unwrap();
+
+    let project = PanelProjectId::new("proj-sm28");
+    let pid = PluginId::try_from("tao3k.grant-panel".to_owned()).unwrap();
+    let cid = ContributionId::try_from("board".to_owned()).unwrap();
+    let cap_read = CapabilityId::try_from("read_tasks".to_owned()).unwrap();
+    let cap_undeclared = CapabilityId::try_from("ghost_cap".to_owned()).unwrap();
+
+    // 1. Enabling a panel requiring `read_tasks` MUST FAIL CLOSED without an operator grant.
+    assert_eq!(
+        host.enable_panel(project.clone(), &pid, &cid, b""),
+        Err(PluginDenial::MissingCapability(cap_read.clone()))
+    );
+
+    // 2. Granting an undeclared capability MUST be refused.
+    assert_eq!(
+        host.set_project_grants(project.clone(), pid.clone(), [cap_undeclared]),
+        Err(PluginDenial::InvalidDeclaration)
+    );
+
+    // 3. Granting the required capability admits activation.
+    host.set_project_grants(project.clone(), pid.clone(), [cap_read])
+        .unwrap();
+    let act = host.enable_panel(project.clone(), &pid, &cid, b"").unwrap();
+    assert_eq!(act.generation, 1);
+
+    // 4. Revoking the grant MUST atomically close the live generation so subsequent actions fail.
+    host.set_project_grants(project.clone(), pid.clone(), std::iter::empty())
+        .unwrap();
+    assert!(
+        host.evidence(&PanelActivationId::new(act.activation_id.clone()))
+            .unwrap()
+            .closed
+    );
+    assert_eq!(
+        host.admit_scoped_action(ScopedPanelActionRequest {
+            project_id: &project,
+            plugin_id: &pid,
+            contribution_id: &cid,
+            generation: act.generation,
+            action_name: "org.task.move",
+            args_json: b"{}",
+            idempotency_key: "idem-after-revoke",
+        }),
+        Err(PluginDenial::StaleActivation)
+    );
+}
+
+#[test]
+fn sm28_adv_l4_panel_blocks_rollback_publisher_hijack_traversal_and_idempotency_conflict() {
+    let seed_a = [29u8; 32];
+    let seed_b = [30u8; 32];
+    let kp_a = Ed25519KeyPair::from_seed_unchecked(&seed_a).unwrap();
+    let kp_b = Ed25519KeyPair::from_seed_unchecked(&seed_b).unwrap();
+    let pub_a = PublisherId::try_from("tao3k.official".to_owned()).unwrap();
+    let pub_b = PublisherId::try_from("evil.publisher".to_owned()).unwrap();
+    let trust = ReleaseTrust::new(BTreeMap::from([
+        (pub_a, kp_a.public_key().as_ref().try_into().unwrap()),
+        (pub_b, kp_b.public_key().as_ref().try_into().unwrap()),
+    ]));
+
+    // 1. Signed manifest with path-traversal / absolute / backslash / NUL entry_path MUST fail verify_panel.
+    for bad_path in [
+        "../../../etc/passwd",
+        "/etc/shadow",
+        "assets\\\\..\\\\evil.wasm",
+        "./panel.wasm",
+        "assets//panel.wasm",
+        "C:evil.wasm",
+        "",
+    ] {
+        let bad_manifest = format!(
+            r#"
+id = "tao3k.traversal"
+version = "1.0.0"
+contract_major = 1
+
+[contributions.main]
+kind = "ui-panel"
+
+[contributions.main.panel]
+runtime = "wasm-ui-ir"
+slot_id = "workbench.main"
+cardinality = "single"
+entry_path = "{bad_path}"
+declared_actions = ["org.act"]
+"#
+        );
+        let (att, sig) = sign_manifest(bad_manifest.as_bytes(), "tao3k.official", &kp_a);
+        let err = trust
+            .verify_panel(SignedPanelRelease {
+                manifest: bad_manifest.as_bytes(),
+                attestation: att,
+                signature: &sig,
+            })
+            .expect_err(&format!("hostile entry_path {bad_path:?} must be rejected"));
+        assert_eq!(err, PluginDenial::InvalidDeclaration);
+    }
+
+    // 2. Install v2.0.0 by publisher A.
+    let v2 = br#"
+id = "tao3k.versioned"
+version = "2.0.0"
+contract_major = 1
+
+[contributions.main]
+kind = "ui-panel"
+
+[contributions.main.panel]
+runtime = "wasm-ui-ir"
+slot_id = "workbench.main"
+cardinality = "single"
+entry_path = "assets/panel.wasm"
+declared_actions = ["org.read", "org.write"]
+"#;
+    let mut host = PanelPluginHost::new(trust);
+    let (att_v2, sig_v2) = sign_manifest(v2, "tao3k.official", &kp_a);
+    host.install(SignedPanelRelease {
+        manifest: v2,
+        attestation: att_v2,
+        signature: &sig_v2,
+    })
+    .unwrap();
+
+    // 3. Signed version downgrade (v1.0.0) by same publisher MUST be refused (anti-rollback).
+    let v1 = br#"
+id = "tao3k.versioned"
+version = "1.0.0"
+contract_major = 1
+
+[contributions.main]
+kind = "ui-panel"
+
+[contributions.main.panel]
+runtime = "wasm-ui-ir"
+slot_id = "workbench.main"
+cardinality = "single"
+entry_path = "assets/panel.wasm"
+declared_actions = ["org.read"]
+"#;
+    let (att_v1, sig_v1) = sign_manifest(v1, "tao3k.official", &kp_a);
+    assert_eq!(
+        host.install(SignedPanelRelease {
+            manifest: v1,
+            attestation: att_v1,
+            signature: &sig_v1,
+        })
+        .unwrap_err(),
+        PluginDenial::ConflictingRelease
+    );
+
+    // 4. Cross-publisher hijack (v3.0.0 signed by publisher B for same plugin_id) MUST be refused.
+    let v3_hijack = br#"
+id = "tao3k.versioned"
+version = "3.0.0"
+contract_major = 1
+
+[contributions.main]
+kind = "ui-panel"
+
+[contributions.main.panel]
+runtime = "wasm-ui-ir"
+slot_id = "workbench.main"
+cardinality = "single"
+entry_path = "assets/panel.wasm"
+declared_actions = ["org.read"]
+"#;
+    let (att_hijack, sig_hijack) = sign_manifest(v3_hijack, "evil.publisher", &kp_b);
+    assert_eq!(
+        host.install(SignedPanelRelease {
+            manifest: v3_hijack,
+            attestation: att_hijack,
+            signature: &sig_hijack,
+        })
+        .unwrap_err(),
+        PluginDenial::ConflictingRelease
+    );
+
+    // 5. Conflicting idempotency replay (same idempotency_key, different action_name or args_json) MUST be refused.
+    let project = PanelProjectId::new("proj-idem");
+    let pid = PluginId::try_from("tao3k.versioned".to_owned()).unwrap();
+    let cid = ContributionId::try_from("main".to_owned()).unwrap();
+    let act = host.enable_panel(project.clone(), &pid, &cid, b"").unwrap();
+    let first = host
+        .admit_scoped_action(ScopedPanelActionRequest {
+            project_id: &project,
+            plugin_id: &pid,
+            contribution_id: &cid,
+            generation: act.generation,
+            action_name: "org.read",
+            args_json: br#"{"id":1}"#,
+            idempotency_key: "idem-key-conflict",
+        })
+        .unwrap();
+    // Exact duplicate replays cached receipt.
+    let exact = host
+        .admit_scoped_action(ScopedPanelActionRequest {
+            project_id: &project,
+            plugin_id: &pid,
+            contribution_id: &cid,
+            generation: act.generation,
+            action_name: "org.read",
+            args_json: br#"{"id":1}"#,
+            idempotency_key: "idem-key-conflict",
+        })
+        .unwrap();
+    assert_eq!(first.receipt_id, exact.receipt_id);
+
+    // Same idempotency_key with different args_json MUST fail!
+    assert_eq!(
+        host.admit_scoped_action(ScopedPanelActionRequest {
+            project_id: &project,
+            plugin_id: &pid,
+            contribution_id: &cid,
+            generation: act.generation,
+            action_name: "org.read",
+            args_json: br#"{"id":2}"#,
+            idempotency_key: "idem-key-conflict",
+        }),
+        Err(PluginDenial::ScopeMismatch)
+    );
+    // Same idempotency_key with different action_name MUST fail!
+    assert_eq!(
+        host.admit_scoped_action(ScopedPanelActionRequest {
+            project_id: &project,
+            plugin_id: &pid,
+            contribution_id: &cid,
+            generation: act.generation,
+            action_name: "org.write",
+            args_json: br#"{"id":1}"#,
+            idempotency_key: "idem-key-conflict",
+        }),
+        Err(PluginDenial::ScopeMismatch)
+    );
+
+    // 6. Same-publisher upgrade v3.0.0 MUST atomically close prior active generation.
+    let (att_v3_ok, sig_v3_ok) = sign_manifest(v3_hijack, "tao3k.official", &kp_a);
+    host.install(SignedPanelRelease {
+        manifest: v3_hijack,
+        attestation: att_v3_ok,
+        signature: &sig_v3_ok,
+    })
+    .unwrap();
+    assert!(
+        host.evidence(&PanelActivationId::new(act.activation_id))
+            .unwrap()
+            .closed
+    );
+}

@@ -38,8 +38,12 @@ pub mod wire;
 pub mod scheme_host_client;
 #[cfg(feature = "ui-grpc")]
 pub use scheme_host_client::{
-    FleetAuditCapsuleView, FleetTaskAction, GovernanceAuthoritySnapshotView, GovernanceFactAction,
-    GrpcCode, GrpcStatus, HostStatusSnapshot, MarlinSchemeHostClient,
+    CedarProbeResultView, FleetAuditCapsuleView, FleetTaskAction, GovernanceAuthoritySnapshotView,
+    GovernanceFactAction, GrpcCode, GrpcStatus, HostStatusSnapshot, MarlinSchemeHostClient,
 };
 #[cfg(feature = "ui-grpc")]
 pub mod ui_grpc;
+#[cfg(feature = "ui-grpc")]
+pub mod mygo_host;
+#[cfg(feature = "ui-grpc")]
+pub mod scheme_ctl;

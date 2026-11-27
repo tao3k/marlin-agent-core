@@ -883,6 +883,34 @@ impl HookDispatchReport {
     }
 }
 
+struct AbortOnDropHandle<T>(Option<tokio::task::JoinHandle<T>>);
+
+impl<T> AbortOnDropHandle<T> {
+    fn new(handle: tokio::task::JoinHandle<T>) -> Self {
+        Self(Some(handle))
+    }
+
+    async fn join(mut self) -> Result<T, tokio::task::JoinError> {
+        let result = self
+            .0
+            .as_mut()
+            .expect("abort-on-drop hook handle awaited once")
+            .await;
+        // Disarm only after the task resolves; if `join` is cancelled mid-await,
+        // `self.0` stays `Some(handle)` so `Drop` aborts the in-flight task.
+        self.0 = None;
+        result
+    }
+}
+
+impl<T> Drop for AbortOnDropHandle<T> {
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
+}
+
 async fn run_permitted_hook_registrations(
     context: RuntimeContext,
     invocation: HookInvocation,
@@ -903,14 +931,16 @@ async fn run_permitted_hook_registrations(
                 runs.push(apply_registration_metadata(&registration, summary));
             }
             HookExecutionMode::Async => {
-                let task = registration.run(context.child_context(), invocation.clone());
+                let task = AbortOnDropHandle::new(
+                    registration.run(context.child_context(), invocation.clone()),
+                );
                 async_runs.push((registration, task));
             }
         }
     }
 
     for (registration, task) in async_runs {
-        let summary = match task.await {
+        let summary = match task.join().await {
             Ok(summary) => summary,
             Err(error) => {
                 tracing::warn!(

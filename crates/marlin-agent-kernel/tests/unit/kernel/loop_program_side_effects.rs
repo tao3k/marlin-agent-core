@@ -560,3 +560,222 @@ fn receipt(step: u64, action: LoopProgramActionKind) -> GenericLoopMachineReceip
         stopped: false,
     }
 }
+
+#[cfg(unix)]
+mod sm22_adv_l4_symlink_escape_tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[tokio::test]
+    async fn sm22_adv_l4_blocks_intermediate_dir_symlink_sandbox_escape() {
+        let (runtime, _events) = TokioAgentRuntime::new(4);
+        let workspace = unique_side_effect_workspace();
+        let outside = workspace.with_file_name(format!(
+            "{}-outside-dir",
+            workspace.file_name().unwrap().to_string_lossy()
+        ));
+        fs::create_dir_all(&workspace).expect("create workspace");
+        fs::create_dir_all(&outside).expect("create outside dir");
+        symlink(&outside, workspace.join("out")).expect("plant intermediate dir symlink");
+
+        let receipt = LoopProgramRuntimeSideEffectExecutor::default()
+            .with_file_write_resolver(file_write_resolver("out/pwned.rs", "EXFILTRATED_PAYLOAD\n"))
+            .with_file_sandbox(
+                LoopProgramFileSandbox::new(workspace.clone())
+                    .with_allowed_relative_paths([PathBuf::from("out/pwned.rs")]),
+            )
+            .execute(&runtime.context(), &agent_flow_handoff_execution())
+            .await;
+
+        let escaped = outside.join("pwned.rs").exists();
+        let _ = fs::remove_dir_all(&workspace);
+        let _ = fs::remove_dir_all(&outside);
+
+        assert!(
+            !escaped,
+            "ADV-L4 ESCAPE PROVEN: intermediate dir symlink allowed write outside sandbox root"
+        );
+        assert_eq!(receipt.status, LoopProgramRuntimeSideEffectStatus::Failed);
+        assert_eq!(
+            receipt.file_writes[0].status,
+            LoopProgramFileWriteSideEffectStatus::Denied
+        );
+        assert!(
+            receipt.file_writes[0]
+                .diagnostic
+                .as_deref()
+                .unwrap_or("")
+                .contains("symlink_escape_denied"),
+            "expected symlink_escape_denied diagnostic, got {:?}",
+            receipt.file_writes[0].diagnostic
+        );
+    }
+
+    #[tokio::test]
+    async fn sm22_adv_l4_blocks_existing_leaf_symlink_overwrite_and_digest_leak() {
+        let (runtime, _events) = TokioAgentRuntime::new(4);
+        let workspace = unique_side_effect_workspace();
+        let outside = workspace.with_file_name(format!(
+            "{}-outside-leaf",
+            workspace.file_name().unwrap().to_string_lossy()
+        ));
+        fs::create_dir_all(workspace.join("src")).expect("create workspace/src");
+        fs::create_dir_all(&outside).expect("create outside dir");
+        let secret_file = outside.join("secret.key");
+        fs::write(&secret_file, "TOP_SECRET_CREDENTIAL\n").expect("seed outside secret");
+        symlink(&secret_file, workspace.join("src/report.rs")).expect("plant leaf symlink");
+
+        let receipt = LoopProgramRuntimeSideEffectExecutor::default()
+            .with_file_write_resolver(file_write_resolver("src/report.rs", "OVERWRITTEN\n"))
+            .with_file_sandbox(
+                LoopProgramFileSandbox::new(workspace.clone())
+                    .with_allowed_relative_paths([PathBuf::from("src/report.rs")]),
+            )
+            .execute(&runtime.context(), &agent_flow_handoff_execution())
+            .await;
+
+        let secret_after = fs::read_to_string(&secret_file).unwrap_or_default();
+        let _ = fs::remove_dir_all(&workspace);
+        let _ = fs::remove_dir_all(&outside);
+
+        assert_eq!(
+            secret_after, "TOP_SECRET_CREDENTIAL\n",
+            "ADV-L4 ESCAPE PROVEN: leaf symlink overwrote file outside sandbox root"
+        );
+        assert_eq!(
+            receipt.file_writes[0].status,
+            LoopProgramFileWriteSideEffectStatus::Denied
+        );
+        assert!(
+            receipt.file_writes[0].write_receipt.is_none(),
+            "ADV-L4 LEAK PROVEN: leaf symlink leaked outside file digest via write_receipt"
+        );
+        assert!(
+            receipt.file_writes[0]
+                .diagnostic
+                .as_deref()
+                .unwrap_or("")
+                .contains("symlink_escape_denied")
+        );
+    }
+
+    #[tokio::test]
+    async fn sm22_adv_l4_blocks_dangling_leaf_symlink_creation_escape() {
+        let (runtime, _events) = TokioAgentRuntime::new(4);
+        let workspace = unique_side_effect_workspace();
+        let outside = workspace.with_file_name(format!(
+            "{}-outside-dangling",
+            workspace.file_name().unwrap().to_string_lossy()
+        ));
+        fs::create_dir_all(workspace.join("src")).expect("create workspace/src");
+        fs::create_dir_all(&outside).expect("create outside dir");
+        let outside_target = outside.join("created_via_dangling.rs");
+        symlink(&outside_target, workspace.join("src/new_out.rs"))
+            .expect("plant dangling leaf symlink");
+
+        let receipt = LoopProgramRuntimeSideEffectExecutor::default()
+            .with_file_write_resolver(file_write_resolver("src/new_out.rs", "CREATED_OUTSIDE\n"))
+            .with_file_sandbox(
+                LoopProgramFileSandbox::new(workspace.clone())
+                    .with_allowed_relative_paths([PathBuf::from("src/new_out.rs")]),
+            )
+            .execute(&runtime.context(), &agent_flow_handoff_execution())
+            .await;
+
+        let created = outside_target.exists();
+        let _ = fs::remove_dir_all(&workspace);
+        let _ = fs::remove_dir_all(&outside);
+
+        assert!(
+            !created,
+            "ADV-L4 ESCAPE PROVEN: dangling leaf symlink created file outside sandbox root"
+        );
+        assert_eq!(
+            receipt.file_writes[0].status,
+            LoopProgramFileWriteSideEffectStatus::Denied
+        );
+        assert!(
+            receipt.file_writes[0]
+                .diagnostic
+                .as_deref()
+                .unwrap_or("")
+                .contains("symlink_escape_denied")
+        );
+    }
+
+    #[tokio::test]
+    async fn sm22_adv_l4_blocks_chained_symlink_escape() {
+        let (runtime, _events) = TokioAgentRuntime::new(4);
+        let workspace = unique_side_effect_workspace();
+        let outside = workspace.with_file_name(format!(
+            "{}-outside-chain",
+            workspace.file_name().unwrap().to_string_lossy()
+        ));
+        fs::create_dir_all(workspace.join("a")).expect("create workspace/a");
+        fs::create_dir_all(&outside).expect("create outside dir");
+        symlink(&outside, workspace.join("c")).expect("plant second hop symlink");
+        symlink(workspace.join("c"), workspace.join("a/b")).expect("plant first hop symlink");
+
+        let receipt = LoopProgramRuntimeSideEffectExecutor::default()
+            .with_file_write_resolver(file_write_resolver(
+                "a/b/deep/payload.rs",
+                "CHAINED_ESCAPE\n",
+            ))
+            .with_file_sandbox(
+                LoopProgramFileSandbox::new(workspace.clone())
+                    .with_allowed_relative_paths([PathBuf::from("a/b/deep/payload.rs")]),
+            )
+            .execute(&runtime.context(), &agent_flow_handoff_execution())
+            .await;
+
+        let escaped = outside.join("deep/payload.rs").exists();
+        let _ = fs::remove_dir_all(&workspace);
+        let _ = fs::remove_dir_all(&outside);
+
+        assert!(
+            !escaped,
+            "ADV-L4 ESCAPE PROVEN: multi-hop symlink chain wrote outside sandbox root"
+        );
+        assert_eq!(
+            receipt.file_writes[0].status,
+            LoopProgramFileWriteSideEffectStatus::Denied
+        );
+    }
+
+    #[tokio::test]
+    async fn sm24_adv_l4_tool_process_scrubs_ambient_secret_env_vars() {
+        let secrets = [
+            ("SM24_KERNEL_OPENAI_KEY", "sk-live-kernel-sm24-leak-aaaa"),
+            ("SM24_KERNEL_BRIDGE_TOKEN", "bridge-secret-kernel-sm24-bbbb"),
+        ];
+        for (k, v) in secrets {
+            // SAFETY: unique test-scoped env var names; cleaned up immediately after spawn.
+            unsafe {
+                std::env::set_var(k, v);
+            }
+        }
+        let (runtime, _events) = TokioAgentRuntime::new(4);
+        let handoff_execution = agent_flow_handoff_execution();
+        let receipt = LoopProgramRuntimeSideEffectExecutor::new(tool_resolver(
+            "printf '%s|%s' \"$SM24_KERNEL_OPENAI_KEY\" \"$SM24_KERNEL_BRIDGE_TOKEN\"",
+        ))
+        .execute(&runtime.context(), &handoff_execution)
+        .await;
+        for (k, _) in secrets {
+            unsafe {
+                std::env::remove_var(k);
+            }
+        }
+
+        assert_eq!(receipt.status, LoopProgramRuntimeSideEffectStatus::Completed);
+        let spawn = receipt.tool_processes[0]
+            .spawn_receipt
+            .as_ref()
+            .expect("spawn receipt");
+        let leaked = String::from_utf8_lossy(&spawn.output.stdout);
+        assert_eq!(
+            leaked, "|",
+            "ADV-L4 SECRET EXFILTRATION PROVEN: kernel projected tool process inherited host secrets: {leaked:?}"
+        );
+    }
+}

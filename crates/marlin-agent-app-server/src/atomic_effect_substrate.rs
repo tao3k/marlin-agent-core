@@ -17,9 +17,16 @@ use std::collections::BTreeSet;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use marlin_agent_kernel::{
+    DerivationId, ExecutionCircuitBreaker, GovernanceAdmissionGate, GovernedSubjectName,
+    ToolBudgetUnits, ToolIfcContext,
+};
 use marlin_agent_protocol::ModelGateway;
 use marlin_agent_runtime::{
     AtomicEffect, AtomicEffectExecutor, AtomicEffectReceipt, CasHitReceiptPayload,
@@ -58,10 +65,15 @@ impl AtomicSandboxRunner for DenySandboxRunner {
 }
 
 /// Bounded Tokio command runner for explicitly admitted `AtomicEffect::SandboxRun` payloads.
-#[derive(Clone, Copy, Debug)]
+///
+/// Routes every child process through `marlin_agent_runtime::AsyncManagedChildProcess`
+/// so sandbox commands inherit Unix process-group containment, graceful `SIGTERM` ->
+/// `SIGKILL` shutdown, persistent ledger tracking, and OpenTelemetry `runtime.process` spans.
+#[derive(Clone, Debug)]
 pub struct BoundedTokioSandboxRunner {
     timeout: Duration,
     max_output_bytes: usize,
+    runtime_context: Option<marlin_agent_runtime::RuntimeContext>,
 }
 
 impl BoundedTokioSandboxRunner {
@@ -70,6 +82,40 @@ impl BoundedTokioSandboxRunner {
         Self {
             timeout,
             max_output_bytes: max_output_bytes.max(1),
+            runtime_context: None,
+        }
+    }
+
+    /// Bind a host `RuntimeContext` so every sandboxed child shares the host's
+    /// process registry, persistent ledger, and admission quota.
+    pub fn with_runtime_context(mut self, context: marlin_agent_runtime::RuntimeContext) -> Self {
+        self.runtime_context = Some(context);
+        self
+    }
+}
+
+const SAFE_SANDBOX_ENV_ALLOWLIST: &[&str] = &[
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "USER",
+    "LOGNAME",
+    "TZ",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NIX_SSL_CERT_FILE",
+];
+
+fn apply_scrubbed_env(cmd: &mut tokio::process::Command) {
+    cmd.env_clear();
+    for key in SAFE_SANDBOX_ENV_ALLOWLIST {
+        if let Some(val) = std::env::var_os(key) {
+            cmd.env(key, val);
         }
     }
 }
@@ -81,28 +127,66 @@ impl AtomicSandboxRunner for BoundedTokioSandboxRunner {
     ) -> Pin<Box<dyn Future<Output = AtomicEffectReceipt> + Send + 'a>> {
         let timeout = self.timeout;
         let max_bytes = self.max_output_bytes;
+        let bound_context = self.runtime_context.clone();
         Box::pin(async move {
+            let (_ephemeral_runtime, context) = match bound_context {
+                Some(ctx) => (None, ctx.child_context()),
+                None => {
+                    let (rt, _events) = marlin_agent_runtime::TokioAgentRuntime::new(16);
+                    let ctx = rt.context();
+                    (Some(rt), ctx)
+                }
+            };
             let mut cmd = tokio::process::Command::new(&payload.program);
-            cmd.args(&payload.args).kill_on_drop(true);
+            apply_scrubbed_env(&mut cmd);
+            cmd.args(&payload.args)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
             if let Some(cwd) = &payload.cwd {
                 cmd.current_dir(cwd);
             }
-            match tokio::time::timeout(timeout, cmd.output()).await {
-                Ok(Ok(output)) => {
-                    let mut stdout = output.stdout;
-                    let mut stderr = output.stderr;
-                    stdout.truncate(max_bytes);
-                    stderr.truncate(max_bytes);
-                    AtomicEffectReceipt::SandboxExited(SandboxExitedReceiptPayload {
+            let handle = format!("sandbox:{}", payload.effect_id);
+            let mut argv = Vec::with_capacity(payload.args.len() + 1);
+            argv.push(payload.program.clone());
+            argv.extend(payload.args.iter().cloned());
+            let mut command_obs =
+                marlin_agent_runtime::process::RuntimeCommandObservation::new("sandbox.run")
+                    .with_argv(argv);
+            if let Some(cwd) = &payload.cwd {
+                command_obs = command_obs.with_cwd(cwd.clone());
+            }
+            let spec = marlin_agent_runtime::ManagedChildProcessSpec::new(
+                marlin_agent_runtime::process::RuntimeProcessKind::Tool,
+                handle.clone(),
+            )
+            .with_handle(handle)
+            .with_command(command_obs);
+
+            let child = match marlin_agent_runtime::AsyncManagedChildProcess::spawn_with_spec(
+                &context, cmd, spec,
+            )
+            .await
+            {
+                Ok(child) => child,
+                Err(err) => {
+                    return AtomicEffectReceipt::EffectError(EffectErrorReceiptPayload {
                         effect_id: payload.effect_id,
-                        exit_code: output.status.code().unwrap_or(-1),
-                        stdout,
-                        stderr,
-                    })
+                        message: format!("sandbox spawn failed: {err}"),
+                    });
                 }
+            };
+
+            match tokio::time::timeout(timeout, child.wait_with_bounded_output(max_bytes)).await {
+                Ok(Ok(output)) => AtomicEffectReceipt::SandboxExited(SandboxExitedReceiptPayload {
+                    effect_id: payload.effect_id,
+                    exit_code: output.status.code().unwrap_or(-1),
+                    stdout: output.stdout,
+                    stderr: output.stderr,
+                }),
                 Ok(Err(err)) => AtomicEffectReceipt::EffectError(EffectErrorReceiptPayload {
                     effect_id: payload.effect_id,
-                    message: format!("sandbox spawn failed: {err}"),
+                    message: format!("sandbox wait failed: {err}"),
                 }),
                 Err(_) => AtomicEffectReceipt::EffectError(EffectErrorReceiptPayload {
                     effect_id: payload.effect_id,
@@ -140,6 +224,12 @@ impl AllowlistSandboxRunner {
     /// Confines all executed commands to `root` (or subdirectories thereof).
     pub fn with_confined_root(mut self, root: impl AsRef<Path>) -> Self {
         self.confined_root = Some(root.as_ref().to_path_buf());
+        self
+    }
+
+    /// Bind a host `RuntimeContext` for persistent process ledger & quota accounting.
+    pub fn with_runtime_context(mut self, context: marlin_agent_runtime::RuntimeContext) -> Self {
+        self.inner = self.inner.with_runtime_context(context);
         self
     }
 
@@ -349,11 +439,19 @@ impl<S: AgentStorage + Send + Sync + 'static> StorageCasStore<S> {
     }
 }
 
-/// Thin 4-primitive leaf executor composing `AgentStorage` CAS + `ModelGateway` + `AtomicSandboxRunner`.
+const DEFAULT_ATOMIC_EFFECT_TOOL_BUDGET: u32 = 4096;
+
+/// Thin 4-primitive leaf executor composing `AgentStorage` CAS + `ModelGateway` +
+/// `AtomicSandboxRunner` behind an authoritative fail-closed `GovernanceAdmissionGate`
+/// (`ExecutionCircuitBreaker` + Cedar + ASCENT + Bi-Temporal TMS, SM25).
 pub struct CompositeAtomicEffectExecutor<S, G, R = DenySandboxRunner> {
     storage: S,
     gateway: G,
     sandbox: R,
+    governance_gate: Arc<GovernanceAdmissionGate>,
+    governance_actor: GovernedSubjectName,
+    derivation_id: Option<DerivationId>,
+    ifc_context: ToolIfcContext,
     project_id: ProjectId,
     session_id: SessionId,
     agent_id: AgentId,
@@ -362,7 +460,8 @@ pub struct CompositeAtomicEffectExecutor<S, G, R = DenySandboxRunner> {
 }
 
 impl<S, G> CompositeAtomicEffectExecutor<S, G, DenySandboxRunner> {
-    /// Constructs a leaf executor with fail-closed `DenySandboxRunner` by default.
+    /// Constructs a leaf executor with fail-closed `DenySandboxRunner` and a live
+    /// `GovernanceAdmissionGate` by default.
     pub fn new(
         storage: S,
         gateway: G,
@@ -376,10 +475,20 @@ impl<S, G> CompositeAtomicEffectExecutor<S, G, DenySandboxRunner> {
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         let boot_seq = ATOMIC_EXEC_BOOT_SEQ.fetch_add(1, Ordering::Relaxed);
+        let breaker = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(
+            DEFAULT_ATOMIC_EFFECT_TOOL_BUDGET,
+        )));
+        let governance_gate = Arc::new(GovernanceAdmissionGate::new(breaker));
+        let governance_actor = GovernedSubjectName::new(agent_id.as_str())
+            .unwrap_or_else(|_| GovernedSubjectName::new("agent-atomic-effect").unwrap());
         Self {
             storage,
             gateway,
             sandbox: DenySandboxRunner,
+            governance_gate,
+            governance_actor,
+            derivation_id: None,
+            ifc_context: ToolIfcContext::clean_trusted(),
             project_id,
             session_id,
             agent_id,
@@ -390,18 +499,81 @@ impl<S, G> CompositeAtomicEffectExecutor<S, G, DenySandboxRunner> {
 }
 
 impl<S, G, R> CompositeAtomicEffectExecutor<S, G, R> {
-    /// Mounts an explicit `AtomicSandboxRunner` onto this leaf executor.
+    /// Mounts an explicit `AtomicSandboxRunner` onto this leaf executor while
+    /// preserving the bound `GovernanceAdmissionGate`.
     pub fn with_sandbox<R2>(self, sandbox: R2) -> CompositeAtomicEffectExecutor<S, G, R2> {
         CompositeAtomicEffectExecutor {
             storage: self.storage,
             gateway: self.gateway,
             sandbox,
+            governance_gate: self.governance_gate,
+            governance_actor: self.governance_actor,
+            derivation_id: self.derivation_id,
+            ifc_context: self.ifc_context,
             project_id: self.project_id,
             session_id: self.session_id,
             agent_id: self.agent_id,
             boot_tag: self.boot_tag,
             seq: self.seq,
         }
+    }
+
+    /// Mounts a shared authoritative `GovernanceAdmissionGate` onto this production
+    /// GraphEngine executor so operator E-Stop, Cedar `forbid` rules, ASCENT fencing,
+    /// and Bi-Temporal TMS retractions block physical effects fail-closed (SM25).
+    pub fn with_governance_gate(
+        mut self,
+        gate: Arc<GovernanceAdmissionGate>,
+        actor: GovernedSubjectName,
+        derivation_id: Option<DerivationId>,
+    ) -> Self {
+        self.governance_gate = gate;
+        self.governance_actor = actor;
+        self.derivation_id = derivation_id;
+        self
+    }
+
+    /// Configures the CaMeL/FIDES `ToolIfcContext` evaluated before each mutating effect.
+    pub fn with_ifc_context(mut self, ifc_context: ToolIfcContext) -> Self {
+        self.ifc_context = ifc_context;
+        self
+    }
+
+    /// Borrows the authoritative `GovernanceAdmissionGate` mediating this executor.
+    pub fn governance_gate(&self) -> &Arc<GovernanceAdmissionGate> {
+        &self.governance_gate
+    }
+
+    fn effect_id_of(effect: &AtomicEffect) -> String {
+        match effect {
+            AtomicEffect::CasGet(p) => p.effect_id.clone(),
+            AtomicEffect::CasPut(p) => p.effect_id.clone(),
+            AtomicEffect::LlmComplete(p) => p.effect_id.clone(),
+            AtomicEffect::SandboxRun(p) => p.effect_id.clone(),
+        }
+    }
+
+    fn authorize_atomic_effect(&self, effect: &AtomicEffect) -> Result<(), String> {
+        let (tool_label, resource_label): (&str, &str) = match effect {
+            AtomicEffect::CasGet(_) => return Ok(()),
+            AtomicEffect::CasPut(p) => ("atomic_effect:cas_put", p.key.as_str()),
+            AtomicEffect::LlmComplete(_) => ("atomic_effect:llm_complete", "model_gateway"),
+            AtomicEffect::SandboxRun(p) => ("atomic_effect:sandbox_run", p.program.as_str()),
+        };
+        let tool = GovernedSubjectName::new(tool_label)
+            .unwrap_or_else(|_| GovernedSubjectName::new("atomic_effect").unwrap());
+        let resource = GovernedSubjectName::new(resource_label)
+            .unwrap_or_else(|_| GovernedSubjectName::new("workspace").unwrap());
+        self.governance_gate
+            .authorize_side_effect_on_resource(
+                self.derivation_id.as_ref(),
+                &self.governance_actor,
+                &tool,
+                &resource,
+                &self.ifc_context,
+            )
+            .map(|_| ())
+            .map_err(|err| format!("governance_admission_denied: {err}"))
     }
 
     fn pointer_key_for(key: &str) -> Result<ArtifactPointerKey, String> {
@@ -429,6 +601,12 @@ where
         effect: AtomicEffect,
     ) -> Pin<Box<dyn Future<Output = AtomicEffectReceipt> + Send + 'a>> {
         Box::pin(async move {
+            if let Err(message) = self.authorize_atomic_effect(&effect) {
+                return AtomicEffectReceipt::EffectError(EffectErrorReceiptPayload {
+                    effect_id: Self::effect_id_of(&effect),
+                    message,
+                });
+            }
             match effect {
                 AtomicEffect::CasGet(p) => {
                     let ptr_key = match Self::pointer_key_for(&p.key) {
@@ -581,381 +759,5 @@ where
                 AtomicEffect::SandboxRun(p) => self.sandbox.run_sandbox(p).await,
             }
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    use marlin_agent_protocol::{
-        ModelEndpoint, ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse,
-        ModelGatewayFuture, ModelGatewayRequest, ModelGatewayResult, assistant_gateway_message,
-        user_gateway_message,
-    };
-    use marlin_agent_runtime::{
-        AtomicEffect, AtomicEffectReceipt, CasGetEffectPayload, CasPutEffectPayload,
-        LlmCompleteEffectPayload, SandboxRunEffectPayload, run_atomic_effect_batch,
-    };
-    use marlin_agent_storage::{
-        AgentId, ProjectId, SessionId, TursoAgentStorage, TursoAgentStorageConfig,
-        TursoBatchTransactionMode, TursoOptimizationProfile,
-    };
-
-    use super::{
-        AllowlistSandboxRunner, AtomicSandboxRunner, BoundedTokioSandboxRunner,
-        CompositeAtomicEffectExecutor,
-    };
-
-    struct EchoModelGateway;
-
-    impl ModelGateway for EchoModelGateway {
-        fn complete(
-            &self,
-            request: ModelGatewayRequest,
-        ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayCompletionResponse>> {
-            let prompt = request
-                .messages()
-                .last()
-                .map(|m| m.content.clone())
-                .unwrap_or_default();
-            Box::pin(async move {
-                Ok(ModelGatewayCompletionResponse::new(
-                    "echo-resp-1",
-                    "gpt-marlin-echo",
-                    vec![ModelGatewayCompletionChoice::new(
-                        0,
-                        assistant_gateway_message(format!("echo:{prompt}")),
-                        None,
-                    )],
-                ))
-            })
-        }
-    }
-
-    #[tokio::test]
-    async fn composite_executor_runs_all_four_primitives_on_real_turso_wal_and_survives_restart() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let cfg = TursoAgentStorageConfig {
-            path: dir.path().join("atomic-substrate.db"),
-            optimization_profile: TursoOptimizationProfile::AsyncIoWithMvcc,
-            batch_transaction_mode: TursoBatchTransactionMode::Concurrent,
-        };
-        let project = ProjectId::new("proj-s11").unwrap();
-        let session = SessionId::new("sess-s11").unwrap();
-        let agent = AgentId::new("agent-s11").unwrap();
-
-        // Boot #1 with default fail-closed DenySandboxRunner
-        let storage1 = TursoAgentStorage::open_local(cfg.clone())
-            .await
-            .expect("open turso #1");
-        let exec1 = Arc::new(CompositeAtomicEffectExecutor::new(
-            storage1,
-            EchoModelGateway,
-            project.clone(),
-            session.clone(),
-            agent.clone(),
-        ));
-
-        let batch1 = vec![
-            AtomicEffect::CasGet(CasGetEffectPayload {
-                effect_id: "e-miss".to_owned(),
-                key: "k:s11:wire".to_owned(),
-            }),
-            AtomicEffect::LlmComplete(LlmCompleteEffectPayload {
-                effect_id: "e-llm".to_owned(),
-                request: ModelGatewayRequest::new(
-                    ModelEndpoint::new("openai", "gpt-marlin-echo"),
-                    vec![user_gateway_message("ping-s11")],
-                ),
-            }),
-            AtomicEffect::SandboxRun(SandboxRunEffectPayload {
-                effect_id: "e-sb-denied".to_owned(),
-                program: "/bin/echo".to_owned(),
-                args: vec!["blocked".to_owned()],
-                cwd: None,
-            }),
-        ];
-        let rcpts1 = run_atomic_effect_batch(Arc::clone(&exec1), batch1).await;
-        assert!(matches!(rcpts1[0], AtomicEffectReceipt::CasMiss(ref id) if id == "e-miss"));
-        assert!(matches!(
-            rcpts1[1],
-            AtomicEffectReceipt::LlmCompleted(ref p) if p.effect_id == "e-llm" && p.content == "echo:ping-s11"
-        ));
-        assert!(matches!(
-            rcpts1[2],
-            AtomicEffectReceipt::EffectError(ref p) if p.effect_id == "e-sb-denied"
-        ));
-
-        // Store bytes via CasPut on real Turso WAL, then drop Boot #1 completely!
-        let put_rcpts = run_atomic_effect_batch(
-            Arc::clone(&exec1),
-            vec![AtomicEffect::CasPut(CasPutEffectPayload {
-                effect_id: "e-put".to_owned(),
-                key: "k:s11:wire".to_owned(),
-                bytes: b"(fleet-wire-v1 (round . 11))".to_vec(),
-            })],
-        )
-        .await;
-        assert!(
-            matches!(put_rcpts.as_slice(), [AtomicEffectReceipt::CasStored(id)] if id == "e-put")
-        );
-        drop(exec1);
-
-        // Boot #2: Reopen Turso WAL + mount BoundedTokioSandboxRunner
-        let storage2 = TursoAgentStorage::open_local(cfg)
-            .await
-            .expect("open turso #2");
-        let exec2 = Arc::new(
-            CompositeAtomicEffectExecutor::new(storage2, EchoModelGateway, project, session, agent)
-                .with_sandbox(BoundedTokioSandboxRunner::new(Duration::from_secs(5), 4096)),
-        );
-        let batch2 = vec![
-            AtomicEffect::CasGet(CasGetEffectPayload {
-                effect_id: "e-hit".to_owned(),
-                key: "k:s11:wire".to_owned(),
-            }),
-            AtomicEffect::SandboxRun(SandboxRunEffectPayload {
-                effect_id: "e-sb-ok".to_owned(),
-                program: "/bin/echo".to_owned(),
-                args: vec!["hello-atomic-sandbox".to_owned()],
-                cwd: None,
-            }),
-        ];
-        let rcpts2 = run_atomic_effect_batch(Arc::clone(&exec2), batch2).await;
-        assert!(matches!(
-            rcpts2[0],
-            AtomicEffectReceipt::CasHit(ref p)
-                if p.effect_id == "e-hit" && p.bytes == b"(fleet-wire-v1 (round . 11))"
-        ));
-        assert!(matches!(
-            rcpts2[1],
-            AtomicEffectReceipt::SandboxExited(ref p)
-                if p.effect_id == "e-sb-ok"
-                    && p.exit_code == 0
-                    && String::from_utf8_lossy(&p.stdout).trim() == "hello-atomic-sandbox"
-        ));
-
-        // Boot #2 CasPut on the exact same key must NOT collide on Turso visibility_receipts!
-        let put2 = run_atomic_effect_batch(
-            exec2,
-            vec![AtomicEffect::CasPut(CasPutEffectPayload {
-                effect_id: "e-put-boot2".to_owned(),
-                key: "k:s11:wire".to_owned(),
-                bytes: b"(fleet-wire-v1 (round . 16))".to_vec(),
-            })],
-        )
-        .await;
-        assert!(
-            matches!(put2.as_slice(), [AtomicEffectReceipt::CasStored(id)] if id == "e-put-boot2")
-        );
-    }
-
-    #[tokio::test]
-    async fn allowlist_sandbox_runner_enforces_program_allowlist_and_cwd_confinement() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let sub = dir.path().join("work");
-        std::fs::create_dir_all(&sub).expect("create work subdir");
-        let outside = tempfile::tempdir().expect("outside tempdir");
-
-        let runner = AllowlistSandboxRunner::new(Duration::from_secs(5), 4096, ["/bin/echo"])
-            .with_confined_root(dir.path());
-
-        // 1. Allowed program inside confined subdir succeeds.
-        let ok = runner
-            .run_sandbox(SandboxRunEffectPayload {
-                effect_id: "sb-ok".to_owned(),
-                program: "/bin/echo".to_owned(),
-                args: vec!["confined-ok".to_owned()],
-                cwd: Some("work".to_owned()),
-            })
-            .await;
-        assert!(matches!(
-            ok,
-            AtomicEffectReceipt::SandboxExited(ref p)
-                if p.effect_id == "sb-ok"
-                    && p.exit_code == 0
-                    && String::from_utf8_lossy(&p.stdout).trim() == "confined-ok"
-        ));
-
-        // 2. Disallowed program fails closed.
-        let denied_prog = runner
-            .run_sandbox(SandboxRunEffectPayload {
-                effect_id: "sb-deny-prog".to_owned(),
-                program: "/bin/ls".to_owned(),
-                args: vec![],
-                cwd: None,
-            })
-            .await;
-        assert!(matches!(
-            denied_prog,
-            AtomicEffectReceipt::EffectError(ref p)
-                if p.effect_id == "sb-deny-prog" && p.message.contains("allowlist")
-        ));
-
-        // 3. Escaping confined root via absolute outside path or `..` fails closed.
-        let escaped_abs = runner
-            .run_sandbox(SandboxRunEffectPayload {
-                effect_id: "sb-escape-abs".to_owned(),
-                program: "/bin/echo".to_owned(),
-                args: vec!["nope".to_owned()],
-                cwd: Some(outside.path().to_string_lossy().into_owned()),
-            })
-            .await;
-        assert!(matches!(
-            escaped_abs,
-            AtomicEffectReceipt::EffectError(ref p)
-                if p.effect_id == "sb-escape-abs" && p.message.contains("escapes confined root")
-        ));
-
-        let escaped_rel = runner
-            .run_sandbox(SandboxRunEffectPayload {
-                effect_id: "sb-escape-rel".to_owned(),
-                program: "/bin/echo".to_owned(),
-                args: vec!["nope".to_owned()],
-                cwd: Some("..".to_owned()),
-            })
-            .await;
-        assert!(matches!(
-            escaped_rel,
-            AtomicEffectReceipt::EffectError(ref p)
-                if p.effect_id == "sb-escape-rel" && p.message.contains("escapes confined root")
-        ));
-    }
-
-    #[cfg(feature = "ui-grpc")]
-    #[tokio::test]
-    async fn mygo_bridge_host_executes_atomic_effect_batch_over_mounted_turso_executor() {
-        use marlin_agent_runtime::plugin::ReleaseTrust;
-        use std::collections::BTreeMap;
-
-        let unmounted =
-            crate::ui_grpc::MyGoBridgeHost::new(ReleaseTrust::new(BTreeMap::new()), |_| Ok(()));
-        let denied = unmounted
-            .run_atomic_effects(vec![AtomicEffect::CasGet(CasGetEffectPayload {
-                effect_id: "e-unmounted".to_owned(),
-                key: "k:missing".to_owned(),
-            })])
-            .await
-            .unwrap_err();
-        assert_eq!(denied.code(), tonic::Code::FailedPrecondition);
-
-        let dir = tempfile::tempdir().expect("tempdir");
-        let cfg = TursoAgentStorageConfig {
-            path: dir.path().join("mygo-host-atomic.db"),
-            optimization_profile: TursoOptimizationProfile::AsyncIoWithMvcc,
-            batch_transaction_mode: TursoBatchTransactionMode::Concurrent,
-        };
-        let storage = TursoAgentStorage::open_local(cfg)
-            .await
-            .expect("open turso");
-        let exec = Arc::new(CompositeAtomicEffectExecutor::new(
-            storage,
-            EchoModelGateway,
-            ProjectId::new("proj-host-s13").unwrap(),
-            SessionId::new("sess-host-s13").unwrap(),
-            AgentId::new("mygo-host-s13").unwrap(),
-        ));
-        let host =
-            crate::ui_grpc::MyGoBridgeHost::new(ReleaseTrust::new(BTreeMap::new()), |_| Ok(()))
-                .with_atomic_executor(exec);
-
-        let put_rcpts = host
-            .run_atomic_effects(vec![
-                AtomicEffect::CasPut(CasPutEffectPayload {
-                    effect_id: "h-put".to_owned(),
-                    key: "k:host:s13".to_owned(),
-                    bytes: b"host-wal-bytes".to_vec(),
-                }),
-                AtomicEffect::LlmComplete(LlmCompleteEffectPayload {
-                    effect_id: "h-llm".to_owned(),
-                    request: ModelGatewayRequest::new(
-                        ModelEndpoint::new("openai", "gpt-marlin-echo"),
-                        vec![user_gateway_message("host-ping")],
-                    ),
-                }),
-            ])
-            .await
-            .expect("host atomic batch");
-        assert!(matches!(put_rcpts[0], AtomicEffectReceipt::CasStored(ref id) if id == "h-put"));
-        assert!(matches!(
-            put_rcpts[1],
-            AtomicEffectReceipt::LlmCompleted(ref p) if p.content == "echo:host-ping"
-        ));
-
-        let get_rcpts = host
-            .run_atomic_effects(vec![AtomicEffect::CasGet(CasGetEffectPayload {
-                effect_id: "h-get".to_owned(),
-                key: "k:host:s13".to_owned(),
-            })])
-            .await
-            .expect("host cas get");
-        assert!(matches!(
-            get_rcpts.as_slice(),
-            [AtomicEffectReceipt::CasHit(p)] if p.bytes == b"host-wal-bytes"
-        ));
-    }
-
-    #[cfg(feature = "turso-host")]
-    #[tokio::test]
-    async fn allowlist_run_command_and_storage_cas_store_round_trip() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let runner = AllowlistSandboxRunner::new(Duration::from_secs(5), 1024, ["/bin/echo"])
-            .with_confined_root(dir.path());
-        let (code, stdout, _) = runner
-            .run_command(
-                "/bin/echo".to_owned(),
-                vec!["direct-ok".to_owned()],
-                Some(dir.path().to_string_lossy().into_owned()),
-            )
-            .await
-            .expect("allowlisted direct command must succeed");
-        assert_eq!(code, 0);
-        assert_eq!(String::from_utf8_lossy(&stdout).trim(), "direct-ok");
-        assert!(
-            runner
-                .run_command(
-                    "/bin/sh".to_owned(),
-                    vec!["-c".to_owned(), "true".to_owned()],
-                    None
-                )
-                .await
-                .is_err()
-        );
-        assert!(
-            runner
-                .run_command(
-                    "/bin/echo".to_owned(),
-                    vec!["escape".to_owned()],
-                    Some("/".to_owned())
-                )
-                .await
-                .is_err()
-        );
-
-        let cfg = TursoAgentStorageConfig {
-            path: dir.path().join("cas-store-s27.db"),
-            optimization_profile: TursoOptimizationProfile::AsyncIoOnlyCompatibility,
-            batch_transaction_mode: TursoBatchTransactionMode::Immediate,
-        };
-        let storage = TursoAgentStorage::open_local(cfg)
-            .await
-            .expect("open turso");
-        let store = super::StorageCasStore::new(
-            storage,
-            ProjectId::new("proj-cas-s27").unwrap(),
-            SessionId::new("sess-cas-s27").unwrap(),
-            AgentId::new("agent-cas-s27").unwrap(),
-        );
-        assert_eq!(store.get_blob("k:s27").await.unwrap(), None);
-        store
-            .put_blob("k:s27", b"cas-s27-bytes".to_vec())
-            .await
-            .unwrap();
-        assert_eq!(
-            store.get_blob("k:s27").await.unwrap(),
-            Some(b"cas-s27-bytes".to_vec())
-        );
     }
 }

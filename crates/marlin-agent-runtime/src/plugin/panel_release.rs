@@ -208,6 +208,9 @@ impl UnifiedPanelManifest {
             {
                 return Err(PluginDenial::InvalidDeclaration);
             }
+            if let Some(ref entry_path) = contrib.panel.entry_path {
+                validate_confined_entry_path(entry_path)?;
+            }
             if contrib.panel.read_scopes.len() > SCOPE_LIST_LIMIT
                 || contrib.panel.declared_actions.len() > SCOPE_LIST_LIMIT
                 || !contrib.panel.read_scopes.iter().all(|s| valid_dot_id(s))
@@ -291,6 +294,14 @@ impl VerifiedPanelRelease {
     pub fn requires_features(&self) -> &[String] {
         &self.manifest.requires_features
     }
+
+    pub fn capabilities(&self) -> &BTreeMap<CapabilityId, PanelCapability> {
+        &self.manifest.capabilities
+    }
+
+    pub fn has_capability(&self, id: &CapabilityId) -> bool {
+        self.manifest.capabilities.contains_key(id)
+    }
 }
 
 impl ReleaseTrust {
@@ -323,6 +334,22 @@ impl ReleaseTrust {
             attestation: release.attestation,
         })
     }
+}
+
+fn validate_confined_entry_path(path: &str) -> Result<(), PluginDenial> {
+    if path.is_empty()
+        || path.len() > 256
+        || path.starts_with('/')
+        || path.ends_with('/')
+        || path.contains(['\\', ':'])
+        || path.chars().any(char::is_control)
+        || !path
+            .split('/')
+            .all(|part| !part.is_empty() && !matches!(part, "." | ".."))
+    {
+        return Err(PluginDenial::InvalidDeclaration);
+    }
+    Ok(())
 }
 
 fn valid_dot_id(value: &str) -> bool {

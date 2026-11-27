@@ -2896,19 +2896,25 @@ checksum = "6a027efd2ad3c4dbb4123b5c018e3efbe7f6236da7c7612f122dad030f5d2de5"
 name = "marlin-agent-app-server"
 version = "0.1.0"
 dependencies = [
+ "agent-semantic-search",
+ "asp-rust",
  "async-stream",
+ "marlin-agent-kernel",
  "marlin-agent-protocol",
  "marlin-agent-runtime",
  "marlin-agent-sessions",
  "marlin-agent-storage",
  "marlin-agent-stream",
  "prost",
+ "serde",
  "tempfile",
  "tokio",
  "tokio-stream",
+ "toml 1.2.1+spec-1.1.0",
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "weaver-llm",
 ]
 
 [[package]]
@@ -2999,6 +3005,7 @@ dependencies = [
  "marlin-agent-protocol",
  "marlin-agent-runtime",
  "marlin-agent-sessions",
+ "marlin-agent-stream",
  "marlin-agent-test-support",
  "marlin-context-org-model",
  "marlin-gerbil-ir",
@@ -3008,6 +3015,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "weaver-llm",
 ]
 
 [[package]]
@@ -3086,7 +3094,6 @@ dependencies = [
  "marlin-agent-harness-types",
  "marlin-agent-protocol",
  "marlin-agent-sessions",
- "marlin-agent-test-support",
  "parking_lot",
  "process-wrap",
  "ring",
@@ -3131,10 +3138,12 @@ dependencies = [
 name = "marlin-agent-sessions"
 version = "0.1.0"
 dependencies = [
+ "asp-rust",
  "marlin-agent-protocol",
  "marlin-agent-storage",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -3146,7 +3155,6 @@ dependencies = [
  "marlin-agent-context",
  "marlin-agent-gitops",
  "marlin-agent-protocol",
- "marlin-agent-sessions",
  "mrr-data-backend",
  "serde",
  "serde_json",
@@ -3160,13 +3168,8 @@ name = "marlin-agent-stream"
 version = "0.1.0"
 dependencies = [
  "async-stream",
- "marlin-agent-harness",
- "marlin-agent-harness-types",
- "marlin-agent-kernel",
  "marlin-agent-protocol",
- "marlin-agent-runtime",
  "marlin-agent-test-support",
- "marlin-gerbil-scheme",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
@@ -3202,6 +3205,7 @@ name = "marlin-agent-test-support"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "marlin-agent-graph",
  "marlin-agent-harness-types",
  "marlin-agent-kernel",
  "marlin-agent-protocol",

@@ -134,3 +134,65 @@ async fn atomic_effect_batch_executes_four_primitives_and_preserves_order() {
         ]
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sm19_atomic_effect_batch_bounds_peak_concurrency_and_preserves_id_on_panic() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    struct ConcurrencyAndPanicSubstrate {
+        in_flight: AtomicUsize,
+        peak_in_flight: AtomicUsize,
+    }
+
+    impl AtomicEffectExecutor for ConcurrencyAndPanicSubstrate {
+        fn execute_atomic<'a>(
+            &'a self,
+            effect: AtomicEffect,
+        ) -> Pin<Box<dyn Future<Output = AtomicEffectReceipt> + Send + 'a>> {
+            Box::pin(async move {
+                let current = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                self.peak_in_flight.fetch_max(current, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(25)).await;
+                self.in_flight.fetch_sub(1, Ordering::SeqCst);
+                let id = effect.effect_id().to_owned();
+                if id == "sha256:panic-target-7" {
+                    panic!("simulated worker panic for {id}");
+                }
+                AtomicEffectReceipt::CasMiss(id)
+            })
+        }
+    }
+
+    let substrate = Arc::new(ConcurrencyAndPanicSubstrate {
+        in_flight: AtomicUsize::new(0),
+        peak_in_flight: AtomicUsize::new(0),
+    });
+    let effects: Vec<AtomicEffect> = (0..48)
+        .map(|i| {
+            let effect_id = if i == 7 {
+                "sha256:panic-target-7".to_owned()
+            } else {
+                format!("sha256:batch-{i}")
+            };
+            AtomicEffect::CasGet(CasGetEffectPayload {
+                effect_id,
+                key: format!("k-{i}"),
+            })
+        })
+        .collect();
+
+    let receipts = run_atomic_effect_batch(Arc::clone(&substrate), effects).await;
+    let peak = substrate.peak_in_flight.load(Ordering::SeqCst);
+    assert!(
+        peak <= 16,
+        "unbounded JoinSet fan-out reached {peak} concurrent workers (expected <= 16)"
+    );
+    assert_eq!(receipts.len(), 48);
+    assert_eq!(
+        receipts[7].effect_id(),
+        "sha256:panic-target-7",
+        "panicked worker lost caller effect_id correlation: got {:?}",
+        receipts[7]
+    );
+}

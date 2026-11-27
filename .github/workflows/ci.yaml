@@ -105,11 +105,12 @@ jobs:
           host=$(descriptor host)
           cmp -- "$client" "$host"
           sha256sum -- "$host"
-      - name: Test Bridge SDK and marlin-scheme-ctl unit suites
+      - name: Test Bridge SDK, marlin-mygo-host, marlin-scheme-ctl, and ASP Rust unit gates
         shell: bash
         run: |
-          cargo test --locked -p marlin-agent-app-server --features ui-grpc --lib scheme_host_client::tests
-          cargo test --locked -p marlin-agent-app-server --features ui-grpc --bin marlin-scheme-ctl
+          cargo test --locked -p marlin-agent-app-server --features ui-grpc --test unit_test scheme_host_client::
+          cargo test --locked -p marlin-agent-app-server --features ui-grpc --test unit_test
+          cargo test --locked -p marlin-agent-app-server --features ui-grpc --bin marlin-scheme-ctl --bin marlin-mygo-host
 
   model:
     name: Quint / protocol models

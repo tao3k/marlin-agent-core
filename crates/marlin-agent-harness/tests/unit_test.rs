@@ -4,3 +4,5 @@
 
 #[path = "unit/harness/mod.rs"]
 mod harness;
+#[path = "unit/runtime_repair_loop.rs"]
+mod runtime_repair_loop;

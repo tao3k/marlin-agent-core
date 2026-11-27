@@ -17,7 +17,9 @@ use weaver_llm::{Request, TurnEvent};
 use crate::{
     MODEL_STREAM_MAX_CHUNK_BYTES, ModelStreamChunk, ModelStreamEvent, ModelThinkingChunk,
     WeaverModelGateway,
-    gateway::{provider_continuation, provider_tool_calls, request_message},
+    gateway::{
+        check_stream_output_budget, provider_continuation, provider_tool_calls, request_message,
+    },
 };
 
 /// A pull-driven model stream. Dropping it cancels the underlying exchange.
@@ -92,10 +94,7 @@ impl ModelStreamingGateway for WeaverModelGateway {
                                 let mut end = start.saturating_add(MODEL_STREAM_MAX_CHUNK_BYTES).min(delta.len());
                                 while !delta.is_char_boundary(end) { end -= 1; }
                                 let part = &delta[start..end];
-                                if let Some(limit) = output_limit
-                                    && text.len().checked_add(thinking_bytes).and_then(|size| size.checked_add(part.len())).is_none_or(|size| size > limit.bytes()) {
-                                    Err(ModelGatewayError::StreamInterrupted(ModelStreamInterruption::OutputLimit { limit_bytes: limit.bytes() }))?;
-                                }
+                                check_stream_output_budget(output_limit, text.len(), thinking_bytes, part.len())?;
                                 text.push_str(part);
                                 sequence = sequence.checked_add(1).ok_or(ModelGatewayError::StreamInterrupted(ModelStreamInterruption::SequenceExhausted))?;
                                 yield ModelStreamEvent::Chunk(ModelStreamChunk::new(sequence, part));
@@ -109,10 +108,7 @@ impl ModelStreamingGateway for WeaverModelGateway {
                                 let mut end = start.saturating_add(MODEL_STREAM_MAX_CHUNK_BYTES).min(delta.len());
                                 while !delta.is_char_boundary(end) { end -= 1; }
                                 let part = &delta[start..end];
-                                if let Some(limit) = output_limit
-                                    && text.len().checked_add(thinking_bytes).and_then(|size| size.checked_add(part.len())).is_none_or(|size| size > limit.bytes()) {
-                                    Err(ModelGatewayError::StreamInterrupted(ModelStreamInterruption::OutputLimit { limit_bytes: limit.bytes() }))?;
-                                }
+                                check_stream_output_budget(output_limit, text.len(), thinking_bytes, part.len())?;
                                 thinking_bytes += part.len();
                                 thinking_sequence = thinking_sequence.checked_add(1).ok_or(ModelGatewayError::StreamInterrupted(ModelStreamInterruption::SequenceExhausted))?;
                                 yield ModelStreamEvent::Thinking(ModelThinkingChunk::new(thinking_sequence, part));
@@ -160,7 +156,7 @@ impl ModelStreamingGateway for WeaverModelGateway {
     }
 }
 
-fn stream_event_error(error: weaver_llm::Error) -> ModelGatewayError {
+pub(crate) fn stream_event_error(error: weaver_llm::Error) -> ModelGatewayError {
     match error {
         weaver_llm::Error::Transport => {
             ModelGatewayError::StreamInterrupted(ModelStreamInterruption::Transport)

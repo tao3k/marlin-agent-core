@@ -113,14 +113,42 @@ pub struct LoopProgramToolProcessSpawnReceipt {
     pub output: RuntimeProcessOutput,
 }
 
+const SAFE_TOOL_ENV_ALLOWLIST: &[&str] = &[
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "USER",
+    "LOGNAME",
+    "TZ",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NIX_SSL_CERT_FILE",
+];
+
+fn apply_scrubbed_env(command: &mut AsyncCommand) {
+    command.env_clear();
+    for key in SAFE_TOOL_ENV_ALLOWLIST {
+        if let Some(val) = std::env::var_os(key) {
+            command.env(key, val);
+        }
+    }
+}
+
 /// Executes an explicitly approved tool-process projection through runtime process ownership.
 pub async fn spawn_loop_program_tool_process(
     context: &RuntimeContext,
     request: LoopProgramToolProcessSpawnRequest,
 ) -> io::Result<LoopProgramToolProcessSpawnReceipt> {
     let mut command = AsyncCommand::new(request.program.as_str());
+    apply_scrubbed_env(&mut command);
     command
         .args(request.args.iter().map(String::as_str))
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 

@@ -2,14 +2,22 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Thin, zero-orchestration HTTP/HTTPS client for OpenAI-compatible
-//! `/v1/chat/completions` endpoints backed by `reqwest` + `rustls`.
+//! Thin adapter routing OpenAI-compatible `/v1/chat/completions` requests
+//! through the canonical `weaver-llm` HTTP transport (`Policy::none()` redirect
+//! confinement, HTTPS-for-remote / loopback-only HTTP enforcement, userinfo
+//! rejection, `no_proxy()`, and 4 MiB bounded response streaming).
 
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use marlin_agent_protocol::{ModelGatewayMessageRole, ModelGatewayRequest};
+use weaver_llm::{
+    Client as WeaverClient, Endpoint as WeaverEndpoint, Error as WeaverError,
+    Message as WeaverMessage, Options as WeaverOptions, Protocol as WeaverProtocol,
+    Request as WeaverRequest, Role as WeaverRole,
+};
 
 const MAX_OPENAI_HTTP_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const LOOPBACK_FALLBACK_CREDENTIAL: &str = "marlin-loopback-no-key";
 
 /// Configuration for an OpenAI-compatible HTTP/HTTPS chat completions endpoint.
 #[derive(Clone, Debug)]
@@ -20,31 +28,52 @@ pub struct OpenAiHttpConfig {
     pub timeout: Duration,
 }
 
-/// Thin HTTP/HTTPS client executing single `LlmComplete` atomic effects against
-/// any OpenAI-compatible `POST /v1/chat/completions` server (`http://` or `https://`).
-#[derive(Clone, Debug)]
+/// OpenAI-compatible chat completions adapter backed by `weaver_llm::Client`.
+#[derive(Clone)]
 pub struct OpenAiCompatibleHttpClient {
-    client: reqwest::Client,
+    client: WeaverClient,
+    endpoint: WeaverEndpoint,
     completions_url: String,
     model_override: Option<String>,
     api_key: Option<String>,
 }
 
+impl fmt::Debug for OpenAiCompatibleHttpClient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpenAiCompatibleHttpClient")
+            .field("completions_url", &self.completions_url)
+            .field("model_override", &self.model_override)
+            .field("has_api_key", &self.api_key.is_some())
+            .finish()
+    }
+}
+
 impl OpenAiCompatibleHttpClient {
-    /// Constructs a validated client from `config`, supporting both `http://` and `https://`.
+    /// Constructs a validated `weaver-llm`-backed client from `config`.
+    ///
+    /// Enforces `weaver-llm` endpoint invariants: `https://` required for remote
+    /// hosts, `http://` allowed only on explicit loopback (`localhost`, `127.0.0.1`,
+    /// `[::1]`), zero URL userinfo/fragments/control characters, no automatic
+    /// redirects (`Policy::none()`), and a 4 MiB response body ceiling.
     pub fn new(config: OpenAiHttpConfig) -> Result<Self, String> {
         let completions_url = normalize_completions_url(&config.base_url)?;
+        let endpoint = WeaverEndpoint::new(WeaverProtocol::OpenAi, &completions_url).map_err(
+            |err| {
+                format!(
+                    "invalid weaver-llm endpoint {completions_url} (remote hosts require https:// without userinfo): {err:?}"
+                )
+            },
+        )?;
         let timeout = if config.timeout.is_zero() {
             Duration::from_secs(15)
         } else {
             config.timeout
         };
-        let client = reqwest::Client::builder()
-            .timeout(timeout)
-            .build()
-            .map_err(|err| format!("build reqwest tls client: {err}"))?;
+        let client = WeaverClient::new(timeout, MAX_OPENAI_HTTP_RESPONSE_BYTES)
+            .map_err(|err| format!("build weaver-llm tls client: {err:?}"))?;
         Ok(Self {
             client,
+            endpoint,
             completions_url,
             model_override: config.model_override,
             api_key: config.api_key,
@@ -56,57 +85,67 @@ impl OpenAiCompatibleHttpClient {
         &self.completions_url
     }
 
-    /// Executes one non-streaming OpenAI chat completion request and returns
-    /// `choices[0].message.content`.
+    /// Executes one non-streaming OpenAI chat completion request via `weaver-llm`
+    /// and returns `choices[0].message.content`.
     pub async fn complete_text(&self, request: &ModelGatewayRequest) -> Result<String, String> {
         let model = self
             .model_override
             .as_deref()
             .unwrap_or_else(|| request.endpoint().model.as_str());
-        let messages: Vec<serde_json::Value> = request
+        let messages: Vec<WeaverMessage> = request
             .messages()
             .iter()
             .map(|msg| {
                 let role = match msg.role {
-                    ModelGatewayMessageRole::System => "system",
-                    ModelGatewayMessageRole::Developer => "developer",
-                    ModelGatewayMessageRole::User => "user",
-                    ModelGatewayMessageRole::Assistant => "assistant",
-                    ModelGatewayMessageRole::Tool => "tool",
+                    ModelGatewayMessageRole::System => WeaverRole::System,
+                    ModelGatewayMessageRole::Developer => WeaverRole::Developer,
+                    ModelGatewayMessageRole::User => WeaverRole::User,
+                    ModelGatewayMessageRole::Assistant => WeaverRole::Assistant,
+                    ModelGatewayMessageRole::Tool => WeaverRole::Tool,
                 };
-                serde_json::json!({
-                    "role": role,
-                    "content": msg.content,
-                })
+                WeaverMessage {
+                    role,
+                    content: msg.content.clone(),
+                    images: Vec::new(),
+                    name: msg.name.clone(),
+                    tool_call_id: msg.tool_call_id.as_ref().map(|id| id.as_str().to_owned()),
+                    tool_calls: Vec::new(),
+                    responses_output: None,
+                    anthropic_output: None,
+                }
             })
             .collect();
-        let payload = serde_json::json!({
-            "model": model,
-            "messages": messages,
-            "stream": false,
-        });
+        let options = WeaverOptions::default();
+        let weaver_req = WeaverRequest {
+            model,
+            messages: &messages,
+            options: &options,
+        };
+        let credential = self
+            .api_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|k| !k.is_empty())
+            .unwrap_or(LOOPBACK_FALLBACK_CREDENTIAL);
 
-        let mut req_builder = self.client.post(&self.completions_url).json(&payload);
-        if let Some(key) = &self.api_key {
-            req_builder = req_builder.bearer_auth(key);
-        }
-        let resp = req_builder
-            .send()
+        let completion = self
+            .client
+            .complete(&self.endpoint, credential, &weaver_req)
             .await
-            .map_err(|err| format!("send llm http request to {}: {err}", self.completions_url))?;
-        let status = resp.status();
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|err| format!("read llm http response body: {err}"))?;
-        if bytes.len() > MAX_OPENAI_HTTP_RESPONSE_BYTES {
-            return Err("llm http response exceeded 4 MiB safety limit".to_owned());
-        }
-        if !status.is_success() {
-            let preview = String::from_utf8_lossy(&bytes);
-            return Err(format!("llm http status {}: {preview}", status.as_u16()));
-        }
-        extract_completion_content(&bytes)
+            .map_err(|err| match err {
+                WeaverError::Limit => "llm http response exceeded 4 MiB safety limit".to_owned(),
+                other => format!(
+                    "weaver-llm http request to {} failed: {other:?}",
+                    self.completions_url
+                ),
+            })?;
+
+        completion
+            .choices
+            .into_iter()
+            .next()
+            .map(|choice| choice.message.content)
+            .ok_or_else(|| "llm json response missing choices[0].message.content".to_owned())
     }
 }
 
@@ -115,39 +154,30 @@ fn normalize_completions_url(raw_url: &str) -> Result<String, String> {
     if trimmed.is_empty() {
         return Err("MARLIN_SCHEME_LLM_BASE_URL must not be empty".to_owned());
     }
-    let after_scheme = if let Some(rest) = trimmed.strip_prefix("https://") {
-        rest
-    } else if let Some(rest) = trimmed.strip_prefix("http://") {
-        rest
-    } else {
-        return Err(format!(
-            "MARLIN_SCHEME_LLM_BASE_URL must use http:// or https:// scheme, got {trimmed}"
-        ));
-    };
-    let authority = after_scheme.split('/').next().unwrap_or("");
-    if authority.is_empty() {
-        return Err("MARLIN_SCHEME_LLM_BASE_URL missing host authority".to_owned());
+    if trimmed
+        .chars()
+        .any(|ch| ch.is_ascii_control() || ch.is_whitespace())
+    {
+        return Err(
+            "MARLIN_SCHEME_LLM_BASE_URL must not contain whitespace or control characters"
+                .to_owned(),
+        );
     }
+    WeaverEndpoint::new(WeaverProtocol::OpenAi, trimmed).map_err(|err| {
+        format!("MARLIN_SCHEME_LLM_BASE_URL rejected by weaver-llm endpoint policy: {err:?}")
+    })?;
     let clean = trimmed.trim_end_matches('/');
-    if clean.ends_with("/chat/completions") {
-        Ok(clean.to_owned())
+    let resolved = if clean.ends_with("/chat/completions") {
+        clean.to_owned()
     } else if clean.ends_with("/v1") {
-        Ok(format!("{clean}/chat/completions"))
+        format!("{clean}/chat/completions")
     } else {
-        Ok(format!("{clean}/v1/chat/completions"))
-    }
-}
-
-fn extract_completion_content(body: &[u8]) -> Result<String, String> {
-    let json: serde_json::Value =
-        serde_json::from_slice(body).map_err(|err| format!("parse llm json response: {err}"))?;
-    json.get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c0| c0.get("message"))
-        .and_then(|m| m.get("content"))
-        .and_then(|v| v.as_str())
-        .map(str::to_owned)
-        .ok_or_else(|| "llm json response missing choices[0].message.content".to_owned())
+        format!("{clean}/v1/chat/completions")
+    };
+    WeaverEndpoint::new(WeaverProtocol::OpenAi, &resolved).map_err(|err| {
+        format!("MARLIN_SCHEME_LLM_BASE_URL rejected by weaver-llm endpoint policy: {err:?}")
+    })?;
+    Ok(resolved)
 }
 
 #[cfg(test)]
@@ -192,7 +222,7 @@ mod tests {
                     .to_ascii_lowercase()
                     .contains("authorization: bearer sk-s29")
             );
-            let body = r#"{"id":"cmpl-1","choices":[{"index":0,"message":{"role":"assistant","content":"tls-client-ok"}}]}"#;
+            let body = r#"{"id":"cmpl-1","model":"gpt-s29","choices":[{"index":0,"message":{"role":"assistant","content":"tls-client-ok"},"finish_reason":"stop"}]}"#;
             let resp = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 body.len(),
@@ -215,5 +245,101 @@ mod tests {
         let reply = client.complete_text(&req).await.unwrap();
         assert_eq!(reply, "tls-client-ok");
         srv.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn sm23_adv_l4_blocks_307_redirect_ssrf_and_prompt_exfiltration() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+
+        let victim_hit = Arc::new(AtomicBool::new(false));
+        let victim_hit_clone = Arc::clone(&victim_hit);
+        let victim_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let victim_addr = victim_listener.local_addr().unwrap();
+        let victim_task = tokio::spawn(async move {
+            if let Ok(Ok((mut sock, _))) =
+                tokio::time::timeout(Duration::from_millis(800), victim_listener.accept()).await
+            {
+                victim_hit_clone.store(true, Ordering::SeqCst);
+                let mut buf = vec![0u8; 4096];
+                let _ = sock.read(&mut buf).await;
+                let body = r#"{"id":"cmpl-evil","model":"gpt-adv-l4","choices":[{"index":0,"message":{"role":"assistant","content":"INTERNAL_ADMIN_SECRET_42"},"finish_reason":"stop"}]}"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+            }
+        });
+
+        let redirect_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let redirect_addr = redirect_listener.local_addr().unwrap();
+        let redirect_task = tokio::spawn(async move {
+            let (mut sock, _) = redirect_listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let _ = sock.read(&mut buf).await;
+            let resp = format!(
+                "HTTP/1.1 307 Temporary Redirect\r\nLocation: http://{victim_addr}/v1/chat/completions\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            let _ = sock.write_all(resp.as_bytes()).await;
+        });
+
+        let client = OpenAiCompatibleHttpClient::new(OpenAiHttpConfig {
+            base_url: format!("http://{redirect_addr}"),
+            model_override: Some("gpt-adv-l4".to_owned()),
+            api_key: Some("sk-adv-l4-secret".to_owned()),
+            timeout: Duration::from_secs(3),
+        })
+        .unwrap();
+        let req = ModelGatewayRequest::new(
+            ModelEndpoint::new("openai", "gpt-adv-l4"),
+            vec![user_gateway_message("CONFIDENTIAL_PROMPT")],
+        );
+        let result = client.complete_text(&req).await;
+        let _ = redirect_task.await;
+        let _ = victim_task.await;
+
+        assert!(
+            !victim_hit.load(Ordering::SeqCst),
+            "ADV-L4 SSRF ESCAPE PROVEN: reqwest followed 307 redirect to internal victim service and exfiltrated prompt!"
+        );
+        assert!(
+            result.is_err(),
+            "ADV-L4 REDIRECT PROVEN: complete_text succeeded across 307 redirect with {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn sm23_adv_l4_blocks_cleartext_http_bearer_to_remote_host() {
+        let res = OpenAiCompatibleHttpClient::new(OpenAiHttpConfig {
+            base_url: "http://api.remote-attacker.example.com".to_owned(),
+            model_override: None,
+            api_key: Some("sk-prod-bearer-secret".to_owned()),
+            timeout: Duration::from_secs(5),
+        });
+        assert!(
+            res.is_err(),
+            "ADV-L4 CREDENTIAL LEAK PROVEN: accepted cleartext http:// for non-loopback host with Bearer api_key"
+        );
+    }
+
+    #[test]
+    fn sm23_adv_l4_blocks_url_userinfo_and_crlf_authority_smuggling() {
+        for hostile in [
+            "https://api.openai.com@evil.example/v1",
+            "https://user:pass@api.openai.com/v1",
+            "https://api.openai.com/v1\r\nX-Injected: 1",
+            "https://api.openai.com /v1",
+        ] {
+            let res = normalize_completions_url(hostile);
+            assert!(
+                res.is_err(),
+                "ADV-L4 URL SMUGGLING PROVEN: normalize_completions_url accepted hostile URL {hostile:?} -> {res:?}"
+            );
+        }
     }
 }

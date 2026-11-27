@@ -19,6 +19,9 @@ use super::{
 
 const MAX_INSTALLED_PANEL_RELEASES: usize = 512;
 const MAX_PANEL_EFFECTS_PER_ACTIVATION: usize = 4096;
+const MAX_RETAINED_PANEL_ACTIVATIONS: usize = 512;
+const MAX_PANEL_SETTINGS_BYTES: usize = 64 * 1024;
+const MAX_PANEL_ACTION_ARGS_BYTES: usize = 64 * 1024;
 
 /// Domain identifier for a project scoped to unified UI panel grants and activations.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -150,7 +153,10 @@ impl PanelPluginHost {
     /// Construct a new in-process panel plugin host bound to deployment trust roots.
     pub fn new(trust: ReleaseTrust) -> Self {
         let mut host_epoch = [0u8; 16];
-        let _ = SystemRandom::new().fill(&mut host_epoch);
+        if SystemRandom::new().fill(&mut host_epoch).is_err() {
+            let fallback = sha256_bytes(b"marlin.panel.host.epoch.fallback");
+            host_epoch.copy_from_slice(&fallback[..16]);
+        }
         Self {
             host_epoch,
             trust,
@@ -164,13 +170,22 @@ impl PanelPluginHost {
     }
 
     /// Cryptographically verify and install a signed unified panel release.
+    /// Enforces publisher continuity and monotonic version anti-rollback (SM28),
+    /// closing any active generations of the plugin when replacing an installed release.
     pub fn install(
         &mut self,
         release: SignedPanelRelease<'_>,
     ) -> Result<&VerifiedPanelRelease, PluginDenial> {
         let verified = self.trust.verify_panel(release)?;
         let id = verified.id().clone();
-        if !self.releases.contains_key(&id) && self.releases.len() >= MAX_INSTALLED_PANEL_RELEASES {
+        if let Some(existing) = self.releases.get(&id) {
+            if existing.attestation().publisher != verified.attestation().publisher
+                || verified.version() < existing.version()
+            {
+                return Err(PluginDenial::ConflictingRelease);
+            }
+            self.close_active_generations_for_plugin(&id);
+        } else if self.releases.len() >= MAX_INSTALLED_PANEL_RELEASES {
             return Err(PluginDenial::CapacityExceeded);
         }
         self.releases.insert(id.clone(), verified);
@@ -190,18 +205,26 @@ impl PanelPluginHost {
     }
 
     /// Record operator-approved capability grants for `(project_id, plugin_id)`.
+    /// Validates every granted capability is declared by the installed release and
+    /// atomically closes any live generation whose required capabilities were revoked (SM28).
     pub fn set_project_grants(
         &mut self,
         project_id: PanelProjectId,
         plugin_id: PluginId,
         granted: impl IntoIterator<Item = CapabilityId>,
     ) -> Result<Vec<CapabilityId>, PluginDenial> {
-        if !self.releases.contains_key(&plugin_id) {
-            return Err(PluginDenial::MissingRelease);
-        }
+        let verified = self
+            .releases
+            .get(&plugin_id)
+            .ok_or(PluginDenial::MissingRelease)?;
         let set: BTreeSet<CapabilityId> = granted.into_iter().collect();
+        if !set.iter().all(|cap| verified.has_capability(cap)) {
+            return Err(PluginDenial::InvalidDeclaration);
+        }
         let list: Vec<CapabilityId> = set.iter().cloned().collect();
-        self.grants.insert((project_id, plugin_id), set);
+        self.grants
+            .insert((project_id.clone(), plugin_id.clone()), set);
+        self.close_revoked_activations(&project_id, &plugin_id);
         Ok(list)
     }
 
@@ -217,8 +240,9 @@ impl PanelPluginHost {
             .unwrap_or_default()
     }
 
-    /// Activate an installed panel contribution for `project_id`, closing any prior
-    /// active generation atomically and returning the new authoritative record.
+    /// Activate an installed panel contribution for `project_id`, verifying every
+    /// required capability is granted, closing any prior active generation atomically,
+    /// and returning the new authoritative record.
     pub fn enable_panel(
         &mut self,
         project_id: PanelProjectId,
@@ -226,6 +250,9 @@ impl PanelPluginHost {
         contribution_id: &ContributionId,
         settings_toml: &[u8],
     ) -> Result<PanelActivationRecord, PluginDenial> {
+        if settings_toml.len() > MAX_PANEL_SETTINGS_BYTES {
+            return Err(PluginDenial::CapacityExceeded);
+        }
         let verified = self
             .releases
             .get(plugin_id)
@@ -233,6 +260,14 @@ impl PanelPluginHost {
         let contrib: &PanelContribution = verified
             .contribution(contribution_id)
             .ok_or(PluginDenial::UnregisteredWorkflow)?;
+
+        let granted_caps = self.grants.get(&(project_id.clone(), plugin_id.clone()));
+        for required in &contrib.requires {
+            let is_granted = granted_caps.is_some_and(|set| set.contains(required));
+            if !is_granted {
+                return Err(PluginDenial::MissingCapability(required.clone()));
+            }
+        }
 
         let key = (
             project_id.clone(),
@@ -269,6 +304,7 @@ impl PanelPluginHost {
             closed: false,
             actions: Vec::new(),
         };
+        self.prune_closed_activations_if_needed();
         self.active_by_key.insert(key, activation_id.clone());
         self.activations.insert(activation_id, record.clone());
         Ok(record)
@@ -327,11 +363,15 @@ impl PanelPluginHost {
     }
 
     /// Admit and record a scoped panel action, enforcing live non-closed generation,
-    /// exact `declared_actions` membership, and bounded effect accounting.
+    /// exact `declared_actions` membership, digest-verified idempotency replay,
+    /// and bounded effect accounting.
     pub fn admit_scoped_action(
         &mut self,
         request: ScopedPanelActionRequest<'_>,
     ) -> Result<PanelActionRecord, PluginDenial> {
+        if request.args_json.len() > MAX_PANEL_ACTION_ARGS_BYTES {
+            return Err(PluginDenial::CapacityExceeded);
+        }
         let act_id = self.active_activation_id(
             request.project_id,
             request.plugin_id,
@@ -342,7 +382,13 @@ impl PanelPluginHost {
         if !rec.declared_actions.contains(request.action_name) {
             return Err(PluginDenial::ScopeMismatch);
         }
-        if let Some(existing) = find_idempotent_action(&rec.actions, request.idempotency_key) {
+        let args_digest = sha256_bytes(request.args_json);
+        if let Some(existing) = find_idempotent_action(
+            &rec.actions,
+            request.idempotency_key,
+            request.action_name,
+            &args_digest,
+        )? {
             return Ok(existing);
         }
         if rec.actions.len() >= MAX_PANEL_EFFECTS_PER_ACTIVATION {
@@ -352,7 +398,7 @@ impl PanelPluginHost {
             next_seq,
             (rec.actions.len() + 1) as u64,
             request.action_name,
-            request.args_json,
+            args_digest,
             request.idempotency_key,
         );
         rec.actions.push(entry.clone());
@@ -430,29 +476,101 @@ impl PanelPluginHost {
         }
         Ok(rec)
     }
+
+    fn close_active_generations_for_plugin(&mut self, plugin_id: &PluginId) {
+        let keys: Vec<_> = self
+            .active_by_key
+            .keys()
+            .filter(|(_, pid, _)| pid == plugin_id)
+            .cloned()
+            .collect();
+        for key in keys {
+            if let Some(act_id) = self.active_by_key.remove(&key)
+                && let Some(rec) = self.activations.get_mut(&act_id)
+            {
+                rec.closed = true;
+            }
+        }
+    }
+
+    fn close_revoked_activations(
+        &mut self,
+        project_id: &PanelProjectId,
+        plugin_id: &PluginId,
+    ) {
+        let Some(verified) = self.releases.get(plugin_id) else {
+            return;
+        };
+        let granted = self.grants.get(&(project_id.clone(), plugin_id.clone()));
+        let keys_to_close: Vec<_> = self
+            .active_by_key
+            .keys()
+            .filter(|(proj, pid, cid)| {
+                if proj != project_id || pid != plugin_id {
+                    return false;
+                }
+                verified.contribution(cid).is_none_or(|contrib| {
+                    contrib
+                        .requires
+                        .iter()
+                        .any(|cap| !granted.is_some_and(|set| set.contains(cap)))
+                })
+            })
+            .cloned()
+            .collect();
+        for key in keys_to_close {
+            if let Some(act_id) = self.active_by_key.remove(&key)
+                && let Some(rec) = self.activations.get_mut(&act_id)
+            {
+                rec.closed = true;
+            }
+        }
+    }
+
+    fn prune_closed_activations_if_needed(&mut self) {
+        while self.activations.len() >= MAX_RETAINED_PANEL_ACTIVATIONS {
+            let oldest_closed = self
+                .activations
+                .iter()
+                .filter(|(_, rec)| rec.closed)
+                .min_by_key(|(_, rec)| rec.generation)
+                .map(|(id, _)| id.clone());
+            let Some(evict_id) = oldest_closed else {
+                break;
+            };
+            self.activations.remove(&evict_id);
+        }
+    }
 }
 
 fn find_idempotent_action(
     actions: &[PanelActionRecord],
     idempotency_key: &str,
-) -> Option<PanelActionRecord> {
+    action_name: &str,
+    args_digest: &[u8; 32],
+) -> Result<Option<PanelActionRecord>, PluginDenial> {
     if idempotency_key.is_empty() {
-        return None;
+        return Ok(None);
     }
-    actions
+    let Some(existing) = actions
         .iter()
         .find(|action| action.idempotency_key == idempotency_key)
-        .cloned()
+    else {
+        return Ok(None);
+    };
+    if existing.action_name != action_name || &existing.args_digest != args_digest {
+        return Err(PluginDenial::ScopeMismatch);
+    }
+    Ok(Some(existing.clone()))
 }
 
 fn build_panel_action_record(
     receipt_seq: u64,
     ordinal: u64,
     action_name: &str,
-    args_json: &[u8],
+    args_digest: [u8; 32],
     idempotency_key: &str,
 ) -> PanelActionRecord {
-    let args_digest = sha256_bytes(args_json);
     let receipt_id = format!("rcpt-panel-action-{receipt_seq}");
     let mut mat = Vec::with_capacity(64 + action_name.len());
     mat.extend_from_slice(receipt_id.as_bytes());

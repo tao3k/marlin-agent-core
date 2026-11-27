@@ -112,6 +112,11 @@ fn write_status_file(path: &Path, status: &ReleaseStatus) -> OrgSourceStoreResul
 }
 
 fn atomic_write(path: &Path, text: &str) -> OrgSourceStoreResult<()> {
+    use std::io::Write as _;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
     let parent = path
         .parent()
         .ok_or_else(|| OrgSourceStoreError::new("release status path has no parent"))?;
@@ -119,23 +124,40 @@ fn atomic_write(path: &Path, text: &str) -> OrgSourceStoreResult<()> {
         OrgSourceStoreError::new(format!("create release status parent failed: {error}"))
     })?;
 
-    let temp = temp_path(path);
-    fs::write(&temp, text).map_err(|error| {
-        OrgSourceStoreError::new(format!("write release status temp file failed: {error}"))
-    })?;
+    let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let temp = temp_path(path, std::process::id(), seq);
+    let write_res = (|| -> std::io::Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    if let Err(error) = write_res {
+        let _ = fs::remove_file(&temp);
+        return Err(OrgSourceStoreError::new(format!(
+            "write release status temp file failed: {error}"
+        )));
+    }
     fs::rename(&temp, path).map_err(|error| {
         let _ = fs::remove_file(&temp);
         OrgSourceStoreError::new(format!("rename release status temp file failed: {error}"))
-    })
+    })?;
+    if let Ok(dir) = fs::File::open(parent) {
+        let _ = dir.sync_all();
+    }
+    Ok(())
 }
 
-fn temp_path(path: &Path) -> PathBuf {
+fn temp_path(path: &Path, pid: u32, seq: u64) -> PathBuf {
     let mut temp = path.to_path_buf();
     let extension = path
         .extension()
         .and_then(|value| value.to_str())
-        .map(|value| format!("{value}.tmp"))
-        .unwrap_or_else(|| "tmp".to_owned());
+        .map(|value| format!("{value}.{pid}.{seq}.tmp"))
+        .unwrap_or_else(|| format!("{pid}.{seq}.tmp"));
     temp.set_extension(extension);
     temp
 }

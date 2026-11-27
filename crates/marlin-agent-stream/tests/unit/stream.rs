@@ -51,6 +51,85 @@ fn anthropic_thinking_requires_matching_valid_continuation() {
     assert!(!matches_observed_anthropic_thinking(&message, "thought"));
 }
 
+#[test]
+fn anthropic_thinking_with_tool_use_blocks_verifies_exact_continuation_and_rejects_tampering() {
+    use marlin_agent_protocol::{
+        ModelContinuation, ModelContinuationKind, ModelToolCall, ModelToolCallId, ModelToolName,
+    };
+    use marlin_agent_stream::matches_observed_anthropic_thinking;
+
+    let endpoint = ModelEndpoint::new("deepseek", "deepseek-flash");
+    let mut message = assistant_gateway_message("");
+    message.tool_calls = vec![
+        ModelToolCall {
+            id: ModelToolCallId::new("call_00").unwrap(),
+            name: ModelToolName::new("workspace_search").unwrap(),
+            arguments:
+                serde_json::json!({"query": "(ascent-fragment ((a p) <-- (file _ \"rust\" p)))"})
+                    .as_object()
+                    .cloned()
+                    .unwrap(),
+        },
+        ModelToolCall {
+            id: ModelToolCallId::new("call_01").unwrap(),
+            name: ModelToolName::new("workspace_search").unwrap(),
+            arguments: serde_json::json!({"query": "(brute-search \"fn \" limit: 8)"})
+                .as_object()
+                .cloned()
+                .unwrap(),
+        },
+    ];
+    message.continuation = Some(ModelContinuation {
+        endpoint,
+        kind: ModelContinuationKind::AnthropicMessages,
+        destination: None,
+        payload: serde_json::json!([
+            {"type": "thinking", "thinking": "Let me search Rust functions.", "signature": "sig-1"},
+            {"type": "redacted_thinking", "data": "opaque"},
+            {"type": "tool_use", "id": "call_00", "name": "workspace_search", "input": {"query": "(ascent-fragment ((a p) <-- (file _ \"rust\" p)))"}},
+            {"type": "tool_use", "id": "call_01", "name": "workspace_search", "input": {"query": "(brute-search \"fn \" limit: 8)"}}
+        ])
+        .to_string(),
+    });
+    assert!(matches_observed_anthropic_thinking(
+        &message,
+        "Let me search Rust functions."
+    ));
+    // Tampered thinking must fail closed.
+    assert!(!matches_observed_anthropic_thinking(
+        &message,
+        "Let me search Python functions."
+    ));
+    // Tampered tool call arguments must fail closed.
+    let mut tampered_args = message.clone();
+    tampered_args.tool_calls[0].arguments = serde_json::json!({"query": "tampered"})
+        .as_object()
+        .cloned()
+        .unwrap();
+    assert!(!matches_observed_anthropic_thinking(
+        &tampered_args,
+        "Let me search Rust functions."
+    ));
+    // Missing tool call must fail closed.
+    let mut missing_call = message.clone();
+    missing_call.tool_calls.pop();
+    assert!(!matches_observed_anthropic_thinking(
+        &missing_call,
+        "Let me search Rust functions."
+    ));
+    // Unknown block type must fail closed.
+    let mut bad_block = message.clone();
+    bad_block.continuation.as_mut().unwrap().payload = serde_json::json!([
+        {"type": "thinking", "thinking": "Let me search Rust functions."},
+        {"type": "unknown_block", "value": 1}
+    ])
+    .to_string();
+    assert!(!matches_observed_anthropic_thinking(
+        &bad_block,
+        "Let me search Rust functions."
+    ));
+}
+
 #[tokio::test]
 async fn invalid_request_override_is_rejected_before_stream_dispatch() {
     let defaults = weaver_llm::AnthropicSettings {
@@ -724,7 +803,7 @@ fn required_live_llm_env(name: &str) -> String {
     env::var(name).unwrap_or_else(|_| panic!("{name} must be set when {LIVE_LLM_GATE_ENV}=1"))
 }
 
-pub(super) fn live_weaver_gateway(provider: &str, timeout: Duration) -> WeaverModelGateway {
+fn live_weaver_gateway(provider: &str, timeout: Duration) -> WeaverModelGateway {
     let (protocol, url, default_key) = match provider {
         "openai" => (
             weaver_llm::Protocol::OpenAiResponses,

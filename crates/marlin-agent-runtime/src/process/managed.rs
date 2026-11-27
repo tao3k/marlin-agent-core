@@ -18,7 +18,7 @@ use std::{
 #[cfg(unix)]
 use process_wrap::tokio::ProcessGroup;
 use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
-use tokio::io::{AsyncReadExt, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::process::{ChildStdin as AsyncChildStdin, Command as AsyncCommand};
 use tokio::sync::OwnedSemaphorePermit;
 
@@ -40,6 +40,36 @@ pub enum RuntimeProcessContainmentRequirement {
     PlatformDefault,
     /// Require an OS-enforced boundary that prevents descendants escaping.
     EnforcedDescendantTree,
+}
+
+/// Default upper bound retained per pipe (`stdout`/`stderr`) by `wait_with_output` (SM20).
+/// Excess bytes are still drained to EOF into a fixed scratch buffer so the child never deadlocks.
+pub const DEFAULT_MAX_CAPTURED_PIPE_BYTES: usize = 16 * 1024 * 1024;
+
+/// Reads from a child process pipe, retaining at most `max_bytes` in heap while
+/// continuously draining any excess bytes into a fixed stack scratch buffer until EOF
+/// to prevent both buffer-before-truncate OOM and kernel pipe-buffer deadlocks (SM20).
+async fn read_pipe_bounded_drain<R: AsyncRead + Unpin>(
+    reader: &mut R,
+    max_bytes: usize,
+) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::with_capacity(max_bytes.min(8192));
+    let mut scratch = [0u8; 8192];
+    loop {
+        let n = reader.read(&mut scratch).await?;
+        if n == 0 {
+            break;
+        }
+        let remaining = max_bytes.saturating_sub(bytes.len());
+        if remaining > 0 {
+            let keep = n.min(remaining);
+            if bytes.capacity() - bytes.len() < keep {
+                bytes.reserve_exact(keep);
+            }
+            bytes.extend_from_slice(&scratch[..keep]);
+        }
+    }
+    Ok(bytes)
 }
 
 /// Named spawn request for a runtime-owned child process.
@@ -487,23 +517,47 @@ impl AsyncManagedChildProcess {
     }
 
     pub async fn wait_with_output(self) -> io::Result<RuntimeProcessOutput> {
-        self.wait_with_output_observed_at(current_time_millis())
-            .await
+        self.wait_with_bounded_output_observed_at(
+            current_time_millis(),
+            DEFAULT_MAX_CAPTURED_PIPE_BYTES,
+        )
+        .await
     }
 
     pub async fn wait_with_output_observed_at(
+        self,
+        observed_at_ms: u64,
+    ) -> io::Result<RuntimeProcessOutput> {
+        self.wait_with_bounded_output_observed_at(observed_at_ms, DEFAULT_MAX_CAPTURED_PIPE_BYTES)
+            .await
+    }
+
+    pub async fn wait_with_bounded_output(
+        self,
+        max_output_bytes: usize,
+    ) -> io::Result<RuntimeProcessOutput> {
+        self.wait_with_bounded_output_observed_at(current_time_millis(), max_output_bytes)
+            .await
+    }
+
+    pub async fn wait_with_bounded_output_observed_at(
         mut self,
         observed_at_ms: u64,
+        max_output_bytes: usize,
     ) -> io::Result<RuntimeProcessOutput> {
         let stop = self.stop.clone();
         tokio::select! {
             biased;
             () = stop.cancelled() => Err(stop_requested()),
-            output = self.read_output(observed_at_ms) => output,
+            output = self.read_output(observed_at_ms, max_output_bytes) => output,
         }
     }
 
-    async fn read_output(&mut self, observed_at_ms: u64) -> io::Result<RuntimeProcessOutput> {
+    async fn read_output(
+        &mut self,
+        observed_at_ms: u64,
+        max_output_bytes: usize,
+    ) -> io::Result<RuntimeProcessOutput> {
         let lease = self.permit.0.clone();
         let child = self
             .child
@@ -518,18 +572,18 @@ impl AsyncManagedChildProcess {
             _lease: lease,
         });
         let read_stdout = async {
-            let mut bytes = Vec::new();
             if let Some(stream) = &mut stdout {
-                stream.inner.read_to_end(&mut bytes).await?;
+                read_pipe_bounded_drain(&mut stream.inner, max_output_bytes).await
+            } else {
+                Ok::<_, io::Error>(Vec::new())
             }
-            Ok::<_, io::Error>(bytes)
         };
         let read_stderr = async {
-            let mut bytes = Vec::new();
             if let Some(stream) = &mut stderr {
-                stream.inner.read_to_end(&mut bytes).await?;
+                read_pipe_bounded_drain(&mut stream.inner, max_output_bytes).await
+            } else {
+                Ok::<_, io::Error>(Vec::new())
             }
-            Ok::<_, io::Error>(bytes)
         };
         let output = tokio::try_join!(child.wait(), read_stdout, read_stderr).map(
             |(status, stdout, stderr)| RuntimeProcessOutput {

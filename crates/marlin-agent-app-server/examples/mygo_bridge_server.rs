@@ -14,7 +14,6 @@ use marlin_agent_app_server::{
 use marlin_agent_runtime::plugin::{PublisherId, ReleaseTrust};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
-use tonic::Status;
 
 fn decode_hex_32(hex: &str) -> Result<[u8; 32], String> {
     let trimmed = hex.trim();
@@ -33,7 +32,8 @@ fn decode_hex_32(hex: &str) -> Result<[u8; 32], String> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind_addr = env::var("MARLIN_BRIDGE_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_owned());
-    let token = env::var("MARLIN_BRIDGE_TOKEN").unwrap_or_else(|_| "marlin-dev-token".to_owned());
+    let expected_header =
+        MyGoBridgeHost::resolve_bridge_auth_header(&bind_addr, env::var("MARLIN_BRIDGE_TOKEN"))?;
     let publisher_id =
         env::var("MARLIN_BRIDGE_PUBLISHER").unwrap_or_else(|_| "tao3k.official".to_owned());
 
@@ -43,12 +43,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         keys.insert(PublisherId::try_from(publisher_id)?, pub_bytes);
     }
 
-    let expected_header = format!("Bearer {token}");
     let host = MyGoBridgeHost::new(ReleaseTrust::new(keys), move |meta| {
-        match meta.get("authorization") {
-            Some(v) if v.to_str().ok() == Some(expected_header.as_str()) => Ok(()),
-            _ => Err(Status::unauthenticated("invalid bearer token")),
-        }
+        MyGoBridgeHost::check_bearer_header(meta, expected_header.as_deref())
     });
 
     host.enqueue_pending_gate(PendingGate {

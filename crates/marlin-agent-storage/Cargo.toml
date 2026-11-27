@@ -32,7 +32,6 @@ required-features = ["context-index"]
 [dev-dependencies]
 asp-rust.workspace = true
 marlin-agent-protocol.workspace = true
-marlin-agent-sessions = { workspace = true }
 marlin-agent-context = { workspace = true, features = ["org-memory"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

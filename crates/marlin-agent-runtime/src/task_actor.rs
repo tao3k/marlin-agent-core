@@ -109,6 +109,9 @@ pub enum TaskActorRuntimeError {
     /// Authoritative Scheme `GraphEngineOracle` failed or disagreed with Rust state.
     #[error("scheme graph-engine oracle rejected transition: {reason}")]
     OracleDivergence { reason: String },
+    /// Authoritative `GovernanceAdmissionGate` / `ExecutionCircuitBreaker` denied dispatch (SM25).
+    #[error("governance admission gate denied task actor dispatch: {reason}")]
+    GovernanceDenied { reason: String },
     /// Durable checkpoint serialization or file persistence failed.
     #[error("task actor durable persistence error: {reason}")]
     PersistenceError { reason: String },
@@ -619,33 +622,63 @@ impl TaskActorRuntimeRegistry {
     }
 
     /// Atomically persists the full `TaskActorRuntimeSnapshot` to `path` as JSON
-    /// (write temp file in parent directory + atomic rename) for restart recovery.
+    /// (unique per-writer temp file in parent directory + `sync_all()` + atomic rename
+    /// + parent-dir sync) for crash-safe restart recovery (SM21).
     pub fn save_checkpoint_file(
         &self,
         path: &std::path::Path,
     ) -> Result<TaskActorRuntimeSnapshot, TaskActorRuntimeError> {
+        use std::io::Write as _;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static CHECKPOINT_TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
         let snapshot = self.snapshot();
         let bytes = serde_json::to_vec_pretty(&snapshot).map_err(|err| {
             TaskActorRuntimeError::PersistenceError {
                 reason: format!("serialize snapshot: {err}"),
             }
         })?;
-        if let Some(parent) = path.parent()
-            && !parent.as_os_str().is_empty()
-        {
-            std::fs::create_dir_all(parent).map_err(|err| {
-                TaskActorRuntimeError::PersistenceError {
-                    reason: format!("create checkpoint parent dir: {err}"),
-                }
-            })?;
+        let parent = path
+            .parent()
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        std::fs::create_dir_all(parent).map_err(|err| TaskActorRuntimeError::PersistenceError {
+            reason: format!("create checkpoint parent dir: {err}"),
+        })?;
+        let seq = CHECKPOINT_TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("checkpoint");
+        let tmp = parent.join(format!(
+            ".{file_name}.{}.{seq}.tmp",
+            std::process::id()
+        ));
+        let write_result = (|| -> std::io::Result<()> {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&tmp)?;
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+            Ok(())
+        })();
+        if let Err(err) = write_result {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(TaskActorRuntimeError::PersistenceError {
+                reason: format!("write temp checkpoint: {err}"),
+            });
         }
-        let tmp = path.with_extension("checkpoint.tmp");
-        std::fs::write(&tmp, &bytes).map_err(|err| TaskActorRuntimeError::PersistenceError {
-            reason: format!("write temp checkpoint: {err}"),
+        std::fs::rename(&tmp, path).map_err(|err| {
+            let _ = std::fs::remove_file(&tmp);
+            TaskActorRuntimeError::PersistenceError {
+                reason: format!("rename checkpoint atomically: {err}"),
+            }
         })?;
-        std::fs::rename(&tmp, path).map_err(|err| TaskActorRuntimeError::PersistenceError {
-            reason: format!("rename checkpoint atomically: {err}"),
-        })?;
+        if let Ok(dir) = std::fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
         Ok(snapshot)
     }
 
@@ -859,4 +892,85 @@ fn spawn_detour_sibling(
         },
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod sm21_atomic_persistence_tests {
+    use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    #[test]
+    fn sm21_concurrent_save_checkpoint_file_has_zero_tmp_collisions_and_zero_torn_reads() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = Arc::new(dir.path().join("task-actor-state.json"));
+        let registry = Arc::new(TaskActorRuntimeRegistry::new());
+        registry
+            .register_actor(
+                TaskActorId::new("actor-sm21-a").expect("id"),
+                "SM21 Initial Actor",
+                TaskActorScopeMode::Project,
+            )
+            .expect("register");
+        registry
+            .save_checkpoint_file(&path)
+            .expect("initial checkpoint save");
+
+        let done = Arc::new(AtomicBool::new(false));
+        let reader_path = Arc::clone(&path);
+        let reader_done = Arc::clone(&done);
+        let reader = std::thread::spawn(move || {
+            let mut reads = 0usize;
+            while !reader_done.load(Ordering::Acquire) {
+                let bytes = std::fs::read(&*reader_path)
+                    .expect("SM21 live checkpoint file must always exist");
+                let parsed = TaskActorRuntimeRegistry::from_snapshot_json_bytes(&bytes);
+                assert!(
+                    parsed.is_ok(),
+                    "SM21 torn/corrupt checkpoint read ({} bytes): {:?}",
+                    bytes.len(),
+                    parsed.err()
+                );
+                reads += 1;
+            }
+            reads
+        });
+
+        let mut writers = Vec::new();
+        for w in 0..8usize {
+            let p = Arc::clone(&path);
+            let reg = Arc::clone(&registry);
+            writers.push(std::thread::spawn(move || {
+                for iter in 0..30usize {
+                    let res = reg.save_checkpoint_file(&p);
+                    assert!(
+                        res.is_ok(),
+                        "SM21 shared-.tmp collision on writer {w} iter {iter}: {:?}",
+                        res.err()
+                    );
+                }
+            }));
+        }
+
+        for handle in writers {
+            handle.join().expect("writer thread panicked");
+        }
+        done.store(true, Ordering::Release);
+        let reads = reader.join().expect("reader thread panicked");
+        assert!(reads > 0, "reader must observe live checkpoint reads");
+
+        // Verify zero leftover temp files in directory after quiescence.
+        let leftover_tmps: Vec<_> = std::fs::read_dir(dir.path())
+            .expect("read_dir")
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains(".tmp"))
+            .collect();
+        assert!(
+            leftover_tmps.is_empty(),
+            "SM21 orphaned temp files remained: {leftover_tmps:?}"
+        );
+    }
 }

@@ -32,7 +32,7 @@ use crate::governance_cedar::{
 
 pub const GOVERNANCE_ADMISSION_SCHEMA_VERSION: u32 = 1;
 pub const GOVERNANCE_DURABLE_CHECKPOINT_MAGIC: &[u8; 4] = b"MGV1";
-pub const GOVERNANCE_DURABLE_CHECKPOINT_VERSION: u32 = 1;
+pub const GOVERNANCE_DURABLE_CHECKPOINT_VERSION: u32 = 2;
 
 /// Validated canonical SHA-256 content digest (`sha256:<64 lowercase hex>`).
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -597,6 +597,20 @@ impl GovernanceAdmissionGate {
         tool: &GovernedSubjectName,
         ifc: &ToolIfcContext,
     ) -> Result<ExecutionBreakerCommitReceipt, GovernanceAdmissionError> {
+        let default_resource = GovernedSubjectName::new("workspace")?;
+        self.commit_derived_effect_on_resource(derivation_id, actor, tool, &default_resource, ifc)
+    }
+
+    /// Resource-aware variant of `commit_derived_effect` enforcing compiled Cedar
+    /// resource-scoped and `Marlin::Scope::"..."` `unless`-clause policies.
+    pub fn commit_derived_effect_on_resource(
+        &self,
+        derivation_id: &DerivationId,
+        actor: &GovernedSubjectName,
+        tool: &GovernedSubjectName,
+        resource: &GovernedSubjectName,
+        ifc: &ToolIfcContext,
+    ) -> Result<ExecutionBreakerCommitReceipt, GovernanceAdmissionError> {
         let mut guard = self
             .inner
             .lock()
@@ -621,20 +635,22 @@ impl GovernanceAdmissionGate {
         }
 
         // Evaluate compiled Scheme-synthesized Cedar policies under strict forbid-overrides-permit.
-        let default_resource = GovernedSubjectName::new("workspace")?;
-        let cedar_req = CedarEvaluationRequest::for_side_effect(
+        let mut cedar_req = CedarEvaluationRequest::for_side_effect(
             actor,
             tool,
-            &default_resource,
+            resource,
             ifc.tool_controlled_by_tainted_data,
             ifc.declassification_approved,
         );
+        if let Some(scope) = guard.resource_scopes.get(resource) {
+            cedar_req = cedar_req.with_resource_scope(scope.clone());
+        }
         if let CedarEvaluationDecision::Deny { matching_forbids } =
             evaluate_compiled_cedar_policies(&guard.compiled_cedar_policies, &cedar_req)
         {
             return Err(GovernanceAdmissionError::CedarForbidDenied {
                 policy_id: matching_forbids[0].clone(),
-                subject: actor.clone(),
+                subject: resource.clone(),
             });
         }
 
@@ -781,6 +797,7 @@ impl GovernanceAdmissionGate {
             blocked_tools: guard.blocked_tools.iter().cloned().collect(),
             retracted_conclusions: guard.retracted_derivations.iter().cloned().collect(),
             cedar_policies: guard.cedar_policies.clone(),
+            resource_scopes: guard.resource_scopes.clone(),
         })
     }
 
@@ -866,6 +883,7 @@ impl GovernanceAdmissionGate {
             guard.retracted_derivations = cp.retracted_conclusions.into_iter().collect();
             guard.cedar_policies = cp.cedar_policies;
             guard.compiled_cedar_policies = compiled_cedar;
+            guard.resource_scopes = cp.resource_scopes;
         }
 
         self.snapshot()
@@ -926,10 +944,11 @@ pub struct GovernanceDurableCheckpoint {
     pub blocked_tools: Vec<GovernedSubjectName>,
     pub retracted_conclusions: Vec<DerivationId>,
     pub cedar_policies: Vec<SynthesizedCedarPolicy>,
+    pub resource_scopes: BTreeMap<GovernedSubjectName, String>,
 }
 
 impl GovernanceDurableCheckpoint {
-    /// Serializes into canonical `MGV1` length-prefixed binary bytes followed by a
+    /// Serializes into canonical `MGV1` v2 length-prefixed binary bytes followed by a
     /// 32-byte FIPS 180-4 SHA-256 integrity digest over all preceding bytes.
     pub fn to_canonical_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(512);
@@ -998,13 +1017,20 @@ impl GovernanceDurableCheckpoint {
             put_str(&mut buf, p.policy_id.as_str());
             put_str(&mut buf, &p.source);
         }
+        if self.schema_version >= 2 {
+            put_u32(&mut buf, self.resource_scopes.len() as u32);
+            for (resource, scope) in &self.resource_scopes {
+                put_str(&mut buf, resource.as_str());
+                put_str(&mut buf, scope);
+            }
+        }
         let mac = sha256_bytes(&buf);
         buf.extend_from_slice(&mac);
         buf
     }
 
-    /// Validates magic, schema version, exact SHA-256 integrity tag, exact EOF, and
-    /// every domain newtype invariant.
+    /// Validates magic, schema version (`1` or `2`), exact SHA-256 integrity tag, exact EOF,
+    /// and every domain newtype invariant.
     pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, GovernanceAdmissionError> {
         if bytes.len() < 4 + 4 + 32 {
             return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(
@@ -1027,7 +1053,7 @@ impl GovernanceDurableCheckpoint {
             ));
         }
         let schema_version = cur.read_u32()?;
-        if schema_version != GOVERNANCE_DURABLE_CHECKPOINT_VERSION {
+        if schema_version != 1 && schema_version != GOVERNANCE_DURABLE_CHECKPOINT_VERSION {
             return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(format!(
                 "unsupported durable checkpoint version {schema_version}"
             )));
@@ -1108,6 +1134,27 @@ impl GovernanceDurableCheckpoint {
                 source: src,
             });
         }
+        let mut resource_scopes = BTreeMap::new();
+        if schema_version >= 2 {
+            let scope_count = cur.read_u32()? as usize;
+            if scope_count > 4096 {
+                return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(format!(
+                    "excessive resource scope count {scope_count}"
+                )));
+            }
+            for _ in 0..scope_count {
+                let res = GovernedSubjectName::new(cur.read_str()?).map_err(|e| {
+                    GovernanceAdmissionError::CorruptDurableCheckpoint(e.to_string())
+                })?;
+                let scope = cur.read_str()?;
+                if scope.trim().is_empty() || scope.len() > 128 {
+                    return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(
+                        "invalid persisted resource scope value".to_owned(),
+                    ));
+                }
+                resource_scopes.insert(res, scope);
+            }
+        }
         if !cur.is_eof() {
             return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(
                 "unexpected trailing bytes in durable checkpoint".to_owned(),
@@ -1132,6 +1179,7 @@ impl GovernanceDurableCheckpoint {
             blocked_tools,
             retracted_conclusions,
             cedar_policies,
+            resource_scopes,
         })
     }
 }
@@ -1720,5 +1768,51 @@ mod durable_checkpoint_tests {
         };
         gate.authorize_side_effect_on_resource(None, &human, &tool, &ext_sibling, &declass_ifc)
             .expect("explicitly declassified write should satisfy unless clause");
+
+        // 4. `MGV1` v2 preserves `resource_scopes` across restart without needing an external fact store,
+        //    and `commit_derived_effect_on_resource` enforces the restored scope `unless` rule!
+        let v2_bytes = gate.export_durable_checkpoint_bytes().unwrap();
+        let fresh_breaker = Arc::new(ExecutionCircuitBreaker::new(ToolBudgetUnits::new(8)));
+        let restored_gate = GovernanceAdmissionGate::new(Arc::clone(&fresh_breaker));
+        restored_gate
+            .restore_durable_checkpoint_bytes(&v2_bytes)
+            .expect("MGV1 v2 checkpoint should restore cleanly");
+
+        let deriv = DerivationId::new("D-SCOPE-COMMIT").unwrap();
+        let lease_id =
+            crate::execution_breaker::ToolExecutionLeaseId::new("lease-scope-1").unwrap();
+        let lease = fresh_breaker
+            .acquire_lease(lease_id, tool.as_str())
+            .unwrap();
+        restored_gate
+            .register_derived_lease(deriv.clone(), lease)
+            .unwrap();
+        let err = restored_gate
+            .commit_derived_effect_on_resource(
+                &deriv,
+                &human,
+                &tool,
+                &ext_sibling,
+                &ToolIfcContext::clean_trusted(),
+            )
+            .expect_err("restored MGV1 v2 must still deny un-declassified external-scope commit");
+        assert!(matches!(
+            err,
+            GovernanceAdmissionError::CedarForbidDenied { ref policy_id, .. }
+                if policy_id.as_str() == "marlin.ascent.forbid.scope.external-unless-declassified"
+        ));
+        restored_gate
+            .commit_derived_effect_on_resource(&deriv, &human, &tool, &ext_sibling, &declass_ifc)
+            .expect("declassified derived effect commit should succeed after MGV1 v2 restore");
+
+        // 5. Legacy `MGV1` v1 checkpoint (schema_version = 1, no resource_scopes tail) still decodes cleanly!
+        let mut legacy_cp = gate.export_durable_checkpoint().unwrap();
+        legacy_cp.schema_version = 1;
+        legacy_cp.resource_scopes.clear();
+        let legacy_bytes = legacy_cp.to_canonical_bytes();
+        let decoded_legacy = GovernanceDurableCheckpoint::from_canonical_bytes(&legacy_bytes)
+            .expect("legacy MGV1 v1 checkpoint must remain backward-compatible");
+        assert_eq!(decoded_legacy.schema_version, 1);
+        assert!(decoded_legacy.resource_scopes.is_empty());
     }
 }
