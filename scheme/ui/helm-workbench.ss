@@ -8,7 +8,7 @@
 
 (import (only-in :clan/poo/object .get .o)
         (only-in "../ui-helm/funcs.ss" helm-project-ui-elements)
-        (only-in "../ui-meow/interface.ss" define-key-bindings meow-normal)
+        (only-in "../ui-meow/interface.ss" define-key-bindings meow-global meow-normal)
         (only-in "./package.ss" UiPackage. make-ui-package))
 
 (export HelmWorkbenchKeymap.
@@ -17,7 +17,10 @@
 
 ;;; Disjoint from `UiMeowScope` (`SPC s` opens live interactive Helm, `SPC x`,
 ;;; `SPC b b`, `SPC r`, `SPC t t`, `SPC h`) and `TaskWorkbenchKeymap.` (`SPC o`).
+;;; Paired with native Emacs `C-c f h` per `UiMeowScopeContract`.
 (define-key-bindings HelmWorkbenchKeymap.
+  (meow-global
+    ((C-c f h) buffer-helm-snapshot "Focus Helm results buffer"))
   (meow-normal
     ((SPC f h) buffer-helm-snapshot "Focus Helm results buffer")))
 

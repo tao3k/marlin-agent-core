@@ -10,3 +10,5 @@ mod support;
 mod bridge_tests;
 #[path = "ui_grpc/host_binary_tests.rs"]
 mod host_binary_tests;
+#[path = "ui_grpc/magit_bridge_tests.rs"]
+mod magit_bridge_tests;

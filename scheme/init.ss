@@ -24,6 +24,8 @@
   (ui-themes)
   (ui-layout)
   (ui-workspaces)
+  (ui-modes)
+  (ui-magit)
   (search-engine)
   (repair +ast-patch)
   (search-dsl)

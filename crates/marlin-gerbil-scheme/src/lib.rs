@@ -20,6 +20,8 @@ mod policy_pack_projection;
 mod runtime;
 #[cfg(feature = "app-server-host")]
 pub mod scheme_host_runtime;
+#[cfg(feature = "app-server-host")]
+pub mod scheme_ui_keymap;
 #[doc(hidden)]
 pub mod scheme_type_fixtures;
 mod scheme_types;

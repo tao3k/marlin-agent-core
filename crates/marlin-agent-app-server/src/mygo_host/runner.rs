@@ -438,15 +438,17 @@ pub async fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
     })
     .with_governance_gate(Arc::clone(&shared_governance_gate));
 
+    let ws_root = env::var("MARLIN_BRIDGE_WORKSPACE_ROOT")
+        .ok()
+        .map(|s| std::path::PathBuf::from(s.trim()))
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
+    host = host.with_magit_workspace(ws_root.clone());
+
     if env::var("MARLIN_BRIDGE_DISABLE_WORKSPACE_SEARCH")
         .unwrap_or_else(|_| "0".to_owned())
         != "1"
     {
-        let ws_root = env::var("MARLIN_BRIDGE_WORKSPACE_ROOT")
-            .ok()
-            .map(|s| std::path::PathBuf::from(s.trim()))
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
         let helm_bridge = mygo_host_config::WorkspaceHelmSearchBridge::spawn_background(ws_root);
         host = host.with_graph_query_handler(move |req| helm_bridge.query(req));
     }

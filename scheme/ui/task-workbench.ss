@@ -14,7 +14,7 @@
                  marlin-ui-task-tab-identity marlin-ui-task-tab-bar-for)
         (only-in "../ui-elements/funcs.ss" ui-rows ui-text)
         (only-in "../ui-layout/config.ss" marlin-ui-layout-with-tab-bar)
-        (only-in "../ui-meow/interface.ss" define-key-bindings meow-normal)
+        (only-in "../ui-meow/interface.ss" define-key-bindings meow-global meow-normal)
         (only-in "./package.ss" UiPackage. make-ui-package))
 
 (export TaskDisclosureLevel
@@ -36,9 +36,29 @@
     (.ref obj key)
     default))
 
-;;; Doom/Meow-style Task Workbench keybindings under `SPC o` (Org/Task workbench),
-;;; strictly disjoint from `UiMeowScope` (`SPC x`, `SPC b`, `SPC t`, `SPC h`, `SPC r`, `SPC m`).
+;;; Doom/Meow-style Task Workbench keybindings under `SPC o` paired 1:1 with
+;;; native Emacs `C-c o` chords (enforced by `UiMeowScopeContract`).
 (define-key-bindings TaskWorkbenchKeymap.
+  (meow-global
+    ((C-c o i) task-index "Open pinned Task Index")
+    ((C-c o t) task-switch "Switch active Task tab")
+    ((C-c o p) task-peek "Peek archived Task read-only")
+    ((C-c o r) task-reopen "Reopen archived Task into active tabs")
+    ((C-c o #\0) task-drill-l0 "Fold Org disclosure to L0 Skeleton")
+    ((C-c o #\1) task-drill-l1 "Expand Org disclosure to L1 Checklist")
+    ((C-c o #\2) task-drill-l2 "Expand Org disclosure to L2 Synthesis Body")
+    ((C-c o #\3) task-drill-l3 "Expand Org disclosure to L3 Full Evidence")
+    ((C-c o d b) task-detour-blocker "Enter Blocker-Active Scoped Detour")
+    ((C-c o d s) task-detour-sidequest "Enter Side-Quest Scoped Detour")
+    ((C-c o d r) task-detour-exit-return "Exit Detour: Return to Origin")
+    ((C-c o d a) task-detour-exit-absorb "Exit Detour: Absorb and Continue")
+    ((C-c o d n) task-detour-exit-sibling "Exit Detour: Spawn Sibling Task")
+    ((C-c o d x) task-detour-exit-abort "Exit Detour: Abort Detour")
+    ((C-c o h a) task-human-approve "Approve human gate and resolve active defeater")
+    ((C-c o h b) task-propose-branch "Propose bounded hypothesis branch for HxB evaluation")
+    ((C-c o h p) task-propagate-defeater "Propagate shared-premise defeater across live Fleet")
+    ((C-c o f s) task-fleet-step "Advance live GraphEngine Fleet one pure step")
+    ((C-c o f c) task-fleet-checkpoint "Emit Fleet CAS checkpoint effect"))
   (meow-normal
     ((SPC o i) task-index "Open pinned Task Index")
     ((SPC o t) task-switch "Switch active Task tab")

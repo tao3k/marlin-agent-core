@@ -117,69 +117,112 @@ impl UiWorkbenchService for MyGoBridgeHost {
         self.check_auth(&request)?;
         self.ensure_governance_live("dispatch_ui_event")?;
         let req = request.into_inner();
-        let mut st = self.lock_state()?;
-        if req.expected_generation != 0 && req.expected_generation != st.generation {
-            return Ok(Response::new(DispatchUiEventResponse {
-                admitted: false,
-                intent: None,
-                next_workbench: None,
-                denial: Some(TypedDenial {
-                    code: DenialCode::StaleGeneration as i32,
-                    message: format!(
-                        "expected generation {}, current {}",
-                        req.expected_generation, st.generation
-                    ),
-                    owner_id: Some("marlin.ui.v1".to_owned()),
-                    details: HashMap::new(),
-                }),
-            }));
-        }
+        let (intent, next, dispatched_cmd) = {
+            let mut st = self.lock_state()?;
+            if req.expected_generation != 0 && req.expected_generation != st.generation {
+                return Ok(Response::new(DispatchUiEventResponse {
+                    admitted: false,
+                    intent: None,
+                    next_workbench: None,
+                    denial: Some(TypedDenial {
+                        code: DenialCode::StaleGeneration as i32,
+                        message: format!(
+                            "expected generation {}, current {}",
+                            req.expected_generation, st.generation
+                        ),
+                        owner_id: Some("marlin.ui.v1".to_owned()),
+                        details: HashMap::new(),
+                    }),
+                }));
+            }
 
-        let mut dispatched_cmd = None;
-        let intent = match req.event {
-            Some(dispatch_ui_event_request::Event::SelectProfile(prof)) => {
-                st.profile_name = prof;
-                st.generation += 1;
-                Some(UiIntent {
-                    intent: Some(ui_intent::Intent::FocusComponentId(st.focus_id.clone())),
-                })
-            }
-            Some(dispatch_ui_event_request::Event::SelectFocus(target)) => {
-                st.focus_id = target.clone();
-                st.generation += 1;
-                Some(UiIntent {
-                    intent: Some(ui_intent::Intent::FocusComponentId(target)),
-                })
-            }
-            Some(dispatch_ui_event_request::Event::SelectBuffer(buf)) => {
-                st.generation += 1;
-                Some(UiIntent {
-                    intent: Some(ui_intent::Intent::SelectBufferId(buf)),
-                })
-            }
-            Some(dispatch_ui_event_request::Event::RecordCommand(cmd)) => {
-                if let Some(alias) = cmd.strip_prefix("model.select ") {
-                    let trimmed = alias.trim();
-                    if !trimmed.is_empty() {
-                        st.model_label = trimmed.to_owned();
+            let mut dispatched_cmd = None;
+            let intent = match req.event {
+                Some(dispatch_ui_event_request::Event::SelectProfile(prof)) => {
+                    st.profile_name = prof;
+                    st.generation += 1;
+                    Some(UiIntent {
+                        intent: Some(ui_intent::Intent::FocusComponentId(st.focus_id.clone())),
+                    })
+                }
+                Some(dispatch_ui_event_request::Event::SelectFocus(target)) => {
+                    st.focus_id = target.clone();
+                    st.generation += 1;
+                    Some(UiIntent {
+                        intent: Some(ui_intent::Intent::FocusComponentId(target)),
+                    })
+                }
+                Some(dispatch_ui_event_request::Event::SelectBuffer(buf)) => {
+                    st.generation += 1;
+                    Some(UiIntent {
+                        intent: Some(ui_intent::Intent::SelectBufferId(buf)),
+                    })
+                }
+                Some(dispatch_ui_event_request::Event::RecordCommand(cmd)) => {
+                    if let Some(alias) = cmd.strip_prefix("model.select ") {
+                        let trimmed = alias.trim();
+                        if !trimmed.is_empty() {
+                            st.model_label = trimmed.to_owned();
+                        }
+                    }
+                    st.generation += 1;
+                    dispatched_cmd = Some(DispatchedUiCommand {
+                        session_id: req.session_id,
+                        command: cmd,
+                        generation: st.generation,
+                    });
+                    Some(UiIntent {
+                        intent: Some(ui_intent::Intent::SubmitDraft(UiEmptyMarker {})),
+                    })
+                }
+                _ => Some(UiIntent {
+                    intent: Some(ui_intent::Intent::SubmitDraft(UiEmptyMarker {})),
+                }),
+            };
+            let next = build_snapshot(&st);
+            (intent, next, dispatched_cmd)
+        };
+
+        // Execute Rust-owned Magit VCS mutations synchronously under the governance
+        // gate before returning, publishing an Aitia causal trajectory receipt.
+        if let Some(ref cmd_ev) = dispatched_cmd
+            && cmd_ev.command.trim().starts_with("magit.")
+            && let Some(bridge) = &self.magit_bridge
+        {
+            match bridge.execute_ui_command(&cmd_ev.command).await {
+                Ok(Some((receipt, _snap, traj))) => {
+                    self.publish_graph_trajectory_event(traj);
+                    if !receipt.ok {
+                        return Ok(Response::new(DispatchUiEventResponse {
+                            admitted: false,
+                            intent: None,
+                            next_workbench: Some(next),
+                            denial: Some(TypedDenial {
+                                code: DenialCode::Unspecified as i32,
+                                message: receipt.summary,
+                                owner_id: Some("marlin.magit".to_owned()),
+                                details: HashMap::new(),
+                            }),
+                        }));
                     }
                 }
-                st.generation += 1;
-                dispatched_cmd = Some(DispatchedUiCommand {
-                    session_id: req.session_id,
-                    command: cmd,
-                    generation: st.generation,
-                });
-                Some(UiIntent {
-                    intent: Some(ui_intent::Intent::SubmitDraft(UiEmptyMarker {})),
-                })
+                Ok(None) => {}
+                Err(err) => {
+                    return Ok(Response::new(DispatchUiEventResponse {
+                        admitted: false,
+                        intent: None,
+                        next_workbench: Some(next),
+                        denial: Some(TypedDenial {
+                            code: DenialCode::Unspecified as i32,
+                            message: err,
+                            owner_id: Some("marlin.magit".to_owned()),
+                            details: HashMap::new(),
+                        }),
+                    }));
+                }
             }
-            _ => Some(UiIntent {
-                intent: Some(ui_intent::Intent::SubmitDraft(UiEmptyMarker {})),
-            }),
-        };
-        let next = build_snapshot(&st);
-        drop(st);
+        }
+
         let _ = self.wb_tx.send(next.clone());
         if let Some(cmd_ev) = dispatched_cmd {
             let _ = self.ui_cmd_tx.send(cmd_ev);

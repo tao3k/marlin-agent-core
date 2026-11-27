@@ -12,6 +12,7 @@
 
 mod blob_locator;
 mod diff;
+pub mod magit;
 mod read;
 mod repository;
 #[cfg(unix)]

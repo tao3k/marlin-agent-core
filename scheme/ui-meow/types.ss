@@ -53,22 +53,29 @@
 (def KeyBindings
   (.cc Type. .element?:
     (lambda (bindings)
-      (and (bounded-list? bindings 256) (andmap binding? bindings)))))
+      (and (bounded-list? bindings 384) (andmap binding? bindings)))))
 
 (def KeypadAliases
   (.cc Type. .element?:
     (lambda (aliases)
-      (and (bounded-list? aliases 64) (andmap keypad-alias? aliases)))))
+      (and (bounded-list? aliases 128) (andmap keypad-alias? aliases)))))
 
 (def KeymapProjection (.cc Type. '.element? vector?))
 
-(def (check-key-overlap keymap)
+(def (native-emacs-chord? keys)
+  (and (pair? keys)
+       (let ((first (marlin-ui-key-spelling (car keys))))
+         (or (string-prefix? "C-" first)
+             (string-prefix? "M-" first)))))
+
+(def (check-keymap-contracts keymap)
   (def (prefix? shorter longer)
     (let (count (length shorter))
       (and (<= count (length longer)) (equal? shorter (take longer count)))))
+  (def raw-bindings (.get keymap bindings))
   (def sequences
     (map (lambda (entry) (cons (car entry) (map marlin-ui-key-spelling (cadr entry))))
-      (.get keymap bindings)))
+      raw-bindings))
   (let loop ((pending sequences))
     (unless (null? pending)
       (let* ((current (car pending)) (scope (car current)) (keys (cdr current)))
@@ -79,6 +86,28 @@
                       (error "overlapping UI keybindings" current other)))
           (cdr pending)))
       (loop (cdr pending))))
+  ;; Hard contract: EVERY Doom/Meow SPC leader binding MUST have a paired
+  ;; native Emacs binding (C-x / C-c / C-h / M-* / C-*) for the same action so
+  ;; no agent can add a SPC shortcut without its canonical Emacs chord.
+  (def native-actions
+    (let loop ((rest raw-bindings) (acc '()))
+      (if (null? rest)
+        acc
+        (let* ((entry (car rest))
+               (keys (cadr entry))
+               (action (caddr entry)))
+          (if (native-emacs-chord? keys)
+            (loop (cdr rest) (cons action acc))
+            (loop (cdr rest) acc))))))
+  (for-each
+    (lambda (entry)
+      (let ((keys (cadr entry))
+            (action (caddr entry)))
+        (when (and (pair? keys) (eq? (car keys) 'SPC))
+          (unless (member action native-actions)
+            (error "SPC leader binding requires a paired native Emacs (C-*/M-*) binding"
+                   keys action)))))
+    raw-bindings)
   keymap)
 
 (def UiMeowScopeContract
@@ -87,4 +116,4 @@
                project: [(Fun KeymapProjection <- KeyBindings)]
                help: [(Fun (List String) <- KeyBindings)])
        identity: 'marlin/ui-meow
-       .instantiate: check-key-overlap))
+       .instantiate: check-keymap-contracts))

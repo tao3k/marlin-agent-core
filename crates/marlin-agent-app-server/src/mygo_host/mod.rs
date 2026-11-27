@@ -5,8 +5,10 @@
 //! Production-grade Marlin MyGo Authority Host daemon module.
 
 pub mod config;
+pub mod magit_bridge;
 mod runner;
 
+pub use magit_bridge::{WorkspaceMagitBridge, parse_magit_ui_command};
 pub use runner::{
     DeterministicLocalGateway, MAX_RESIDENT_SESSIONS, ResidentSessionTable, lookup_host_session,
     run_cli, run_ui_command_router_loop,

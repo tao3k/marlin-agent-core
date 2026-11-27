@@ -268,15 +268,28 @@ impl ProjectionQueryService for MyGoBridgeHost {
                 "secret visibility cannot be elevated by UI clients",
             ));
         }
-        let seeded = {
+        let (seeded, mode_records) = {
             let st = self.lock_state()?;
-            if !st.graph_projection_records.is_empty() {
+            let s = if !st.graph_projection_records.is_empty() {
                 Some(st.graph_projection_records.clone())
             } else {
                 None
-            }
+            };
+            (s, st.scheme_mode_records.clone())
         };
-        let records = if let Some(records) = seeded {
+        let trimmed_query = req.query.trim();
+        let records = if trimmed_query.starts_with("modes:") && !mode_records.is_empty() {
+            mode_records
+        } else if trimmed_query.starts_with("magit:")
+            && let Some(bridge) = &self.magit_bridge
+        {
+            let snap = bridge
+                .refresh_snapshot()
+                .await
+                .map_err(|err| Status::failed_precondition(format!("magit snapshot error: {err}")))?;
+            let receipt = bridge.last_receipt();
+            crate::mygo_host::WorkspaceMagitBridge::project_snapshot(&snap, receipt.as_ref())
+        } else if let Some(records) = seeded {
             records
         } else if let Some(handler) = &self.graph_query_handler
             && let Some(live_records) = handler(&req)
@@ -311,19 +324,26 @@ impl ProjectionQueryService for MyGoBridgeHost {
         request: Request<WatchWorkspaceDiffRequest>,
     ) -> Result<Response<Self::WatchWorkspaceDiffStream>, Status> {
         self.check_auth(&request)?;
+        let snapshot = if let Some(bridge) = &self.magit_bridge
+            && let Ok(snap) = bridge.refresh_snapshot().await
+        {
+            crate::mygo_host::WorkspaceMagitBridge::to_workspace_diff_snapshot(&snap)
+        } else {
+            WorkspaceDiffSnapshot {
+                revision: 1,
+                branch: "main".to_owned(),
+                files: vec![FileDiffEntry {
+                    path: "scheme/ui-mygo/interface.ss".to_owned(),
+                    status: "A".to_owned(),
+                    added_lines: 12,
+                    removed_lines: 0,
+                    diff_artifact: None,
+                }],
+            }
+        };
         let stream = async_stream::try_stream! {
             yield WatchWorkspaceDiffResponse {
-                snapshot: Some(WorkspaceDiffSnapshot {
-                    revision: 1,
-                    branch: "main".to_owned(),
-                    files: vec![FileDiffEntry {
-                        path: "scheme/ui-mygo/interface.ss".to_owned(),
-                        status: "A".to_owned(),
-                        added_lines: 12,
-                        removed_lines: 0,
-                        diff_artifact: None,
-                    }],
-                }),
+                snapshot: Some(snapshot),
             };
         };
         Ok(Response::new(Box::pin(stream)))

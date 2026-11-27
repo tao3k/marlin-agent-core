@@ -31,6 +31,7 @@ grpc = [
 ui-grpc = [
     "grpc",
     "dep:agent-semantic-search",
+    "dep:marlin-agent-gitops",
     "dep:serde",
     "dep:toml",
     "dep:weaver-llm",
@@ -40,6 +41,7 @@ turso-host = ["ui-grpc", "marlin-agent-storage/turso"]
 [dependencies]
 agent-semantic-search = { workspace = true, optional = true }
 async-stream = { version = "0.3.6", optional = true }
+marlin-agent-gitops = { workspace = true, optional = true }
 marlin-agent-kernel = { workspace = true, optional = true }
 marlin-agent-protocol = { workspace = true, optional = true }
 marlin-agent-runtime = { workspace = true, optional = true }

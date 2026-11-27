@@ -24,7 +24,8 @@ use crate::wire::marlin::{
     ui::v1::{
         SlotCardinality, SlotDeclaration, UiCommand, UiCommandArguments, UiElement,
         UiElementSequence, UiKeyBinding, UiKeyScope, UiLayoutPolicy, UiRgb, UiSlotNode,
-        UiSlotSource, UiSpan, UiTextNode, UiTheme, UiTone, UiWorkbenchSnapshot, ui_element,
+        UiSlotSource, UiSpan, UiTextNode, UiTheme, UiTone, UiTransient, UiWorkbenchSnapshot,
+        ui_element,
     },
 };
 
@@ -144,6 +145,10 @@ pub(super) struct BridgeState {
     pub(super) artifact_order: VecDeque<String>,
     pub(super) graph_projection_records: Vec<GraphRecordView>,
     pub(super) graph_trajectory_history: Vec<GraphTrajectoryEvent>,
+    pub(super) scheme_commands: Vec<UiCommand>,
+    pub(super) scheme_keymap: Vec<UiKeyBinding>,
+    pub(super) scheme_transients: Vec<UiTransient>,
+    pub(super) scheme_mode_records: Vec<GraphRecordView>,
 }
 
 impl BridgeState {
@@ -494,29 +499,37 @@ pub(super) fn build_snapshot(st: &BridgeState) -> UiWorkbenchSnapshot {
             transcript_policy: None,
         }),
         regions: Vec::new(),
-        commands: vec![
-            UiCommand {
-                name: "select-buffer".to_owned(),
-                description: "Switch active Scheme workbench buffer".to_owned(),
-                arguments: UiCommandArguments::Optional as i32,
-                capability: "ui.buffer".to_owned(),
-                fixed_value: None,
-            },
-            UiCommand {
-                name: "split-vertical".to_owned(),
-                description: "Split workbench pane vertically".to_owned(),
-                arguments: UiCommandArguments::None as i32,
-                capability: "ui.layout".to_owned(),
-                fixed_value: None,
-            },
-        ],
-        keymap: vec![UiKeyBinding {
-            scope: UiKeyScope::Normal as i32,
-            sequence: vec!["SPC".to_owned(), "w".to_owned(), "v".to_owned()],
-            action_kind: "invoke".to_owned(),
-            command_name: Some("split-vertical".to_owned()),
-        }],
-        transients: Vec::new(),
+        commands: if st.scheme_commands.is_empty() {
+            vec![
+                UiCommand {
+                    name: "select-buffer".to_owned(),
+                    description: "Switch active Scheme workbench buffer".to_owned(),
+                    arguments: UiCommandArguments::Optional as i32,
+                    capability: "ui.buffer".to_owned(),
+                    fixed_value: None,
+                },
+                UiCommand {
+                    name: "split-vertical".to_owned(),
+                    description: "Split workbench pane vertically".to_owned(),
+                    arguments: UiCommandArguments::None as i32,
+                    capability: "ui.layout".to_owned(),
+                    fixed_value: None,
+                },
+            ]
+        } else {
+            st.scheme_commands.clone()
+        },
+        keymap: if st.scheme_keymap.is_empty() {
+            vec![UiKeyBinding {
+                scope: UiKeyScope::Normal as i32,
+                sequence: vec!["SPC".to_owned(), "w".to_owned(), "v".to_owned()],
+                action_kind: "invoke".to_owned(),
+                command_name: Some("split-vertical".to_owned()),
+            }]
+        } else {
+            st.scheme_keymap.clone()
+        },
+        transients: st.scheme_transients.clone(),
         slots: st.slots.clone(),
     }
 }

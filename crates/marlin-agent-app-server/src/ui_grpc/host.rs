@@ -23,7 +23,10 @@ use crate::wire::marlin::{
         GraphRecordView, GraphTrajectoryEvent, QueryProjectGraphRequest,
         projection_query_service_server::ProjectionQueryServiceServer,
     },
-    ui::v1::{UiWorkbenchSnapshot, ui_workbench_service_server::UiWorkbenchServiceServer},
+    ui::v1::{
+        UiCommand, UiKeyBinding, UiTransient, UiWorkbenchSnapshot,
+        ui_workbench_service_server::UiWorkbenchServiceServer,
+    },
 };
 
 use super::state::{
@@ -49,6 +52,7 @@ pub struct MyGoBridgeHost {
     pub(super) governance_gate: Option<Arc<marlin_agent_kernel::GovernanceAdmissionGate>>,
     pub(super) process_registry: Option<marlin_agent_runtime::RuntimeProcessRegistryHandle>,
     pub(super) graph_query_handler: Option<Arc<GraphQueryHandler>>,
+    pub(super) magit_bridge: Option<Arc<crate::mygo_host::WorkspaceMagitBridge>>,
 }
 
 
@@ -215,6 +219,10 @@ impl MyGoBridgeHost {
             artifact_order: VecDeque::new(),
             graph_projection_records: Vec::new(),
             graph_trajectory_history: Vec::new(),
+            scheme_commands: Vec::new(),
+            scheme_keymap: Vec::new(),
+            scheme_transients: Vec::new(),
+            scheme_mode_records: Vec::new(),
         };
         Ok(Self {
             authorize: Arc::new(authorize),
@@ -231,6 +239,7 @@ impl MyGoBridgeHost {
             governance_gate: None,
             process_registry: None,
             graph_query_handler: None,
+            magit_bridge: None,
         })
     }
 
@@ -241,6 +250,55 @@ impl MyGoBridgeHost {
         F: Fn(&QueryProjectGraphRequest) -> Option<Vec<GraphRecordView>> + Send + Sync + 'static,
     {
         self.graph_query_handler = Some(Arc::new(handler));
+        self
+    }
+
+    /// Attach a live Rust-owned AI-Native Magit (`jj` + Git + Aitia) bridge for
+    /// `ProjectionQueryService` (`magit:*` graph queries and live workspace diff)
+    /// and governance-gated `DispatchUiEvent(RecordCommand("magit.*"))` mutations.
+    pub fn with_magit_workspace(mut self, workspace_root: std::path::PathBuf) -> Self {
+        self.magit_bridge = Some(Arc::new(crate::mygo_host::WorkspaceMagitBridge::new(
+            workspace_root,
+        )));
+        self
+    }
+
+    /// Attach Scheme-projected commands, dual keymap (`SPC` <-> `C-x`/`C-c`/`C-h`/`M-`),
+    /// and transients decoded directly from Gerbil Scheme via native FFI (`marlin-gerbil-scheme`).
+    pub fn with_scheme_ui_surface(
+        self,
+        commands: Vec<UiCommand>,
+        keymap: Vec<UiKeyBinding>,
+        transients: Vec<UiTransient>,
+    ) -> Self {
+        self.set_scheme_ui_surface(commands, keymap, transients);
+        self
+    }
+
+    /// Replace the live Scheme-projected commands, keymap, and transients and
+    /// broadcast the updated `UiWorkbenchSnapshot` to connected MyGo gRPC clients.
+    pub fn set_scheme_ui_surface(
+        &self,
+        commands: Vec<UiCommand>,
+        keymap: Vec<UiKeyBinding>,
+        transients: Vec<UiTransient>,
+    ) {
+        let mut st = self.state.lock().expect("bridge mutex poisoned");
+        st.scheme_commands = commands;
+        st.scheme_keymap = keymap;
+        st.scheme_transients = transients;
+        st.generation += 1;
+        let snap = build_snapshot(&st);
+        drop(st);
+        let _ = self.wb_tx.send(snap);
+    }
+
+    /// Attach Scheme-projected Major/Minor/Polymode registry records decoded
+    /// directly from `:marlin-agent-core/ui-modes` over Gerbil C-ABI FFI.
+    pub fn with_scheme_mode_records(self, records: Vec<GraphRecordView>) -> Self {
+        let mut st = self.state.lock().expect("bridge mutex poisoned");
+        st.scheme_mode_records = records;
+        drop(st);
         self
     }
 

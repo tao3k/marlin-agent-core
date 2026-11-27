@@ -1094,6 +1094,18 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
     governance_linked_export: Option<unsafe extern "C" fn(i64) -> i64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let _ = &dynamic_scheme_dir;
+    #[cfg(not(feature = "external-program"))]
+    let projected_ui_surface = dynamic_scheme_dir
+        .as_deref()
+        .and_then(|dir| match crate::scheme_ui_keymap::project_scheme_ui_surface(runtime, dir) {
+            Ok(surface) => Some(surface),
+            Err(err) => {
+                eprintln!("warning: Scheme UI keymap/transient FFI projection skipped: {err}");
+                None
+            }
+        });
+    #[cfg(feature = "external-program")]
+    let projected_ui_surface: Option<crate::scheme_ui_keymap::ProjectedSchemeUiSurface> = None;
     let bind_addr = env::var("MARLIN_BRIDGE_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_owned());
     let expected_header = resolve_bridge_auth_header(&bind_addr, env::var("MARLIN_BRIDGE_TOKEN"))?;
     let turso_path = env::var("MARLIN_BRIDGE_TURSO_PATH")
@@ -1294,10 +1306,22 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
 
             let app_auth = expected_header.clone();
             let bridge_auth = expected_header;
-            let host = MyGoBridgeHost::new_default_trust(move |meta| {
+            let mut host = MyGoBridgeHost::new_default_trust(move |meta| {
                 MyGoBridgeHost::check_bearer_header(meta, bridge_auth.as_deref())
             })
             .with_task_actors(task_actors.clone());
+            if let Some(surface) = projected_ui_surface {
+                host = host
+                    .with_scheme_ui_surface(
+                        surface.commands,
+                        surface.keymap,
+                        surface.transients,
+                    )
+                    .with_scheme_mode_records(surface.mode_records);
+            }
+            if let Ok(cwd) = env::current_dir() {
+                host = host.with_magit_workspace(cwd);
+            }
 
             if let Some(report) = &initial_fleet_report {
                 let boot_disc = if report.mode == "restored" {
