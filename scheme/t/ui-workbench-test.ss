@@ -163,7 +163,14 @@
                   #(normal #(SPC TAB n) workspace-new) #(normal #(SPC TAB d) workspace-kill)
                   ,(vector 'normal (vector 'SPC 'TAB (string->symbol "]")) 'workspace-next)
                   ,(vector 'normal (vector 'SPC 'TAB (string->symbol "[")) 'workspace-prev)
-                  ,(vector 'normal (vector 'SPC (string->symbol "~")) 'popup-toggle)))
+                  ,(vector 'normal (vector 'SPC (string->symbol "~")) 'popup-toggle)
+                  ;; Native Emacs global chords (active in Insert & Normal!) mapped 1:1 with SPC leaders
+                  #(global #(C-x o) window-other) #(global #(C-x C-c) quit)
+                  #(global #(C-x b) switch-buffer) #(global #(C-s) helm)
+                  #(global #(C-x w d) window-toggle-dedicated)
+                  #(global #(C-x z) zen-mode) #(global #(C-x Z) zen-fullscreen)
+                  #(global #(C-c u) winner-undo) #(global #(M-1) winum-select-window-1)
+                  #(insert #(M-x) open-commands) #(normal #(SPC q q) quit)))
   (error "selected Emacs and Meow bindings were not published"))
 (for-each
   (lambda (step)

@@ -53,12 +53,12 @@
 (def KeyBindings
   (.cc Type. .element?:
     (lambda (bindings)
-      (and (bounded-list? bindings 192) (andmap binding? bindings)))))
+      (and (bounded-list? bindings 256) (andmap binding? bindings)))))
 
 (def KeypadAliases
   (.cc Type. .element?:
     (lambda (aliases)
-      (and (bounded-list? aliases 32) (andmap keypad-alias? aliases)))))
+      (and (bounded-list? aliases 64) (andmap keypad-alias? aliases)))))
 
 (def KeymapProjection (.cc Type. '.element? vector?))
 
