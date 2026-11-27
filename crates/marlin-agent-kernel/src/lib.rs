@@ -11,6 +11,7 @@ pub mod execution_breaker;
 pub mod governance_admission;
 pub mod governance_cedar;
 pub mod governance_plane;
+pub mod model_weight_attestation;
 mod loop_machine;
 mod loop_program_controller;
 mod loop_program_execution;
@@ -56,6 +57,10 @@ pub use governance_plane::{
     GovernanceGateId, GovernancePlaneRejection, GovernancePrincipal, GovernanceProposalId,
     GovernanceTenantId, MultiTenantIsolationFence, PrivilegedHumanReceipt, SodProposalRecord,
     TenantExecutionTicket, TenantExecutionTicketId, TenantOutboxEntry, TenantOutboxEntryId,
+};
+pub use model_weight_attestation::{
+    ModelInferenceAdmissionReceipt, ModelInferenceClaim, ModelWeightAttestationGate,
+    ModelWeightGovernancePolicy, ModelWeightRejection, compute_shard_merkle_root,
 };
 pub use loop_machine::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,
