@@ -5,7 +5,9 @@
 //! Rooted Gerbil Scheme C-ABI bridge for Marlin's native `:gerbil-ascent` +
 //! `:gerbil-parser` + POO Search DSL (`scheme/search-dsl` + `scheme/c-abi/search-dsl.ss`).
 
+mod choice_codec;
 mod codec;
+mod render;
 mod runner;
 mod types;
 
@@ -26,7 +28,9 @@ pub use runner::{
     project_package_search_dsl_completions,
 };
 pub use types::{
-    OwnedWorkspaceEdbPrefilter, SearchDslCompletionEntry, SearchDslCompletionKind,
-    SearchDslExecutionMode, SearchDslExecutionRequest, SearchDslLinkedExports, SearchDslRunner,
-    SearchDslStructuredResult, SearchDslStructuredRow, SearchDslStructuredRunner,
+    EdbHydrationMask, OwnedWorkspaceEdbPrefilter, SearchDslChoiceRuleKind, SearchDslChoiceWitness,
+    SearchDslChoiceWitnessKind, SearchDslChoiceWorld, SearchDslCompletionEntry,
+    SearchDslCompletionKind, SearchDslExecutionMode, SearchDslExecutionRequest,
+    SearchDslLinkedExports, SearchDslRunner, SearchDslStructuredResult, SearchDslStructuredRow,
+    SearchDslStructuredRunner,
 };

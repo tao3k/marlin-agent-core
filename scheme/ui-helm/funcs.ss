@@ -553,9 +553,12 @@
         preview-elements
         action-elements))))
 
-;;; Project Scheme-owned resident search index policy into a rooted native vector:
+;;; Project Scheme-owned resident search index, ASP hydration budgets, and
+;;; declarative Helm mode presets into a rooted native 12-slot vector:
 ;;; #(skip-dirs-vector max-file-bytes max-line-matches max-line-preview-chars
-;;;   fuzzy-distance enable-tantivy? enable-file-locator? enable-rg-regex?)
+;;;   fuzzy-distance enable-tantivy? enable-file-locator? enable-rg-regex?
+;;;   asp-inspect-batch-files asp-hydration-max-files asp-hydration-chunk-size
+;;;   search-presets-vector)
 (def (helm-project-index-config (policy HelmIndexPolicy.))
   (vector
     (list->vector (.get policy skip-dirs))
@@ -565,7 +568,11 @@
     (.get policy fuzzy-distance)
     (.get policy enable-tantivy?)
     (.get policy enable-file-locator?)
-    (.get policy enable-rg-regex?)))
+    (.get policy enable-rg-regex?)
+    (.get policy asp-inspect-batch-files)
+    (.get policy asp-hydration-max-files)
+    (.get policy asp-hydration-chunk-size)
+    (list->vector (.get (.get policy search-presets) entries))))
 
 ;;; Project Scheme-owned Emacs Helm window layout policy into a rooted native vector:
 ;;; #(window-style height-percent preview-width-percent preview-min-width

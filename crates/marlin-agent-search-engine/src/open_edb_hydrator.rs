@@ -26,7 +26,6 @@ use gerbil_scheme::{CollectionKind, GerbilRuntime, RootedSchemeObject};
 use marlin_context_org_model::OrgNodeKind;
 
 use crate::SearchPlanProjectionError;
-use crate::asp_http_client::{AspForwardingEndpoint, hydrate_workspace_pending_via_asp_http};
 use crate::edb_bridge::{decode_string, decode_usize, make_string, make_vector, native};
 use crate::org_port::parse_live_org_nodes;
 
@@ -289,29 +288,13 @@ fn hydrate_pending_org_files(
     receipt.cache_saved = index.save_open_edb_cache(cache_path).is_ok();
 }
 
-fn hydrate_pending_via_configured_asp_http(
-    index: &mut WorkspaceSearchIndex,
-    cache_path: &Path,
-    receipt: &mut WorkspaceOpenEdbHydrationReceipt,
-) {
-    let Some(endpoint) = AspForwardingEndpoint::from_env() else {
-        return;
-    };
-    let Ok(asp_receipt) = hydrate_workspace_pending_via_asp_http(&endpoint, index, cache_path)
-    else {
-        return;
-    };
-    receipt.asp_http_files_hydrated = asp_receipt.http_inspected_files;
-    receipt.total_ingested_entities += asp_receipt.http_ingested_entities;
-    if asp_receipt.cache_saved {
-        receipt.cache_saved = true;
-    }
-}
-
-/// Restore matching BLAKE3-verified Open EDB cache entries, hydrate any
-/// unhydrated `.org` files via Marlin's zero-regex Org AST parser, and when
-/// `MARLIN_ASP_FORWARDING_URL` is configured, hydrate pending native-compiler
-/// source files through ASP's HTTP forwarding gateway.
+/// Restore matching BLAKE3-verified Open EDB cache entries and hydrate any
+/// unhydrated `.org` files via Marlin's zero-regex Org AST parser.
+///
+/// ASP HTTP hydration runs strictly through Scheme-projected
+/// [`crate::AspHydrationPolicy`] via [`crate::hydrate_workspace_chunked_via_asp_http`]
+/// or [`crate::hydrate_workspace_pending_via_asp_http`] (never using hardcoded
+/// Rust batch budgets).
 pub fn hydrate_workspace_open_edb_org_and_cache(
     index: &mut WorkspaceSearchIndex,
     cache_path: &Path,
@@ -324,7 +307,6 @@ pub fn hydrate_workspace_open_edb_org_and_cache(
         receipt.restored_entities = restored.restored_entities;
     }
     hydrate_pending_org_files(index, cache_path, &mut receipt);
-    hydrate_pending_via_configured_asp_http(index, cache_path, &mut receipt);
     receipt
 }
 

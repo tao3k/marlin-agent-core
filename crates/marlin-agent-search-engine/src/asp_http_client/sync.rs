@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::SearchPlanProjectionError;
 use crate::edb_bridge::{decode_string, decode_usize, make_string, make_vector, native};
+use crate::projection::AspHydrationPolicy;
 
 use super::domain_types::{
     AspForwardingEndpoint, GeneralOntologyKindName, NativeAstKindName, TargetedJsonSchemaDocument,
@@ -27,45 +28,6 @@ use super::protocol_types::{
     ForwardedDslPack, ForwardedKindMapping, ForwardedProviderCatalog,
 };
 use super::transport::{fetch_asp_provider_catalog, http_loopback_request};
-
-const MAX_INSPECT_BATCH_FILES: usize = 512;
-
-const BUILTIN_SPECIAL_RELATIONS: &[&str] = &[
-    "rust_fn",
-    "rust_method",
-    "rust_struct",
-    "rust_enum",
-    "rust_trait",
-    "rust_type",
-    "rust_impl",
-    "rust_macro",
-    "rust_mod",
-    "scheme_def",
-    "scheme_const",
-    "scheme_struct",
-    "scheme_class",
-    "scheme_macro",
-    "scheme_poo_def",
-    "scheme_grammar",
-    "ts_fn",
-    "ts_class",
-    "ts_interface",
-    "ts_type",
-    "py_fn",
-    "py_class",
-    "julia_fn",
-    "julia_macro",
-    "julia_struct",
-    "julia_abstract",
-    "julia_module",
-    "sysml_requirement",
-    "sysml_part",
-    "sysml_state",
-    "sysml_action",
-    "quint_action",
-    "quint_invariant",
-    "org_heading",
-];
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -168,17 +130,42 @@ fn encode_dynamic_descriptor<'a>(
     )
 }
 
+struct RegisterDescriptorOutcome {
+    total_relations: usize,
+    added_entries: usize,
+}
+
 fn decode_register_receipt(
     receipt: RootedSchemeObject<'_>,
-) -> Result<usize, SearchPlanProjectionError> {
+) -> Result<RegisterDescriptorOutcome, SearchPlanProjectionError> {
     let tuple = native(receipt.into_collection(CollectionKind::Vector))?;
-    if tuple.len() != 3 {
+    if tuple.len() != 3 && tuple.len() != 4 {
         return Err(SearchPlanProjectionError::Invalid(
-            "dynamic register receipt must be a 3-vector",
+            "dynamic register receipt must be a 3- or 4-vector",
         ));
     }
     let _lang = decode_string(native(tuple.element(1))?, 256)?;
-    decode_usize(native(tuple.element(2))?)
+    let total_relations = decode_usize(native(tuple.element(2))?)?;
+    let added_entries = if tuple.len() == 4 {
+        decode_usize(native(tuple.element(3))?)?
+    } else {
+        1
+    };
+    Ok(RegisterDescriptorOutcome {
+        total_relations,
+        added_entries,
+    })
+}
+
+unsafe fn register_linked_descriptor_outcome(
+    runtime: &GerbilRuntime,
+    export: unsafe extern "C" fn(i64) -> i64,
+    request: &DynamicLanguageDescriptorRequest<'_>,
+) -> Result<RegisterDescriptorOutcome, SearchPlanProjectionError> {
+    let reg_fn = native(unsafe { runtime.bind_object_export(export) })?;
+    let payload = encode_dynamic_descriptor(runtime, request)?;
+    let receipt = native(reg_fn.call(&payload).into_result())?;
+    decode_register_receipt(receipt)
 }
 
 /// Register a dynamically forwarded language descriptor through an AOT-linked
@@ -191,20 +178,14 @@ pub unsafe fn register_linked_dynamic_language_descriptor(
     export: unsafe extern "C" fn(i64) -> i64,
     request: &DynamicLanguageDescriptorRequest<'_>,
 ) -> Result<usize, SearchPlanProjectionError> {
-    let reg_fn = native(unsafe { runtime.bind_object_export(export) })?;
-    let payload = encode_dynamic_descriptor(runtime, request)?;
-    let receipt = native(reg_fn.call(&payload).into_result())?;
-    decode_register_receipt(receipt)
+    Ok(unsafe { register_linked_descriptor_outcome(runtime, export, request) }?.total_relations)
 }
 
-/// Register a dynamically forwarded language descriptor directly in Marlin's
-/// compiled Scheme package over the zero-JSON `RootedSchemeObject` C-ABI.
-/// Returns the updated total relation count in `*active-search-registry*`.
 #[cfg(not(feature = "linked-ui"))]
-pub fn register_package_dynamic_language_descriptor(
+fn register_package_descriptor_outcome(
     runtime: &GerbilRuntime,
     request: &DynamicLanguageDescriptorRequest<'_>,
-) -> Result<usize, SearchPlanProjectionError> {
+) -> Result<RegisterDescriptorOutcome, SearchPlanProjectionError> {
     let module = native(runtime.intern_identifier(
         IdentifierKind::Symbol,
         ":marlin-agent-core/c-abi/search-dsl",
@@ -217,6 +198,17 @@ pub fn register_package_dynamic_language_descriptor(
     let payload = encode_dynamic_descriptor(runtime, request)?;
     let receipt = native(runtime.call_rooted(&reg_fn, &payload))?;
     decode_register_receipt(receipt)
+}
+
+/// Register a dynamically forwarded language descriptor directly in Marlin's
+/// compiled Scheme package over the zero-JSON `RootedSchemeObject` C-ABI.
+/// Returns the updated total relation count in `*active-search-registry*`.
+#[cfg(not(feature = "linked-ui"))]
+pub fn register_package_dynamic_language_descriptor(
+    runtime: &GerbilRuntime,
+    request: &DynamicLanguageDescriptorRequest<'_>,
+) -> Result<usize, SearchPlanProjectionError> {
+    Ok(register_package_descriptor_outcome(runtime, request)?.total_relations)
 }
 
 pub(crate) fn infer_special_specs_from_dsl_pack(
@@ -264,71 +256,86 @@ pub(crate) fn infer_special_specs_from_dsl_pack(
         .collect()
 }
 
-fn canonical_search_language(provider_lang: &str) -> &str {
-    match provider_lang {
-        "gerbil-scheme" => "scheme",
-        other => other,
+/// Build `providerLanguageId -> canonicalLanguageId` aliases strictly from
+/// the live ASP provider catalog (`dslPack.providerLanguageId -> dslPack.languageId`)
+/// with zero hardcoded language names in Rust.
+pub(super) fn provider_language_aliases(
+    catalog: &ForwardedProviderCatalog,
+) -> BTreeMap<String, String> {
+    let mut aliases = BTreeMap::new();
+    for env in &catalog.providers {
+        if let Some(pack) = env.dsl_pack.as_ref() {
+            let provider_lang = pack.provider_language_id.as_str();
+            let canonical_lang = pack.language_id.as_str();
+            if provider_lang != canonical_lang {
+                aliases.insert(provider_lang.to_owned(), canonical_lang.to_owned());
+            }
+        }
     }
+    aliases
 }
 
-fn is_builtin_search_language(language_id: &str) -> bool {
-    matches!(
-        language_id,
-        "rust"
-            | "python"
-            | "typescript"
-            | "julia"
-            | "scheme"
-            | "gerbil-scheme"
-            | "sysml"
-            | "quint"
-            | "org"
-    )
+fn resolve_canonical_language<'a>(
+    provider_lang: &'a str,
+    aliases: &'a BTreeMap<String, String>,
+) -> &'a str {
+    aliases
+        .get(provider_lang)
+        .map_or(provider_lang, String::as_str)
 }
 
-fn supported_languages_from_catalog(catalog: &ForwardedProviderCatalog) -> BTreeSet<String> {
+fn supported_languages_from_catalog(
+    catalog: &ForwardedProviderCatalog,
+    aliases: &BTreeMap<String, String>,
+) -> BTreeSet<String> {
     catalog
         .providers
         .iter()
-        .map(|env| canonical_search_language(env.manifest.language_id.as_str()).to_owned())
+        .map(|env| {
+            resolve_canonical_language(env.manifest.language_id.as_str(), aliases).to_owned()
+        })
         .collect()
 }
 
-fn dynamic_provider_sync_deltas(
+/// Forward every provider's `dslPack` (or fallback `manifest.special`)
+/// (`kindMappings` + `specialRelations`) straight to Scheme `*active-search-registry*`,
+/// which owns deduplication and mapping onto the General Syntax Ontology with zero
+/// hardcoded language tables in Rust.
+fn forwarded_provider_descriptors(
     catalog: &ForwardedProviderCatalog,
 ) -> Vec<(
     &[String],
-    &ForwardedDslPack,
+    ForwardedDslPack,
     Vec<DynamicSpecialRelationSpec>,
 )> {
     catalog
         .providers
         .iter()
         .filter_map(|env| {
-            let pack = env.dsl_pack.as_ref()?;
-            let all_specs = infer_special_specs_from_dsl_pack(pack);
-            if !is_builtin_search_language(env.manifest.language_id.as_str()) {
-                return Some((env.manifest.extensions.as_slice(), pack, all_specs));
-            }
-            // Even built-in languages (e.g., `rust` shipping a brand-new syntax
-            // kind) dynamically absorb additive special relations with zero
-            // Marlin recompilation!
-            let additive: Vec<DynamicSpecialRelationSpec> = all_specs
-                .into_iter()
-                .filter(|spec| !BUILTIN_SPECIAL_RELATIONS.contains(&spec.relation_name.as_str()))
-                .collect();
-            if additive.is_empty() {
-                None
+            let pack = if let Some(pack) = env.dsl_pack.as_ref() {
+                pack.clone()
             } else {
-                Some((env.manifest.extensions.as_slice(), pack, additive))
-            }
+                let special = env.manifest.special.as_ref()?;
+                if special.kind_mappings.is_empty() && special.special_relations.is_empty() {
+                    return None;
+                }
+                ForwardedDslPack {
+                    language_id: env.manifest.language_id.clone(),
+                    provider_language_id: env.manifest.language_id.clone(),
+                    extensions: env.manifest.extensions.clone(),
+                    kind_mappings: special.kind_mappings.clone(),
+                    special_relations: special.special_relations.clone(),
+                }
+            };
+            let specs = infer_special_specs_from_dsl_pack(&pack);
+            Some((env.manifest.extensions.as_slice(), pack, specs))
         })
         .collect()
 }
 
 /// Fetch ASP's live provider catalog and sync any new or additive language
 /// descriptors into Marlin's AOT-linked `*active-search-registry*` over zero-JSON C-ABI.
-/// Returns the number of dynamically synced provider descriptors.
+/// Returns the number of descriptors that introduced new languages or relations in Scheme.
 ///
 /// # Safety
 /// `export` must originate from `runtime`'s live linked Marlin programme.
@@ -338,9 +345,9 @@ pub unsafe fn sync_linked_asp_provider_descriptors(
     endpoint: &AspForwardingEndpoint,
 ) -> Result<usize, SearchPlanProjectionError> {
     let catalog = fetch_asp_provider_catalog(endpoint)?;
-    dynamic_provider_sync_deltas(&catalog).into_iter().try_fold(
-        0usize,
-        |synced, (extensions, pack, specs)| {
+    forwarded_provider_descriptors(&catalog)
+        .into_iter()
+        .try_fold(0usize, |synced, (extensions, pack, specs)| {
             let desc_req = DynamicLanguageDescriptorRequest {
                 scheme_dir: "",
                 language_id: &pack.language_id,
@@ -349,11 +356,10 @@ pub unsafe fn sync_linked_asp_provider_descriptors(
                 kind_mappings: &pack.kind_mappings,
                 special_specs: &specs,
             };
-            let _ =
-                unsafe { register_linked_dynamic_language_descriptor(runtime, export, &desc_req) }?;
-            Ok(synced + 1)
-        },
-    )
+            let outcome =
+                unsafe { register_linked_descriptor_outcome(runtime, export, &desc_req) }?;
+            Ok(synced + usize::from(outcome.added_entries > 0))
+        })
 }
 
 /// Fetch ASP's live provider catalog and sync any new or additive language
@@ -365,9 +371,9 @@ pub fn sync_package_asp_provider_descriptors(
     endpoint: &AspForwardingEndpoint,
 ) -> Result<usize, SearchPlanProjectionError> {
     let catalog = fetch_asp_provider_catalog(endpoint)?;
-    dynamic_provider_sync_deltas(&catalog).into_iter().try_fold(
-        0usize,
-        |synced, (extensions, pack, specs)| {
+    forwarded_provider_descriptors(&catalog)
+        .into_iter()
+        .try_fold(0usize, |synced, (extensions, pack, specs)| {
             let desc_req = DynamicLanguageDescriptorRequest {
                 scheme_dir,
                 language_id: &pack.language_id,
@@ -376,10 +382,9 @@ pub fn sync_package_asp_provider_descriptors(
                 kind_mappings: &pack.kind_mappings,
                 special_specs: &specs,
             };
-            let _ = register_package_dynamic_language_descriptor(runtime, &desc_req)?;
-            Ok(synced + 1)
-        },
-    )
+            let outcome = register_package_descriptor_outcome(runtime, &desc_req)?;
+            Ok(synced + usize::from(outcome.added_entries > 0))
+        })
 }
 
 #[cfg(not(feature = "linked-ui"))]
@@ -397,15 +402,16 @@ fn restore_cached_open_edb(
     }
 }
 
-fn targeted_schemas_by_language(
-    catalog: &ForwardedProviderCatalog,
-) -> BTreeMap<&str, &TargetedJsonSchemaDocument> {
+fn targeted_schemas_by_language<'a>(
+    catalog: &'a ForwardedProviderCatalog,
+    aliases: &'a BTreeMap<String, String>,
+) -> BTreeMap<&'a str, &'a TargetedJsonSchemaDocument> {
     catalog
         .providers
         .iter()
         .map(|env| {
             (
-                canonical_search_language(env.manifest.language_id.as_str()),
+                resolve_canonical_language(env.manifest.language_id.as_str(), aliases),
                 &env.targeted_schema,
             )
         })
@@ -414,12 +420,13 @@ fn targeted_schemas_by_language(
 
 fn normalize_and_validate_batch(
     mut batch: WorkspaceOpenEdbIngestBatch,
+    aliases: &BTreeMap<String, String>,
     schemas_by_lang: &BTreeMap<&str, &TargetedJsonSchemaDocument>,
     receipt: &mut AspHttpHydrationReceipt,
 ) -> WorkspaceOpenEdbIngestBatch {
     for ent in &mut batch.entities {
-        if ent.language == "gerbil-scheme" {
-            ent.language = "scheme".to_owned();
+        if let Some(canonical) = aliases.get(ent.language.as_str()) {
+            ent.language.clone_from(canonical);
         }
         if let Some(schema) = schemas_by_lang.get(ent.language.as_str()) {
             if schema.admits_entity_kinds(&ent.kind, &ent.language_kind) {
@@ -429,8 +436,10 @@ fn normalize_and_validate_batch(
             }
         }
     }
-    if batch.language_id.as_deref() == Some("gerbil-scheme") {
-        batch.language_id = Some("scheme".to_owned());
+    if let Some(lang) = batch.language_id.as_deref()
+        && let Some(canonical) = aliases.get(lang)
+    {
+        batch.language_id = Some(canonical.clone());
     }
     batch
 }
@@ -440,11 +449,13 @@ fn inspect_and_ingest_pending_files(
     index: &mut WorkspaceSearchIndex,
     catalog: &ForwardedProviderCatalog,
     cache_path: &Path,
+    max_batch_files: usize,
     receipt: &mut AspHttpHydrationReceipt,
 ) -> Result<(), SearchPlanProjectionError> {
-    let supported_langs = supported_languages_from_catalog(catalog);
+    let aliases = provider_language_aliases(catalog);
+    let supported_langs = supported_languages_from_catalog(catalog, &aliases);
     let lang_refs: Vec<&str> = supported_langs.iter().map(String::as_str).collect();
-    let pending = index.live_files_needing_open_edb(&lang_refs, MAX_INSPECT_BATCH_FILES);
+    let pending = index.live_files_needing_open_edb(&lang_refs, max_batch_files.max(1));
     if pending.is_empty() {
         return Ok(());
     }
@@ -477,12 +488,12 @@ fn inspect_and_ingest_pending_files(
         SearchPlanProjectionError::Native(format!("decode inspect-files response: {e}"))
     })?;
 
-    let schemas_by_lang = targeted_schemas_by_language(catalog);
+    let schemas_by_lang = targeted_schemas_by_language(catalog, &aliases);
     receipt.http_inspected_files = wire.inspected_files;
     receipt.failed_files = wire.failed_paths.len();
     receipt.asp_inspect_micros = wire.elapsed_micros;
     for batch in wire.batches {
-        let normalized = normalize_and_validate_batch(batch, &schemas_by_lang, receipt);
+        let normalized = normalize_and_validate_batch(batch, &aliases, &schemas_by_lang, receipt);
         let ing = index.ingest_open_edb_facts(normalized);
         receipt.http_ingested_entities += ing.ingested_entities;
     }
@@ -493,18 +504,270 @@ fn inspect_and_ingest_pending_files(
 }
 
 /// Hydrate pending uncached multi-language workspace files via ASP's HTTP
-/// forwarding gateway without touching the Gerbil VM thread (safe for background
-/// TUI warm-up, Helm refresh, and Agent `workspace_search` indexing threads).
+/// forwarding gateway, bounded by Scheme-projected [`AspHydrationPolicy`].
 pub fn hydrate_workspace_pending_via_asp_http(
     endpoint: &AspForwardingEndpoint,
     index: &mut WorkspaceSearchIndex,
     cache_path: &Path,
+    policy: &AspHydrationPolicy,
 ) -> Result<AspHttpHydrationReceipt, SearchPlanProjectionError> {
     let started = Instant::now();
     let mut receipt = AspHttpHydrationReceipt::default();
     let catalog = fetch_asp_provider_catalog(endpoint)?;
     receipt.providers_discovered = catalog.providers.len();
-    inspect_and_ingest_pending_files(endpoint, index, &catalog, cache_path, &mut receipt)?;
+    inspect_and_ingest_pending_files(
+        endpoint,
+        index,
+        &catalog,
+        cache_path,
+        policy.inspect_batch_files(),
+        &mut receipt,
+    )?;
+    receipt.total_elapsed_micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+    Ok(receipt)
+}
+
+/// Derive package-manifest anchor directories from the live ASP provider
+/// catalog's declared `projectMarkers` against `workspace_root`.
+fn discover_package_anchors(
+    workspace_root: &Path,
+    catalog: &ForwardedProviderCatalog,
+    aliases: &BTreeMap<String, String>,
+    pending: &[agent_semantic_search::WorkspaceOpenEdbPendingFile],
+) -> BTreeMap<String, Vec<String>> {
+    let mut anchors_by_lang: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut marker_map: BTreeMap<&str, &[String]> = BTreeMap::new();
+    for env in &catalog.providers {
+        marker_map.insert(
+            resolve_canonical_language(env.manifest.language_id.as_str(), aliases),
+            env.manifest.project_markers.as_slice(),
+        );
+    }
+    for file in pending {
+        let lang = resolve_canonical_language(&file.language, aliases);
+        let Some(markers) = marker_map.get(lang) else {
+            continue;
+        };
+        if markers.is_empty() {
+            continue;
+        }
+        let rel = Path::new(&file.path);
+        let mut cursor = rel.parent();
+        while let Some(dir) = cursor {
+            let abs_dir = if dir.as_os_str().is_empty() {
+                workspace_root.to_path_buf()
+            } else {
+                workspace_root.join(dir)
+            };
+            if markers.iter().any(|marker| abs_dir.join(marker).is_file()) {
+                let norm = dir.to_string_lossy().replace('\\', "/");
+                anchors_by_lang
+                    .entry(lang.to_owned())
+                    .or_default()
+                    .insert(norm);
+                break;
+            }
+            if dir.as_os_str().is_empty() {
+                break;
+            }
+            cursor = dir.parent();
+        }
+    }
+    anchors_by_lang
+        .into_iter()
+        .map(|(lang, dirs)| (lang, dirs.into_iter().collect()))
+        .collect()
+}
+
+/// Rank a pending file strictly by its ASP provider `projectMarkers` package
+/// anchor without any hardcoded repository paths or language names.
+fn package_anchor_rank(
+    path: &str,
+    language: &str,
+    aliases: &BTreeMap<String, String>,
+    anchors_by_lang: &BTreeMap<String, Vec<String>>,
+) -> (u8, usize, bool) {
+    let lang = resolve_canonical_language(language, aliases);
+    let anchored_depth = anchors_by_lang.get(lang).and_then(|anchors| {
+        anchors
+            .iter()
+            .filter(|anchor| {
+                anchor.is_empty()
+                    || path == anchor.as_str()
+                    || path
+                        .strip_prefix(anchor.as_str())
+                        .is_some_and(|rest| rest.starts_with('/'))
+            })
+            .map(|anchor| {
+                if anchor.is_empty() {
+                    0
+                } else {
+                    anchor.matches('/').count() + 1
+                }
+            })
+            .max()
+    });
+    let is_test_like = path.contains("/tests/")
+        || path.contains("/benches/")
+        || path.contains("/test/")
+        || path.contains("/t/");
+    match anchored_depth {
+        Some(depth) => (0, depth, is_test_like),
+        None => (1, usize::MAX, is_test_like),
+    }
+}
+
+/// Typed request envelope for progressive, lock-free-I/O chunked ASP Open EDB hydration.
+pub struct AspChunkedHydrationRequest<'a> {
+    pub endpoint: &'a AspForwardingEndpoint,
+    pub workspace_root: &'a Path,
+    pub cache_path: &'a Path,
+    pub policy: &'a AspHydrationPolicy,
+}
+
+fn collect_ranked_pending_files(
+    shared_index: &std::sync::RwLock<WorkspaceSearchIndex>,
+    request: &AspChunkedHydrationRequest<'_>,
+    catalog: &ForwardedProviderCatalog,
+    aliases: &BTreeMap<String, String>,
+) -> Result<Vec<agent_semantic_search::WorkspaceOpenEdbPendingFile>, SearchPlanProjectionError> {
+    let supported_langs = supported_languages_from_catalog(catalog, aliases);
+    let lang_refs: Vec<&str> = supported_langs.iter().map(String::as_str).collect();
+    let mut pending = {
+        let guard = shared_index.read().map_err(|_| {
+            SearchPlanProjectionError::Native("workspace index lock poisoned".to_owned())
+        })?;
+        guard.live_files_needing_open_edb(&lang_refs, request.policy.max_files().max(1))
+    };
+    if !pending.is_empty() {
+        let anchors_by_lang =
+            discover_package_anchors(request.workspace_root, catalog, aliases, &pending);
+        pending.sort_by(|a, b| {
+            package_anchor_rank(&a.path, &a.language, aliases, &anchors_by_lang)
+                .cmp(&package_anchor_rank(
+                    &b.path,
+                    &b.language,
+                    aliases,
+                    &anchors_by_lang,
+                ))
+                .then_with(|| a.path.cmp(&b.path))
+        });
+    }
+    Ok(pending)
+}
+
+fn hydrate_single_chunk(
+    request: &AspChunkedHydrationRequest<'_>,
+    shared_index: &std::sync::RwLock<WorkspaceSearchIndex>,
+    aliases: &BTreeMap<String, String>,
+    schemas_by_lang: &BTreeMap<&str, &TargetedJsonSchemaDocument>,
+    chunk: &[agent_semantic_search::WorkspaceOpenEdbPendingFile],
+    persist_cache: bool,
+    receipt: &mut AspHttpHydrationReceipt,
+) {
+    let req_payload = InspectFilesRequestPayload {
+        files: chunk
+            .iter()
+            .map(|file| InspectFilePayload {
+                path: file.path.clone(),
+                source_utf8: file.body.clone(),
+            })
+            .collect(),
+    };
+    let Ok(encoded) = serde_json::to_vec(&req_payload) else {
+        receipt.failed_files += chunk.len();
+        return;
+    };
+    let Ok((200, resp_body)) = http_loopback_request(
+        request.endpoint,
+        "POST",
+        "/v1/open-edb/inspect-files",
+        Some(&encoded),
+    ) else {
+        receipt.failed_files += chunk.len();
+        return;
+    };
+    let Ok(wire) = serde_json::from_slice::<ForwardedOpenEdbWireResponse>(&resp_body) else {
+        receipt.failed_files += chunk.len();
+        return;
+    };
+    receipt.http_inspected_files += wire.inspected_files;
+    receipt.failed_files += wire.failed_paths.len();
+    receipt.asp_inspect_micros = receipt
+        .asp_inspect_micros
+        .saturating_add(wire.elapsed_micros);
+    let normalized_batches: Vec<WorkspaceOpenEdbIngestBatch> = wire
+        .batches
+        .into_iter()
+        .map(|batch| normalize_and_validate_batch(batch, aliases, schemas_by_lang, receipt))
+        .collect();
+    if let Ok(mut guard) = shared_index.write() {
+        for batch in normalized_batches {
+            let ing = guard.ingest_open_edb_facts(batch);
+            receipt.http_ingested_entities += ing.ingested_entities;
+        }
+        if persist_cache && receipt.http_ingested_entities > 0 {
+            receipt.cache_saved = guard.save_open_edb_cache(request.cache_path).is_ok();
+        }
+    }
+}
+
+fn hydrate_pending_chunks(
+    request: &AspChunkedHydrationRequest<'_>,
+    shared_index: &std::sync::RwLock<WorkspaceSearchIndex>,
+    catalog: &ForwardedProviderCatalog,
+    aliases: &BTreeMap<String, String>,
+    pending: &[agent_semantic_search::WorkspaceOpenEdbPendingFile],
+    receipt: &mut AspHttpHydrationReceipt,
+    mut on_progress: impl FnMut(usize, usize),
+) {
+    let schemas_by_lang = targeted_schemas_by_language(catalog, aliases);
+    let step = request.policy.chunk_size().max(1);
+    let total = pending.len();
+    let mut processed = 0usize;
+    for (chunk_idx, chunk) in pending.chunks(step).enumerate() {
+        processed = processed.saturating_add(chunk.len());
+        let remaining = total.saturating_sub(processed);
+        let persist_cache = chunk_idx % 4 == 3 || remaining == 0;
+        hydrate_single_chunk(
+            request,
+            shared_index,
+            aliases,
+            &schemas_by_lang,
+            chunk,
+            persist_cache,
+            receipt,
+        );
+        on_progress(receipt.http_ingested_entities, remaining);
+    }
+}
+
+/// Progressive, lock-free-I/O chunked ASP Open EDB hydration over a shared
+/// [`std::sync::RwLock<WorkspaceSearchIndex>`], anchored by each ASP language
+/// provider's declared `projectMarkers` and bounded by Scheme-projected
+/// [`AspHydrationPolicy`] (`HelmIndexPolicy.`).
+pub fn hydrate_workspace_chunked_via_asp_http(
+    request: &AspChunkedHydrationRequest<'_>,
+    shared_index: &std::sync::RwLock<WorkspaceSearchIndex>,
+    on_progress: impl FnMut(usize, usize),
+) -> Result<AspHttpHydrationReceipt, SearchPlanProjectionError> {
+    let started = Instant::now();
+    let mut receipt = AspHttpHydrationReceipt::default();
+    let catalog = fetch_asp_provider_catalog(request.endpoint)?;
+    receipt.providers_discovered = catalog.providers.len();
+    let aliases = provider_language_aliases(&catalog);
+    let pending = collect_ranked_pending_files(shared_index, request, &catalog, &aliases)?;
+    if !pending.is_empty() {
+        hydrate_pending_chunks(
+            request,
+            shared_index,
+            &catalog,
+            &aliases,
+            &pending,
+            &mut receipt,
+            on_progress,
+        );
+    }
     receipt.total_elapsed_micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
     Ok(receipt)
 }
@@ -529,11 +792,14 @@ pub fn hydrate_workspace_from_asp_http(
         receipt.dynamic_descriptors_synced =
             sync_package_asp_provider_descriptors(runtime, request.scheme_dir, request.endpoint)?;
     }
+    let policy =
+        crate::projection::project_helm_index_policy(runtime, request.scheme_dir)?.hydration;
     inspect_and_ingest_pending_files(
         request.endpoint,
         index,
         &catalog,
         request.cache_path,
+        policy.inspect_batch_files(),
         &mut receipt,
     )?;
 

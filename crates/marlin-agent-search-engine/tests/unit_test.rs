@@ -4,6 +4,8 @@
 
 #[path = "unit/bridge.rs"]
 mod bridge;
+#[path = "unit/engine.rs"]
+mod engine;
 #[path = "unit/policy.rs"]
 mod policy;
 #[path = "unit/state_machine.rs"]

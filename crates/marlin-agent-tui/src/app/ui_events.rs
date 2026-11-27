@@ -371,18 +371,25 @@ pub(super) fn handle_helm_input(
     app: &mut App,
     ui: &mut UiHost<'_>,
     runtime: &tokio::runtime::Handle,
+    terminal_size: (u16, u16),
     received: Result<std::io::Result<TerminalInput>, std::sync::mpsc::RecvTimeoutError>,
 ) -> std::io::Result<bool> {
-    let Some(helm) = app.helm.as_mut() else {
+    if app.helm.is_none() {
         return Ok(false);
-    };
+    }
     let mut accepted: Option<super::HelmAction> = None;
     let mut close_helm = false;
+    let mut disarm_exit = false;
+    let mut yank_register = std::mem::take(&mut app.yank_register);
+    let helm = app.helm.as_mut().expect("checked helm present");
     match received {
-        Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => return Ok(true),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => {
+            app.yank_register = yank_register;
+            return Ok(true);
+        }
         Ok(Ok(TerminalInput::Key(Key::Ctrl('c' | 'g')))) => {
             close_helm = true;
-            app.disarm_exit();
+            disarm_exit = true;
         }
         Ok(Ok(TerminalInput::Key(Key::Esc))) => {
             if helm.completion_mode {
@@ -391,7 +398,7 @@ pub(super) fn handle_helm_input(
                 helm.toggle_action_mode();
             } else {
                 close_helm = true;
-                app.disarm_exit();
+                disarm_exit = true;
             }
         }
         Ok(Ok(TerminalInput::Key(Key::Char('\n')))) => {
@@ -399,7 +406,7 @@ pub(super) fn handle_helm_input(
             accepted = action;
             close_helm = should_close;
         }
-        Ok(Ok(TerminalInput::Key(Key::Ctrl('e')))) => {
+        Ok(Ok(TerminalInput::Key(Key::Alt('e')))) => {
             let (should_close, action) = helm.accept(true);
             accepted = action;
             close_helm = should_close;
@@ -412,6 +419,68 @@ pub(super) fn handle_helm_input(
             helm.toggle_mark_and_advance();
         }
         Ok(Ok(TerminalInput::Key(Key::Alt('a')))) => helm.toggle_mark_all(),
+        Ok(Ok(TerminalInput::Key(Key::Alt(d @ '1'..='5')))) => {
+            helm.select_search_preset((d as u8 - b'1') as usize);
+        }
+        Ok(Ok(TerminalInput::Key(Key::F(n @ 1..=5)))) => {
+            helm.select_search_preset((n - 1) as usize);
+        }
+        Ok(Ok(TerminalInput::Key(Key::Alt('[') | Key::BackTab))) => {
+            helm.cycle_search_preset_prev();
+        }
+        Ok(Ok(TerminalInput::Key(Key::Alt(']') | Key::Ctrl('t')))) => {
+            helm.cycle_search_preset();
+        }
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('k')))) => helm.kill_to_line_end(&mut yank_register),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('u')))) => helm.kill_to_line_start(&mut yank_register),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('w') | Key::Alt('\x7f' | '\x08')))) => {
+            helm.delete_backward_word(&mut yank_register);
+        }
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('y')))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::PasteSelection,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::Alt('b')))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::PreviousWord,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::Alt('f')))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::NextWord,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::Left))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::BackwardChar,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::Right))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::ForwardChar,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::Home))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::LineStart,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::End))) => {
+            helm.edit(marlin_agent_ui::UiEditorAction::LineEnd, &mut yank_register);
+        }
+        Ok(Ok(TerminalInput::Key(Key::Delete))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::DeleteChar,
+                &mut yank_register,
+            );
+        }
         Ok(Ok(TerminalInput::Key(Key::Char('\t')))) => helm.toggle_tab_mode(),
         Ok(Ok(TerminalInput::Key(Key::Ctrl('z')))) => helm.toggle_follow_preview(),
         Ok(Ok(TerminalInput::Key(Key::Ctrl('o')))) => helm.jump_next_source(),
@@ -421,10 +490,41 @@ pub(super) fn handle_helm_input(
         Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() => {
             helm.insert_text(&c.to_string());
         }
+        Ok(Ok(TerminalInput::Key(key @ (Key::Ctrl(_) | Key::Alt(_))))) => {
+            // Inherit every global Emacs editing keybinding declared in Scheme
+            // `meow-global` (`C-a`, `C-e`, `C-b`, `C-f`, `C-d`, `C-g`, etc.)!
+            match ui.route_key(key, true, true, UiKeyMode::Insert) {
+                Ok(UiKeyAction::Edit(action)) => helm.edit(action, &mut yank_register),
+                Ok(UiKeyAction::Cancel) => {
+                    close_helm = true;
+                    disarm_exit = true;
+                }
+                _ => {}
+            }
+        }
         Ok(Ok(TerminalInput::Paste(text))) => helm.insert_text(&text),
-        Ok(Err(err)) => return Err(err),
-        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Err(unexpected_stdin_eof()),
+        Ok(Ok(TerminalInput::MouseClick(column, row))) => {
+            let full = ratatui::layout::Rect::new(0, 0, terminal_size.0, terminal_size.1);
+            if let Some(area) = crate::helm::helm_window_area(full)
+                && let Some(tab_idx) =
+                    crate::helm::hit_test_helm_mode_tab(area, &helm.search_presets, column, row)
+            {
+                helm.select_search_preset(tab_idx);
+            }
+        }
+        Ok(Err(err)) => {
+            app.yank_register = yank_register;
+            return Err(err);
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            app.yank_register = yank_register;
+            return Err(unexpected_stdin_eof());
+        }
         _ => {}
+    }
+    app.yank_register = yank_register;
+    if disarm_exit {
+        app.disarm_exit();
     }
     if close_helm {
         app.helm = None;
@@ -445,6 +545,11 @@ pub(super) fn apply_wheel_scroll(
     column: u16,
     row: u16,
 ) {
+    if let Some(helm) = app.helm.as_mut() {
+        let step = isize::try_from(pulses.saturating_mul(3)).unwrap_or(isize::MAX);
+        helm.move_selection(if up { -step } else { step });
+        return;
+    }
     let hit = if column > 0 && row > 0 {
         super::super::ui_elements::hit_test_scroll(painted_regions, column - 1, row - 1)
     } else {
@@ -452,7 +557,7 @@ pub(super) fn apply_wheel_scroll(
     };
     let target = hit.and_then(|region| region.scroll_target());
     let units = pulses.saturating_mul(usize::from(
-        hit.and_then(|region| region.scroll_step()).unwrap_or(0),
+        hit.and_then(|region| region.scroll_step()).map_or(0, |step| step),
     ));
     if target == Some("transcript")
         && let Some(prompt) = app.tool_review_prompt.as_mut()

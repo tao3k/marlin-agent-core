@@ -8,14 +8,14 @@ use super::{
     App, Arc, Command, GatewayObservation, MAX_RESPONSE_BYTES, MAX_TURN_SEGMENTS, MessageEvent,
     MessageSeverity, MessageSource, ModelGatewayError, ModelGatewayMessageRole,
     ModelGatewayRequest, ModelStreamEvent, ModelStreamInterruption, ModelStreamingGateway,
-    OutputLimit, PendingTurn, Reply, ReplyError, ReplySender, SessionBrowser, SessionId, UiContent,
-    UiEvent, matches_observed_anthropic_thinking, parse_query, user_gateway_message,
+    OutputLimit, PendingTurn, Reply, ReplyError, ReplySender, SessionBrowser, SessionId, UiEvent,
+    matches_observed_anthropic_thinking, parse_query, user_gateway_message,
 };
 use std::env;
 use tokio_stream::StreamExt;
 
 impl App {
-    fn runtime_session_id(&self) -> marlin_agent_runtime::SessionId {
+    pub(super) fn runtime_session_id(&self) -> marlin_agent_runtime::SessionId {
         self.current_session.as_ref().map_or_else(
             || self.runtime_owner.session().session_id().clone(),
             |session| marlin_agent_runtime::SessionId::new(session.as_str()),
@@ -598,10 +598,22 @@ impl App {
                             matches_observed_anthropic_thinking(&choice.message, &thinking)
                         };
                         let pending = self.pending.take().expect("matching pending turn");
+                        let truncated = matches!(
+                            choice.finish_reason.as_deref(),
+                            Some("max_tokens" | "length")
+                        );
                         if pending.output_segments.is_empty()
                             && (!tool_requested || !choice.message.content.is_empty())
                         {
                             self.push_answer("Assistant", choice.message.content.clone());
+                        }
+                        if truncated {
+                            self.publish_message(MessageEvent {
+                                source: MessageSource::Gateway,
+                                severity: MessageSeverity::Warning,
+                                summary: "Response truncated (max_tokens)",
+                                detail: "Provider stopped at max_tokens; raise [anthropic].max_tokens in config or ask to continue.",
+                            });
                         }
                         if tool_requested {
                             self.pending_tool_request = true;
@@ -750,8 +762,13 @@ impl App {
                 summary: "Workspace read cancelled",
                 detail: "The pending read was cancelled.",
             });
-        } else {
+        } else if self.runtime_receipt_open {
             self.runtime_receipt_open = false;
+        } else if !self.composer.text().is_empty() {
+            // Emacs `keyboard-quit` (`C-g` / Normal `ESC`): clear residual
+            // minibuffer/composer text when no higher-priority overlay is open.
+            let _ = self.composer.take();
+            self.prompt_history.restore(&mut self.composer);
         }
     }
 
@@ -841,124 +858,5 @@ impl App {
             return;
         }
         self.scroll_up = value;
-    }
-}
-
-impl App {
-    fn submit_runtime_command(&mut self) -> bool {
-        let Some(_) = self.command_draft else {
-            return false;
-        };
-        let input = match &self.command_menu {
-            Some(menu) => format!("{}{}", menu.prefix, self.composer.text()),
-            None => self.composer.text().to_owned(),
-        };
-        let descriptor = self.command_descriptor(&input).cloned();
-        let command = descriptor
-            .as_ref()
-            .and_then(|item| Command::parse(item, &input));
-        match command {
-            Some(Command::SelectUi(UiEvent::SelectBuffer(buffer)))
-                if buffer.as_str() == "processes" =>
-            {
-                self.ui_request = Some(UiEvent::SelectBuffer(buffer));
-                self.refresh_process_content();
-            }
-            Some(Command::KillProcess(generation)) => self.stop_process(generation),
-            Some(Command::Envrc(command)) => self.envrc_command = Some(command),
-            _ => return false,
-        }
-        self.command_history_request = descriptor.map(|item| item.name);
-        self.composer = self
-            .command_draft
-            .take()
-            .expect("runtime command has a saved draft");
-        self.command_menu = None;
-        true
-    }
-
-    fn stop_process(&mut self, generation: std::num::NonZeroU64) {
-        let session = self.runtime_session_id();
-        let stopped = self
-            .runtime_owner
-            .process_registry()
-            .stop_session_generation(&session, generation);
-        let (severity, summary, detail) = if stopped {
-            (
-                MessageSeverity::Info,
-                "Process stop requested",
-                "Runtime is reaping the selected process.",
-            )
-        } else {
-            (
-                MessageSeverity::Warning,
-                "Process unavailable",
-                "Use a live generation from this session's Processes buffer.",
-            )
-        };
-        self.publish_message(MessageEvent {
-            source: MessageSource::Runtime,
-            severity,
-            summary,
-            detail,
-        });
-    }
-
-    pub(crate) fn refresh_process_content(&mut self) -> bool {
-        let session = self.runtime_session_id();
-        let registry = self.runtime_owner.process_registry();
-        let revision = registry.managed_revision();
-        if self.process_snapshot.as_ref() == Some(&(session.clone(), revision)) {
-            return false;
-        }
-        let rows = registry.managed_processes(&session);
-        let mut content = Vec::with_capacity(rows.len() + 1);
-        content.push(UiContent::Text(if rows.is_empty() {
-            "No managed processes in this session.".into()
-        } else {
-            "Generation   State   PID   Operation".into()
-        }));
-        for row in rows {
-            let id = row.resource_id().expect("managed process row");
-            let operation: String = id
-                .operation()
-                .as_str()
-                .chars()
-                .take(128)
-                .map(|ch| if ch.is_control() { '�' } else { ch })
-                .collect();
-            use marlin_agent_runtime::process::RuntimeProcessStatus;
-            let state = match row.status {
-                RuntimeProcessStatus::Running => "Running",
-                RuntimeProcessStatus::Finished => "Exited",
-                RuntimeProcessStatus::Failed => "Exited (failed)",
-                RuntimeProcessStatus::Orphaned => "Orphaned",
-                RuntimeProcessStatus::CleanupRequested => "Cleaning up",
-            };
-            content.push(UiContent::Text(format!(
-                "{}   {}   {}   {}",
-                id.generation().get(),
-                state,
-                row.pid,
-                operation
-            )));
-        }
-        let id = marlin_agent_ui::UiBufferId::new("processes").expect("static Buffer identity");
-        match self.replace_dynamic_buffer_content(id, content) {
-            Ok(changed) => {
-                self.process_snapshot = Some((session, revision));
-                changed
-            }
-            Err(detail) => {
-                self.process_snapshot = Some((session, revision));
-                self.publish_message(MessageEvent {
-                    source: MessageSource::Runtime,
-                    severity: MessageSeverity::Error,
-                    summary: "Process Buffer update rejected",
-                    detail,
-                });
-                false
-            }
-        }
     }
 }

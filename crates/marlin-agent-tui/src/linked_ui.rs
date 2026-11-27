@@ -139,15 +139,15 @@ pub(crate) fn tooling_declarations(
     unsafe { marlin_agent_tooling::project_linked(runtime, marlin_tooling_project) }
 }
 
-pub(crate) fn helm_index_config(
+pub(crate) fn helm_index_policy(
     runtime: &GerbilRuntime,
 ) -> Result<
-    marlin_agent_search_engine::WorkspaceIndexConfig,
+    marlin_agent_search_engine::HelmIndexPolicyProjection,
     marlin_agent_search_engine::SearchPlanProjectionError,
 > {
     // SAFETY: `marlin_ui_helm_index_config` belongs to the linked Marlin TUI programme.
     unsafe {
-        marlin_agent_search_engine::project_linked_helm_index_config(
+        marlin_agent_search_engine::project_linked_helm_index_policy(
             runtime,
             marlin_ui_helm_index_config,
         )
@@ -171,19 +171,18 @@ pub(crate) fn search_dsl_completions(
     }
 }
 
-pub(crate) fn sync_asp_provider_descriptors_from_env(runtime: &GerbilRuntime) -> usize {
-    let Some(endpoint) = marlin_agent_search_engine::AspForwardingEndpoint::from_env() else {
-        return 0;
-    };
+pub(crate) fn sync_asp_provider_descriptors(
+    runtime: &GerbilRuntime,
+    endpoint: &marlin_agent_search_engine::AspForwardingEndpoint,
+) -> Result<usize, marlin_agent_search_engine::SearchPlanProjectionError> {
     // SAFETY: `marlin_search_dsl_register_provider_descriptor` belongs to the linked Marlin TUI programme.
     unsafe {
         marlin_agent_search_engine::sync_linked_asp_provider_descriptors(
             runtime,
             marlin_search_dsl_register_provider_descriptor,
-            &endpoint,
+            endpoint,
         )
     }
-    .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -240,7 +239,7 @@ pub(crate) fn execute_search_dsl(
 /// Service any pending Helm `:gerbil-ascent` / Dusa query directly on the TUI's
 /// owning Gerbil VM thread (zero channel deadlock, sub-millisecond evaluation).
 pub(crate) fn service_helm_dsl(runtime: &GerbilRuntime, app: &mut super::app::App) -> bool {
-    let Some((shared_index, query)) = app
+    let Some((shared_index, query_epoch, query)) = app
         .helm
         .as_mut()
         .and_then(super::helm::HelmOverlay::take_pending_dsl_query)
@@ -253,30 +252,61 @@ pub(crate) fn service_helm_dsl(runtime: &GerbilRuntime, app: &mut super::app::Ap
         Err(_) => Err("resident search index lock poisoned".to_owned()),
     };
     if let Some(helm) = app.helm.as_mut() {
-        helm.apply_dsl_result(outcome);
+        helm.apply_dsl_result(query_epoch, outcome);
     }
     true
 }
+
+/// Maximum queued L1 (`FastAscent` / `BruteForce`) jobs in the priority-isolated
+/// search DSL ingress channel and VM mailbox (SM11).
+const MAX_FAST_DSL_JOBS: usize = 64;
+/// Maximum queued L2 (`DusaSolver`) jobs in the priority-isolated search DSL
+/// ingress channel and VM mailbox (SM11).
+const MAX_DUSA_DSL_JOBS: usize = 32;
 
 struct LinkedSearchDslJob {
     index: std::sync::Arc<std::sync::RwLock<marlin_agent_search_engine::WorkspaceSearchIndex>>,
     query: String,
     output_limit: usize,
-    reply: std::sync::mpsc::Sender<
+    reply: tokio::sync::oneshot::Sender<
         Result<String, marlin_agent_search_engine::SearchPlanProjectionError>,
     >,
 }
 
-/// Thread-affine mailbox delivering `workspace_search` tool calls onto the TUI's
-/// linked Gerbil Scheme VM thread.
+/// Priority-isolated, bounded, time-sliced thread-affine mailbox delivering
+/// `workspace_search` tool calls onto the TUI's linked Gerbil Scheme VM thread
+/// without ever blocking Tokio worker threads or stalling the 60 FPS TUI render loop.
+///
+/// - Separate bounded ingress channels (`MAX_FAST_DSL_JOBS` / `MAX_DUSA_DSL_JOBS`)
+///   prevent saturated L2 (`DusaSolver`) bursts from ever starving L1 (`FastAscent`).
+/// - L1 (`FastAscent`) queries preempt waiting L2 (`DusaSolver`) queries (4:1 ratio
+///   for starvation-free weighted fair queueing).
+/// - Cancelled or timed-out callers (`reply.is_closed()`) are actively compacted in
+///   O(cap) before touching the Gerbil VM, and idle queues reclaim excess capacity.
+/// - Draining yields once `budget` (e.g. `8ms`) elapses so keyboard input and
+///   rendering remain responsive under heavy multi-agent Dusa workloads.
 pub(crate) struct LinkedSearchDslMailbox {
-    rx: std::sync::mpsc::Receiver<LinkedSearchDslJob>,
+    fast_rx: tokio::sync::mpsc::Receiver<LinkedSearchDslJob>,
+    dusa_rx: tokio::sync::mpsc::Receiver<LinkedSearchDslJob>,
+    fast_queue: std::collections::VecDeque<LinkedSearchDslJob>,
+    dusa_queue: std::collections::VecDeque<LinkedSearchDslJob>,
+    fast_burst: u8,
 }
 
 impl LinkedSearchDslMailbox {
-    /// Drain any pending `workspace_search` requests on the owning Gerbil VM thread.
-    pub(crate) fn drain(&self, runtime: &gerbil_scheme::GerbilRuntime) {
-        while let Ok(job) = self.rx.try_recv() {
+    /// Drain pending `workspace_search` jobs within `budget`, returning `true` if
+    /// queued jobs remain for the next frame slice.
+    pub(crate) fn drain_budgeted(
+        &mut self,
+        runtime: &gerbil_scheme::GerbilRuntime,
+        budget: std::time::Duration,
+    ) -> bool {
+        let started = std::time::Instant::now();
+        self.ingest_pending();
+        while started.elapsed() < budget {
+            let Some(job) = self.pop_next_live_job() else {
+                break;
+            };
             let outcome = match job.index.read() {
                 Ok(index) => execute_search_dsl(runtime, &index, &job.query, job.output_limit),
                 Err(_) => Err(
@@ -286,39 +316,126 @@ impl LinkedSearchDslMailbox {
                 ),
             };
             let _ = job.reply.send(outcome);
+            self.ingest_pending();
+        }
+        if self.fast_queue.is_empty() && self.fast_queue.capacity() > MAX_FAST_DSL_JOBS {
+            self.fast_queue.shrink_to(MAX_FAST_DSL_JOBS);
+        }
+        if self.dusa_queue.is_empty() && self.dusa_queue.capacity() > MAX_DUSA_DSL_JOBS {
+            self.dusa_queue.shrink_to(MAX_DUSA_DSL_JOBS);
+        }
+        !self.fast_queue.is_empty() || !self.dusa_queue.is_empty()
+    }
+
+    fn ingest_pending(&mut self) {
+        self.fast_queue.retain(|job| !job.reply.is_closed());
+        self.dusa_queue.retain(|job| !job.reply.is_closed());
+        while let Ok(job) = self.fast_rx.try_recv() {
+            if job.reply.is_closed() {
+                continue;
+            }
+            if self.fast_queue.len() < MAX_FAST_DSL_JOBS {
+                self.fast_queue.push_back(job);
+            } else {
+                let _ = job.reply.send(Err(
+                    marlin_agent_search_engine::SearchPlanProjectionError::Invalid(
+                        "TUI search DSL fast mailbox saturated; shed excess load",
+                    ),
+                ));
+            }
+        }
+        while let Ok(job) = self.dusa_rx.try_recv() {
+            if job.reply.is_closed() {
+                continue;
+            }
+            if self.dusa_queue.len() < MAX_DUSA_DSL_JOBS {
+                self.dusa_queue.push_back(job);
+            } else {
+                let _ = job.reply.send(Err(
+                    marlin_agent_search_engine::SearchPlanProjectionError::Invalid(
+                        "TUI search DSL solver mailbox saturated; shed excess load",
+                    ),
+                ));
+            }
+        }
+    }
+
+    fn pop_next_live_job(&mut self) -> Option<LinkedSearchDslJob> {
+        loop {
+            let take_dusa =
+                self.fast_queue.is_empty() || (!self.dusa_queue.is_empty() && self.fast_burst >= 4);
+            let next = if take_dusa {
+                self.fast_burst = 0;
+                self.dusa_queue.pop_front()
+            } else {
+                self.fast_burst = self.fast_burst.saturating_add(1);
+                self.fast_queue.pop_front()
+            }?;
+            if !next.reply.is_closed() {
+                return Some(next);
+            }
         }
     }
 }
 
-/// Create a linked `SearchDslRunner` handle paired with its VM-thread mailbox.
-pub(crate) fn search_dsl_channel() -> (
-    marlin_agent_search_engine::SearchDslRunner,
+/// Create a non-blocking, priority-isolated bounded `AsyncSearchDslRunner` paired
+/// with its time-sliced VM-thread [`LinkedSearchDslMailbox`].
+pub(crate) fn search_dsl_async_channel() -> (
+    marlin_agent_tooling::AsyncSearchDslRunner,
     LinkedSearchDslMailbox,
 ) {
-    let (tx, rx) = std::sync::mpsc::channel::<LinkedSearchDslJob>();
-    let runner: marlin_agent_search_engine::SearchDslRunner =
-        std::sync::Arc::new(move |index, query, output_limit| {
-            let (reply_tx, reply_rx) = std::sync::mpsc::channel();
-            tx.send(LinkedSearchDslJob {
-                index,
-                query: query.to_owned(),
-                output_limit,
-                reply: reply_tx,
+    let (fast_tx, fast_rx) = tokio::sync::mpsc::channel::<LinkedSearchDslJob>(MAX_FAST_DSL_JOBS);
+    let (dusa_tx, dusa_rx) = tokio::sync::mpsc::channel::<LinkedSearchDslJob>(MAX_DUSA_DSL_JOBS);
+    let runner: marlin_agent_tooling::AsyncSearchDslRunner =
+        std::sync::Arc::new(move |index, query, output_limit, tier| {
+            let tx = match tier {
+                marlin_agent_tooling::SearchQueryTier::DusaSolver => dusa_tx.clone(),
+                marlin_agent_tooling::SearchQueryTier::FastAscent
+                | marlin_agent_tooling::SearchQueryTier::BruteForce => fast_tx.clone(),
+            };
+            Box::pin(async move {
+                let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+                tx.try_send(LinkedSearchDslJob {
+                    index,
+                    query,
+                    output_limit,
+                    reply: reply_tx,
+                })
+                .map_err(|err| match err {
+                    tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                        marlin_agent_search_engine::SearchPlanProjectionError::Invalid(
+                            "TUI search DSL mailbox saturated; shed excess load",
+                        )
+                    }
+                    tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                        marlin_agent_search_engine::SearchPlanProjectionError::Invalid(
+                            "TUI Scheme VM loop closed",
+                        )
+                    }
+                })?;
+                reply_rx.await.map_err(|_| {
+                    marlin_agent_search_engine::SearchPlanProjectionError::Invalid(
+                        "TUI Scheme VM response channel closed",
+                    )
+                })?
             })
-            .map_err(|_| {
-                marlin_agent_search_engine::SearchPlanProjectionError::Invalid(
-                    "TUI Scheme VM loop closed",
-                )
-            })?;
-            reply_rx.recv().map_err(|_| {
-                marlin_agent_search_engine::SearchPlanProjectionError::Invalid(
-                    "TUI Scheme VM response channel closed",
-                )
-            })?
         });
-    (runner, LinkedSearchDslMailbox { rx })
+    (
+        runner,
+        LinkedSearchDslMailbox {
+            fast_rx,
+            dusa_rx,
+            fast_queue: std::collections::VecDeque::with_capacity(MAX_FAST_DSL_JOBS.min(16)),
+            dusa_queue: std::collections::VecDeque::with_capacity(MAX_DUSA_DSL_JOBS.min(16)),
+            fast_burst: 0,
+        },
+    )
 }
 
 #[cfg(test)]
 #[path = "../tests/unit/linked_ui_source.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/unit/linked_ui_stability.rs"]
+mod stability_tests;

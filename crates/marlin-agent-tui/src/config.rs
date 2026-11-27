@@ -75,7 +75,7 @@ pub enum WireProtocol {
 }
 
 /// One named model route with its own provider and credentials.
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelProfile {
     pub provider: String,
@@ -139,7 +139,11 @@ impl Config {
         let identity = default.endpoint.clone();
         let mut routes = vec![default];
         for (name, profile) in &self.models {
-            routes.push(profile.route(ModelAlias::new(name.clone()), &client, &read_env, false)?);
+            let mut effective = profile.clone();
+            if effective.anthropic.is_none() && matches!(effective.protocol, WireProtocol::Anthropic) {
+                effective.anthropic = self.anthropic;
+            }
+            routes.push(effective.route(ModelAlias::new(name.clone()), &client, &read_env, false)?);
         }
         Ok((identity, ModelCatalog::new(routes)?))
     }

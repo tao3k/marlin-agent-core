@@ -8,6 +8,7 @@
 use std::sync::{Arc, RwLock};
 
 use marlin_agent_search_engine::{
+    SearchDslChoiceWitness, SearchDslChoiceWitnessKind, SearchDslExecutionMode,
     SearchDslStructuredResult, SearchDslStructuredRow, SearchPlaybookComposition,
     SearchPlaybookLeaf, SearchPlaybookPlanInput, TopologyOwnerMembershipBlock,
     WorkspaceContextLine, WorkspaceSearchHit, WorkspaceSearchIndex, admit_search_playbook_plan,
@@ -82,6 +83,18 @@ pub(super) struct HelmAsyncKey<'a> {
 
 impl HelmParsedInput {
     pub(crate) fn parse(raw: &str) -> Self {
+        if raw.trim_start().starts_with('(') {
+            return Self {
+                async_pattern: raw.trim().to_owned(),
+                local_tokens: Vec::new(),
+                languages: Vec::new(),
+                documents: Vec::new(),
+                path_prefix: None,
+                extension: None,
+                symbol: None,
+                graph_target: None,
+            };
+        }
         let (async_raw, local_raw) = match raw.find('#') {
             Some(idx) => (raw[..idx].trim(), raw[idx + 1..].trim()),
             None => (raw.trim(), ""),
@@ -125,7 +138,8 @@ impl HelmParsedInput {
         }
 
         let local_tokens = local_raw
-            .split_whitespace()
+            .split(|ch: char| ch.is_whitespace() || ch == '#')
+            .filter(|tok| !tok.is_empty())
             .map(str::to_owned)
             .collect::<Vec<_>>();
 
@@ -262,6 +276,58 @@ pub(crate) enum HelmAction {
     PrepareCommand(UiCommandName),
 }
 
+fn find_matching_choice_witness<'a>(
+    row: &SearchDslStructuredRow,
+    result: &'a SearchDslStructuredResult,
+) -> Option<(usize, &'a SearchDslChoiceWitness)> {
+    for world in &result.choice_worlds {
+        let prefix = format!("[W#{}] ", world.world_index);
+        if !row.display.starts_with(&prefix) {
+            continue;
+        }
+        let matched = world.witnesses.iter().find(|w| {
+            w.fact.len() == row.cells.len() + 1 && w.fact.iter().skip(1).eq(row.cells.iter())
+        });
+        if let Some(witness) = matched {
+            return Some((world.world_index, witness));
+        }
+    }
+    None
+}
+
+fn append_choice_witness_preview(
+    context_lines: &mut Vec<WorkspaceContextLine>,
+    world_index: usize,
+    witness: &SearchDslChoiceWitness,
+) {
+    let base_line = context_lines
+        .last()
+        .map_or(1, |ctx| ctx.line_number.saturating_add(1));
+    context_lines.push(WorkspaceContextLine {
+        line_number: base_line,
+        text: format!(
+            "── Dusa World #{world_index} [{} · {} rule] ──",
+            witness.kind.as_str(),
+            witness.rule_kind.as_str()
+        ),
+        is_match: true,
+    });
+    if !witness.premises.is_empty() {
+        context_lines.push(WorkspaceContextLine {
+            line_number: base_line + 1,
+            text: format!("via: {}", witness.premises.join(" ; ")),
+            is_match: false,
+        });
+    }
+    if !witness.alternatives.is_empty() {
+        context_lines.push(WorkspaceContextLine {
+            line_number: base_line + 2,
+            text: format!("alts: {}", witness.alternatives.join(", ")),
+            is_match: false,
+        });
+    }
+}
+
 pub(super) fn dsl_row_to_candidate(
     idx: usize,
     row: &SearchDslStructuredRow,
@@ -269,7 +335,7 @@ pub(super) fn dsl_row_to_candidate(
     index: Option<&WorkspaceSearchIndex>,
     context_radius: usize,
 ) -> HelmCandidate {
-    let (display, citation, context_lines) = match (&row.path, row.line) {
+    let (display, citation, mut context_lines) = match (&row.path, row.line) {
         (Some(path), Some(line)) => {
             let ctx = index
                 .map(|idx_ref| idx_ref.live_file_context(path, line, context_radius))
@@ -288,7 +354,26 @@ pub(super) fn dsl_row_to_candidate(
         }
         _ => (row.display.clone(), Some(row.display.clone()), Vec::new()),
     };
-    let badge = format!("{}:{}", result.mode.as_str(), result.relation);
+    let mut badge = format!("{}:{}", result.mode.as_str(), result.relation);
+    let mut graph_relations = result.repairs.clone();
+    if result.mode == SearchDslExecutionMode::Choice
+        && let Some((world_index, witness)) = find_matching_choice_witness(row, result)
+    {
+        let pill = match witness.kind {
+            SearchDslChoiceWitnessKind::Deduction => "deduction",
+            SearchDslChoiceWitnessKind::Branch => "branch",
+            SearchDslChoiceWitnessKind::Derived => "derived",
+        };
+        badge = format!("W#{world_index}·{pill}");
+        graph_relations.insert(
+            0,
+            format!(
+                "Dusa W#{world_index} [{pill}:{}]",
+                witness.rule_kind.as_str()
+            ),
+        );
+        append_choice_witness_preview(&mut context_lines, world_index, witness);
+    }
     HelmCandidate {
         id: format!("dsl:{}:{}:{idx}", result.relation, display),
         source: HelmSourceKind::Dsl,
@@ -300,8 +385,12 @@ pub(super) fn dsl_row_to_candidate(
             .iter()
             .find(|c| Some(*c) != row.path.as_ref() && c.parse::<usize>().is_err())
             .cloned(),
-        graph_relations: result.repairs.clone(),
-        snippet: row.display.clone(),
+        graph_relations,
+        snippet: if row.path.is_some() {
+            row.display.clone()
+        } else {
+            String::new()
+        },
         citation,
         badge,
         context_lines,
@@ -447,32 +536,11 @@ pub(super) fn hit_to_candidate(hit: WorkspaceSearchHit) -> HelmCandidate {
         _ => hit.path.clone(),
     };
     let citation = Some(format!("@{display}"));
-    let lang = hit.language.as_deref().unwrap_or("file");
-    let axes_tag: String = hit
-        .matched_axes
-        .iter()
-        .filter(|a| *a != "topology" && *a != "index")
-        .take(2)
-        .cloned()
-        .collect::<Vec<_>>()
-        .join("+");
     let primary_symbol = hit.symbols.first().map(|s| s.name.clone());
-    let rel_suffix = hit
-        .graph_relations
-        .first()
-        .map(|rel| format!("·{rel}"))
-        .or_else(|| {
-            hit.symbols
-                .first()
-                .filter(|_| hit.matched_axes.iter().any(|a| a == "symbol"))
-                .map(|sym| format!("·{}", sym.kind.as_str()))
-        })
-        .unwrap_or_default();
-    let badge = if axes_tag.is_empty() {
-        format!("{lang}{rel_suffix}")
-    } else {
-        format!("{lang}·{axes_tag}{rel_suffix}")
-    };
+    // Keep regular file/grep/fuzzy/BM25 rows clean without redundant `[lang·rg]`
+    // or `[lang·fuzzy-path+bm25]` clutter; only display a concise badge when a
+    // non-obvious graph edge relation is active.
+    let badge = hit.graph_relations.first().cloned().unwrap_or_default();
     HelmCandidate {
         id: format!("search:{display}"),
         source: HelmSourceKind::Search,

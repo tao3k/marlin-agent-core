@@ -4,11 +4,83 @@
 
 //! Converged Marlin search engine constructor.
 
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use agent_semantic_search::{MarlinConvergedSearchEngine, SearchEngineStoragePort};
+use agent_semantic_search::{
+    MarlinConvergedSearchEngine, SearchEngineStoragePort, TrigramSnapshotError,
+    WorkspaceIndexConfig, WorkspaceSearchIndex,
+};
 use agent_semantic_topology::OrgDocumentProjectionPort;
+
+static SNAPSHOT_TMP_NONCE: AtomicU64 = AtomicU64::new(0);
+
+/// Atomically persist a resident search snapshot via a sibling temp file + rename
+/// so any concurrent or active `mmap` reader on the old inode is never truncated.
+pub fn save_workspace_snapshot_atomic(
+    index: &WorkspaceSearchIndex,
+    snapshot_path: &Path,
+) -> Result<(), TrigramSnapshotError> {
+    let bytes = index.encode_snapshot_bytes();
+    if let Some(parent) = snapshot_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(|e| TrigramSnapshotError::Io(e.to_string()))?;
+    }
+    let nonce = SNAPSHOT_TMP_NONCE.fetch_add(1, Ordering::Relaxed);
+    let tmp_name = format!(
+        ".{}.tmp.{}.{nonce}",
+        snapshot_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace.asp-index.bin"),
+        std::process::id(),
+    );
+    let tmp_path = snapshot_path.with_file_name(tmp_name);
+    let write_res = (|| -> Result<(), std::io::Error> {
+        let mut file = File::create(&tmp_path)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    if let Err(err) = write_res {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(TrigramSnapshotError::Io(err.to_string()));
+    }
+    if let Err(err) = std::fs::rename(&tmp_path, snapshot_path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(TrigramSnapshotError::Io(err.to_string()));
+    }
+    Ok(())
+}
+
+/// Open a cached zero-copy `mmap` snapshot if present, incrementally sync disk
+/// changes, compact before rewriting (dropping any active `mmap`), and atomically
+/// replace `snapshot_path` so base trigram postings are never corrupted in place.
+#[must_use]
+pub fn open_or_build_workspace_index_safe(
+    root: &Path,
+    snapshot_path: &Path,
+    config: WorkspaceIndexConfig,
+) -> WorkspaceSearchIndex {
+    if snapshot_path.is_file()
+        && let Ok(mut idx) =
+            WorkspaceSearchIndex::load_mmap_snapshot(root.to_path_buf(), snapshot_path, config.clone())
+    {
+        let receipt = idx.sync_workspace_from_disk();
+        if receipt.upserted_files > 0 || receipt.deleted_files > 0 {
+            idx.compact();
+            let _ = save_workspace_snapshot_atomic(&idx, snapshot_path);
+        }
+        return idx;
+    }
+    let idx = WorkspaceSearchIndex::build_with_config(root, config);
+    let _ = save_workspace_snapshot_atomic(&idx, snapshot_path);
+    idx
+}
 
 /// Construct a converged ASP search engine backed by Marlin's Org and Storage ports.
 #[must_use]

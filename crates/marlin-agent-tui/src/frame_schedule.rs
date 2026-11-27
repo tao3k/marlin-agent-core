@@ -6,7 +6,7 @@
 
 use std::time::{Duration, Instant};
 
-const FRAME_INTERVAL: Duration = Duration::from_millis(16);
+const FRAME_INTERVAL: Duration = Duration::from_millis(8);
 const INPUT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 pub(crate) struct FrameSchedule {

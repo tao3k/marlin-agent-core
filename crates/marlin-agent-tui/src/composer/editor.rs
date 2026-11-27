@@ -69,9 +69,71 @@ impl Composer {
     pub(crate) fn limit_reached(&self) -> bool {
         self.limit_reached
     }
-    #[cfg(test)]
     pub fn cursor(&self) -> usize {
         self.cursor
+    }
+    pub(crate) fn set_text_at_end(&mut self, text: impl Into<String>) {
+        self.take();
+        let next = text.into();
+        if !next.is_empty() {
+            self.insert_text(&next);
+        }
+    }
+    pub(crate) fn kill_to_line_end(&mut self) -> String {
+        self.clear_selection();
+        let end = self.text[self.cursor..]
+            .find('\n')
+            .map_or(self.text.len(), |i| self.cursor + i);
+        if end == self.cursor {
+            return String::new();
+        }
+        let killed = self.text[self.cursor..end].to_owned();
+        self.record_edit(self.cursor, 0, killed.clone(), self.cursor);
+        self.text.drain(self.cursor..end);
+        self.limit_reached = false;
+        self.vertical_column = None;
+        self.normalize_cursor();
+        killed
+    }
+    pub(crate) fn kill_to_line_start(&mut self) -> String {
+        self.clear_selection();
+        let start = self.text[..self.cursor].rfind('\n').map_or(0, |i| i + 1);
+        let (from, to) = if self.cursor > start {
+            (start, self.cursor)
+        } else {
+            let end = self.text[self.cursor..]
+                .find('\n')
+                .map_or(self.text.len(), |i| self.cursor + i);
+            (start, end)
+        };
+        if from == to {
+            return String::new();
+        }
+        let killed = self.text[from..to].to_owned();
+        self.record_edit(from, 0, killed.clone(), self.cursor);
+        self.text.drain(from..to);
+        self.cursor = from;
+        self.limit_reached = false;
+        self.vertical_column = None;
+        self.normalize_cursor();
+        killed
+    }
+    pub(crate) fn delete_backward_word(&mut self) -> String {
+        if let Some(selected) = self.selected_text().map(str::to_owned) {
+            self.replace_selection("");
+            return selected;
+        }
+        let old = self.cursor;
+        self.previous_word();
+        if self.cursor == old {
+            return String::new();
+        }
+        let killed = self.text[self.cursor..old].to_owned();
+        self.record_edit(self.cursor, 0, killed.clone(), old);
+        self.text.drain(self.cursor..old);
+        self.limit_reached = false;
+        self.normalize_cursor();
+        killed
     }
     pub fn insert(&mut self, c: char) {
         if self.anchor.is_some() && self.replace_selection(c.encode_utf8(&mut [0; 4])) {

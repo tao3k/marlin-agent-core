@@ -1,0 +1,331 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+;;; Closed `:gerbil-ascent` Rule Normalization, Path-Predicate Lowering & DNF
+;;; Disjunction Expansion (`scheme/repair/ascent.ss`).
+(import (only-in :clan/poo/object .get)
+        "./objects.ss"
+        "./reader.ss"
+        "./diagnostics.ss"
+        "./ascent-validate.ss")
+(export rule-clause?
+        repair-ascent-fragment-clauses)
+
+(def (limit-clause? clause)
+  (and (pair? clause) (list? clause) (eq? (car clause) 'limit)
+       (= (length clause) 2) (exact-integer? (cadr clause)) (> (cadr clause) 0)))
+
+(def (context-clause? clause)
+  (and (pair? clause) (list? clause) (eq? (car clause) 'context)
+       (= (length clause) 2) (exact-integer? (cadr clause))
+       (>= (cadr clause) 0) (<= (cadr clause) 8)))
+
+(def (wrapped-limit-clause? clause)
+  (and (pair? clause) (list? clause) (= (length clause) 1) (limit-clause? (car clause))))
+
+(def (lower-positive-path-pred-atom expr)
+  (and (pair? expr) (list? expr) (= (length expr) 3) (symbol? (car expr))
+       (let ((op (car expr)) (a (cadr expr)) (b (caddr expr)))
+         (let ((rel (cond
+                      ((memq op +path-prefix-ops+) 'path_has_prefix)
+                      ((memq op +path-contains-ops+) 'path_contains)
+                      (else #f))))
+           (and rel
+                (cond
+                  ((and (symbol? a) (not (eq? a '_)) (string? b)) (list rel a b))
+                  ((and (string? a) (symbol? b) (not (eq? b '_))) (list rel b a))
+                  (else #f)))))))
+
+(def (lower-path-pred-atom atom)
+  (let ((unwrapped
+          (cond
+            ((and (pair? atom) (eq? (car atom) 'if) (= (length atom) 3) (pair? (caddr atom)))
+             (caddr atom))
+            ((and (pair? atom) (eq? (car atom) 'if) (= (length atom) 2) (pair? (cadr atom)))
+             (cadr atom))
+            (else atom))))
+    (cond
+      ((lower-positive-path-pred-atom unwrapped) => (lambda (rel-atom) rel-atom))
+      ((and (pair? unwrapped) (eq? (car unwrapped) 'not) (= (length unwrapped) 2)
+            (pair? (cadr unwrapped)))
+       (let* ((inner (cadr unwrapped))
+              (inner-u (cond
+                         ((and (eq? (car inner) 'if) (= (length inner) 3) (pair? (caddr inner)))
+                          (caddr inner))
+                         ((and (eq? (car inner) 'if) (= (length inner) 2) (pair? (cadr inner)))
+                          (cadr inner))
+                         (else inner)))
+              (lowered (lower-positive-path-pred-atom inner-u)))
+         (and lowered (list 'not lowered))))
+      (else #f))))
+
+(def (hoist-ascent-rule-directives clauses tags)
+  (let loop ((rest clauses) (hoisted '()) (kept '()) (t tags))
+    (if (null? rest)
+      (values (append (reverse hoisted) (reverse kept)) t)
+      (let ((c (car rest)))
+        (if (and (rule-clause? c) (eq? (cadr c) '<--))
+          (let body-loop ((bs (cddr c)) (b-acc '()) (h hoisted) (bt t))
+            (if (null? bs)
+              (let ((clean-body (reverse b-acc)))
+                (if (null? clean-body)
+                  (loop (cdr rest) h (cons c kept) bt)
+                  (loop (cdr rest) h (cons (cons (car c) (cons '<-- clean-body)) kept) bt)))
+              (let ((atom (car bs)))
+                (cond
+                  ((scope-clause? atom)
+                   (let-values (((norm-scope t1) (normalize-scope-clause atom bt)))
+                     (body-loop (cdr bs) b-acc (cons norm-scope h)
+                                (add-repair-tag t1 'hoist-rule-directive))))
+                  ((limit-clause? atom)
+                   (body-loop (cdr bs) b-acc (cons atom h)
+                              (add-repair-tag bt 'hoist-rule-directive)))
+                  ((context-clause? atom)
+                   (body-loop (cdr bs) b-acc (cons atom h)
+                              (add-repair-tag bt 'hoist-rule-directive)))
+                  ((wrapped-limit-clause? atom)
+                   (body-loop (cdr bs) b-acc (cons (car atom) h)
+                              (add-repair-tag bt 'hoist-rule-directive)))
+                  (else (body-loop (cdr bs) (cons atom b-acc) h bt))))))
+          (loop (cdr rest) hoisted (cons c kept) t))))))
+
+(def (normalize-ascent-directives clauses tags)
+  (let loop ((rest clauses) (acc '()) (t tags))
+    (if (null? rest)
+      (values (reverse acc) t)
+      (let ((c (car rest)))
+        (cond
+          ((wrapped-limit-clause? c)
+           (loop (cdr rest) (cons (car c) acc) (add-repair-tag t 'unwrap-limit-clause)))
+          ((scope-clause? c)
+           (let-values (((nc nt) (normalize-scope-clause c t)))
+             (loop (cdr rest) (cons nc acc) nt)))
+          ((or (limit-clause? c) (context-clause? c) (rule-clause? c)
+               (and (pair? c) (eq? (car c) 'relation)))
+           (loop (cdr rest) (cons c acc) t))
+          (else
+           (raise-repair-diagnostic
+             'invalid_ascent_clause
+             (call-with-output-string
+               (lambda (p) (display "invalid top-level clause in (ascent-fragment ...): " p) (write c p)))
+             "(ascent-fragment (scope path-prefix: \"...\") (limit N) (context N) ((head ...) <-- body-atom ...))"
+             "(ascent-fragment (scope path-prefix: \"crates/\") (limit 40) ((answer name path line) <-- (rust_struct _ fid name line) (file fid \"rust\" path)))")))))))
+
+(def (normalize-ascent-var-sym sym)
+  (if (not (symbol? sym))
+    (values sym #f)
+    (let ((s (symbol->string sym)))
+      (cond
+        ((string=? s "?_") (values '_ #t))
+        ((and (> (string-length s) 1) (char=? (string-ref s 0) #\?))
+         (values (string->symbol (substring s 1 (string-length s))) #t))
+        (else (values sym #f))))))
+
+(def (normalize-ascent-term-tree x tags)
+  (cond
+    ((symbol? x)
+     (let-values (((nx changed?) (normalize-ascent-var-sym x)))
+       (values nx (if changed? (add-repair-tag tags 'normalize-ascent-vars) tags))))
+    ((and (pair? x) (eq? (car x) 'quote)) (values x tags))
+    ((pair? x)
+     (let loop ((rest x) (acc '()) (t tags))
+       (if (null? rest)
+         (values (reverse acc) t)
+         (let-values (((nx nt) (normalize-ascent-term-tree (car rest) t)))
+           (loop (cdr rest) (cons nx acc) nt)))))
+    (else (values x tags))))
+
+(def (subst-var-in-tree tree var val)
+  (cond
+    ((eq? tree var) val)
+    ((and (pair? tree) (eq? (car tree) 'quote)) tree)
+    ((pair? tree)
+     (cons (subst-var-in-tree (car tree) var val)
+           (subst-var-in-tree (cdr tree) var val)))
+    (else tree)))
+
+(def (normalize-guard-expr expr tags)
+  (cond
+    ((not (pair? expr)) (values expr tags))
+    ((eq? (car expr) 'quote) (values expr tags))
+    ((and (memq (car expr) '(string=? ==)) (= (length expr) 3))
+     (let*-values (((a t1) (normalize-guard-expr (cadr expr) tags))
+                   ((b t2) (normalize-guard-expr (caddr expr) t1)))
+       (values (list 'equal? a b) (add-repair-tag t2 'normalize-string-eq))))
+    ((and (memq (car expr) '(!= not= <>)) (= (length expr) 3))
+     (let*-values (((a t1) (normalize-guard-expr (cadr expr) tags))
+                   ((b t2) (normalize-guard-expr (caddr expr) t1)))
+       (values (list 'not (list 'equal? a b)) t2)))
+    (else
+     (let loop ((rest (cdr expr)) (acc '()) (t tags))
+       (if (null? rest)
+         (values (cons (car expr) (reverse acc)) t)
+         (let-values (((ne nt) (normalize-guard-expr (car rest) t)))
+           (loop (cdr rest) (cons ne acc) nt)))))))
+
+(def (comparison-atom->guard-expr op lhs rhs)
+  (case op
+    ((= == equal? string=?) (list 'equal? lhs rhs))
+    ((!= not= <>) (list 'not (list 'equal? lhs rhs)))
+    (else (list op lhs rhs))))
+
+(def (negated-comparison-atom->guard-expr op lhs rhs)
+  (case op
+    ((= == equal? string=?) (list 'not (list 'equal? lhs rhs)))
+    ((!= not= <>) (list 'equal? lhs rhs))
+    (else (list 'not (list op lhs rhs)))))
+
+(def (lower-ascent-body-atom atom tags)
+  (if (not (and (pair? atom) (symbol? (car atom))))
+    (values atom tags)
+    (let ((path-rel (lower-path-pred-atom atom)))
+      (if path-rel
+        (values path-rel tags)
+        (let ((head (car atom)) (args (cdr atom)))
+          (cond
+            ((and (eq? head 'if) (= (length args) 2) (list? (car args)))
+             (let-values (((nexpr t1) (normalize-guard-expr (cadr args) tags)))
+               (values (list 'if (car args) nexpr) t1)))
+            ((and (eq? head 'if) (= (length args) 1) (pair? (car args)))
+             (let*-values (((nexpr t1) (normalize-guard-expr (car args) tags)))
+               (values (list 'if (collect-expr-vars nexpr '()) nexpr)
+                       (add-repair-tag t1 'infer-guard-inputs))))
+            ((and (eq? head 'not) (= (length args) 1)
+                  (pair? (car args)) (list? (car args)) (= (length (car args)) 3)
+                  (memq (caar args) +comparison-atom-ops+))
+             (let* ((inner (car args))
+                    (expr (negated-comparison-atom->guard-expr (car inner) (cadr inner) (caddr inner))))
+               (values (list 'if (collect-expr-vars expr '()) expr) tags)))
+            ((and (memq head +comparison-atom-ops+) (= (length args) 2))
+             (let ((expr (comparison-atom->guard-expr head (car args) (cadr args))))
+               (values (list 'if (collect-expr-vars expr '()) expr) tags)))
+            (else (values atom tags))))))))
+
+(def (quote-known-lang-in-atom atom known-langs head-vars tags)
+  (if (not (and (pair? atom) (symbol? (car atom))))
+    (values atom tags)
+    (let ((rel (car atom)) (args (cdr atom)))
+      (cond
+        ((and (eq? rel 'file) (>= (length args) 2)
+              (symbol? (cadr args)) (memq (cadr args) known-langs) (not (memq (cadr args) head-vars)))
+         (values (cons 'file (cons (car args) (cons (symbol->string (cadr args)) (cddr args))))
+                 (add-repair-tag tags 'quote-language-literal)))
+        ((and (or (eq? rel 'entity) (memq rel +general-ontology-5col-rels+))
+              (>= (length args) 3)
+              (symbol? (caddr args)) (memq (caddr args) known-langs) (not (memq (caddr args) head-vars)))
+         (values (cons rel (cons (car args) (cons (cadr args) (cons (symbol->string (caddr args)) (cdddr args)))))
+                 (add-repair-tag tags 'quote-language-literal)))
+        (else (values atom tags))))))
+
+(def (guard-clause-like? clause)
+  (and (pair? clause) (list? clause) (symbol? (car clause))
+       (or (and (memq (car clause) +comparison-atom-ops+) (= (length clause) 3))
+           (and (eq? (car clause) 'if) (or (= (length clause) 2) (= (length clause) 3)))
+           (and (eq? (car clause) 'let) (= (length clause) 3)))))
+
+(def (absorb-trailing-rule-guards clauses tags)
+  (let loop ((rest clauses) (acc '()) (t tags))
+    (if (null? rest)
+      (values (reverse acc) t)
+      (let ((c (car rest)))
+        (if (and (guard-clause-like? c) (pair? acc) (rule-clause? (car acc)))
+          (loop (cdr rest) (cons (append (car acc) (list c)) (cdr acc))
+                (add-repair-tag t 'absorb-trailing-guard))
+          (loop (cdr rest) (cons c acc) t))))))
+
+(def (equality-literal-binding atom)
+  (and (pair? atom) (list? atom) (= (length atom) 3)
+       (memq (car atom) '(= == equal? string=?))
+       (let ((lhs (cadr atom)) (rhs (caddr atom)))
+         (cond
+           ((and (symbol? lhs) (not (eq? lhs '_)) (literal-datum? rhs)) (cons lhs rhs))
+           ((and (literal-datum? lhs) (symbol? rhs) (not (eq? rhs '_))) (cons rhs lhs))
+           (else #f)))))
+
+(def (repair-ascent-rule-ergonomics clause known-langs tags)
+  (if (not (and (rule-clause? clause) (eq? (cadr clause) '<--)))
+    (values clause tags)
+    (let*-values (((head0 t1) (normalize-ascent-term-tree (car clause) tags))
+                  ((body0 t2) (normalize-ascent-term-tree (cddr clause) t1)))
+      (let let-loop ((bs body0) (head head0) (kept '()) (t t2))
+        (if (null? bs)
+          (let ((head-vars (filter symbol? (cdr head))))
+            (let body-loop ((rest (reverse kept)) (out '()) (bt t))
+              (if (null? rest)
+                (values (cons head (cons '<-- (reverse out))) bt)
+                (let*-values (((a1 t3) (lower-ascent-body-atom (car rest) bt))
+                              ((a2 t4) (quote-known-lang-in-atom a1 known-langs head-vars t3)))
+                  (body-loop (cdr rest) (cons a2 out) t4)))))
+          (let ((atom (car bs)))
+            (cond
+              ((and (pair? atom) (eq? (car atom) 'let) (= (length atom) 3)
+                    (symbol? (cadr atom)) (literal-datum? (caddr atom)))
+               (let ((var (cadr atom)) (val (caddr atom)))
+                 (let-loop (map (lambda (b) (subst-var-in-tree b var val)) (cdr bs))
+                           (subst-var-in-tree head var val)
+                           (map (lambda (b) (subst-var-in-tree b var val)) kept)
+                           (add-repair-tag t 'inline-literal-let))))
+              ((equality-literal-binding atom)
+               => (lambda (pair)
+                    (let ((var (car pair)) (val (cdr pair)))
+                      (let-loop (map (lambda (b) (subst-var-in-tree b var val)) (cdr bs))
+                                (subst-var-in-tree head var val)
+                                (map (lambda (b) (subst-var-in-tree b var val)) kept)
+                                t))))
+              (else (let-loop (cdr bs) head (cons atom kept) t)))))))))
+
+(def (expand-single-rule-disjunctions clause)
+  (if (not (and (rule-clause? clause) (eq? (cadr clause) '<--)))
+    (list clause)
+    (let ((head (car clause)) (body (cddr clause)))
+      (let loop ((rest body) (bodies '(())))
+        (if (null? rest)
+          (map (lambda (b) (cons head (cons '<-- (reverse b)))) bodies)
+          (let ((atom (car rest)))
+            (if (and (pair? atom) (list? atom) (eq? (car atom) 'or) (>= (length atom) 2))
+              (let* ((branches (cdr atom))
+                     (expanded
+                       (apply append
+                         (map (lambda (prefix)
+                                (map (lambda (br)
+                                       (let ((items (if (and (pair? br) (list? br) (eq? (car br) 'and))
+                                                      (cdr br) (list br))))
+                                         (append (reverse items) prefix)))
+                                     branches))
+                              bodies))))
+                (when (> (length expanded) +max-disjunction-rules+)
+                  (raise-repair-diagnostic
+                    'disjunction_too_large
+                    (string-append "expanding (or ...) in ASCENT rule exceeds safe bound of "
+                                   (number->string +max-disjunction-rules+) " rules")
+                    "Write separate rules ((answer ...) <-- ...) or keep (or ...) disjunctions concise."
+                    "Split independent branches into separate rules inside (ascent-fragment ...)."))
+                (loop (cdr rest) expanded))
+              (loop (cdr rest) (map (lambda (prefix) (cons atom prefix)) bodies)))))))))
+
+(def (normalize-rule-arrows clauses tags)
+  (let loop ((rest clauses) (acc '()) (t tags))
+    (if (null? rest)
+      (values (reverse acc) t)
+      (let ((c (car rest)))
+        (if (and (rule-clause? c) (not (eq? (cadr c) '<--)))
+          (loop (cdr rest) (cons (cons (car c) (cons '<-- (cddr c))) acc)
+                (add-repair-tag t 'normalize-rule-arrow))
+          (loop (cdr rest) (cons c acc) t))))))
+
+;;; Full closed `:gerbil-ascent` clause repair pipeline.
+(def (repair-ascent-fragment-clauses clauses registry tags)
+  (let*-values (((c0 t1) (normalize-rule-arrows clauses tags))
+                ((c1 t2) (absorb-trailing-rule-guards c0 t1))
+                ((c2 t3) (hoist-ascent-rule-directives c1 t2))
+                ((c3 t4) (normalize-ascent-directives c2 t3))
+                ((c3b) (apply append (map expand-single-rule-disjunctions c3)))
+                ((c4 t5)
+                 (let ((known-langs (.get registry languages)))
+                   (let loop ((rest c3b) (acc '()) (t t4))
+                     (if (null? rest)
+                       (values (reverse acc) t)
+                       (let-values (((nc nt) (repair-ascent-rule-ergonomics (car rest) known-langs t)))
+                         (loop (cdr rest) (cons nc acc) nt)))))))
+    (repair-ascent-clauses c4 registry t5)))

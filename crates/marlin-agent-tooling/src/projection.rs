@@ -57,7 +57,7 @@ fn symbol(value: RootedSchemeObject<'_>) -> Result<String, ToolingProjectionErro
 
 fn string(value: RootedSchemeObject<'_>) -> Result<String, ToolingProjectionError> {
     let value = native(value.into_string())?;
-    if native(value.len().into_result())? > 256 {
+    if native(value.len().into_result())? > 4096 {
         return Err(ToolingProjectionError::Invalid("description length"));
     }
     native(value.to_string().into_result())

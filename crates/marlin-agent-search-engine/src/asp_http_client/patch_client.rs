@@ -93,32 +93,64 @@ struct WireAstPatchRequest<'a> {
 }
 
 fn atomic_write_file(target: &Path, bytes: &[u8]) -> Result<(), SearchPlanProjectionError> {
+    use std::io::Write as _;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static PATCH_TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
     let parent = target.parent().unwrap_or_else(|| Path::new("."));
     let file_name = target
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("ast-patch");
-    let tmp = parent.join(format!(".{file_name}.marlin-ast-tmp"));
-    fs::write(&tmp, bytes)
-        .map_err(|e| SearchPlanProjectionError::Native(format!("write temp patch: {e}")))?;
+    let seq = PATCH_TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp = parent.join(format!(
+        ".{file_name}.{}.{seq}.marlin-ast-tmp",
+        std::process::id()
+    ));
+    let write_res = (|| -> std::io::Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    if let Err(e) = write_res {
+        let _ = fs::remove_file(&tmp);
+        return Err(SearchPlanProjectionError::Native(format!(
+            "write temp patch: {e}"
+        )));
+    }
     fs::rename(&tmp, target).map_err(|e| {
         let _ = fs::remove_file(&tmp);
         SearchPlanProjectionError::Native(format!("commit atomic patch: {e}"))
-    })
+    })?;
+    if let Ok(dir) = fs::File::open(parent) {
+        let _ = dir.sync_all();
+    }
+    Ok(())
 }
 
-fn normalize_batch_language(batch: &mut WorkspaceOpenEdbIngestBatch) {
+fn normalize_batch_language(
+    batch: &mut WorkspaceOpenEdbIngestBatch,
+    aliases: &std::collections::BTreeMap<String, String>,
+) {
     for ent in &mut batch.entities {
-        if ent.language == "gerbil-scheme" {
-            ent.language = "scheme".to_owned();
+        if let Some(canonical) = aliases.get(ent.language.as_str()) {
+            ent.language.clone_from(canonical);
         }
     }
-    if batch.language_id.as_deref() == Some("gerbil-scheme") {
-        batch.language_id = Some("scheme".to_owned());
+    if let Some(lang) = batch.language_id.as_deref()
+        && let Some(canonical) = aliases.get(lang)
+    {
+        batch.language_id = Some(canonical.clone());
     }
 }
 
 fn commit_and_sync_patched_file(
+    endpoint: &AspForwardingEndpoint,
     abs_path: &Path,
     rel_path: &str,
     index: &mut WorkspaceSearchIndex,
@@ -135,7 +167,9 @@ fn commit_and_sync_patched_file(
     let Some(mut batch) = receipt.open_edb_batch.clone() else {
         return Ok(());
     };
-    normalize_batch_language(&mut batch);
+    let catalog = super::transport::fetch_asp_provider_catalog(endpoint)?;
+    let aliases = super::sync::provider_language_aliases(&catalog);
+    normalize_batch_language(&mut batch, &aliases);
     let ingest = index.ingest_open_edb_facts(batch);
     receipt.synced_entities = ingest.ingested_entities;
     receipt.synced_edges = ingest.ingested_edges;
@@ -183,7 +217,7 @@ pub fn apply_ast_patch_via_asp_http(
             AspHttpAstPatchStatus::Applied | AspHttpAstPatchStatus::CalibratedAndApplied
         );
     if should_commit {
-        commit_and_sync_patched_file(&abs_path, request.path, index, &mut receipt)?;
+        commit_and_sync_patched_file(endpoint, &abs_path, request.path, index, &mut receipt)?;
     }
     Ok(receipt)
 }

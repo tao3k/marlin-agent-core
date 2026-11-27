@@ -292,7 +292,7 @@ pub fn render_list<'a>(
     let metrics = |key: &UiComponentId| match key.as_str() {
         "list-total" => cells(count),
         "list-visible" => cells(visible),
-        "list-index" => cells(selected.unwrap_or(0)),
+        "list-index" => cells(selected.map_or(0, |idx| idx)),
         "list-offset" => super::Extent::Cells(saved_offset),
         _ => (data.extent)(key),
     };
@@ -418,7 +418,11 @@ pub fn render_content(
     let lines: Vec<Line<'static>> = content
         .iter()
         .map(|item| match item {
-            UiContent::Text(text) => Line::from(terminal_text(text).into_owned()),
+            UiContent::Text(text) => Line::from(super::core::style_structured_org_line(
+                text,
+                Style::default().fg(tone_color(marlin_agent_ui::UiTone::Normal, inputs.theme)),
+                inputs.theme,
+            )),
             UiContent::Field { label, value } => {
                 let UiElement::Template { spans, background } = field_template else {
                     return Line::default();

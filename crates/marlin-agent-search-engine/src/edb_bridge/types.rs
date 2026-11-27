@@ -11,6 +11,60 @@ use agent_semantic_search::{WorkspaceEdbPrefilter, WorkspaceSearchIndex};
 
 use crate::SearchPlanProjectionError;
 
+pub(crate) const DEFAULT_MAX_EDB_FACTS: usize = 262_144;
+
+/// Typed bitmask governing which optional EDB relation tables are hydrated across
+/// the Rust -> Gerbil C-ABI boundary for a query's dependency cone.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct EdbHydrationMask(u8);
+
+impl EdbHydrationMask {
+    const EDGES: u8 = 1 << 0;
+    const ATTRS: u8 = 1 << 1;
+    const SYMBOL_REFS: u8 = 1 << 2;
+
+    /// Default hydration set (`edge` + `attr`, excluding `symbol_ref` unless active).
+    pub const DEFAULT_RELATIONS: Self = Self(Self::EDGES | Self::ATTRS);
+
+    /// Build a hydration mask from the active EDB relation symbols returned by the
+    /// Scheme prefilter compiler.
+    #[must_use]
+    pub fn from_active_relations(active_edb: &[String]) -> Self {
+        let mut bits = 0u8;
+        if active_edb.is_empty() || active_edb.iter().any(|r| r == "edge") {
+            bits |= Self::EDGES;
+        }
+        if active_edb.is_empty() || active_edb.iter().any(|r| r == "attr") {
+            bits |= Self::ATTRS;
+        }
+        if active_edb.iter().any(|r| r == "symbol_ref") {
+            bits |= Self::SYMBOL_REFS;
+        }
+        Self(bits)
+    }
+
+    #[must_use]
+    pub const fn includes_edges(self) -> bool {
+        (self.0 & Self::EDGES) != 0
+    }
+
+    #[must_use]
+    pub const fn includes_attrs(self) -> bool {
+        (self.0 & Self::ATTRS) != 0
+    }
+
+    #[must_use]
+    pub const fn includes_symbol_refs(self) -> bool {
+        (self.0 & Self::SYMBOL_REFS) != 0
+    }
+}
+
+impl Default for EdbHydrationMask {
+    fn default() -> Self {
+        Self::DEFAULT_RELATIONS
+    }
+}
+
 /// Owned storage backing ASP's zero-regex [`WorkspaceEdbPrefilter`].
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OwnedWorkspaceEdbPrefilter {
@@ -21,6 +75,7 @@ pub struct OwnedWorkspaceEdbPrefilter {
     pub required_tokens: Vec<String>,
     pub max_files: usize,
     pub max_facts: usize,
+    pub hydration: EdbHydrationMask,
 }
 
 impl OwnedWorkspaceEdbPrefilter {
@@ -47,6 +102,8 @@ pub enum SearchDslCompletionKind {
     Parser,
     Edb,
     Relation,
+    Keyword,
+    Value,
 }
 
 impl SearchDslCompletionKind {
@@ -59,6 +116,8 @@ impl SearchDslCompletionKind {
             Self::Parser => "parser",
             Self::Edb => "edb",
             Self::Relation => "relation",
+            Self::Keyword => "keyword",
+            Self::Value => "value",
         }
     }
 
@@ -69,6 +128,8 @@ impl SearchDslCompletionKind {
             "parser" => Ok(Self::Parser),
             "edb" => Ok(Self::Edb),
             "relation" => Ok(Self::Relation),
+            "keyword" => Ok(Self::Keyword),
+            "value" => Ok(Self::Value),
             _ => Err(SearchPlanProjectionError::Invalid(
                 "unknown search DSL completion kind",
             )),
@@ -117,6 +178,80 @@ pub struct SearchDslStructuredRow {
     pub line: Option<usize>,
 }
 
+/// Provenance derivation kind emitted by Dusa's finite-choice solver.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum SearchDslChoiceWitnessKind {
+    Deduction,
+    Branch,
+    Derived,
+}
+
+impl SearchDslChoiceWitnessKind {
+    /// Canonical lowercase label for TUI & LLM witness formatting.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Deduction => "deduction",
+            Self::Branch => "branch",
+            Self::Derived => "derived",
+        }
+    }
+
+    pub(crate) fn parse(raw: &str) -> Self {
+        match raw {
+            "deduction" => Self::Deduction,
+            "branch" => Self::Branch,
+            _ => Self::Derived,
+        }
+    }
+}
+
+/// Dusa rule discipline (`closed` deterministic/forbid vs `open` branching).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum SearchDslChoiceRuleKind {
+    Closed,
+    Open,
+    Rule,
+}
+
+impl SearchDslChoiceRuleKind {
+    /// Canonical lowercase label for TUI & LLM witness formatting.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Closed => "closed",
+            Self::Open => "open",
+            Self::Rule => "rule",
+        }
+    }
+
+    pub(crate) fn parse(raw: &str) -> Self {
+        match raw {
+            "closed" => Self::Closed,
+            "open" => Self::Open,
+            _ => Self::Rule,
+        }
+    }
+}
+
+/// One Dusa derivation witness explaining why a choice binding holds in a world.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SearchDslChoiceWitness {
+    pub kind: SearchDslChoiceWitnessKind,
+    pub fact: Vec<String>,
+    pub rule_kind: SearchDslChoiceRuleKind,
+    pub premises: Vec<String>,
+    pub alternatives: Vec<String>,
+}
+
+/// One self-consistent world (model) returned by Dusa `search-choice-program`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SearchDslChoiceWorld {
+    pub world_index: usize,
+    pub bindings: Vec<Vec<String>>,
+    pub witnesses: Vec<SearchDslChoiceWitness>,
+}
+
 /// Complete typed result of a Scheme Search DSL execution shared by both
 /// LLM `workspace_search` tool calls and TUI Helm live S-expression evaluation.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -128,8 +263,21 @@ pub struct SearchDslStructuredResult {
     pub mode: SearchDslExecutionMode,
     pub relation: String,
     pub repairs: Vec<String>,
+    pub canonical_query: Option<String>,
     pub rows: Vec<SearchDslStructuredRow>,
+    pub choice_worlds: Vec<SearchDslChoiceWorld>,
+    pub budget_exhausted: Option<String>,
     pub rendered_text: String,
+}
+
+/// Optional host context passed to the rooted Search DSL decoder so rendered
+/// output reports accurate scoped vs workspace coverage and attaches zero-I/O
+/// RAM source snippets directly to L1 Ascent answer rows.
+#[derive(Clone, Copy)]
+pub(crate) struct SearchDslDecodeContext<'a> {
+    pub(crate) index: Option<&'a WorkspaceSearchIndex>,
+    pub(crate) prefilter: Option<&'a OwnedWorkspaceEdbPrefilter>,
+    pub(crate) output_limit: usize,
 }
 
 /// One interactive Helm TAB completion row introspected from Scheme's POO

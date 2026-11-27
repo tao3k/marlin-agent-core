@@ -55,8 +55,28 @@ pub(super) struct PendingKeyHint {
     pub(super) show_at: Option<Instant>,
 }
 
+pub(crate) struct ToolExecutionRecord {
+    pub(crate) call_id: String,
+    pub(crate) tool_name: String,
+    pub(crate) arguments: Vec<(String, String)>,
+    pub(crate) state: &'static str,
+    pub(crate) started_at: Instant,
+    pub(crate) duration_ms: Option<u64>,
+    pub(crate) otel_span: &'static str,
+    pub(crate) output_summary: String,
+    pub(crate) output_lines: Vec<String>,
+}
+
+pub(crate) struct ToolReviewCallSummary {
+    pub(crate) call_id: String,
+    pub(crate) tool_name: String,
+    pub(crate) arguments: Vec<(String, String)>,
+    pub(crate) compact_args: String,
+}
+
 pub(crate) struct ToolReviewPrompt {
     pub(crate) key: marlin_agent_sessions::ConversationToolRequestKey,
+    pub(crate) calls: Vec<ToolReviewCallSummary>,
     pub(crate) menu: marlin_agent_ui::UiToolReviewMenu,
     pub(crate) details: Transcript,
     pub(crate) selected: usize,
@@ -77,7 +97,13 @@ pub(crate) struct App {
     pub(crate) helm: Option<super::HelmOverlay>,
     pub(crate) search_index: Option<crate::helm::SharedSearchIndex>,
     pub(crate) search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig,
+    pub(crate) search_hydration_policy: Option<marlin_agent_search_engine::AspHydrationPolicy>,
+    pub(crate) search_presets: Vec<marlin_agent_search_engine::HelmSearchPresetSpec>,
+    pub(crate) search_cache_dir: Option<std::path::PathBuf>,
     pub(crate) search_dsl_catalog: Vec<marlin_agent_search_engine::SearchDslCompletionEntry>,
+    pub(crate) asp_live_status: super::asp_supervisor::AspLiveStatus,
+    pub(super) asp_endpoint: Option<marlin_agent_search_engine::AspForwardingEndpoint>,
+    pub(super) asp_hydrating: Option<tokio::sync::watch::Receiver<Option<(usize, usize)>>>,
     pub(super) search_index_warming:
         Option<tokio::sync::oneshot::Receiver<crate::helm::SharedSearchIndex>>,
     pub(super) search_index_syncing: Option<tokio::sync::oneshot::Receiver<bool>>,
@@ -134,12 +160,14 @@ pub(crate) struct App {
     >,
     pub(crate) tool_review_task: Option<marlin_agent_runtime::RuntimeTask<()>>,
     pub(crate) tool_review_suppressed: bool,
+    pub(crate) tool_executions: Vec<ToolExecutionRecord>,
+    pub(crate) tool_executions_revision: u64,
     pub(super) unverified_thinking: bool,
     pub(crate) runtime_edge: Option<RuntimeEdgePolicyReceipt>,
     pub(crate) runtime_content: Vec<UiContent>,
     pub(crate) runtime_receipt_open: bool,
     pub(crate) dynamic_buffer_content: std::collections::HashMap<UiBufferId, Vec<UiContent>>,
-    pub(super) process_snapshot: Option<(marlin_agent_runtime::SessionId, u64)>,
+    pub(super) process_snapshot: Option<(marlin_agent_runtime::SessionId, u64, u64, usize, usize)>,
     pub(super) session_browser: Option<SessionBrowser<TursoAgentStorage>>,
     pub(super) current_session: Option<SessionId>,
     pub(super) history_position: Option<HistoryPosition>,
@@ -189,7 +217,13 @@ impl App {
             helm: None,
             search_index: None,
             search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig::default(),
+            search_hydration_policy: None,
+            search_presets: Vec::new(),
+            search_cache_dir: None,
             search_dsl_catalog: Vec::new(),
+            asp_live_status: super::asp_supervisor::AspLiveStatus::default(),
+            asp_endpoint: None,
+            asp_hydrating: None,
             search_index_warming: None,
             search_index_syncing: None,
             #[cfg(feature = "linked-ui")]
@@ -237,6 +271,8 @@ impl App {
             tool_review_inflight: None,
             tool_review_task: None,
             tool_review_suppressed: false,
+            tool_executions: Vec::new(),
+            tool_executions_revision: 0,
             unverified_thinking: false,
             runtime_edge: None,
             runtime_content: Vec::new(),
@@ -418,171 +454,6 @@ impl App {
         if let Some(preview) = self.history_search.take().and_then(HistorySearch::accept) {
             self.prompt_history.discard();
             self.composer = preview;
-        }
-    }
-
-    pub(crate) fn warm_search_index(
-        &mut self,
-        config: marlin_agent_search_engine::WorkspaceIndexConfig,
-        runtime: &tokio::runtime::Handle,
-    ) {
-        self.search_index_config = config.clone();
-        if self.search_index.is_some() || self.search_index_warming.is_some() {
-            return;
-        }
-        let workspace_root = self
-            .context_worktree
-            .clone()
-            .or_else(|| std::env::current_dir().ok())
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
-        let snapshot_path =
-            marlin_agent_search_engine::default_workspace_snapshot_path(&workspace_root);
-        let edb_cache_path =
-            marlin_agent_search_engine::default_workspace_edb_cache_path(&workspace_root);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.search_index_warming = Some(rx);
-        runtime.spawn_blocking(move || {
-            if tx.is_closed() {
-                return;
-            }
-            let mut idx = marlin_agent_search_engine::WorkspaceSearchIndex::open_or_build_cached(
-                &workspace_root,
-                &snapshot_path,
-                config,
-            );
-            if tx.is_closed() {
-                return;
-            }
-            let _ = marlin_agent_search_engine::hydrate_workspace_open_edb_org_and_cache(
-                &mut idx,
-                &edb_cache_path,
-            );
-            let built = Arc::new(std::sync::RwLock::new(idx));
-            let _ = tx.send(built);
-        });
-    }
-
-    pub(crate) fn sync_search_index_background(&mut self, runtime: &tokio::runtime::Handle) {
-        if self.search_index_syncing.is_some() || self.search_index_warming.is_some() {
-            return;
-        }
-        let Some(existing) = self.search_index.clone() else {
-            return;
-        };
-        let workspace_root = self
-            .context_worktree
-            .clone()
-            .or_else(|| std::env::current_dir().ok())
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
-        let snapshot_path =
-            marlin_agent_search_engine::default_workspace_snapshot_path(&workspace_root);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.search_index_syncing = Some(rx);
-        runtime.spawn_blocking(move || {
-            let mut changed = false;
-            if let Ok(mut guard) = existing.write() {
-                let receipt = guard.sync_workspace_from_disk();
-                if receipt.upserted_files > 0 || receipt.deleted_files > 0 {
-                    let _ = guard.save_snapshot(&snapshot_path);
-                    changed = true;
-                }
-            }
-            let _ = tx.send(changed);
-        });
-    }
-
-    pub(crate) fn poll_search_index(&mut self) -> bool {
-        let mut changed = false;
-        if let Some(rx) = self.search_index_warming.as_mut() {
-            match rx.try_recv() {
-                Ok(built) => {
-                    self.search_index_warming = None;
-                    self.search_index = Some(built.clone());
-                    #[cfg(feature = "linked-ui")]
-                    self.search_tool_slot.attach(built.clone());
-                    if let Some(helm) = self.helm.as_mut() {
-                        helm.attach_warm_index(built);
-                    }
-                    changed = true;
-                }
-                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
-                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                    self.search_index_warming = None;
-                }
-            }
-        }
-        if let Some(rx) = self.search_index_syncing.as_mut() {
-            match rx.try_recv() {
-                Ok(synced_changes) => {
-                    self.search_index_syncing = None;
-                    if synced_changes && let Some(existing) = self.search_index.clone() {
-                        #[cfg(feature = "linked-ui")]
-                        self.search_tool_slot.attach(existing.clone());
-                        if let Some(helm) = self.helm.as_mut() {
-                            helm.attach_warm_index(existing);
-                        }
-                        changed = true;
-                    }
-                }
-                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
-                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                    self.search_index_syncing = None;
-                }
-            }
-        }
-        if let Some(built) = self.helm.as_mut().and_then(super::HelmOverlay::poll) {
-            #[cfg(feature = "linked-ui")]
-            self.search_tool_slot.attach(built.clone());
-            self.search_index = Some(built);
-            changed = true;
-        }
-        changed
-    }
-
-    pub(crate) fn open_helm(
-        &mut self,
-        initial_query: Option<&str>,
-        runtime: &tokio::runtime::Handle,
-    ) {
-        self.history_search = None;
-        self.command_selection = None;
-        self.command_selection_locked = false;
-        let workspace_root = self
-            .context_worktree
-            .clone()
-            .or_else(|| std::env::current_dir().ok())
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
-        self.helm = Some(
-            super::HelmOverlay::open(
-                initial_query,
-                workspace_root,
-                &self.command_catalog,
-                self.search_index_config.clone(),
-                self.search_index.clone(),
-                runtime,
-            )
-            .with_completion_catalog(self.search_dsl_catalog.clone()),
-        );
-        self.sync_search_index_background(runtime);
-    }
-
-    pub(crate) fn apply_helm_action(&mut self, action: super::HelmAction) {
-        match action {
-            super::HelmAction::InsertCitations(text) => {
-                let existing = self.composer.text();
-                let needs_space = !existing.is_empty() && !existing.ends_with(char::is_whitespace);
-                if needs_space {
-                    self.composer.insert_text(" ");
-                }
-                self.composer.insert_text(&text);
-                self.enter_insert_mode(false);
-            }
-            super::HelmAction::SelectBuffer(buffer) => {
-                self.ui_request = Some(UiEvent::SelectBuffer(buffer));
-            }
-            super::HelmAction::PrepareCommand(name) => {
-                let _ = self.prepare_bound_command(&name);
-            }
         }
     }
 

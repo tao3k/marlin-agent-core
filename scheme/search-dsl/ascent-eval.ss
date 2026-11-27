@@ -1,0 +1,296 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+;;; Zero-Eval Closed `:gerbil-ascent` Pruning, Derived Path/Name EDB
+;;; Materialization, Anti-Mode-Collapse Sampling & Session Evaluation
+;;; (`scheme/search-dsl/ascent-eval.ss`).
+(import (only-in :clan/poo/object .get .ref)
+        (only-in :std/string/misc string-contains)
+        (only-in :gerbil-ascent/rules/closed-source ascent-closed-dsl-parts)
+        (only-in :gerbil-ascent/program/api
+                 gerbil-ascent-program
+                 gerbil-ascent-open-session
+                 gerbil-ascent-session-replace-source!
+                 gerbil-ascent-session-run)
+        (only-in :marlin-agent-core/repair/funcs format-canonical-search-form)
+        "./prefilter.ss")
+(export prune-ascent-parts-for-query
+        path-is-test-file?
+        path-is-hot-path-module?
+        select-diverse-rows-up-to
+        compile-closed-ascent-session
+        run-compiled-ascent-session
+        evaluate-closed-ascent-over-edb)
+
+(def (string-contains-any? haystack needles)
+  (let ((down (string-downcase haystack)))
+    (let loop ((rest needles))
+      (cond
+        ((null? rest) #f)
+        ((string-contains down (car rest)) #t)
+        (else (loop (cdr rest)))))))
+
+(def (path-is-test-file? path-str)
+  (string-contains-any?
+    path-str
+    '("/tests/" "tests/" "/t/" "_test." "-test." "test_" "_mock." "mock" "fixture")))
+
+(def (path-is-hot-path-module? path-str)
+  (string-contains-any?
+    path-str
+    '("search-dsl" "edb_bridge" "converged_resident_index" "c-abi"
+      "span_overlay" "linked_ui" "hot_path" "hot-path" "kernel")))
+
+;;; Prune `fragments` to ONLY the transitive dependency cone of `query-part`,
+;;; returning `(values pruned-program active-edb-names)`.
+(def (prune-ascent-parts-for-query fragments query-part)
+  (let* ((all-parts (append fragments (list query-part)))
+         (all-rules (apply append (map (lambda (p) (.ref p 'rules)) all-parts)))
+         (needed (reachable-relation-names query-part all-rules))
+         (pruned-rules
+           (filter (lambda (rule)
+                     (ormap (lambda (h) (hash-get needed h))
+                            (rule-head-relations rule)))
+                   all-rules))
+         (relations (make-hash-table-eq))
+         (order '()))
+    (for-each
+      (lambda (part)
+        (for-each
+          (lambda (rel)
+            (let* ((name (.ref rel 'name))
+                   (keep? (or (hash-get needed name) (memq name +edb-relation-names+))))
+              (when keep?
+                (let ((old (hash-get relations name)))
+                  (when (and old (not (= (.ref old 'arity) (.ref rel 'arity))))
+                    (error "incompatible ASCENT relation arity across fragments" name))
+                  (unless old
+                    (hash-put! relations name rel)
+                    (set! order (cons name order)))))))
+          (.ref part 'relations)))
+      all-parts)
+    (let* ((ordered (map (lambda (n) (hash-ref relations n)) (reverse order)))
+           (active-edb (filter (lambda (n) (hash-get needed n)) +edb-relation-names+))
+           (program (gerbil-ascent-program
+                      ordered pruned-rules 100000 100000 100000 +edb-relation-names+)))
+      (values program active-edb))))
+
+(def (select-query-output-relation query-part)
+  (let* ((names (map (lambda (r) (.ref r 'name)) (.ref query-part 'relations)))
+         (derived (filter (lambda (n) (not (memq n +edb-relation-names+))) names)))
+    (cond
+      ((memq 'answer derived) 'answer)
+      ((pair? derived) (car (reverse derived)))
+      (else (error "ASCENT query must declare at least one derived output relation")))))
+
+(def (take-rows-up-to rows limit)
+  (if (not limit)
+    rows
+    (let loop ((rest rows) (n limit) (acc '()))
+      (if (or (null? rest) (<= n 0))
+        (reverse acc)
+        (loop (cdr rest) (- n 1) (cons (car rest) acc))))))
+
+;;; Anti-mode-collapse Quality-Diversity / MAP-Elites niche round-robin selector:
+;;; When a query returns more rows than `limit` and each row has >= 2 columns,
+;;; partition rows by their primary semantic niche key `(car row)` and draw
+;;; round-robin across niches so no single high-frequency niche starves others.
+(def (select-diverse-rows-up-to rows limit)
+  (cond
+    ((or (not limit) (<= (length rows) limit) (null? rows)) rows)
+    ((or (not (pair? (car rows))) (< (length (car rows)) 2))
+     (take-rows-up-to rows limit))
+    (else
+     (let ((buckets (make-hash-table))
+           (order '()))
+       (for-each
+         (lambda (row)
+           (let* ((k (car row))
+                  (prev (hash-get buckets k)))
+             (if prev
+               (hash-put! buckets k (cons row prev))
+               (begin
+                 (hash-put! buckets k (list row))
+                 (set! order (cons k order))))))
+         rows)
+       (let ((queues (map (lambda (k) (reverse (hash-ref buckets k))) (reverse order))))
+         (let loop ((cur queues) (next '()) (rem limit) (acc '()))
+           (cond
+             ((<= rem 0) (reverse acc))
+             ((null? cur)
+              (if (null? next)
+                (reverse acc)
+                (loop (reverse next) '() rem acc)))
+             (else
+              (let ((q (car cur)))
+                (loop (cdr cur)
+                      (if (pair? (cdr q)) (cons (cdr q) next) next)
+                      (- rem 1)
+                      (cons (car q) acc)))))))))))
+
+;;; Extract literal arguments referenced by derived path and name EDB relations
+;;; anywhere in `form` (including inside `(not (...))`):
+;;;   #(path-prefixes path-needles name-needles name-prefixes)
+(def (extract-derived-pred-literals form)
+  (let ((path-prefixes '())
+        (path-needles '())
+        (name-needles '())
+        (name-prefixes '()))
+    (def (visit x)
+      (when (pair? x)
+        (cond
+          ((and (eq? (car x) 'path_has_prefix) (= (length x) 3) (string? (caddr x)))
+           (set! path-prefixes (append-unique path-prefixes (caddr x))))
+          ((and (eq? (car x) 'path_contains) (= (length x) 3) (string? (caddr x)))
+           (set! path-needles (append-unique path-needles (caddr x))))
+          ((and (eq? (car x) 'name_contains) (= (length x) 3) (string? (caddr x)))
+           (set! name-needles (append-unique name-needles (caddr x))))
+          ((and (eq? (car x) 'name_has_prefix) (= (length x) 3) (string? (caddr x)))
+           (set! name-prefixes (append-unique name-prefixes (caddr x))))
+          (else
+           (visit (car x))
+           (visit (cdr x))))))
+    (visit form)
+    (vector path-prefixes path-needles name-needles name-prefixes)))
+
+(def (collect-edb-unique-paths edb)
+  (let ((seen (make-hash-table))
+        (out '()))
+    (for-each
+      (lambda (f)
+        (when (and (pair? f) (>= (length f) 3) (string? (caddr f)))
+          (let ((p (caddr f)))
+            (unless (hash-get seen p)
+              (hash-put! seen p #t)
+              (set! out (cons p out))))))
+      (edb-table-ref edb 'file))
+    (for-each
+      (lambda (e)
+        (when (and (pair? e) (>= (length e) 4) (string? (list-ref e 3)))
+          (let ((p (list-ref e 3)))
+            (unless (hash-get seen p)
+              (hash-put! seen p #t)
+              (set! out (cons p out))))))
+      (edb-table-ref edb 'edge))
+    (for-each
+      (lambda (r)
+        (when (and (pair? r) (>= (length r) 2) (string? (cadr r)))
+          (let ((p (cadr r)))
+            (unless (hash-get seen p)
+              (hash-put! seen p #t)
+              (set! out (cons p out))))))
+      (edb-table-ref edb 'symbol_ref))
+    (reverse out)))
+
+(def (collect-edb-unique-names edb)
+  (let ((seen (make-hash-table))
+        (out '()))
+    (for-each
+      (lambda (ent)
+        (when (and (pair? ent) (>= (length ent) 6) (string? (list-ref ent 5)))
+          (let ((nm (list-ref ent 5)))
+            (unless (hash-get seen nm)
+              (hash-put! seen nm #t)
+              (set! out (cons nm out))))))
+      (edb-table-ref edb 'entity))
+    (reverse out)))
+
+(def (materialize-derived-path-edb-rows rel-name all-paths pred-lits)
+  (case rel-name
+    ((is_test_path)
+     (map list (filter path-is-test-file? all-paths)))
+    ((prod_path)
+     (map list (filter (lambda (p) (not (path-is-test-file? p))) all-paths)))
+    ((path_has_prefix)
+     (let ((prefixes (if (vector? pred-lits) (vector-ref pred-lits 0) '())))
+       (apply append
+         (map (lambda (pfx)
+                (filter-map (lambda (p) (and (string-prefix? pfx p) (list p pfx))) all-paths))
+              prefixes))))
+    ((path_contains)
+     (let ((needles (if (vector? pred-lits) (vector-ref pred-lits 1) '())))
+       (apply append
+         (map (lambda (needle)
+                (filter-map (lambda (p) (and (string-contains p needle) (list p needle))) all-paths))
+              needles))))
+    (else '())))
+
+(def (materialize-derived-name-edb-rows rel-name all-names pred-lits)
+  (case rel-name
+    ((name_contains)
+     (let ((needles (if (vector? pred-lits) (vector-ref pred-lits 2) '())))
+       (apply append
+         (map (lambda (needle)
+                (let ((needle-lc (string-downcase needle)))
+                  (filter-map
+                    (lambda (nm)
+                      (and (string-contains (string-downcase nm) needle-lc)
+                           (list nm needle)))
+                    all-names)))
+              needles))))
+    ((name_has_prefix)
+     (let ((prefixes (if (vector? pred-lits) (vector-ref pred-lits 3) '())))
+       (apply append
+         (map (lambda (pfx)
+                (let ((pfx-lc (string-downcase pfx)))
+                  (filter-map
+                    (lambda (nm)
+                      (and (string-prefix? pfx-lc (string-downcase nm))
+                           (list nm pfx)))
+                    all-names)))
+              prefixes))))
+    (else '())))
+
+;;; Compile a repaired closed `(ascent ...)` / `(ascent-fragment ...)` form into
+;;; a reusable pruned `:gerbil-ascent` session:
+;;;   #(compiled-ascent-session session target-rel repairs active-edb-names row-limit canonical-query context-lines pred-lits)
+(def (compile-closed-ascent-session form registry repairs)
+  (let-values (((pure-form row-limit context-lines) (strip-ascent-directives form)))
+    (let ((query-parts (ascent-closed-dsl-parts (list pure-form)))
+          (canonical-query (and (pair? repairs) (format-canonical-search-form form)))
+          (pred-lits (extract-derived-pred-literals pure-form)))
+      (unless (and (pair? query-parts) (null? (cdr query-parts)))
+        (error "ASCENT query rejected: only closed inert :gerbil-ascent declarations are admitted (explicit column predicates and closed guards; host callbacks forbidden)" pure-form))
+      (let* ((query-part (car query-parts))
+             (target-rel (select-query-output-relation query-part)))
+        (let-values (((program active-edb)
+                      (prune-ascent-parts-for-query (.get registry ascent-fragments) query-part)))
+          (let ((session (gerbil-ascent-open-session program)))
+            (gerbil-ascent-session-run session)
+            (vector 'compiled-ascent-session session target-rel repairs active-edb row-limit canonical-query context-lines pred-lits)))))))
+
+;;; Execute a compiled pruned `:gerbil-ascent` session against an EDB alist,
+;;; updating ONLY the active EDB relations actually referenced by the pruned cone.
+(def (run-compiled-ascent-session compiled edb)
+  (let* ((session (vector-ref compiled 1))
+         (target-rel (vector-ref compiled 2))
+         (repairs (vector-ref compiled 3))
+         (active-edb (vector-ref compiled 4))
+         (row-limit (and (> (vector-length compiled) 5) (vector-ref compiled 5)))
+         (canonical-query (and (> (vector-length compiled) 6) (vector-ref compiled 6)))
+         (context-lines (and (> (vector-length compiled) 7) (vector-ref compiled 7)))
+         (pred-lits (and (> (vector-length compiled) 8) (vector-ref compiled 8)))
+         (needs-paths? (ormap (lambda (r) (memq r +derived-path-edb-names+)) active-edb))
+         (needs-names? (ormap (lambda (r) (memq r +derived-name-edb-names+)) active-edb))
+         (all-paths (if needs-paths? (collect-edb-unique-paths edb) '()))
+         (all-names (if needs-names? (collect-edb-unique-names edb) '())))
+    (for-each
+      (lambda (rel-name)
+        (let ((rows (cond
+                      ((memq rel-name +derived-path-edb-names+)
+                       (materialize-derived-path-edb-rows rel-name all-paths pred-lits))
+                      ((memq rel-name +derived-name-edb-names+)
+                       (materialize-derived-name-edb-rows rel-name all-names pred-lits))
+                      (else (edb-table-ref edb rel-name)))))
+          (gerbil-ascent-session-replace-source! session rel-name rows)))
+      active-edb)
+    (let* ((result (gerbil-ascent-session-run session))
+           (all-rows ((.ref result 'rows-of) target-rel))
+           (total-count (length all-rows))
+           (shown-rows (select-diverse-rows-up-to all-rows row-limit)))
+      (vector 'search-result 'ascent target-rel shown-rows repairs total-count canonical-query context-lines))))
+
+(def (evaluate-closed-ascent-over-edb form edb registry repairs)
+  (let ((compiled (compile-closed-ascent-session form registry repairs)))
+    (run-compiled-ascent-session compiled edb)))

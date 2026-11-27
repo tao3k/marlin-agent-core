@@ -15,6 +15,34 @@ use super::domain_types::{
     ProviderTransportProtocol, TargetedJsonSchemaDocument,
 };
 
+/// Unified project root markers, source entrypoints, and config files forwarded
+/// by a language provider manifest (`provider-core-manifest.schema.json`).
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardedProjectSurface {
+    #[serde(default)]
+    pub markers: Vec<String>,
+    #[serde(default)]
+    pub entry_files: Vec<String>,
+    #[serde(default)]
+    pub workspace_files: Vec<String>,
+    #[serde(default)]
+    pub config_files: Vec<String>,
+}
+
+/// Language-owned `special` protocol extension layered onto ASP's universal protocol
+/// (`kindMappings`, `specialRelations`, and language-specific Draft 2020-12 JSON Schema).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardedSpecialExtension {
+    #[serde(default)]
+    pub kind_mappings: Vec<ForwardedKindMapping>,
+    #[serde(default)]
+    pub special_relations: Vec<String>,
+    #[serde(default)]
+    pub schema: Option<TargetedJsonSchemaDocument>,
+}
+
 /// Provider manifest summary forwarded over HTTP by ASP `GET /v1/providers`.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,6 +51,12 @@ pub struct ForwardedProviderManifest {
     pub provider_id: AspProviderId,
     #[serde(default)]
     pub extensions: Vec<String>,
+    #[serde(default)]
+    pub project_markers: Vec<String>,
+    #[serde(default)]
+    pub project: Option<ForwardedProjectSurface>,
+    #[serde(default)]
+    pub special: Option<ForwardedSpecialExtension>,
 }
 
 /// One native-kind -> general-kind mapping entry forwarded in a DSL pack.
@@ -67,6 +101,8 @@ pub struct ForwardedProviderCatalog {
     pub schema_version: String,
     pub generation: u64,
     pub registry_digest: String,
+    #[serde(default)]
+    pub universal_protocol_schema: Option<TargetedJsonSchemaDocument>,
     pub providers: Vec<ForwardedProviderEnvelope>,
 }
 

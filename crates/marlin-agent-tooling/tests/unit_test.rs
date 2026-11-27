@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
+#[path = "unit/l0_search.rs"]
+mod l0_search;
 #[path = "unit/policy.rs"]
 mod policy;
 #[path = "unit/projection.rs"]

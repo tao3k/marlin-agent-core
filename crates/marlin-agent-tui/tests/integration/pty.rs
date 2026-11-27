@@ -189,6 +189,7 @@ impl Terminal {
             .env("MARLIN_TUI_FIXTURE_KEY", "fixture")
             .env_remove("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
             .env_remove("MARLIN_TUI_HOST_OBSERVATIONS_FILE")
+            .env_remove("MARLIN_AGENT_CORE_DEV")
             .stdin(Stdio::from(slave.try_clone().unwrap()))
             .stdout(Stdio::from(slave.try_clone().unwrap()))
             .stderr(Stdio::from(slave.try_clone().unwrap()));
@@ -970,3 +971,7 @@ mod soak;
 
 #[path = "pty/tool_cleanup.rs"]
 mod tool_cleanup;
+
+#[cfg(feature = "linked-ui")]
+#[path = "pty/search_e2e.rs"]
+mod search_e2e;

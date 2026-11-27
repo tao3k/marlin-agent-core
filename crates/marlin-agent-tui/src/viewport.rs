@@ -73,21 +73,21 @@ impl Transcript {
         content: String,
         collapsed: bool,
     ) {
+        self.push_collapsible(expanded_role, collapsed_role.to_owned(), content, collapsed);
+    }
+
+    pub(crate) fn push_collapsible(
+        &mut self,
+        expanded_role: String,
+        collapsed_role: String,
+        content: String,
+        collapsed: bool,
+    ) {
         self.changed();
         let (role, other_role, visible, other) = if collapsed {
-            (
-                collapsed_role.to_owned(),
-                expanded_role,
-                String::new(),
-                content,
-            )
+            (collapsed_role, expanded_role, String::new(), content)
         } else {
-            (
-                expanded_role,
-                collapsed_role.to_owned(),
-                content,
-                String::new(),
-            )
+            (expanded_role, collapsed_role, content, String::new())
         };
         debug_assert!(
             self.folds

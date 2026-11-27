@@ -11,17 +11,38 @@ authors.workspace = true
 repository.workspace = true
 readme = "README.org"
 
+[features]
+default = []
+live-weaver = [
+    "dep:gerbil-scheme",
+    "dep:marlin-agent-search-engine",
+    "dep:marlin-agent-stream",
+    "dep:marlin-agent-tooling",
+    "dep:serde_json",
+    "dep:tokio",
+    "dep:toml",
+    "dep:weaver-llm",
+]
+
 [dependencies]
+gerbil-scheme = { workspace = true, optional = true }
 marlin-agent-kernel.workspace = true
 marlin-agent-harness-types.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-gitops.workspace = true
 marlin-agent-runtime.workspace = true
+marlin-agent-search-engine = { workspace = true, optional = true }
+marlin-agent-stream = { workspace = true, optional = true }
+marlin-agent-tooling = { workspace = true, optional = true }
 marlin-gerbil-ir.workspace = true
 marlin-gerbil-scheme = { version = "0.1.0", path = "../marlin-gerbil-scheme" }
 serde.workspace = true
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 tokio-stream.workspace = true
+toml = { workspace = true, optional = true }
 tracing.workspace = true
+weaver-llm = { workspace = true, optional = true }
 
 [dev-dependencies]
 marlin-agent-hooks.workspace = true
@@ -33,3 +54,8 @@ marlin-context-org-model.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 weaver-llm.workspace = true
+
+[[test]]
+name = "live_weaver_search_eval"
+path = "tests/integration/live_weaver_search_eval.rs"
+required-features = ["live-weaver"]

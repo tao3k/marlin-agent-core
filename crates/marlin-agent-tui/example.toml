@@ -18,11 +18,11 @@ timeout_seconds = 120
 # memory_limit_bytes = 3221225472
 # command_reservation_bytes = 268435456
 
-# Optional Anthropic thinking settings; provider/model support varies.
-# [anthropic]
+# Optional Anthropic thinking / output budget settings; provider/model support varies.
+[anthropic]
+max_tokens = 16384
 # thinking = { type = "adaptive" }
 # effort = "low"
-# max_tokens = 8192
 # Manual mode instead: thinking = { type = "enabled", budget_tokens = 4096 }
 
 # OpenAI alternative. Replace the default route above and comment out the
@@ -41,6 +41,7 @@ provider = "deepseek"
 model = "deepseek-v4-pro"
 protocol = "anthropic"
 credential_env = "ANTHROPIC_API_KEY"
+anthropic = { max_tokens = 16384 }
 
 # Optional named model, selected with M-x model alternate.
 # [models.alternate]

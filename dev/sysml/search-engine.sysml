@@ -24,6 +24,36 @@ package MarlinSearchEngine {
         enum turso;
     }
 
+    enum def SearchConsumerParadigm {
+        enum humanInteractive;
+        enum aiNativeAutonomous;
+        doc /* Distinguishes search engine assumptions optimized for human
+               visual paging/trial-and-error from those required by AI-native
+               bounded-context autonomous agent loops. */
+    }
+
+    enum def SearchEntryPointKind {
+        enum l0FastRam;
+        enum l1RelationalAscent;
+        enum l2DusaChoice;
+        enum repairAstPatch;
+        doc /* Scenario-specific sound entry point into Marlin's converged
+               search and repair stack. */
+    }
+
+    part def SearchAntiPatternCountermodel {
+        attribute countermodelId : String;
+        attribute paradigmMismatch : SearchConsumerParadigm;
+        attribute humanRationale : String;
+        attribute aiNativeFailureMode : String;
+        attribute quintCountermodelRef : String;
+        attribute recommendedEntryPoint : SearchEntryPointKind;
+        doc /* Explicit formal countermodel documenting a search pattern that
+               is reasonable for human-driven exploration but provably fails
+               under AI-native autonomous execution, together with its exact
+               Quint countermodel reference and sound AI-native entry point. */
+    }
+
     attribute def SearchPlanProjection {
         attribute workspace : String [0..1];
         attribute languages : String [0..*];
@@ -68,18 +98,28 @@ package MarlinSearchEngine {
 
     part <'MAR-SRCH-A01'> actual {
         part schemeSearchDsl {
-            doc /* `scheme/search-dsl/{types,grammar,syntax,objects,repair,extract,funcs,config,interface}.ss`
-                   and `scheme/c-abi/search-dsl.ss`: unified pure S-expression
-                   search DSL powered by `:gerbil-ascent` (zero-eval closed-source
-                   Datalog + Dusa POPL 2025 finite-choice), `:gerbil-parser`
-                   (`deflanguage` typed structured sub-syntax parsing), zero-regex
-                   native AST extraction (`extract.ss` for `.ss`/`.sysml`/`.qnt`),
+            doc /* `scheme/search-dsl/{types,grammar,syntax,objects,extract,funcs,config,interface}.ss`,
+                   `scheme/search-dsl/evidence-chain.ss`, and `scheme/c-abi/search-dsl.ss`:
+                   unified pure S-expression search DSL powered by `:gerbil-ascent`
+                   (zero-eval closed-source Datalog with relational path predicates
+                   `is_test_path`/`prod_path`/`path_has_prefix`/`path_contains`,
+                   one-shot `find-impact`, anti-mode-collapse niche-diverse sampling
+                   `select-diverse-rows-up-to`, and Dusa POPL 2025 finite-choice),
+                   `:gerbil-parser` (`deflanguage`), zero-regex native AST extraction,
                    zero-regex POO `SearchLanguageRegistry.` fragments over ASP's
-                   universal `semantic-open-edb.v1` `(lang, kind, language_kind)`
-                   protocol, the Safe Pre-Tool-Call Model AST Repair Hook v2
-                   (`repair.ss` with wildcard padding, choice-value normalization,
-                   and registry-backed did-you-mean diagnostics), live LLM Tool
-                   Schema generation, and Helm TAB completions. */
+                   universal `semantic-open-edb.v1` protocol, focused 3-tier tool
+                   schemas (`workspace_search`, `structural_query`, `constraint_solve`),
+                   and Helm TAB completions. */
+        }
+        part schemeRepairModule {
+            doc /* `scheme/repair/{types,objects,reader,diagnostics,desugar,ascent,ascent-validate,choice,ast-patch,funcs,config,interface}.ss`:
+                   independent modular Yuanxu `repair` module with opt-in `+ast-patch`
+                   feature. Owns bounded non-eval lexical healing, POO-registry
+                   similarity diagnostics (`DSL_REPAIR_DIAGNOSTIC`), high-level L1/L2
+                   DSL lowering (`find-impact`, `find-collisions`, `solve-placement`,
+                   `solve-resolve`), closed `:gerbil-ascent` and Dusa AST repair,
+                   and typed fail-closed `entity_locator` / `ast-style` -> ASP
+                   `POST /v1/ast/patch` request projection. */
         }
         part schemeSearchEngine {
             doc /* `scheme/search-engine/{types,objects,funcs,config,interface}.ss`
@@ -280,10 +320,82 @@ package MarlinSearchEngine {
                with negative mutation controls and Rust stateful reference-model
                property tests. */
     }
+    part <'MAR-SRCH-CM'> aiNativeSearchCountermodels {
+        doc /* Explicit anti-pattern countermodels separating human-oriented
+               search engines from AI-native autonomous search engines. Each
+               countermodel is backed by a verified Quint refutation trace in
+               `deterministic-engineering-qnt` and specifies the exact entry
+               point that resolves it across scenarios. */
+
+        part <'MAR-SRCH-CM01'> humanTopKModeCollapse : SearchAntiPatternCountermodel {
+            attribute redefines countermodelId = "CM01-HUMAN-TOPK-MODE-COLLAPSE";
+            attribute redefines paradigmMismatch = SearchConsumerParadigm::humanInteractive;
+            attribute redefines humanRationale = "Humans visually skim and paginate flat frequency- or path-sorted search results in an IDE.";
+            attribute redefines aiNativeFailureMode = "Bounded LLM windows truncate without paging; naive top-K collapses onto one dominant niche (e.g. 40 rows of `new()` hiding all other colliding symbols).";
+            attribute redefines quintCountermodelRef = "engineering.defense.search-diversity-exploration::stepModeCollapse (h.modeCollapseViolations > 0)";
+            attribute redefines recommendedEntryPoint = SearchEntryPointKind::l1RelationalAscent;
+        }
+
+        part <'MAR-SRCH-CM02'> humanIterativeGrepLoop : SearchAntiPatternCountermodel {
+            attribute redefines countermodelId = "CM02-HUMAN-ITERATIVE-GREP-LOOP";
+            attribute redefines paradigmMismatch = SearchConsumerParadigm::humanInteractive;
+            attribute redefines humanRationale = "Humans interactively chain cheap terminal ls/find/rg/cat commands and backtrack intuitively.";
+            attribute redefines aiNativeFailureMode = "Serial probe loops consume full-context LLM turns (7+ rounds), inflate latency/tokens, and trap agents in zero-hit dead-end retries without switching niches.";
+            attribute redefines quintCountermodelRef = "engineering.defense.search-diversity-exploration::stepDeadEndLoop (h.deadEndLoopViolations > 0)";
+            attribute redefines recommendedEntryPoint = SearchEntryPointKind::l1RelationalAscent;
+        }
+
+        part <'MAR-SRCH-CM03'> humanMonolithicToolAndUngroundedGuess : SearchAntiPatternCountermodel {
+            attribute redefines countermodelId = "CM03-MONOLITHIC-TOOL-AND-UNGROUNDED-GUESS";
+            attribute redefines paradigmMismatch = SearchConsumerParadigm::humanInteractive;
+            attribute redefines humanRationale = "Humans read comprehensive manuals and synthesize partial results mentally.";
+            attribute redefines aiNativeFailureMode = "Overloaded monolithic search tool schemas cause fast models to collapse onto L0 text grep and promote unverified claims without execution receipts.";
+            attribute redefines quintCountermodelRef = "engineering.defense.search-diversity-exploration::stepUngroundedPromotion (h.ungroundedPromotionViolations > 0)";
+            attribute redefines recommendedEntryPoint = SearchEntryPointKind::repairAstPatch;
+        }
+
+        part <'MAR-SRCH-CM04'> humanTextualDisambiguationAndUnboundedFrontier : SearchAntiPatternCountermodel {
+            attribute redefines countermodelId = "CM04-TEXTUAL-DISAMBIGUATION-AND-FRONTIER-EXPLOSION";
+            attribute redefines paradigmMismatch = SearchConsumerParadigm::humanInteractive;
+            attribute redefines humanRationale = "Humans manually filter mocks/tests via Go-To-Definition and reason over module architecture in working memory.";
+            attribute redefines aiNativeFailureMode = "Vector/lexical RAG cannot solve global forbidden constraints or cross-file callsite disambiguation; naive combinatorial search blows past state budgets.";
+            attribute redefines quintCountermodelRef = "engineering.defense.search-diversity-exploration::stepFrontierExplosion (h.frontierExplosionViolations > 0)";
+            attribute redefines recommendedEntryPoint = SearchEntryPointKind::l2DusaChoice;
+        }
+
+        part <'MAR-SRCH-CM05'> humanStaticCacheAndStaleEvidence : SearchAntiPatternCountermodel {
+            attribute redefines countermodelId = "CM05-STATIC-CACHE-AND-STALE-EVIDENCE";
+            attribute redefines paradigmMismatch = SearchConsumerParadigm::humanInteractive;
+            attribute redefines humanRationale = "Humans naturally discard outdated notes after editing code.";
+            attribute redefines aiNativeFailureMode = "AI-native loops silently reuse stale structural evidence across AST edits, ignore DE01 negative-domain expansion, serve epoch-drifted/unpinned KV cache conclusions, or follow retracted single-support chains.";
+            attribute redefines quintCountermodelRef = "engineering.defense.search-evidence-chain-integrity::{stepStaleStructuralReuse,stepStaleNegDomainReuse,stepKvCacheContamination,stepPoisonedEvidencePromotion,stepZombieEvidenceCascade}";
+            attribute redefines recommendedEntryPoint = SearchEntryPointKind::l2DusaChoice;
+        }
+    }
+
     requirement <'MAR-SRCH-R07'> highPerformanceQualification {
         doc /* Hot paths (source-index rank, graph-owner rank, Scheme ABI
                projection, Org port admission, and CAS storage round-trips) are
                measured by reproducible multi-scale Criterion benchmarks. */
+    }
+    requirement <'MAR-SRCH-R08'> modularRepairAndAstPatch {
+        doc /* Query lexical healing, POO-registry diagnostics, declarative L1/L2
+               lowering, closed Ascent/Dusa repair, and opt-in `+ast-patch`
+               request projection live in the dedicated modular `scheme/repair`
+               Yuanxu module with zero monolithic repair blobs or compatibility
+               shims. */
+    }
+    requirement <'MAR-SRCH-R09'> diverseAntiCollapseExploration {
+        doc /* AI-native search enforces niche-diverse bounded truncation
+               (MAP-Elites / MMR), dead-end backtracking, grounded witness
+               admission, and bounded choice frontiers, explicitly refuting
+               human-oriented countermodels CM01-CM04. */
+    }
+    requirement <'MAR-SRCH-R10'> bitemporalEvidenceAndKvFencing {
+        doc /* Promoted M1 search evidence chains distinguish comment-only edits
+               from AST structural drift, revalidate DE01 negative-domain
+               expansions, fence KV-cache epochs and pinned constraints, and
+               enforce ATMS multi-support poison retraction (refuting CM05). */
     }
 
     allocation ownNativeIntegration allocate nativeRustIntegration to target.aspSearchKernel;
@@ -295,4 +407,7 @@ package MarlinSearchEngine {
     allocation ownZeroSubmodule allocate zeroSubmodulePackaging to target.aspSearchKernel;
     allocation ownFormalVerification allocate formalAndStatefulVerification to target.verificationHarness;
     allocation ownBenchQualification allocate highPerformanceQualification to target.verificationHarness;
+    allocation ownModularRepair allocate modularRepairAndAstPatch to target.schemePolicyPlane;
+    allocation ownDiverseExploration allocate diverseAntiCollapseExploration to target.verificationHarness;
+    allocation ownEvidenceFencing allocate bitemporalEvidenceAndKvFencing to target.verificationHarness;
 }

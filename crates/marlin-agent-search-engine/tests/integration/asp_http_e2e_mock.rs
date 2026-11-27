@@ -349,7 +349,10 @@ pub(crate) fn run_self_contained_asp_http_forwarding_and_dynamic_o1_leverage(
         },
     )
     .expect("sync dynamic odin descriptor");
-    assert_eq!(synced.dynamic_descriptors_synced, 2);
+    // Scheme registry deduplication is idempotent: `rust_gen_fn` was already
+    // absorbed during cold hydration, so only the newly registered `odin`
+    // descriptor increments `dynamic_descriptors_synced`.
+    assert_eq!(synced.dynamic_descriptors_synced, 1);
 
     let completions = project_package_search_dsl_completions(
         runtime,
@@ -489,4 +492,215 @@ pub(crate) fn run_live_p3_closed_loop_patch_phase(
         "src/rust/closed_loop_demo.rs#fn:compute_weighted_score"
     );
     (contains_res.rows.len(), imports_res.rows.len())
+}
+
+/// Live S1 Dusa POPL 2025 verification over REAL `asp-rust` (`syn`) +
+/// `asp-gerbil-scheme` extracted AST entities and `calls` edges:
+/// executes BOTH verbatim Scenario B queries (callsite disambiguation +
+/// architecture tier constraint verification) and asserts exact world counts,
+/// `[deduction]` vs `[branch]` witnesses, test-mock exclusion, and jumpable paths.
+pub(crate) fn run_live_s1_dusa_scenario_b_phase(
+    runtime: &GerbilRuntime,
+    scheme_dir: &str,
+    endpoint: &AspForwardingEndpoint,
+) -> (usize, usize) {
+    use marlin_agent_search_engine::{SearchDslChoiceWitnessKind, SearchDslExecutionMode};
+
+    let tmp = TempDir::new().expect("scenario B temp workspace");
+    let ws = tmp.path();
+    fs::create_dir_all(ws.join("src")).expect("create src");
+    fs::create_dir_all(ws.join("tests")).expect("create tests");
+    fs::create_dir_all(ws.join("crates/marlin-agent-search-engine/src"))
+        .expect("create engine dir");
+    fs::create_dir_all(ws.join("scheme/search-dsl")).expect("create scheme dir");
+
+    fs::write(
+        ws.join("src/app.rs"),
+        "pub fn local_init() -> usize { 1 }\n\
+         pub fn run_app() -> usize {\n\
+             let a = local_init();\n\
+             let b = parse_payload();\n\
+             a + b\n\
+         }\n",
+    )
+    .expect("write src/app.rs");
+    fs::write(
+        ws.join("src/parser_a.rs"),
+        "pub fn parse_payload() -> usize { 10 }\n",
+    )
+    .expect("write src/parser_a.rs");
+    fs::write(
+        ws.join("src/parser_b.rs"),
+        "pub fn parse_payload() -> usize { 20 }\n",
+    )
+    .expect("write src/parser_b.rs");
+    fs::write(
+        ws.join("tests/mock_parser.rs"),
+        "pub fn parse_payload() -> usize { 99 }\n",
+    )
+    .expect("write tests/mock_parser.rs");
+
+    let snap_path = ws.join(".cache/index.snap");
+    let edb_cache_path = ws.join(".cache/open-edb.cache.json");
+    let mut index =
+        WorkspaceSearchIndex::open_or_build_cached(ws, &snap_path, WorkspaceIndexConfig::default());
+    let receipt = hydrate_workspace_from_asp_http(
+        runtime,
+        &mut index,
+        &AspHttpHydrationRequest {
+            scheme_dir,
+            endpoint,
+            cache_path: &edb_cache_path,
+            sync_new_descriptors: false,
+        },
+    )
+    .expect("hydrate scenario B.1 workspace via real asp-rust");
+    assert_eq!(receipt.failed_files, 0);
+
+    // Scenario B.1: VERBATIM same-name call-site disambiguation query
+    let query_b1 = "(search-choice-program
+      (use rust)
+      (choice resolve (callsite target))
+      (rule (closed (resolve ?call) (?def))
+            (ref-at ?call ?name)
+            (same-module-def ?call ?name ?def))
+      (rule (open (resolve ?call) ?def)
+            (ref-at ?call ?name)
+            (workspace-def ?name ?def))
+      (rule (closed (resolve ?call) ())
+            (resolve ?call ?def)
+            (in-test-file ?def))
+      (solve resolve state-budget: 32 provenance?: #t))";
+    let res_b1 = execute_package_search_dsl_structured(
+        runtime,
+        scheme_dir,
+        &SearchDslExecutionRequest {
+            index: &index,
+            query: query_b1,
+            output_limit: 8192,
+        },
+    )
+    .expect("live Dusa Scenario B.1");
+
+    assert_eq!(res_b1.mode, SearchDslExecutionMode::Choice);
+    assert_eq!(res_b1.relation, "resolve");
+    assert_eq!(
+        res_b1.choice_worlds.len(),
+        2,
+        "test mock must be excluded leaving 2 worlds (parser_a vs parser_b), got:\n{}",
+        res_b1.rendered_text
+    );
+    assert!(
+        !res_b1.rendered_text.contains("tests/mock_parser.rs"),
+        "forbidden test mock leaked into Dusa worlds:\n{}",
+        res_b1.rendered_text
+    );
+    assert!(
+        res_b1.choice_worlds[0]
+            .witnesses
+            .iter()
+            .any(|w| w.kind == SearchDslChoiceWitnessKind::Deduction),
+        "expected same-module Deduction witness in B.1:\n{}",
+        res_b1.rendered_text
+    );
+    assert!(
+        res_b1.choice_worlds[0]
+            .witnesses
+            .iter()
+            .any(|w| w.kind == SearchDslChoiceWitnessKind::Branch),
+        "expected cross-module Branch witness in B.1:\n{}",
+        res_b1.rendered_text
+    );
+    assert!(
+        res_b1
+            .rows
+            .iter()
+            .any(|r| r.path.as_deref() == Some("src/app.rs") && r.line.is_some()),
+        "Dusa callsite rows must project jumpable path + line for TUI Helm"
+    );
+
+    // Scenario B.2: Architecture tier boundary verification over real Rust + Scheme files
+    let tmp_b2 = TempDir::new().expect("scenario B.2 temp workspace");
+    let ws2 = tmp_b2.path();
+    fs::create_dir_all(ws2.join("crates/marlin-agent-search-engine/src/edb_bridge"))
+        .expect("create engine");
+    fs::create_dir_all(ws2.join("scheme/search-dsl")).expect("create scheme");
+    fs::create_dir_all(ws2.join("crates/marlin-agent-cli/src")).expect("create cli");
+    fs::write(
+        ws2.join("crates/marlin-agent-search-engine/src/edb_bridge/codec.rs"),
+        "pub fn decode() {}\n",
+    )
+    .expect("write codec.rs");
+    fs::write(
+        ws2.join("scheme/search-dsl/funcs.ss"),
+        "(def (eval-query x) x)\n",
+    )
+    .expect("write funcs.ss");
+    fs::write(
+        ws2.join("crates/marlin-agent-cli/src/main.rs"),
+        "pub fn main() {}\n",
+    )
+    .expect("write main.rs");
+    let mut index2 = WorkspaceSearchIndex::open_or_build_cached(
+        ws2,
+        &ws2.join(".cache/index.snap"),
+        WorkspaceIndexConfig::default(),
+    );
+    let _ = hydrate_workspace_from_asp_http(
+        runtime,
+        &mut index2,
+        &AspHttpHydrationRequest {
+            scheme_dir,
+            endpoint,
+            cache_path: &ws2.join(".cache/open-edb.cache.json"),
+            sync_new_descriptors: false,
+        },
+    )
+    .expect("hydrate scenario B.2 workspace");
+
+    let query_b2 = "(search-choice-program
+      (use rust scheme)
+      (choice tier (mod level))
+      (rule (closed (tier ?m) (resident provider)) (module-in-scope ?m))
+      (rule (closed (tier ?m) ()) (hot-path-module ?m) (tier ?m 'provider))
+      (solve tier state-budget: 64 provenance?: #t))";
+    let res_b2 = execute_package_search_dsl_structured(
+        runtime,
+        scheme_dir,
+        &SearchDslExecutionRequest {
+            index: &index2,
+            query: query_b2,
+            output_limit: 8192,
+        },
+    )
+    .expect("live Dusa Scenario B.2");
+    assert_eq!(
+        res_b2.choice_worlds.len(),
+        2,
+        "2 hot-path modules forced resident + 1 cli module branching => 2 worlds, got:\n{}",
+        res_b2.rendered_text
+    );
+    for world in &res_b2.choice_worlds {
+        assert!(
+            world.bindings.iter().any(|b| {
+                b.first().map(String::as_str)
+                    == Some("crates/marlin-agent-search-engine/src/edb_bridge/codec.rs")
+                    && b.get(1).map(String::as_str) == Some("resident")
+            }),
+            "hot-path Rust engine module must be forced resident in all worlds"
+        );
+        assert!(
+            world.bindings.iter().any(|b| {
+                b.first().map(String::as_str) == Some("scheme/search-dsl/funcs.ss")
+                    && b.get(1).map(String::as_str) == Some("resident")
+            }),
+            "hot-path Scheme search-dsl module must be forced resident in all worlds"
+        );
+    }
+
+    println!(
+        "\n--- LIVE DUSA SCENARIO B.1 OUTPUT ---\n{}\n--- LIVE DUSA SCENARIO B.2 OUTPUT ---\n{}",
+        res_b1.rendered_text, res_b2.rendered_text
+    );
+    (res_b1.choice_worlds.len(), res_b2.choice_worlds.len())
 }

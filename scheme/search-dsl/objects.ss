@@ -44,13 +44,21 @@
        (name string?) (line integer?)))
     (relation edge
       ((src string?) (dst string?) (rel string?) (path string?) (line integer?)))
-    (relation attr ((id string?) (key string?) (val string?)))))
+    (relation attr ((id string?) (key string?) (val string?)))
+    (relation is_test_path ((path string?)))
+    (relation prod_path ((path string?)))
+    (relation path_has_prefix ((path string?) (prefix string?)))
+    (relation path_contains ((path string?) (needle string?)))
+    (relation name_contains ((name string?) (needle string?)))
+    (relation name_has_prefix ((name string?) (prefix string?)))
+    (relation symbol_ref ((name string?) (path string?) (line integer?)))))
 
 ;;; Universal cross-language General Language Ontology derived over Open EDB.
 ;;; Every language shares these general semantic categories; language-specific
 ;;; constructs extend them cleanly through POO `.mix`.
 (def +general-language-ontology-fragment+
   (ascent-fragment
+    (relation file ((id integer?) (lang string?) (path string?)))
     (relation entity
       ((id string?) (file_id integer?) (lang string?)
        (kind string?) (language_kind string?)
@@ -59,6 +67,13 @@
       ((src string?) (dst string?) (rel string?) (path string?) (line integer?)))
     (relation attr
       ((id string?) (key string?) (val string?)))
+    (relation is_test_path ((path string?)))
+    (relation prod_path ((path string?)))
+    (relation path_has_prefix ((path string?) (prefix string?)))
+    (relation path_contains ((path string?) (needle string?)))
+    (relation name_contains ((name string?) (needle string?)))
+    (relation name_has_prefix ((name string?) (prefix string?)))
+    (relation symbol_ref ((name string?) (path string?) (line integer?)))
     (relation callable
       ((id string?) (file_id integer?) (lang string?) (name string?) (line integer?)))
     (relation type_decl
@@ -81,12 +96,22 @@
       ((src string?) (dst string?) (path string?) (line integer?)))
     (relation calls_edge
       ((src string?) (dst string?) (path string?) (line integer?)))
+    (relation calls_symbol
+      ((caller_name string?) (callee_name string?) (path string?) (line integer?)))
     (relation implements_edge
       ((src string?) (dst string?) (path string?) (line integer?)))
+    (relation impl_trait
+      ((type_name string?) (trait_name string?) (path string?) (line integer?)))
     (relation entity_locator
       ((id string?) (locator string?)))
     (relation depends_on
       ((src string?) (dst string?)))
+    (relation verified_tier
+      ((mod string?) (level string?)))
+    (relation verified_resolution
+      ((callsite string?) (target string?)))
+    (relation verified_evidence
+      ((target string?) (val string?)))
 
     ((callable id f lang name line) <-- (entity id f lang "function" _ name line))
     ((callable id f lang name line) <-- (entity id f lang "method" _ name line))
@@ -109,8 +134,27 @@
     ((contains_edge parent child path line) <-- (edge parent child "contains" path line))
     ((imports_edge src dst path line) <-- (edge src dst "imports" path line))
     ((calls_edge src dst path line) <-- (edge src dst "calls" path line))
+    ((calls_symbol caller_name callee_name path line)
+     <-- (edge src_id dst_id "calls" path line)
+         (entity src_id _ _ _ _ caller_name _)
+         (entity dst_id _ _ _ _ callee_name _))
+    ((calls_symbol caller_name dst_name path line)
+     <-- (edge src_id dst_name "calls" path line)
+         (entity src_id _ _ _ _ caller_name _)
+         (not (entity dst_name _ _ _ _ _ _)))
+    ((calls_symbol src_name dst_name path line)
+     <-- (edge src_name dst_name "calls" path line)
+         (not (entity src_name _ _ _ _ _ _))
+         (not (entity dst_name _ _ _ _ _ _)))
     ((implements_edge src dst path line) <-- (edge src dst "implements" path line))
+    ((impl_trait name trait_name path line)
+     <-- (entity id f _ _ _ name line) (attr id "implements" trait_name) (file f _ path))
+    ((impl_trait name trait_name path line)
+     <-- (entity id f _ _ _ name line) (attr id "trait" trait_name) (file f _ path))
     ((entity_locator id loc) <-- (attr id "locator" loc))
+    ((verified_tier mod level) <-- (attr mod "verified_tier" level))
+    ((verified_resolution callsite target) <-- (attr callsite "verified_resolution" target))
+    ((verified_evidence target val) <-- (attr target "verified_evidence" val))
     ((depends_on src dst) <-- (edge src dst "imports" _ _))
     ((depends_on src dst) <-- (edge src dst "calls" _ _))
     ((depends_on src dst) <-- (edge src dst "implements" _ _))
@@ -119,14 +163,82 @@
 (.def BaseSearchLanguageFragment.
   languages: '()
   language-contracts: '()
+  protocol-json-schemas: '()
   ascent-fragments: (list +open-edb-base-fragment+)
   relation-meta:
-  '((file   "edb" "file"   _ "Open EDB file fact (id, lang, path)")
-    (entity "edb" "entity" _ "Open EDB entity fact (id, file_id, lang, kind, language_kind, name, line)")
-    (edge   "edb" "edge"   _ "Open EDB directed relation edge (src, dst, rel, path, line)")
-    (attr   "edb" "attr"   _ "Open EDB extensible attribute facet (id, key, val)"))
+  '((file            "edb" "file"            _ "Open EDB file fact (id, lang, path)")
+    (entity          "edb" "entity"          _ "Open EDB entity fact (id, file_id, lang, kind, language_kind, name, line)")
+    (edge            "edb" "edge"            _ "Open EDB directed relation edge (src, dst, rel, path, line)")
+    (attr            "edb" "attr"            _ "Open EDB extensible attribute facet (id, key, val)")
+    (is_test_path    "edb" "is_test_path"    _ "True when file path is a test, mock, or fixture file (path)")
+    (prod_path       "edb" "prod_path"       _ "True when file path is production code, not test/mock/fixture (path)")
+    (path_has_prefix "edb" "path_has_prefix" _ "True when file path starts with literal prefix (path, prefix)")
+    (path_contains   "edb" "path_contains"   _ "True when file path contains literal substring (path, needle)")
+    (name_contains   "edb" "name_contains"   _ "Case-insensitive entity name substring match (name, needle)")
+    (name_has_prefix "edb" "name_has_prefix" _ "Case-insensitive entity name prefix match (name, prefix)")
+    (symbol_ref      "edb" "symbol_ref"      _ "Exact word-boundary symbol reference in scoped RAM files (name, path, line)"))
   syntax-forms:
-  '(("(ascent-fragment ...)"
+  '(("(find-impact ...)"
+     "ascent"
+     "(find-impact \"Symbol\" path-prefix: \"crates/\" exclude-tests?: #f limit: 60)"
+     "ascent"
+     "One-shot def/caller/impl/import/ref blast radius (100% RAM coverage, prod vs test)"
+     "(find-impact \"SymbolName\" path-prefix: \"crates/\" limit: 60)")
+    ("(find-symbols ...)"
+     "ascent"
+     "(find-symbols lang: \"rust\" kind: \"struct\" name-contains: \"...\" exclude-tests?: #t limit: 60)"
+     "ascent"
+     "Polyglot case-insensitive symbol discovery across code languages"
+     "(find-symbols lang: \"rust\" kind: \"struct\" exclude-tests?: #t limit: 60)")
+    ("(find-collisions ...)"
+     "ascent"
+     "(find-collisions lang: \"rust\" kind: \"struct\" path-prefix: \"crates/\" min-files: 2 exclude-tests?: #t limit: 40)"
+     "ascent"
+     "Cross-file duplicate symbol detector with niche-diverse sampling"
+     "(find-collisions lang: \"rust\" kind: \"struct\" path-prefix: \"crates/\" exclude-tests?: #t limit: 40)")
+    ("(find-callers ...)"
+     "ascent"
+     "(find-callers \"fn_name\" path-prefix: \"crates/\" exclude-tests?: #t limit: 40 context: 2)"
+     "ascent"
+     "Structural call-graph reverse lookup for callers of a symbol"
+     "(find-callers \"target_fn\" path-prefix: \"crates/\" exclude-tests?: #t limit: 40)")
+    ("(find-impls ...)"
+     "ascent"
+     "(find-impls \"TraitName\" path-prefix: \"crates/\" exclude-tests?: #t limit: 40)"
+     "ascent"
+     "Find all types implementing a trait or interface"
+     "(find-impls \"TraitName\" path-prefix: \"crates/\" exclude-tests?: #t limit: 40)")
+    ("(brute-search ...)"
+     "parser"
+     "(brute-search \"pattern\" lang: \"rust\" path-prefix: \"crates/\" exclude-tests?: #t context: 2 limit: 32)"
+     "l0-ram"
+     "Sub-millisecond pure-Rust RAM trigram/BM25/regex text search"
+     "(brute-search \"pattern\" lang: \"rust\" path-prefix: \"crates/\" exclude-tests?: #t limit: 32)")
+    ("(file-outline ...)"
+     "parser"
+     "(file-outline \"path/\" lang: \"rust\" kind: \"any\" exclude-tests?: #t limit: 80)"
+     "l0-ram"
+     "Zero-I/O RAM AST symbol skeleton with exact line numbers"
+     "(file-outline \"crates/\" lang: \"rust\" kind: \"struct\" exclude-tests?: #t limit: 80)")
+    ("(read-file ...)"
+     "parser"
+     "(read-file \"path/to/file.rs\" symbol: \"Name\" context: 25)"
+     "l0-ram"
+     "Zero-I/O RAM file reader anchored by symbol name or line range"
+     "(read-file \"path/to/file.rs\" symbol: \"Name\" context: 25)")
+    ("(solve-placement ...)"
+     "dusa"
+     "(solve-placement path-prefix: \"crates/.../src/\" module-limit: 6 choices: (resident provider) forbid-hot-path: provider state-budget: 64)"
+     "dusa"
+     "Dusa finite-choice architecture placement solver with forced/free provenance"
+     "(solve-placement path-prefix: \"crates/marlin-agent-search-engine/src/\" module-limit: 6 choices: (resident provider) forbid-hot-path: provider state-budget: 64)")
+    ("(solve-resolve ...)"
+     "dusa"
+     "(solve-resolve path-prefix: \"crates/.../src/\" module-limit: 6 exclude-tests?: #t state-budget: 32)"
+     "dusa"
+     "Dusa finite-choice multi-definition callsite disambiguator"
+     "(solve-resolve path-prefix: \"crates/marlin-agent-search-engine/src/\" module-limit: 6 exclude-tests?: #t state-budget: 32)")
+    ("(ascent-fragment ...)"
      "ascent"
      "(ascent-fragment (relation answer ((path string?) (name string?))) ((answer path name) <-- ...))"
      "ascent"
@@ -138,6 +250,12 @@
      "ascent"
      "Real :gerbil-ascent Datalog program (recursion, stratified negation, guards)"
      "(ascent (relation reach ((a string?) (b string?))) ((reach a b) <-- (edge a b _ _ _)) ((reach a c) <-- (reach a b) (edge b c _ _ _)))")
+    ("(search-choice-program ...)"
+     "dusa"
+     "(search-choice-program (use rust) (choice r (k v)) (rule (closed ...) ...) (solve r state-budget: 32 provenance?: #t))"
+     "dusa"
+     "High-level Dusa POPL 2025 Search + Disambiguation + Architecture Constraint Solver with provenance witnesses"
+     "(search-choice-program (use rust) (choice tier (mod level)) (rule (closed (tier ?m) (resident provider)) (module-in-scope ?m)) (rule (closed (tier ?m) ()) (hot-path-module ?m) (tier ?m 'provider)) (solve tier state-budget: 64 provenance?: #t))")
     ("(relational-choice-program ...)"
      "dusa"
      "(relational-choice-program (choice r (k v)) (rule (closed ...) ...) (limits ...))"
@@ -188,10 +306,15 @@
       (test_decl       "general"    "test_decl"    _ "General Ontology test case declaration")
       (contains_edge   "graph"      "contains"     _ "Structural parent-to-child AST containment edge (parent, child, path, line)")
       (imports_edge    "graph"      "imports"      _ "Module/file import dependency edge (src, dst, path, line)")
-      (calls_edge      "graph"      "calls"        _ "Directed call graph edge (src, dst, path, line)")
+      (calls_edge      "graph"      "calls"        _ "Directed call graph edge (src_id, dst_id, path, line)")
+      (calls_symbol    "graph"      "calls_symbol" _ "Symbol-level call graph edge (caller_name, callee_name, path, line)")
       (implements_edge "graph"      "implements"   _ "Trait/interface implementation edge (src, dst, path, line)")
-      (entity_locator  "graph-pair" "locator"      _ "Authoritative AST patch locator for an entity (id, locator)")
-      (depends_on      "graph-pair" "depends_on"   _ "Transitive dependency closure over imports, calls, and implements"))))
+      (impl_trait      "graph"      "impl_trait"   _ "Trait/interface implementation relation (type_name, trait_name, path, line)")
+      (entity_locator      "graph-pair" "locator"             _ "Authoritative AST patch locator for an entity (id, locator)")
+      (verified_tier       "graph-pair" "verified_tier"       _ "Admitted M1 Scenario B architecture tier evidence (mod, level)")
+      (verified_resolution "graph-pair" "verified_resolution" _ "Admitted M1 Scenario B callsite disambiguation evidence (callsite, target)")
+      (verified_evidence   "graph-pair" "verified_evidence"   _ "Admitted M1 search evidence chain fact (target, val)")
+      (depends_on          "graph-pair" "depends_on"          _ "Transitive dependency closure over imports, calls, and implements"))))
 
 (defasp-language RustSearchFragment.
   (languages rust)
@@ -383,6 +506,6 @@
   (seal-object! SearchLanguageRegistry.))
 
 (defsearch-tool-spec WorkspaceSearchToolSpecValue
-  (forms ascent-fragment ascent relational-choice-program)
+  (forms brute-search file-outline read-file ascent-fragment ascent search-choice-program relational-choice-program)
   (edb file entity edge attr)
   (registry SearchLanguageRegistryValue))

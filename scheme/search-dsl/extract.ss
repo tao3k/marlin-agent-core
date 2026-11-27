@@ -95,6 +95,36 @@
      (extract-import-targets (cadr spec)))
     (else '())))
 
+(def +scheme-call-ignore-heads+
+  '(quote quasiquote unquote unquote-splicing lambda fn case-lambda
+    let let* letrec letrec* let-values let*-values
+    if cond case when unless and or not begin do
+    set! def define defstruct defclass defmethod defsyntax defrules
+    import export module begin-foreign .def .o .mix .get .ref .slot?
+    parameterize with-catch values car cdr cadr caddr cdddr cons list vector
+    null? pair? symbol? string? number? integer? exact-integer? boolean? eq? eqv? equal?
+    + - * / = < <= > >=))
+
+(def (collect-scheme-call-edges owner form path line edges-box seen)
+  (when (pair? form)
+    (let ((head (car form)))
+      (cond
+        ((eq? head 'quote) #f)
+        ((and (symbol? head) (not (memq head +scheme-call-ignore-heads+)))
+         (let ((callee (symbol->string head)))
+           (unless (or (string=? callee owner) (hash-get seen callee))
+             (hash-put! seen callee #t)
+             (set-box! edges-box
+               (cons (make-edge-row owner "calls" callee path line)
+                     (unbox edges-box)))))
+         (for-each
+           (lambda (sub) (collect-scheme-call-edges owner sub path line edges-box seen))
+           (cdr form)))
+        (else
+         (for-each
+           (lambda (sub) (collect-scheme-call-edges owner sub path line edges-box seen))
+           form))))))
+
 (def (collect-mix-edges owner form path line edges-box)
   (when (pair? form)
     (when (and (eq? (car form) '.mix) (pair? (cdr form)))
@@ -145,7 +175,8 @@
                   (set-box! entities-box
                     (cons (make-entity-row path line name "scheme" "function" "def_proc" '())
                           (unbox entities-box)))
-                  (collect-mix-edges name (cdr rest) path line edges-box)))
+                  (collect-mix-edges name (cdr rest) path line edges-box)
+                  (collect-scheme-call-edges name (cdr rest) path line edges-box (make-hash-table))))
                ((symbol? sig)
                 (let ((name (symbol->string sig)))
                   (set-box! entities-box

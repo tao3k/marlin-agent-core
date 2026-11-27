@@ -112,7 +112,7 @@ gitops-context-symbolic-gate apalache="apalache-mc":
     grep -F "Checker reports no error up to computation length 16" "$module-apalache.log"
   done
 
-# MAR-SRCH: converged native search engine CAS publication, Scheme ABI admission, and edge custody.
+# MAR-SRCH: converged native search engine CAS publication, Scheme ABI admission, edge custody, and Scenario B evidence-chain integrity.
 search-engine-model-gate:
   quint typecheck dev/quint/search-engine.qnt
   quint test dev/quint/search-engine.qnt --main=searchGenerationPublication
@@ -122,6 +122,10 @@ search-engine-model-gate:
   quint run dev/quint/search-engine.qnt --main=searchPlanAbiAdmission --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
   quint run dev/quint/search-engine.qnt --main=searchTopologyEdgeCustody --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
   @for control in searchGenerationPublication:publishWithoutBlobMutation searchGenerationPublication:bypassCasMutation searchGenerationPublication:nonMonotonicRevisionMutation searchPlanAbiAdmission:bypassAdmissionMutation searchPlanAbiAdmission:staleGenerationMutation searchTopologyEdgeCustody:crossGenerationLeakMutation searchTopologyEdgeCustody:duplicateCountMutation; do result=0; output=$(quint run dev/quint/search-engine.qnt --main="${control%:*}" --step="${control#*:}" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
+  quint typecheck dev/quint/search-evidence-chain.qnt
+  quint test dev/quint/search-evidence-chain.qnt --main=searchEvidenceChainIntegrity
+  quint run dev/quint/search-evidence-chain.qnt --main=searchEvidenceChainIntegrity --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  @for control in staleStructuralReuseMutation staleNegDomainReuseMutation kvCacheContaminationMutation poisonedPromotionMutation zombieCascadeMutation; do result=0; output=$(quint run dev/quint/search-evidence-chain.qnt --main=searchEvidenceChainIntegrity --step="$control" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
 
 # MAR-HELM: Modern Helm epoch fencing, closed-session immunity, and mark-pruning safety.
 ui-helm-model-gate:
@@ -481,3 +485,109 @@ governance-gate: scheme-build
   cargo test -p marlin-gerbil-scheme --test governance_policy_vm
   GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" cargo build -p marlin-agent-core --features linked-scheme-host --bin marlin-scheme-host-aot
   just scheme-host-aot-smoke target/debug/marlin-scheme-host-aot
+
+# DEV: Launch native Desktop UI connected to the local Rust host (forwards -config and any extra flags).
+dev-desktop *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  root="$PWD"
+  resolved=()
+  expect_path=0
+  for arg in {{args}}; do
+    if [[ "$expect_path" -eq 1 ]]; then
+      expect_path=0
+      if [[ "$arg" != /* && -e "$root/$arg" ]]; then
+        resolved+=("$(cd "$(dirname "$root/$arg")" && pwd)/$(basename "$arg")")
+      else
+        resolved+=("$arg")
+      fi
+      continue
+    fi
+    case "$arg" in
+      -config|-app-server|-ca|-cert|-key|-turso|-recovery-file|-prefs-file)
+        resolved+=("$arg")
+        expect_path=1
+        ;;
+      -config=*|-app-server=*|-ca=*|-cert=*|-key=*|-turso=*|-recovery-file=*|-prefs-file=*)
+        flag="${arg%%=*}"
+        val="${arg#*=}"
+        if [[ "$val" != /* && -e "$root/$val" ]]; then
+          val="$(cd "$(dirname "$root/$val")" && pwd)/$(basename "$val")"
+        fi
+        resolved+=("$flag=$val")
+        ;;
+      *)
+        resolved+=("$arg")
+        ;;
+    esac
+  done
+  cd "$root/.data/marlin-ui"
+  CORE="$root" exec just dev-desktop ${resolved[@]+"${resolved[@]}"}
+
+# DEV: Launch iOS Companion dev shell connected to the local Rust host (forwards -config and any extra flags).
+dev-ios *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  root="$PWD"
+  resolved=()
+  expect_path=0
+  for arg in {{args}}; do
+    if [[ "$expect_path" -eq 1 ]]; then
+      expect_path=0
+      if [[ "$arg" != /* && -e "$root/$arg" ]]; then
+        resolved+=("$(cd "$(dirname "$root/$arg")" && pwd)/$(basename "$arg")")
+      else
+        resolved+=("$arg")
+      fi
+      continue
+    fi
+    case "$arg" in
+      -config|-app-server|-ca|-cert|-key|-recovery-file|-prefs-file)
+        resolved+=("$arg")
+        expect_path=1
+        ;;
+      -config=*|-app-server=*|-ca=*|-cert=*|-key=*|-recovery-file=*|-prefs-file=*)
+        flag="${arg%%=*}"
+        val="${arg#*=}"
+        if [[ "$val" != /* && -e "$root/$val" ]]; then
+          val="$(cd "$(dirname "$root/$val")" && pwd)/$(basename "$val")"
+        fi
+        resolved+=("$flag=$val")
+        ;;
+      *)
+        resolved+=("$arg")
+        ;;
+    esac
+  done
+  cd "$root/.data/marlin-ui"
+  CORE="$root" exec just dev-ios ${resolved[@]+"${resolved[@]}"}
+
+# Build native iOS .app bundle (`ios/simulator` or `ios`) via MyGo Swift/Metal host.
+build-ios platform="ios/simulator" out=".data/marlin-ui/dist/ios":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  root="$PWD"
+  out="{{out}}"
+  if [[ "$out" != /* ]]; then
+    out="$root/$out"
+  fi
+  cd "$root/.data/marlin-ui"
+  exec just build-ios "{{platform}}" "$out"
+
+# DEV: Live-reload native iOS .app in Xcode iOS Simulator or connected iPhone.
+dev-ios-sim device="":
+  cd .data/marlin-ui && exec just dev-ios-sim "{{device}}"
+
+# Run cross-language G2 AI anti-defensive-programming audit across all production Rust + Scheme files.
+audit-g2 *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  CLI="${DE_AGENT_DEFENSE_AUDIT_CLI:-$HOME/ghq/github.com/hardenedlinux/deterministic-engineering-qnt/packages/agent-defense-audit/src/agent-defense-audit.ts}"
+  if [ ! -f "$CLI" ]; then
+    echo "ERROR: agent-defense-audit CLI not found at $CLI (set DE_AGENT_DEFENSE_AUDIT_CLI)" >&2
+    exit 2
+  fi
+  if [ "$#" -gt 0 ]; then
+    exec bun "$CLI" "$@"
+  fi
+  exec bun "$CLI" --dir crates scheme --lang=rust,scheme --exclude-tests

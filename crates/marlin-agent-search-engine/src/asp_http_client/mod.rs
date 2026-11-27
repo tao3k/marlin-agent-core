@@ -8,6 +8,7 @@
 mod domain_types;
 mod patch_client;
 mod protocol_types;
+mod schema_completions;
 mod sync;
 mod transport;
 
@@ -26,17 +27,23 @@ pub use protocol_types::{
     DynamicProviderCapabilities, DynamicProviderDslPackRegistration,
     DynamicProviderRegistrationAck, DynamicProviderRegistrationManifest,
     DynamicProviderRegistrationRequest, DynamicProviderSyntaxSurface, DynamicProviderTransport,
-    DynamicSpecialRelationSpec, ForwardedDslPack, ForwardedKindMapping, ForwardedProviderCatalog,
-    ForwardedProviderEnvelope, ForwardedProviderManifest,
+    DynamicSpecialRelationSpec, ForwardedDslPack, ForwardedKindMapping, ForwardedProjectSurface,
+    ForwardedProviderCatalog, ForwardedProviderEnvelope, ForwardedProviderManifest,
+    ForwardedSpecialExtension,
+};
+pub use schema_completions::{
+    merge_completion_catalogs, project_json_schema_completions,
+    project_provider_catalog_completions, project_provider_envelope_completions,
+};
+pub use sync::{
+    AspChunkedHydrationRequest, hydrate_workspace_chunked_via_asp_http,
+    hydrate_workspace_pending_via_asp_http, register_linked_dynamic_language_descriptor,
+    sync_linked_asp_provider_descriptors,
 };
 #[cfg(not(feature = "linked-ui"))]
 pub use sync::{
     hydrate_workspace_from_asp_http, register_package_dynamic_language_descriptor,
     sync_package_asp_provider_descriptors,
-};
-pub use sync::{
-    hydrate_workspace_pending_via_asp_http, register_linked_dynamic_language_descriptor,
-    sync_linked_asp_provider_descriptors,
 };
 pub use transport::{
     fetch_asp_provider_catalog, register_dynamic_provider_on_asp, shutdown_asp_gateway,

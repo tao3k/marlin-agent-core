@@ -269,8 +269,8 @@ fn converged_helm_supports_rg_regex_asp_fuzzy_path_tantivy_bm25_and_typo_fuzzy()
         rg_overlay.search_candidates.iter().any(|c| c
             .display
             .contains("crates/marlin-agent-search-engine/src/engine.rs")
-            && c.badge.contains("rg-regex")),
-        "expected rg-regex hit on engine.rs, got {:?}",
+            && c.badge.is_empty()),
+        "expected clean rg-regex hit on engine.rs, got {:?}",
         rg_overlay.search_candidates
     );
 
@@ -313,8 +313,8 @@ fn converged_helm_supports_rg_regex_asp_fuzzy_path_tantivy_bm25_and_typo_fuzzy()
         bm25_overlay.search_candidates.iter().any(|c| c
             .display
             .contains("crates/marlin-agent-search-engine/src/projection.rs")
-            && c.badge.contains("bm25")),
-        "expected Tantivy BM25 hit on projection.rs, got {:?}",
+            && c.badge.is_empty()),
+        "expected clean Tantivy BM25 hit on projection.rs, got {:?}",
         bm25_overlay.search_candidates
     );
 
@@ -336,8 +336,8 @@ fn converged_helm_supports_rg_regex_asp_fuzzy_path_tantivy_bm25_and_typo_fuzzy()
             && typo_overlay
                 .search_candidates
                 .iter()
-                .any(|c| c.badge.contains("fuzzy")),
-        "expected Tantivy FuzzyTermQuery hit for typo `playbok`, got {:?}",
+                .all(|c| c.badge.is_empty()),
+        "expected clean Tantivy FuzzyTermQuery hit for typo `playbok`, got {:?}",
         typo_overlay.search_candidates
     );
 }
@@ -454,9 +454,9 @@ fn helm_symbol_and_graph_axes_locate_definitions_callers_and_action_transformer_
         sym_overlay.search_candidates.iter().any(|c| c
             .display
             .contains("crates/marlin-agent-search-engine/src/engine.rs:")
-            && c.badge.contains("symbol")
+            && c.badge.is_empty()
             && c.primary_symbol.as_deref() == Some("marlin_search_engine")),
-        "expected @sym: hit on engine.rs, got {:?}",
+        "expected clean @sym: hit on engine.rs, got {:?}",
         sym_overlay.search_candidates
     );
 
@@ -478,9 +478,9 @@ fn helm_symbol_and_graph_axes_locate_definitions_callers_and_action_transformer_
             .iter()
             .any(
                 |c| c.path.as_deref() == Some("crates/marlin-agent-search-engine/src/engine.rs")
-                    && c.badge.contains("graph")
+                    && c.badge == "defines:marlin_search_engine"
             ),
-        "expected definer in @graph: results, got {:?}",
+        "expected definer relation badge in @graph: results, got {:?}",
         sym_overlay.search_candidates
     );
     assert!(
@@ -604,6 +604,7 @@ fn helm_live_ascent_dsl_mode_projects_rows_ram_preview_repair_badge_and_citation
                 mode: marlin_agent_search_engine::SearchDslExecutionMode::Ascent,
                 relation: "answer".to_owned(),
                 repairs: vec!["synthesize-head-relation".to_owned()],
+                canonical_query: None,
                 rows: vec![marlin_agent_search_engine::SearchDslStructuredRow {
                     cells: vec![
                         "src/kernel.rs".to_owned(),
@@ -614,6 +615,8 @@ fn helm_live_ascent_dsl_mode_projects_rows_ram_preview_repair_badge_and_citation
                     path: Some("src/kernel.rs".to_owned()),
                     line: Some(2),
                 }],
+                choice_worlds: Vec::new(),
+                budget_exhausted: None,
                 rendered_text: "mode: ascent\n".to_owned(),
             })
         });
@@ -679,9 +682,11 @@ fn helm_live_ascent_dsl_mode_projects_rows_ram_preview_repair_badge_and_citation
     );
 
     // Main-thread AOT error delivery clears stale candidates and surfaces fail-closed diagnostic.
-    overlay.apply_dsl_result(Err(
-        "unknown :gerbil-ascent relation 'rust_function'; did you mean: rust_fn?".to_owned(),
-    ));
+    let epoch = overlay.epoch;
+    overlay.apply_dsl_result(
+        epoch,
+        Err("unknown :gerbil-ascent relation 'rust_function'; did you mean: rust_fn?".to_owned()),
+    );
     assert!(overlay.search_candidates.is_empty());
     assert!(
         overlay
@@ -689,4 +694,491 @@ fn helm_live_ascent_dsl_mode_projects_rows_ram_preview_repair_badge_and_citation
             .as_deref()
             .is_some_and(|e| e.contains("did you mean: rust_fn"))
     );
+}
+
+#[test]
+fn helm_dusa_multi_world_provenance_preview_and_preset_cycling() {
+    use marlin_agent_search_engine::{
+        SearchDslChoiceRuleKind, SearchDslChoiceWitness, SearchDslChoiceWitnessKind,
+        SearchDslChoiceWorld, SearchDslExecutionMode, SearchDslStructuredResult,
+        SearchDslStructuredRow,
+    };
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let workspace = tempfile::tempdir().expect("temp workspace");
+    std::fs::create_dir_all(workspace.path().join("src")).unwrap();
+    std::fs::write(
+        workspace.path().join("src/app.rs"),
+        "pub fn local_init() -> usize { 1 }\n\
+         pub fn run_app() -> usize {\n\
+             let a = local_init();\n\
+             let b = parse_payload();\n\
+             a + b\n\
+         }\n",
+    )
+    .unwrap();
+
+    let cfg = scheme_like_config();
+    let raw_index = WorkspaceSearchIndex::build_with_config(workspace.path(), cfg.clone());
+    let generation = raw_index.generation_digest().as_str().to_owned();
+    let warm_index = wrap_index(raw_index);
+
+    let mock_runner: marlin_agent_search_engine::SearchDslStructuredRunner = Arc::new(
+        move |_idx, _query, _limit| {
+            Ok(SearchDslStructuredResult {
+                generation_digest: generation.clone(),
+                elapsed_micros: 24,
+                indexed_files: 4,
+                matched_files: 4,
+                mode: SearchDslExecutionMode::Choice,
+                relation: "resolve".to_owned(),
+                repairs: Vec::new(),
+                canonical_query: None,
+                rows: vec![
+                    SearchDslStructuredRow {
+                        cells: vec![
+                            "src/app.rs#fn:run_app@L3:local_init".to_owned(),
+                            "src/app.rs#fn:local_init".to_owned(),
+                        ],
+                        display: "[W#1] src/app.rs#fn:run_app@L3:local_init -> src/app.rs#fn:local_init  [deduction: closed]".to_owned(),
+                        path: Some("src/app.rs".to_owned()),
+                        line: Some(3),
+                    },
+                    SearchDslStructuredRow {
+                        cells: vec![
+                            "src/app.rs#fn:run_app@L4:parse_payload".to_owned(),
+                            "src/parser_a.rs#fn:parse_payload".to_owned(),
+                        ],
+                        display: "[W#1] src/app.rs#fn:run_app@L4:parse_payload -> src/parser_a.rs#fn:parse_payload  [branch: open]".to_owned(),
+                        path: Some("src/app.rs".to_owned()),
+                        line: Some(4),
+                    },
+                ],
+                choice_worlds: vec![
+                    SearchDslChoiceWorld {
+                        world_index: 1,
+                        bindings: vec![
+                            vec![
+                                "src/app.rs#fn:run_app@L3:local_init".to_owned(),
+                                "src/app.rs#fn:local_init".to_owned(),
+                            ],
+                            vec![
+                                "src/app.rs#fn:run_app@L4:parse_payload".to_owned(),
+                                "src/parser_a.rs#fn:parse_payload".to_owned(),
+                            ],
+                        ],
+                        witnesses: vec![
+                            SearchDslChoiceWitness {
+                                kind: SearchDslChoiceWitnessKind::Deduction,
+                                fact: vec![
+                                    "resolve".to_owned(),
+                                    "src/app.rs#fn:run_app@L3:local_init".to_owned(),
+                                    "src/app.rs#fn:local_init".to_owned(),
+                                ],
+                                rule_kind: SearchDslChoiceRuleKind::Closed,
+                                premises: vec![
+                                    "(ref-at src/app.rs#fn:run_app@L3:local_init local_init)"
+                                        .to_owned(),
+                                ],
+                                alternatives: vec!["src/app.rs#fn:local_init".to_owned()],
+                            },
+                            SearchDslChoiceWitness {
+                                kind: SearchDslChoiceWitnessKind::Branch,
+                                fact: vec![
+                                    "resolve".to_owned(),
+                                    "src/app.rs#fn:run_app@L4:parse_payload".to_owned(),
+                                    "src/parser_a.rs#fn:parse_payload".to_owned(),
+                                ],
+                                rule_kind: SearchDslChoiceRuleKind::Open,
+                                premises: vec![
+                                    "(ref-at src/app.rs#fn:run_app@L4:parse_payload parse_payload)"
+                                        .to_owned(),
+                                ],
+                                alternatives: vec![
+                                    "src/parser_a.rs#fn:parse_payload".to_owned(),
+                                    "src/parser_b.rs#fn:parse_payload".to_owned(),
+                                ],
+                            },
+                        ],
+                    },
+                    SearchDslChoiceWorld {
+                        world_index: 2,
+                        bindings: vec![],
+                        witnesses: vec![],
+                    },
+                ],
+                budget_exhausted: None,
+                rendered_text: "worlds: 2 (SAT)\n".to_owned(),
+            })
+        },
+    );
+
+    let sample_presets = vec![
+        marlin_agent_search_engine::HelmSearchPresetSpec {
+            shortcut: "1".into(),
+            alias: "search".into(),
+            tab: "1:Search".into(),
+            label: "1/5 L0: Brute-Force Trigram/BM25".into(),
+            query: "fn ".into(),
+        },
+        marlin_agent_search_engine::HelmSearchPresetSpec {
+            shortcut: "2".into(),
+            alias: "ascent".into(),
+            tab: "2:Ascent".into(),
+            label: "2/5 Case A: Polyglot Ontology Callables".into(),
+            query: "(ascent-fragment ((answer lang path name line) <-- (file f lang path) (callable_def _ f lang name line)))".into(),
+        },
+        marlin_agent_search_engine::HelmSearchPresetSpec {
+            shortcut: "3".into(),
+            alias: "imports".into(),
+            tab: "3:Imports".into(),
+            label: "3/5 Case A: Imports Graph".into(),
+            query: "(ascent-fragment ((answer src dst path line) <-- (imports_edge src dst path line)))".into(),
+        },
+        marlin_agent_search_engine::HelmSearchPresetSpec {
+            shortcut: "4".into(),
+            alias: "dusa".into(),
+            tab: "4:Dusa-Resolve".into(),
+            label: "4/5 Case B.1: Dusa Call-Site Disambiguation".into(),
+            query: "(search-choice-program (scope limit: 12) (choice resolve (callsite target)) (rule (closed (resolve ?call) (?def)) (ref-at ?call ?name) (same-module-def ?call ?name ?def)) (solve resolve state-budget: 32 provenance?: #t))".into(),
+        },
+        marlin_agent_search_engine::HelmSearchPresetSpec {
+            shortcut: "5".into(),
+            alias: "tier".into(),
+            tab: "5:Dusa-Tier".into(),
+            label: "5/5 Case B.2: Dusa Architecture Tier".into(),
+            query: "(search-choice-program (scope limit: 12) (choice tier (mod level)) (rule (closed (tier ?m) (resident provider)) (module-in-scope ?m)) (solve tier state-budget: 64 provenance?: #t))".into(),
+        },
+    ];
+
+    let mut overlay = HelmOverlay::open(
+        None,
+        workspace.path().to_path_buf(),
+        &[],
+        cfg,
+        Some(warm_index),
+        rt.handle(),
+    )
+    .with_search_presets(sample_presets)
+    .with_dsl_runner(mock_runner)
+    .with_asp_status_badge("ASP:5p·153e".to_owned());
+
+    // Cycling Ctrl-t presets walks L0 -> Case A -> Case A Imports -> Case B.1 Dusa -> Case B.2 Dusa!
+    overlay.cycle_search_preset();
+    assert!(
+        overlay
+            .active_preset_label
+            .as_deref()
+            .unwrap()
+            .contains("L0")
+    );
+    overlay.cycle_search_preset();
+    assert!(
+        overlay
+            .active_preset_label
+            .as_deref()
+            .unwrap()
+            .contains("Case A")
+    );
+    overlay.cycle_search_preset();
+    overlay.cycle_search_preset();
+    assert!(
+        overlay
+            .active_preset_label
+            .as_deref()
+            .unwrap()
+            .contains("Case B.1")
+    );
+    assert!(overlay.input.starts_with("(search-choice-program "));
+    assert_eq!(overlay.last_choice_worlds, 2);
+    assert_eq!(overlay.search_candidates[0].badge, "W#1·deduction");
+    assert_eq!(overlay.search_candidates[1].badge, "W#1·branch");
+    assert!(
+        overlay.search_candidates[0]
+            .context_lines
+            .iter()
+            .any(|l| l.text.contains("Dusa World #1 [deduction · closed rule]"))
+    );
+
+    let area = helm_window_area(ratatui::layout::Rect::new(0, 0, 128, 30)).expect("area");
+    let element = project_helm_ui_element(&overlay, area);
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(128, 30)).expect("terminal");
+    terminal
+        .draw(|frame| {
+            render_overlay_element(frame, area, &element, &sample_theme());
+        })
+        .expect("draw");
+    let screen: String = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect();
+    assert!(screen.contains("HELM-DUSA"), "{screen}");
+    assert!(screen.contains("ASP:5p·153e"), "{screen}");
+    assert!(screen.contains("2 worlds (SAT)"), "{screen}");
+    assert!(screen.contains("W#1·deduction"), "{screen}");
+    assert!(screen.contains("Dusa World #1 [deduction"), "{screen}");
+    assert!(screen.contains("[4:Dusa-Resolve]"), "{screen}");
+    assert!(screen.contains("M-1..5:Mode"), "{screen}");
+}
+
+#[test]
+fn helm_copilot_context_aware_keyword_and_rust_value_completion_chains_and_renders_ghost_text() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let workspace = tempfile::tempdir().expect("temp workspace");
+    std::fs::create_dir_all(workspace.path().join("crates/demo/src")).unwrap();
+    std::fs::write(
+        workspace.path().join("crates/demo/src/engine.rs"),
+        "pub struct SearchEngine;\npub fn run_engine() {}\n",
+    )
+    .unwrap();
+    let mut raw_index =
+        WorkspaceSearchIndex::build_with_config(workspace.path(), scheme_like_config());
+    raw_index.ingest_open_edb_facts(marlin_agent_search_engine::WorkspaceOpenEdbIngestBatch {
+        schema_id: None,
+        schema_version: None,
+        language_id: Some("rust".to_owned()),
+        provider_id: Some("test-provider".to_owned()),
+        entities: vec![
+            marlin_agent_search_engine::WorkspaceEdbEntityFact {
+                entity_id: "crates/demo/src/engine.rs#struct:SearchEngine".to_owned(),
+                file_id: 0,
+                path: "crates/demo/src/engine.rs".to_owned(),
+                line: 1,
+                name: "SearchEngine".to_owned(),
+                language: "rust".to_owned(),
+                kind: "struct".to_owned(),
+                language_kind: "struct_item".to_owned(),
+                source: "native-parser".to_owned(),
+                attrs: Vec::new(),
+            },
+            marlin_agent_search_engine::WorkspaceEdbEntityFact {
+                entity_id: "crates/demo/src/engine.rs#fn:run_engine".to_owned(),
+                file_id: 0,
+                path: "crates/demo/src/engine.rs".to_owned(),
+                line: 2,
+                name: "run_engine".to_owned(),
+                language: "rust".to_owned(),
+                kind: "function".to_owned(),
+                language_kind: "fn_item".to_owned(),
+                source: "native-parser".to_owned(),
+                attrs: Vec::new(),
+            },
+        ],
+        edges: Vec::new(),
+    });
+    let warm_index = wrap_index(raw_index);
+
+    // Build completion catalog 100% dynamically from ASP's `GET /v1/providers`
+    // (`ForwardedProviderCatalog`: `universalProtocolSchema` + per-language `manifest.project`
+    // + `manifest.special` + composed `targetedSchema`) with ZERO hardcoding in Marlin!
+    let provider_catalog: marlin_agent_search_engine::ForwardedProviderCatalog =
+        serde_json::from_value(serde_json::json!({
+            "schemaId": "agent.semantic-protocols.provider-forwarding-catalog",
+            "schemaVersion": "1",
+            "generation": 1,
+            "registryDigest": "blake3-256:0000000000000000000000000000000000000000000000000000000000000000",
+            "universalProtocolSchema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "$defs": {
+                    "UniversalSearchProjection": {
+                        "type": "string",
+                        "enum": ["matches", "source", "callable-skeleton"]
+                    }
+                },
+                "properties": {
+                    "exclude-tests?": { "type": ["boolean", "null"], "description": "Exclude test files" },
+                    "path-prefix": { "type": ["string", "null"], "description": "Workspace-relative path prefix" },
+                    "projection": {
+                        "anyOf": [
+                            { "$ref": "#/$defs/UniversalSearchProjection" },
+                            { "type": "null" }
+                        ]
+                    }
+                }
+            },
+            "providers": [
+                {
+                    "manifest": {
+                        "languageId": "rust",
+                        "providerId": "asp-rust",
+                        "extensions": [".rs"],
+                        "projectMarkers": ["Cargo.toml"],
+                        "project": {
+                            "markers": ["Cargo.toml"],
+                            "entryFiles": ["src/lib.rs", "src/main.rs"],
+                            "workspaceFiles": ["Cargo.toml", "Cargo.lock"],
+                            "configFiles": ["rustfmt.toml"]
+                        },
+                        "special": {
+                            "kindMappings": [
+                                { "nativeLanguageKind": "struct_item", "generalKind": "struct", "description": "Rust struct declaration" },
+                                { "nativeLanguageKind": "fn_item", "generalKind": "function", "description": "Rust free function item" }
+                            ],
+                            "specialRelations": ["rust_fn", "rust_struct"],
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "visibility": { "type": "string", "enum": ["pub", "pub(crate)", "private"] },
+                                    "unsafe": { "type": "boolean" }
+                                }
+                            }
+                        }
+                    },
+                    "targetedSchema": {
+                        "type": "object",
+                        "properties": {
+                            "kind": { "type": "string", "enum": ["struct", "function", "trait"] },
+                            "languageKind": { "type": "string", "enum": ["struct_item", "fn_item", "impl_item"] },
+                            "visibility": { "type": "string", "enum": ["pub", "pub(crate)", "private"] },
+                            "unsafe": { "type": "boolean" }
+                        }
+                    }
+                },
+                {
+                    "manifest": {
+                        "languageId": "zig",
+                        "providerId": "asp-zig-dynamic",
+                        "extensions": [".zig"],
+                        "projectMarkers": ["build.zig"],
+                        "project": {
+                            "markers": ["build.zig"],
+                            "entryFiles": ["src/root.zig", "src/main.zig"]
+                        },
+                        "special": {
+                            "kindMappings": [],
+                            "specialRelations": ["zig_comptime"],
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "comptimeMode": { "type": "string", "enum": ["inline", "generic"] }
+                                }
+                            }
+                        }
+                    },
+                    "targetedSchema": {
+                        "type": "object",
+                        "properties": {
+                            "kind": { "type": "string", "enum": ["function", "struct"] },
+                            "comptimeMode": { "type": "string", "enum": ["inline", "generic"] }
+                        }
+                    }
+                }
+            ]
+        }))
+        .expect("forwarded provider catalog JSON");
+
+    let catalog =
+        marlin_agent_search_engine::project_provider_catalog_completions(&provider_catalog);
+
+    let mut overlay = HelmOverlay::open(
+        Some("(find-collisions lang: \"rust\" "),
+        workspace.path().to_path_buf(),
+        &[],
+        scheme_like_config(),
+        Some(warm_index),
+        rt.handle(),
+    )
+    .with_completion_catalog(catalog);
+
+    // 1. After choosing `lang: "rust"`, Copilot suggests ONLY protocol-derived keywords:
+    //    Rust's `special` + `targetedSchema` properties (`kind:`, `languageKind:`, `visibility:`, `unsafe:`)
+    //    + ASP `universalProtocolSchema` properties (`projection:`, `exclude-tests?:`, `path-prefix:`),
+    //    while omitting used `lang:` and Zig-only `comptimeMode:`.
+    overlay.toggle_tab_mode();
+    assert!(overlay.completion_mode);
+    let kw_forms: Vec<&str> = overlay.completion_entries.iter().map(|e| e.form.as_str()).collect();
+    assert!(kw_forms.contains(&"kind:"), "{kw_forms:?}");
+    assert!(kw_forms.contains(&"languageKind:"), "{kw_forms:?}");
+    assert!(kw_forms.contains(&"visibility:"), "rust special key must appear: {kw_forms:?}");
+    assert!(kw_forms.contains(&"unsafe:"), "rust special key must appear: {kw_forms:?}");
+    assert!(kw_forms.contains(&"projection:"), "universal schema key must appear: {kw_forms:?}");
+    assert!(kw_forms.contains(&"exclude-tests?:"), "universal nullable bool key must appear: {kw_forms:?}");
+    assert!(!kw_forms.contains(&"comptimeMode:"), "zig-only schema key must not leak to rust: {kw_forms:?}");
+    assert!(!kw_forms.contains(&"lang:"), "used keyword must be omitted: {kw_forms:?}");
+
+    // 1b. Rust's `special` keyword `visibility:` chains straight into its enum (`"pub"`, `"pub(crate)"`, `"private"`),
+    //     and universal nullable `exclude-tests?:` chains into `#t` / `#f`!
+    overlay.close_completion_mode();
+    overlay.set_input("(find-collisions lang: \"rust\" visibility: ");
+    overlay.toggle_tab_mode();
+    assert!(overlay.completion_mode);
+    let vis_forms: Vec<&str> = overlay.completion_entries.iter().map(|e| e.form.as_str()).collect();
+    assert!(vis_forms.contains(&"\"pub\"") && vis_forms.contains(&"\"pub(crate)\""), "{vis_forms:?}");
+    overlay.close_completion_mode();
+    overlay.set_input("(find-collisions lang: \"rust\" exclude-tests?: ");
+    overlay.toggle_tab_mode();
+    assert!(overlay.completion_mode);
+    let bool_forms: Vec<&str> = overlay.completion_entries.iter().map(|e| e.form.as_str()).collect();
+    assert!(bool_forms.contains(&"#t") && bool_forms.contains(&"#f"), "{bool_forms:?}");
+    overlay.close_completion_mode();
+    overlay.set_input("(find-collisions lang: \"rust\" ");
+    overlay.toggle_tab_mode();
+    assert!(overlay.completion_mode);
+
+    // 2. Accepting `kind:` inserts `kind: ` AND auto-chains into Rust's JSON-Schema `kind` enum!
+    let (should_close, action) = overlay.accept(false);
+    assert!(!should_close);
+    assert!(action.is_none());
+    assert_eq!(overlay.input, "(find-collisions lang: \"rust\" kind: ");
+    assert!(
+        overlay.completion_mode,
+        "accepting a keyword should chain directly into its JSON-Schema value completions"
+    );
+    let val_forms: Vec<&str> = overlay.completion_entries.iter().map(|e| e.form.as_str()).collect();
+    assert!(val_forms.contains(&"\"struct\""), "{val_forms:?}");
+    assert!(val_forms.contains(&"\"trait\""), "{val_forms:?}");
+
+    // 3. Typing partial `"st` filters to `"struct"` with ghost suffix `ruct"`,
+    //    and accepting replaces `"st` cleanly with `"struct" ` (no doubled quotes).
+    overlay.insert_text("\"st");
+    assert_eq!(overlay.copilot_ghost_suffix().as_deref(), Some("ruct\""));
+    let _ = overlay.accept(false);
+    assert_eq!(overlay.input, "(find-collisions lang: \"rust\" kind: \"struct\" ");
+    assert!(!overlay.completion_mode);
+
+    // 4. Switching language to dynamically forwarded `zig` exposes Zig's custom JSON-Schema
+    //    property `comptimeMode:` and enum values (`"inline"`, `"generic"`) — ZERO hardcoding!
+    overlay.set_input("(find-symbols lang: \"zig\" ");
+    overlay.toggle_tab_mode();
+    assert!(overlay.completion_mode);
+    assert!(
+        overlay.completion_entries.iter().any(|e| e.form == "comptimeMode:"),
+        "{:?}",
+        overlay.completion_entries
+    );
+    overlay.close_completion_mode();
+    overlay.set_input("(find-symbols lang: \"zig\" comptimeMode: ");
+    overlay.toggle_tab_mode();
+    assert!(overlay.completion_mode);
+    let zig_vals: Vec<&str> = overlay.completion_entries.iter().map(|e| e.form.as_str()).collect();
+    assert!(zig_vals.contains(&"\"inline\"") && zig_vals.contains(&"\"generic\""), "{zig_vals:?}");
+
+    // 5. `(read-file "<path>" symbol: ` surfaces live symbols from WorkspaceSearchIndex!
+    overlay.close_completion_mode();
+    overlay.set_input("(read-file \"crates/demo/src/engine.rs\" symbol: ");
+    overlay.toggle_tab_mode();
+    assert!(overlay.completion_mode);
+    let sym_forms: Vec<&str> = overlay.completion_entries.iter().map(|e| e.form.as_str()).collect();
+    assert!(sym_forms.contains(&"\"SearchEngine\""), "{sym_forms:?}");
+    assert!(sym_forms.contains(&"\"run_engine\""), "{sym_forms:?}");
+
+    // 6. Plain human Helm `@lang:zi` and `@ext:` facets complete from forwarded provider manifests!
+    overlay.close_completion_mode();
+    overlay.set_input("engine @lang:zi");
+    overlay.toggle_tab_mode();
+    assert!(overlay.completion_mode);
+    assert_eq!(overlay.completion_entries[0].form, "@lang:zig");
+    let _ = overlay.accept(false);
+    assert_eq!(overlay.input, "engine @lang:zig ");
 }

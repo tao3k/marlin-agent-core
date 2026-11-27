@@ -14,7 +14,7 @@ use agent_semantic_search_playbook::{
 };
 use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
-    RootedSchemeObject, SchemeScalar,
+    RootedSchemeCollection, RootedSchemeObject, SchemeScalar,
 };
 
 const MAX_PRODUCERS: usize = 32;
@@ -25,6 +25,8 @@ const MAX_TEXT_BYTES: usize = 65_536;
 /// Rejection while projecting rooted Scheme search plans into ASP Rust types.
 #[derive(Debug, thiserror::Error)]
 pub enum SearchPlanProjectionError {
+    #[error("search plan validation failed: {0}")]
+    Validation(String),
     #[error("search plan native projection failed: {0}")]
     Native(String),
     #[error("invalid search plan projection: {0}")]
@@ -393,18 +395,82 @@ fn decode_bool(value: RootedSchemeObject<'_>) -> Result<bool, SearchPlanProjecti
     }
 }
 
-/// Decode Scheme-owned `HelmIndexPolicy.` rooted vector into [`crate::WorkspaceIndexConfig`]:
-/// `#(skip-dirs-vector max-file-bytes max-line-matches max-line-preview-chars
-///   fuzzy-distance enable-tantivy? enable-file-locator? enable-rg-regex?)`.
-pub fn decode_workspace_index_config(
-    value: RootedSchemeObject<'_>,
-) -> Result<crate::WorkspaceIndexConfig, SearchPlanProjectionError> {
-    let tuple = native(value.into_collection(CollectionKind::Vector))?;
-    if tuple.len() != 8 {
-        return Err(SearchPlanProjectionError::Invalid(
-            "workspace index config arity",
-        ));
+/// Scheme-declared ASP Open EDB hydration budgets projected exclusively from
+/// `HelmIndexPolicy.` over the zero-JSON C-ABI.
+///
+/// Fields are intentionally private with no `Default` impl in production code:
+/// Rust engine callers MUST project this capability from Scheme rather than
+/// hardcoding batch/chunk constants.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AspHydrationPolicy {
+    inspect_batch_files: usize,
+    max_files: usize,
+    chunk_size: usize,
+}
+
+impl AspHydrationPolicy {
+    #[must_use]
+    pub const fn inspect_batch_files(&self) -> usize {
+        self.inspect_batch_files
     }
+
+    #[must_use]
+    pub const fn max_files(&self) -> usize {
+        self.max_files
+    }
+
+    #[must_use]
+    pub const fn chunk_size(&self) -> usize {
+        self.chunk_size
+    }
+}
+
+/// Declarative Helm search mode preset projected from Scheme `HelmSearchPresets.`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HelmSearchPresetSpec {
+    pub shortcut: String,
+    pub alias: String,
+    pub tab: String,
+    pub label: String,
+    pub query: String,
+}
+
+/// Complete Scheme-declared `HelmIndexPolicy.` projection pairing resident
+/// workspace index settings, sealed ASP hydration budgets, and declarative
+/// Helm mode presets.
+#[derive(Clone, Debug)]
+pub struct HelmIndexPolicyProjection {
+    pub index: crate::WorkspaceIndexConfig,
+    pub hydration: AspHydrationPolicy,
+    pub presets: Vec<HelmSearchPresetSpec>,
+}
+
+fn decode_helm_search_presets(
+    value: RootedSchemeObject<'_>,
+) -> Result<Vec<HelmSearchPresetSpec>, SearchPlanProjectionError> {
+    let entries = native(value.into_collection(CollectionKind::Vector))?;
+    let mut presets = Vec::with_capacity(entries.len());
+    for idx in 0..entries.len() {
+        let row = native(native(entries.element(idx))?.into_collection(CollectionKind::Vector))?;
+        if row.len() != 5 {
+            return Err(SearchPlanProjectionError::Invalid(
+                "helm search preset tuple arity",
+            ));
+        }
+        presets.push(HelmSearchPresetSpec {
+            shortcut: decode_string(native(row.element(0))?, MAX_IDENTIFIER_BYTES)?,
+            alias: decode_string(native(row.element(1))?, MAX_IDENTIFIER_BYTES)?,
+            tab: decode_string(native(row.element(2))?, MAX_IDENTIFIER_BYTES)?,
+            label: decode_string(native(row.element(3))?, MAX_IDENTIFIER_BYTES)?,
+            query: decode_string(native(row.element(4))?, MAX_TEXT_BYTES)?,
+        });
+    }
+    Ok(presets)
+}
+
+fn decode_workspace_index_fields(
+    tuple: &RootedSchemeCollection<'_>,
+) -> Result<crate::WorkspaceIndexConfig, SearchPlanProjectionError> {
     let skip_dirs = decode_string_vector(native(tuple.element(0))?)?;
     let max_file_bytes = decode_u64(native(tuple.element(1))?)?;
     let max_line_matches_per_hit =
@@ -427,6 +493,68 @@ pub fn decode_workspace_index_config(
     })
 }
 
+fn decode_hydration_policy_fields(
+    tuple: &RootedSchemeCollection<'_>,
+) -> Result<AspHydrationPolicy, SearchPlanProjectionError> {
+    let inspect_batch_files = usize::try_from(decode_u64(native(tuple.element(8))?)?)
+        .map_err(|_| SearchPlanProjectionError::Invalid("asp-inspect-batch-files out of range"))?
+        .max(1);
+    let max_files = usize::try_from(decode_u64(native(tuple.element(9))?)?)
+        .map_err(|_| SearchPlanProjectionError::Invalid("asp-hydration-max-files out of range"))?
+        .max(1);
+    let chunk_size = usize::try_from(decode_u64(native(tuple.element(10))?)?)
+        .map_err(|_| SearchPlanProjectionError::Invalid("asp-hydration-chunk-size out of range"))?
+        .max(1);
+    Ok(AspHydrationPolicy {
+        inspect_batch_files,
+        max_files,
+        chunk_size,
+    })
+}
+
+/// Decode Scheme-owned `HelmIndexPolicy.` rooted vector into [`HelmIndexPolicyProjection`].
+pub fn decode_helm_index_policy(
+    value: RootedSchemeObject<'_>,
+) -> Result<HelmIndexPolicyProjection, SearchPlanProjectionError> {
+    let tuple = native(value.into_collection(CollectionKind::Vector))?;
+    if tuple.len() != 12 {
+        return Err(SearchPlanProjectionError::Invalid(
+            "workspace index config arity",
+        ));
+    }
+    let index = decode_workspace_index_fields(&tuple)?;
+    let hydration = decode_hydration_policy_fields(&tuple)?;
+    let presets = decode_helm_search_presets(native(tuple.element(11))?)?;
+    Ok(HelmIndexPolicyProjection {
+        index,
+        hydration,
+        presets,
+    })
+}
+
+/// Decode Scheme-owned `HelmIndexPolicy.` rooted vector into [`crate::WorkspaceIndexConfig`].
+pub fn decode_workspace_index_config(
+    value: RootedSchemeObject<'_>,
+) -> Result<crate::WorkspaceIndexConfig, SearchPlanProjectionError> {
+    Ok(decode_helm_index_policy(value)?.index)
+}
+
+/// Project complete Scheme-owned `HelmIndexPolicy.` (index + sealed ASP
+/// hydration budgets + declarative Helm presets) through an AOT-linked
+/// `marlin_ui_helm_index_config` export.
+///
+/// # Safety
+/// `export` must originate from `runtime`'s live Marlin programme and return a fresh strong root.
+pub unsafe fn project_linked_helm_index_policy(
+    runtime: &GerbilRuntime,
+    export: unsafe extern "C" fn(i64) -> i64,
+) -> Result<HelmIndexPolicyProjection, SearchPlanProjectionError> {
+    let procedure = native(unsafe { runtime.bind_object_export(export) })?;
+    let void_input = native(runtime.void_object())?;
+    let projected = native(procedure.call(&void_input).into_result())?;
+    decode_helm_index_policy(projected)
+}
+
 /// Project Scheme-owned `HelmIndexPolicy.` through an AOT-linked `marlin_ui_helm_index_config` export.
 ///
 /// # Safety
@@ -435,18 +563,15 @@ pub unsafe fn project_linked_helm_index_config(
     runtime: &GerbilRuntime,
     export: unsafe extern "C" fn(i64) -> i64,
 ) -> Result<crate::WorkspaceIndexConfig, SearchPlanProjectionError> {
-    let procedure = native(unsafe { runtime.bind_object_export(export) })?;
-    let void_input = native(runtime.void_object())?;
-    let projected = native(procedure.call(&void_input).into_result())?;
-    decode_workspace_index_config(projected)
+    Ok(unsafe { project_linked_helm_index_policy(runtime, export) }?.index)
 }
 
-/// Resolve and project Scheme-owned `HelmIndexPolicy.` from a compiled package directory.
+/// Resolve and project complete Scheme-owned `HelmIndexPolicy.` from a compiled package directory.
 #[cfg(not(feature = "linked-ui"))]
-pub fn project_helm_index_config(
+pub fn project_helm_index_policy(
     runtime: &GerbilRuntime,
     scheme_dir: &str,
-) -> Result<crate::WorkspaceIndexConfig, SearchPlanProjectionError> {
+) -> Result<HelmIndexPolicyProjection, SearchPlanProjectionError> {
     let module = native(
         runtime.intern_identifier(IdentifierKind::Symbol, ":marlin-agent-core/c-abi/ui-helm"),
     )?;
@@ -460,5 +585,14 @@ pub fn project_helm_index_config(
     }
     let void_input = native(runtime.void_object())?;
     let projected = native(runtime.call_rooted(&procedure, &void_input))?;
-    decode_workspace_index_config(projected)
+    decode_helm_index_policy(projected)
+}
+
+/// Resolve and project Scheme-owned `HelmIndexPolicy.` from a compiled package directory.
+#[cfg(not(feature = "linked-ui"))]
+pub fn project_helm_index_config(
+    runtime: &GerbilRuntime,
+    scheme_dir: &str,
+) -> Result<crate::WorkspaceIndexConfig, SearchPlanProjectionError> {
+    Ok(project_helm_index_policy(runtime, scheme_dir)?.index)
 }

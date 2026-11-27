@@ -8,43 +8,49 @@
 * Ownership Boundary
 
 =scheme/search-dsl= exposes Marlin's unified, zero-regex, zero-=eval=, AOT-safe
-Search DSL built directly on upstream Gerbil libraries — zero invented pseudo
-S-expressions and zero regex extractors in Rust or Scheme:
+3-tier Search DSL built directly on upstream Gerbil libraries and paired with
+the independent modular =scheme/repair= (=+ast-patch=) Yuanxu module:
 
-1. *=:gerbil-ascent=* (=:gerbil-ascent/program/syntax=,
-   =:gerbil-ascent/rules/closed-source=, =:gerbil-ascent/program/api=):
+1. *=:gerbil-ascent= L1 Structural Query Engine*:
    - Real upstream =(ascent ...)= / =(ascent-fragment ...)= closed lowering
      (=ascent-closed-dsl-parts=, zero =eval-syntax=, 100% AOT =linked-ui= safe),
-     composed directly with the REAL compiled =ascent-fragment= objects owned by
-     POO language prototypes (=rust_fn=, =rust_impl=, =rust_macro=,
-     =scheme_poo_def=, =sysml_requirement=, …) over ASP's universal
+     composed directly with compiled POO language fragments over ASP's
      =semantic-open-edb.v1= =(lang, kind, language_kind)= protocol.
-   - Real upstream Lean-verified *Dusa POPL 2025 finite-choice*
-     =(relational-choice-program ...)= + =relational-choice-solve= with
-     derivation provenance (=provenance?: #t=).
-2. *=:gerbil-parser=* (=grammar.ss=):
-   - Typed structured syntax engine (=deflanguage= / =deflanguage-parser-loader=)
-     owning lightweight selector/sub-syntax parsing directly in Scheme.
-3. *Safe Pre-Tool-Call Model AST Repair Hook v2 (=repair.ss=)*:
-   - Deterministically heals common LLM S-expression slips (markdown fences,
-     bounded missing/extra trailing parens, =<-=/=:-= arrows, omitted column
-     predicates, missing head =(relation ...)= declarations inferred from POO
-     signatures, missing trailing wildcards via =pad-relation-wildcards=, bare
-     Dusa choice literals via =normalize-choice-values=, missing =(limits ...)=
-     in choice programs) while emitting an auditable =repairs:= receipt and
-     failing closed with POO-registry-backed =did you mean: ...?= suggestions on
-     unknown relations, legacy =@sym:=, =#.(...)=, and arbitrary Scheme callbacks.
-4. *Zero-Regex Native Open EDB Fact Extractor (=extract.ss=)*:
-   - Uses Gerbil's safe reader (=readtable-eval-allowed? #f=) for =.ss= and pure
-     lexical token-stream parsers for =.sysml= and =.qnt= to produce native
-     =semantic-open-edb.v1= facts (=poo_def=, =deflanguage=, =requirement_def=,
-     =quint_invariant=, =mixes=, =ffi_binds=, =depends=, =allocates=, =imports=)
-     over zero-JSON C-ABI (=marlin_search_dsl_extract_facts=).
-5. *=:clan/poo/object= + =defsyntax= / =defrules= (=syntax.ss=, =objects.ss=)*:
-   - =defsearch-language= compiles one declarative language specification into a
-     POO prototype carrying its real =ascent-fragment= object over universal
-     =(lang, kind, language_kind)= facts (zero regexes).
-   - Helm's live =HELM-DSL= execution, interactive *TAB completion table*, and
-     =workspace_search='s Tool Schema (=defsearch-tool-spec=) are
-     *live-introspected* directly from the composed =:gerbil-ascent= relation
-     objects.
+   - Built-in relational path predicates (=is_test_path=, =prod_path=,
+     =path_has_prefix=, =path_contains=) usable both positively and inside
+     =(not (...))=.
+   - Declarative one-shot forms lowered by =scheme/repair/desugar.ss=:
+     =(find-impact ...)=, =(find-collisions ...)=, =(find-callers ...)=,
+     =(find-impls ...)=, =(find-symbols ...)= — all supporting
+     =exclude-tests?: #t=, =exclude-path-prefix:=, and anti-mode-collapse
+     niche-diverse truncation (=select-diverse-rows-up-to=).
+2. *Dusa POPL 2025 L2 Finite-Choice Constraint Solver*:
+   - Lean-verified =(search-choice-program ...)= / =(relational-choice-program ...)=
+     and declarative =(solve-placement ...)= / =(solve-resolve ...)= with static
+     closed-forbid deduction propagation, balanced bounded frontier slicing,
+     and =[deduction]= vs =[branch]= provenance witnesses.
+   - Bi-temporal evidence-chain truth maintenance (=evidence-chain.ss=)
+     distinguishing comment-only edits from AST structural drift, DE01 negative-
+     domain revalidation, KV-cache epoch fencing, and ATMS poison retraction.
+3. *Independent Modular =scheme/repair= (=+ast-patch=)*:
+   - Owns lexical balancing (=reader.ss=), POO-registry similarity diagnostics
+     (=diagnostics.ss=), L1/L2 desugaring (=desugar.ss=), Ascent/Dusa repair
+     (=ascent.ss=, =ascent-validate.ss=, =choice.ss=), and the opt-in =+ast-patch=
+     feature (=ast-patch.ss=) projecting =entity_locator= / =ast-style= findings
+     into validated ASP =POST /v1/ast/patch= requests.
+4. *Zero-Regex Native Open EDB Fact Extractor (=extract.ss=) & =:gerbil-parser= (=grammar.ss=)*:
+   - Native Scheme/SysML/Quint AST extraction and typed structured selectors.
+
+* Human-Oriented vs AI-Native Search Countermodels (SysML v2 =MAR-SRCH-CM01..CM05=)
+
+Engines built for human visual browsing fail predictably in AI-native autonomous
+loops. Marlin models five explicit countermodels in =dev/sysml/search-engine.sysml=
+backed by Quint refutations in =deterministic-engineering-qnt=:
+
+| Countermodel | Human-Oriented Pattern | Why It Fails AI-Native Loops | Verified Quint Refutation | Sound Entry Point |
+|--------------+------------------------+------------------------------+---------------------------+-------------------|
+| =CM01= | Flat top-K frequency/path pagination | Truncated LLM window mode-collapses onto 1 dominant symbol (e.g. 40 =new()= rows) | =search-diversity-exploration::stepModeCollapse= | =structural_query= (=select-diverse-rows-up-to=) |
+| =CM02= | Serial =ls=/=find=/=rg=/=cat= shell probing | Wastes 7+ full-context turns and loops on zero-hit dead ends | =search-diversity-exploration::stepDeadEndLoop= | Parallel fan-out + one-shot =(find-impact ...)= |
+| =CM03= | Monolithic tool manual + ungrounded mental synthesis | Small models collapse to L0 grep or promote hallucinated claims without receipts | =search-diversity-exploration::stepUngroundedPromotion= | Focused 3-tier tools + =scheme/repair= diagnostics |
+| =CM04= | Textual RAG / manual IDE Go-To-Definition | Cannot prove global forbidden constraints; naive branching explodes state budget | =search-diversity-exploration::stepFrontierExplosion= | =constraint_solve= (Dusa + balanced bounded frontier) |
+| =CM05= | Unfenced static cache & cross-turn context reuse | Reuses stale structural evidence after AST drift, ignores DE01, serves contaminated KV | =search-evidence-chain-integrity::{stepStale*,stepKv*,stepPoisoned*,stepZombie*}= | Bi-temporal =evidence-chain.ss= + ATMS retraction |

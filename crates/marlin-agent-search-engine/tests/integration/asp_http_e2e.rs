@@ -687,6 +687,11 @@ fn asp_http_forwarding_to_marlin_search_and_dynamic_o1_leverage() {
         &edb_cache_path,
         &mut warm_index,
     );
+    let (b1_worlds, b2_worlds) = asp_http_e2e_mock::run_live_s1_dusa_scenario_b_phase(
+        &runtime,
+        &scheme_dir,
+        &gateway.endpoint,
+    );
 
     println!(
         "\n=== ASP HTTP -> MARLIN 5+1 LANGUAGE E2E BENCHMARK SUMMARY ===\n\
@@ -699,6 +704,7 @@ fn asp_http_forwarding_to_marlin_search_and_dynamic_o1_leverage() {
          Package-lookup C-ABI query    : p50={}us, p95={}us (20 iterations, per-call export lookup)\n\
          Dynamic `zig` O(1) leverage   : targetedSchema + zig_comptime_fn + General callable + Helm TAB OK\n\
          P3 semantic graph & edit loop : {} contains_edge, {} imports_edge, locator->patch->calibrate->re-search OK\n\
+         S1 Dusa Scenario B (live)     : B.1={} worlds (deduction+branch, mock excluded), B.2={} worlds (tier boundary)\n\
          ===============================================================",
         gateway.boot_micros,
         gateway.endpoint.control_token().is_some(),
@@ -718,5 +724,7 @@ fn asp_http_forwarding_to_marlin_search_and_dynamic_o1_leverage() {
         pkg_p95_us,
         contains_edges,
         imports_edges,
+        b1_worlds,
+        b2_worlds,
     );
 }

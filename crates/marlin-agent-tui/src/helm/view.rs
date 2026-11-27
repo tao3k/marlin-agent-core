@@ -7,6 +7,7 @@
 //! Produces only host-neutral `marlin_agent_ui::UiElement` trees rendered by
 //! `crate::ui_elements::render_overlay_element` (zero direct Ratatui widget calls).
 
+use marlin_agent_search_engine::HelmSearchPresetSpec;
 use marlin_agent_ui::{UiBackground, UiElement, UiSize, UiTemplateSpan, UiTemplateValue, UiTone};
 use ratatui::layout::Rect;
 use unicode_width::UnicodeWidthStr;
@@ -75,25 +76,112 @@ fn line_row(background: UiBackground, spans: Vec<UiTemplateSpan>) -> UiElement {
     }
 }
 
+/// Hit-test a 1-based terminal click `(column, row)` against the Scheme-projected
+/// Helm top mode tab bar. Returns the clicked preset index when hit.
+pub(crate) fn hit_test_helm_mode_tab(
+    area: Rect,
+    presets: &[HelmSearchPresetSpec],
+    column: u16,
+    row: u16,
+) -> Option<usize> {
+    let x = column.checked_sub(1)?;
+    let y = row.checked_sub(1)?;
+    if y != area.y || x < area.x || x >= area.right() {
+        return None;
+    }
+    let width = usize::from(area.width);
+    let rel_x = usize::from(x.saturating_sub(area.x));
+    let mut cursor = UnicodeWidthStr::width("━━ ");
+    for (idx, preset) in presets.iter().enumerate() {
+        let label = format!("[{}]", preset.tab);
+        let tab_w = UnicodeWidthStr::width(label.as_str());
+        if cursor + tab_w + 1 > width {
+            break;
+        }
+        if rel_x >= cursor && rel_x < cursor + tab_w {
+            return Some(idx);
+        }
+        cursor += tab_w + 1;
+    }
+    None
+}
+
 fn project_top_divider(helm: &HelmOverlay, width: u16) -> UiElement {
     let width = usize::from(width);
-    let label = if helm.completion_mode {
-        " Helm TAB Completion (:gerbil-ascent / POO) "
-    } else if helm.action_mode {
-        " Helm Actions "
-    } else {
-        " Helm "
-    };
-    let left_rule = "━━";
-    let used = UnicodeWidthStr::width(left_rule) + UnicodeWidthStr::width(label);
-    let right_rule = "━".repeat(width.saturating_sub(used));
+    if helm.completion_mode || helm.action_mode {
+        let label = if helm.completion_mode {
+            " Helm TAB Completion (:gerbil-ascent / Dusa / POO) "
+        } else {
+            " Helm Actions (RET:Run · TAB/ESC:Back · C-g:Quit) "
+        };
+        let left_rule = "━━";
+        let used = UnicodeWidthStr::width(left_rule) + UnicodeWidthStr::width(label);
+        let right_rule = "━".repeat(width.saturating_sub(used));
+        return UiElement::Template {
+            background: UiBackground::Canvas,
+            spans: vec![
+                span(left_rule, UiTone::Accent, false),
+                span(label, UiTone::Accent, true),
+                span(right_rule, UiTone::Muted, false),
+            ],
+        };
+    }
+
+    if helm.search_presets.is_empty() {
+        let label = " Helm ";
+        let left_rule = "━━";
+        let used = UnicodeWidthStr::width(left_rule) + UnicodeWidthStr::width(label);
+        let right_rule = "━".repeat(width.saturating_sub(used));
+        return UiElement::Template {
+            background: UiBackground::Canvas,
+            spans: vec![
+                span(left_rule, UiTone::Accent, false),
+                span(label, UiTone::Accent, true),
+                span(right_rule, UiTone::Muted, false),
+            ],
+        };
+    }
+
+    let mut spans = vec![span("━━ ", UiTone::Accent, false)];
+    let mut used = UnicodeWidthStr::width("━━ ");
+    for (idx, preset) in helm.search_presets.iter().enumerate() {
+        let is_active = helm.preset_cursor == Some(idx);
+        let tab = format!("[{}]", preset.tab);
+        let tab_w = UnicodeWidthStr::width(tab.as_str());
+        if used + tab_w + 1 > width {
+            break;
+        }
+        spans.push(span(
+            tab,
+            if is_active {
+                UiTone::Accent
+            } else {
+                UiTone::Muted
+            },
+            is_active,
+        ));
+        spans.push(span(" ", UiTone::Muted, false));
+        used += tab_w + 1;
+    }
+    let hint = "M-1..5 ";
+    let hint_w = UnicodeWidthStr::width(hint);
+    if width >= used + hint_w + 2 {
+        spans.push(span(
+            "━".repeat(width.saturating_sub(used + hint_w)),
+            UiTone::Muted,
+            false,
+        ));
+        spans.push(span(hint, UiTone::Muted, false));
+    } else if width > used {
+        spans.push(span(
+            "━".repeat(width.saturating_sub(used)),
+            UiTone::Muted,
+            false,
+        ));
+    }
     UiElement::Template {
         background: UiBackground::Canvas,
-        spans: vec![
-            span(left_rule, UiTone::Accent, false),
-            span(label, UiTone::Accent, true),
-            span(right_rule, UiTone::Muted, false),
-        ],
+        spans,
     }
 }
 
@@ -195,14 +283,19 @@ fn project_grouped_candidates(helm: &HelmOverlay, width: u16, height: u16) -> Ui
 
 fn project_source_header(title: &str, count: usize, meta: &str, width: usize) -> UiElement {
     let left_text = format!("▌ {title} ({count})");
-    let right_text = if meta.is_empty() {
+    let left_w = UnicodeWidthStr::width(left_text.as_str());
+    let max_right = width.saturating_sub(left_w + 2);
+    let right_text = if meta.is_empty() || max_right < 4 {
         String::new()
     } else {
-        format!("{meta} ")
+        format!("{} ", clip_width(meta, max_right.saturating_sub(1)))
     };
-    let used =
-        UnicodeWidthStr::width(left_text.as_str()) + UnicodeWidthStr::width(right_text.as_str());
-    let pad = " ".repeat(width.saturating_sub(used));
+    let used = left_w + UnicodeWidthStr::width(right_text.as_str());
+    let pad = " ".repeat(
+        width
+            .saturating_sub(used)
+            .max(usize::from(!right_text.is_empty())),
+    );
     line_row(
         UiBackground::Bar,
         vec![
@@ -478,6 +571,9 @@ fn project_helm_modeline(helm: &HelmOverlay, width: u16) -> UiElement {
         " HELM-TAB "
     } else if helm.action_mode {
         " HELM-ACT "
+    } else if helm.last_dsl_mode == Some(marlin_agent_search_engine::SearchDslExecutionMode::Choice)
+    {
+        " HELM-DUSA "
     } else if helm.is_sexp_prompt() {
         " HELM-DSL "
     } else {
@@ -497,7 +593,10 @@ fn project_helm_modeline(helm: &HelmOverlay, width: u16) -> UiElement {
         .generation_digest
         .as_deref()
         .and_then(|d| d.strip_prefix("blake3-256:"))
-        .map(|hex| format!(" · {}", &hex[..hex.len().min(7)]))
+        .map(|hex| {
+            let short: String = hex.chars().take(7).collect();
+            format!(" · {short}")
+        })
         .unwrap_or_default();
     let follow_part = if helm.follow_preview {
         " · follow"
@@ -509,24 +608,30 @@ fn project_helm_modeline(helm: &HelmOverlay, width: u16) -> UiElement {
     } else {
         format!(" · repaired[{}]", helm.last_dsl_repairs.join(","))
     };
+    let asp_part = if helm.asp_status_badge.is_empty() {
+        String::new()
+    } else {
+        format!(" · {}", helm.asp_status_badge)
+    };
     let left_info = format!(
-        " {} · {}{} · {}{}{}{} ",
+        " {} · {}{} · {}{}{}{}{} ",
         helm.active_source.label(),
         pos_text,
         mark_part,
         helm.format_latency(),
         follow_part,
+        asp_part,
         repair_part,
         gen_part
     );
     let hints = if helm.completion_mode {
         "RET:Insert  C-p/C-n:Select  TAB/ESC:Close  C-g:Quit "
     } else if helm.action_mode {
-        "RET:Run  TAB/ESC:Candidates  C-g:Quit "
+        "RET:Run  TAB/ESC:Back  C-g:Quit "
     } else if helm.is_sexp_prompt() {
-        "TAB:Complete  RET:Open  C-l:Refresh  C-g:Quit "
+        "M-1..5:Mode  C-a/e:Move  C-u/k:Kill  TAB:Complete  C-g:Quit "
     } else {
-        "RET:Open  TAB:Actions  C-SPC:Mark  C-o:Source  C-z:Follow  C-l:Refresh  C-g:Quit "
+        "M-1..5:Mode  C-a/e:Move  RET:Insert  M-e:Export  TAB:Actions  C-g:Quit "
     };
 
     let left_w = UnicodeWidthStr::width(badge) + UnicodeWidthStr::width(left_info.as_str());
@@ -556,41 +661,52 @@ fn project_helm_minibuffer(helm: &HelmOverlay, width: u16) -> UiElement {
     let width = usize::from(width);
     let prompt_label = "Helm> ";
     let scope_pill = format!(" [{}] ", helm.active_source.label());
-    let mut spans = vec![span(prompt_label, UiTone::Accent, true)];
-
-    let mut in_local = false;
-    for (idx, part) in helm.input.split(' ').enumerate() {
-        if idx > 0 {
-            spans.push(span(" ", UiTone::Normal, false));
-        }
-        if part.starts_with('#') {
-            in_local = true;
-        }
-        let (tone, bold) = if part.starts_with("@lang:")
-            || part.starts_with("@doc:")
-            || part.starts_with("@prefix:")
-            || part.starts_with("@ext:")
-            || part.starts_with("@sym:")
-            || part.starts_with("@graph:")
-        {
-            (UiTone::Info, true)
-        } else if in_local && part.starts_with('!') {
-            (UiTone::Warning, true)
-        } else if in_local {
-            (UiTone::Success, false)
-        } else {
-            (UiTone::Normal, false)
-        };
-        spans.push(span(part, tone, bold));
-    }
-    spans.push(span("▏", UiTone::Accent, false));
-
-    let used =
-        UnicodeWidthStr::width(prompt_label) + UnicodeWidthStr::width(helm.input.as_str()) + 1;
+    let prompt_w = UnicodeWidthStr::width(prompt_label);
     let pill_w = UnicodeWidthStr::width(scope_pill.as_str());
-    if width > used + pill_w {
+    let input_budget = width.saturating_sub(prompt_w + pill_w + 1).max(4);
+    let (left_ellipsis, visible_input, rel_cursor, right_ellipsis) =
+        cursor_viewport_window(&helm.input, helm.cursor_byte(), input_budget);
+    let mut spans = vec![span(prompt_label, UiTone::Accent, true)];
+    if left_ellipsis {
+        spans.push(span("…", UiTone::Muted, false));
+    }
+
+    let is_sexp = helm.is_sexp_prompt();
+    let before = &visible_input[..rel_cursor];
+    let after = &visible_input[rel_cursor..];
+    let mut in_local = false;
+    push_minibuffer_segment(&mut spans, before, is_sexp, &mut in_local);
+    spans.push(span("▏", UiTone::Accent, true));
+    push_minibuffer_segment(&mut spans, after, is_sexp, &mut in_local);
+    let mut ghost_w = 0usize;
+    if !right_ellipsis
+        && after.is_empty()
+        && let Some(ghost) = helm.copilot_ghost_suffix()
+    {
+        let used_so_far = prompt_w
+            + usize::from(left_ellipsis)
+            + UnicodeWidthStr::width(visible_input)
+            + 1;
+        let ghost_budget = width.saturating_sub(used_so_far + pill_w + 1);
+        if ghost_budget > 0 {
+            let clipped = clip_width(&ghost, ghost_budget);
+            ghost_w = UnicodeWidthStr::width(clipped.as_str());
+            spans.push(span(clipped, UiTone::Muted, false));
+        }
+    }
+    if right_ellipsis {
+        spans.push(span("…", UiTone::Muted, false));
+    }
+
+    let used = prompt_w
+        + usize::from(left_ellipsis)
+        + UnicodeWidthStr::width(visible_input)
+        + 1
+        + ghost_w
+        + usize::from(right_ellipsis);
+    if width >= used + pill_w {
         spans.push(span(
-            " ".repeat(width - used - pill_w),
+            " ".repeat(width.saturating_sub(used + pill_w)),
             UiTone::Normal,
             false,
         ));
@@ -601,6 +717,110 @@ fn project_helm_minibuffer(helm: &HelmOverlay, width: u16) -> UiElement {
         background: UiBackground::Canvas,
         spans,
     }
+}
+
+fn push_minibuffer_segment(
+    spans: &mut Vec<UiTemplateSpan>,
+    segment: &str,
+    is_sexp: bool,
+    in_local: &mut bool,
+) {
+    if segment.is_empty() {
+        return;
+    }
+    for (idx, part) in segment.split(' ').enumerate() {
+        if idx > 0 {
+            spans.push(span(" ", UiTone::Normal, false));
+        }
+        if part.is_empty() {
+            continue;
+        }
+        if !is_sexp && part.starts_with('#') {
+            *in_local = true;
+        }
+        let (tone, bold) = if is_sexp {
+            if part.starts_with('(') || part.ends_with(':') {
+                (UiTone::Info, true)
+            } else if part.starts_with('?') {
+                (UiTone::Success, false)
+            } else {
+                (UiTone::Normal, false)
+            }
+        } else if part.starts_with("@lang:")
+            || part.starts_with("@doc:")
+            || part.starts_with("@prefix:")
+            || part.starts_with("@ext:")
+            || part.starts_with("@sym:")
+            || part.starts_with("@graph:")
+        {
+            (UiTone::Info, true)
+        } else if *in_local && part.starts_with('!') {
+            (UiTone::Warning, true)
+        } else if *in_local {
+            (UiTone::Success, false)
+        } else {
+            (UiTone::Normal, false)
+        };
+        spans.push(span(part, tone, bold));
+    }
+}
+
+/// Compute a UTF-8/grapheme-safe horizontal sliding window around `cursor_byte`
+/// so Emacs `C-a` (start of line), `C-e` (end of line), and mid-line edits stay
+/// visibly centered within `max_width` terminal cells.
+fn cursor_viewport_window(
+    text: &str,
+    cursor_byte: usize,
+    max_width: usize,
+) -> (bool, &str, usize, bool) {
+    if max_width == 0 || text.is_empty() {
+        return (false, "", 0, false);
+    }
+    let mut cursor = cursor_byte.min(text.len());
+    while cursor > 0 && !text.is_char_boundary(cursor) {
+        cursor -= 1;
+    }
+    let total_w = UnicodeWidthStr::width(text);
+    if total_w <= max_width {
+        return (false, text, cursor, false);
+    }
+    let cursor_col = UnicodeWidthStr::width(&text[..cursor]);
+    let win_start_col = if cursor_col < max_width.saturating_sub(2) {
+        0
+    } else {
+        cursor_col.saturating_sub(max_width.saturating_sub(3))
+    };
+    let left_ellipsis = win_start_col > 0;
+    let mut col = 0usize;
+    let mut slice_start = text.len();
+    for (byte_idx, ch) in text.char_indices() {
+        if col >= win_start_col {
+            slice_start = byte_idx;
+            break;
+        }
+        col += unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+    }
+    slice_start = slice_start.min(cursor);
+    let inner_budget = max_width
+        .saturating_sub(usize::from(left_ellipsis) + 1)
+        .max(1);
+    let mut used = 0usize;
+    let mut slice_end = slice_start;
+    for (rel_idx, ch) in text[slice_start..].char_indices() {
+        let cw = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+        if used + cw > inner_budget {
+            break;
+        }
+        used += cw;
+        slice_end = slice_start + rel_idx + ch.len_utf8();
+    }
+    if slice_end < cursor {
+        slice_end = cursor;
+    }
+    let right_ellipsis = slice_end < text.len();
+    let visible = &text[slice_start..slice_end];
+    let rel_cursor = cursor.saturating_sub(slice_start).min(visible.len());
+    (left_ellipsis, visible, rel_cursor, right_ellipsis)
 }
 
 fn compute_display_offset(
@@ -644,15 +864,18 @@ fn push_highlighted_spans(
             continue;
         }
         let mut cursor = 0usize;
-        while let Some(pos) = lower[cursor..].find(&needle_lower) {
+        while cursor < lower.len() {
+            let Some(pos) = lower[cursor..].find(&needle_lower) else {
+                break;
+            };
             let start = cursor + pos;
             let end = (start + needle_lower.len()).min(text.len());
             for slot in &mut mask[start..end] {
                 *slot = true;
             }
             cursor = end.max(start + 1);
-            if cursor >= lower.len() {
-                break;
+            while cursor < lower.len() && !lower.is_char_boundary(cursor) {
+                cursor += 1;
             }
         }
     }

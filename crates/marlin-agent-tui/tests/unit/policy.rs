@@ -138,4 +138,54 @@ mod declarative_ui_boundary_guard {
             );
         }
     }
+
+    #[test]
+    fn search_helm_and_asp_forbid_hardcoded_languages_presets_or_magic_budgets() {
+        let tui_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        collect_rs_files(&tui_src.join("helm"), &mut files);
+        files.push(tui_src.join("app/asp_supervisor.rs"));
+
+        let forbidden_tokens = [
+            "const HELM_SEARCH_PRESETS",
+            "BUILTIN_SPECIAL_RELATIONS",
+            "MAX_INSPECT_BATCH_FILES",
+            "MAX_CHUNKED_HYDRATION_FILES",
+            "\"(ascent-fragment",
+            "\"(search-choice-program",
+            "\"rust_fn\"",
+            "\"scheme_def\"",
+            "\"gerbil-scheme\"",
+            "\"crates/marlin-agent",
+            "\"scheme/search-dsl",
+        ];
+
+        let mut violations = Vec::new();
+        for file in files {
+            let rel = file
+                .strip_prefix(&tui_src)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let code = fs::read_to_string(&file)
+                .unwrap()
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            for token in forbidden_tokens {
+                if code.contains(token) {
+                    violations.push(format!(
+                        "{rel}: forbidden hardcoded search/language/preset token `{token}`; declare in Scheme (`scheme/ui-helm/objects.ss`) or forward from ASP providers"
+                    ));
+                }
+            }
+        }
+
+        assert!(
+            violations.is_empty(),
+            "Scheme-first / language-agnostic Helm & ASP boundary violation:\n{}",
+            violations.join("\n")
+        );
+    }
 }

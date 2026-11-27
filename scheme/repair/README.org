@@ -1,0 +1,20 @@
+#+TITLE: Marlin Modular Repair Module (=scheme/repair=)
+
+* Responsibility
+
+=scheme/repair= owns deterministic, fail-closed query/AST repair, structured
+diagnostic synthesis, declarative L1/L2 search-form lowering, and the opt-in
+=+ast-patch= feature that projects =entity_locator= / =ast-style= findings into
+validated ASP =POST /v1/ast/patch= requests.
+
+* Internal Decomposition
+
+- =objects.ss= — POO policy prototypes (=RepairPolicy.=) and closed grammar tables.
+- =types.ss= — Yuanxu contracts (=RepairScopeContract=, =RepairAstPatchContract=).
+- =reader.ss= — Stage A bounded lexical fence/paren balancing and non-eval reader.
+- =diagnostics.ss= — POO-registry signature table, similarity suggestions, and =DSL_REPAIR_DIAGNOSTIC=.
+- =desugar.ss= — High-level L1 (=find-impact=, =find-collisions=, =find-callers=, =find-impls=, =find-symbols=) and L2 (=solve-placement=, =solve-resolve=) lowering.
+- =ascent.ss= — Closed =:gerbil-ascent= rule normalization, path-predicate lowering, DNF expansion, and safety validation.
+- =choice.ss= — Dusa POPL 2025 choice normalization and canonical formatter.
+- =ast-patch.ss= — Opt-in Yuanxu =+ast-patch= feature (=Marlin.repair.ast-patch=).
+- =funcs.ss= / =config.ss= / =interface.ss= — Pure composition and Yuanxu module export.

@@ -25,9 +25,11 @@
                  compile-closed-ascent-session
                  run-compiled-ascent-session
                  prune-ascent-parts-for-query
+                 select-diverse-rows-up-to
                  evaluate-search-dsl-over-edb
                  evaluate-choice-program-over-edb
                  search-dsl-completions
+                 json-schema-string->completion-entries
                  parse-search-dsl-selector
                  project-language-conformance-pack
                  project-all-conformance-packs
@@ -65,8 +67,10 @@
              (desc ((.get dsl tool-description))))
         (check (eq? (.get dsl identity) 'marlin/search-dsl) => #t)
         (check (string? desc) => #t)
-        (check (<= (string-length desc) 256) => #t)
-        (check (and (string-contains desc "(ascent-fragment ...)")
+        (check (<= (string-length desc) 4096) => #t)
+        (check (and (string-contains desc "(brute-search ...)")
+                    (string-contains desc "(ascent-fragment ...)")
+                    (string-contains desc "(search-choice-program ...)")
                     (string-contains desc "(relational-choice-program ...)")
                     (string-contains desc "rust")
                     (string-contains desc "scheme")
@@ -88,15 +92,36 @@
           sample-edb)
         true))
 
-    (test-case "Zero-regex prefilter compiler derives Rust language + tokens from POO relation (rust_fn)"
+    (test-case "Zero-regex prefilter compiler derives Rust language + tokens from POO relation (rust_fn) without polluting tokens with file path"
       (let* ((pref (compile-search-dsl-prefilter
                      "(ascent-fragment
                         (relation answer ((path string?) (line integer?)))
-                        ((answer path line) <-- (file f \"rust\" path) (rust_fn id f \"open_or_build_cached\" line)))")))
-        (check (vector-length pref) => 5)
+                        ((answer path line) <-- (file f \"rust\" \"crates/foo/src/lib.rs\") (rust_fn id f \"open_or_build_cached\" line)))")))
+        (check (vector-length pref) => 6)
         (check (vector-ref pref 0) => 'search-edb-prefilter)
         (check (vector-ref pref 1) => #("rust"))
-        (check (vector-ref pref 3) => #("open_or_build_cached"))))
+        (check (vector-ref pref 2) => "crates/foo/src/lib.rs")
+        (check (vector-ref pref 3) => #("open_or_build_cached"))
+        (check (>= (vector-ref pref 4) 1024) => #t)))
+
+    (test-case "Ascent supports (limit N), ((limit N)) unwrap repair, impl_trait, and rejects illegal clauses clearly"
+      (let ((limited (evaluate-search-dsl-over-edb
+                       "(ascent-fragment
+                          ((limit 1))
+                          ((answer name line) <-- (rust_fn _ _ name line)))"
+                       sample-edb))
+            (trait-res (evaluate-search-dsl-over-edb
+                         "(ascent-fragment
+                            ((answer ty tr path line) <-- (impl_trait ty tr path line)))"
+                         sample-edb)))
+        (check (length (vector-ref limited 3)) => 1)
+        (check (memq 'unwrap-limit-clause (vector-ref limited 4)) ? pair?)
+        (check (vector-ref trait-res 3) => '(("ResidentSearchToolHandler" "ToolRuntime" "crates/tooling/src/search_tool.rs" 120))))
+      (check-exception
+        (evaluate-search-dsl-over-edb
+          "(ascent-fragment (bogus-clause 1 2) ((answer p) <-- (file _ _ p)))"
+          sample-edb)
+        true))
 
     (test-case "POO relations distinguish native language_kind (rust_impl, rust_macro, scheme_poo_def, sysml_requirement)"
       (let ((impl-res (evaluate-search-dsl-over-edb
@@ -141,7 +166,10 @@
         (let ((tags (vector-ref r1 4)))
           (check (and (memq 'strip-code-fence tags) #t) => #t)
           (check (and (memq 'close-missing-parens tags) #t) => #t)
-          (check (and (memq 'synthesize-head-relation tags) #t) => #t)))
+          ;; Omitting `(relation answer ...)` is first-class surface syntax (silent, no repair noise).
+          (check (memq 'synthesize-head-relation tags) => #f)
+          ;; Real repairs echo the canonical S-expression in slot 6.
+          (check (string? (vector-ref r1 6)) => #t)))
       ;; 2. Untyped columns + `<-` arrow typo + extra trailing `)`
       (let ((r2 (evaluate-search-dsl-over-edb
                   "(ascent-fragment
@@ -160,8 +188,9 @@
         (check (vector-ref r3 3) => '(("RustSearchFragment.")))
         (let ((tags (vector-ref r3 4)))
           (check (and (memq 'wrap-bare-rule tags) #t) => #t)
-          (check (and (memq 'synthesize-head-relation tags) #t) => #t)))
-      ;; 4. Missing `(limits ...)` and bare `'hot` / `'warm` values in Dusa choice program
+          (check (memq 'synthesize-head-relation tags) => #f)))
+      ;; 4. Missing `(limits ...)` and bare `'hot` / `'warm` values are silent first-class sugar;
+      ;;    only omitted trailing wildcards trigger `pad-relation-wildcards`.
       (let ((r4 (evaluate-search-dsl-over-edb
                   "(relational-choice-program
                      (choice tier (f t))
@@ -171,11 +200,14 @@
                            (rust_fn ?_ ?f 'open_or_build_cached)))"
                   sample-edb)))
         (check (vector-ref r4 1) => 'choice)
-        (check (length (vector-ref r4 3)) => 2)
+        (let ((report (vector-ref r4 3)))
+          (check (vector-ref report 0) => 'choice-report)
+          (check (vector-ref report 1) => 2))
         (let ((tags (vector-ref r4 4)))
-          (check (and (memq 'normalize-choice-values tags) #t) => #t)
+          (check (memq 'normalize-choice-values tags) => #f)
           (check (and (memq 'pad-relation-wildcards tags) #t) => #t)
-          (check (and (memq 'append-default-limits tags) #t) => #t)))
+          (check (memq 'append-default-limits tags) => #f)
+          (check (string? (vector-ref r4 5)) => #t)))
       ;; 5. Omitted trailing wildcards on 5-col `edge` (3-col shorthand `(edge a b "imports")`)
       (let ((r5 (evaluate-search-dsl-over-edb
                   "(ascent-fragment
@@ -184,7 +216,7 @@
         (check (vector-ref r5 3) => '(("e2" "e1")))
         (let ((tags (vector-ref r5 4)))
           (check (and (memq 'pad-relation-wildcards tags) #t) => #t)
-          (check (and (memq 'synthesize-head-relation tags) #t) => #t)))
+          (check (memq 'synthesize-head-relation tags) => #f)))
       ;; 6. Fail-closed unknown relation produces POO-registry "did you mean?" diagnostic
       (let ((err-msg
               (with-catch
@@ -231,15 +263,18 @@
                             (limits 4096 4096 4096))"
                          sample-edb)))
         (check (vector-ref direct-res 1) => 'choice)
-        (check (length (vector-ref direct-res 3)) => 2)
+        (check (vector-ref (vector-ref direct-res 3) 0) => 'choice-report)
+        (check (vector-ref (vector-ref direct-res 3) 1) => 2)
         (check (vector-ref text-res 1) => 'choice)
-        (let ((models (vector-ref text-res 3)))
-          (check (length models) => 2)
-          (check (andmap (lambda (m)
-                           (and (eq? (vector-ref m 0) 'choice-model)
-                                (member '(2 hot) (vector-ref m 1))
-                                (pair? (vector-ref m 2))))
-                         models)
+        (let* ((report (vector-ref text-res 3))
+               (worlds (vector-ref report 4)))
+          (check (vector-ref report 0) => 'choice-report)
+          (check (length worlds) => 2)
+          (check (andmap (lambda (w)
+                           (and (eq? (vector-ref w 0) 'choice-world)
+                                (member '(2 hot) (vector-ref w 2))
+                                (pair? (vector-ref w 3))))
+                         worlds)
                  => #t))))
 
     (test-case "Structured selector sub-language parses via :gerbil-parser"
@@ -425,7 +460,8 @@
         (check (vector-ref jl-abs 3) => '(("AbstractOp")))
         ;; Dusa choice program binds BOTH General Ontology (`callable`) and Special (`ts_interface`)!
         (check (vector-ref dusa-general-and-special 1) => 'choice)
-        (check (pair? (vector-ref dusa-general-and-special 3)) => #t)))
+        (check (vector-ref (vector-ref dusa-general-and-special 3) 0) => 'choice-report)
+        (check (> (vector-ref (vector-ref dusa-general-and-special 3) 1) 0) => #t)))
 
     (test-case "defasp-language projects Yuanxu-compatible targeted JSON Schemas for all 5 languages"
       (let* ((rust-schema (project-language-json-schema 'rust))
@@ -559,4 +595,600 @@
         (check (and (member '("src/b.rs") (vector-ref dep-res 3))
                     (member '("src/c.rs") (vector-ref dep-res 3))
                     #t)
-               => #t))))))
+               => #t)))
+
+    (test-case "Scenario B.1: Dusa search-choice-program disambiguates same-name callsites with deduction/branch witnesses and excludes test mocks"
+      (let* ((edb
+               '((file . ((1 "rust" "src/app.rs")
+                          (2 "rust" "src/parser_a.rs")
+                          (3 "rust" "src/parser_b.rs")
+                          (4 "rust" "tests/mock_parser.rs")))
+                 (entity . (("src/app.rs#fn:run" 1 "rust" "function" "fn_item" "run" 1)
+                            ("src/app.rs#fn:local_init" 1 "rust" "function" "fn_item" "local_init" 8)
+                            ("src/parser_a.rs#fn:parse" 2 "rust" "function" "fn_item" "parse" 3)
+                            ("src/parser_b.rs#fn:parse" 3 "rust" "function" "fn_item" "parse" 5)
+                            ("tests/mock_parser.rs#fn:parse" 4 "rust" "function" "fn_item" "parse" 2)))
+                 (edge . (("src/app.rs#fn:run" "local_init" "calls" "src/app.rs" 2)
+                          ("src/app.rs#fn:run" "parse" "calls" "src/app.rs" 4)))
+                 (attr . ())))
+             (query
+               "(search-choice-program
+                  (use rust)
+                  (choice resolve (callsite target))
+                  (rule (closed (resolve ?call) (?def))
+                        (ref-at ?call ?name)
+                        (same-module-def ?call ?name ?def))
+                  (rule (open (resolve ?call) ?def)
+                        (ref-at ?call ?name)
+                        (workspace-def ?name ?def))
+                  (rule (closed (resolve ?call) ())
+                        (resolve ?call ?def)
+                        (in-test-file ?def))
+                  (solve resolve state-budget: 32 provenance?: #t))")
+             (res (evaluate-search-dsl-over-edb query edb SearchLanguageRegistryValue))
+             (report (vector-ref res 3))
+             (world-count (vector-ref report 1))
+             (worlds (vector-ref report 4)))
+        ;; `local_init` is forced by same-module `closed` deduction;
+        ;; `parse` has 3 defs across workspace, test mock is pruned by `closed ()`,
+        ;; leaving EXACTLY 2 consistent worlds (parser_a vs parser_b)!
+        (check (vector-ref res 1) => 'choice)
+        (check (vector-ref res 2) => 'resolve)
+        (check (vector-ref report 0) => 'choice-report)
+        (check world-count => 2)
+        (check (length worlds) => 2)))
+
+    (test-case "Scenario B.2: Dusa search-choice-program verifies architecture tier boundaries with hot-path forbid constraint"
+      (let* ((edb
+               '((file . ((1 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/codec.rs")
+                          (2 "scheme" "scheme/search-dsl/funcs.ss")
+                          (3 "rust" "crates/marlin-agent-cli/src/main.rs")))
+                 (entity . ())
+                 (edge . ())
+                 (attr . ())))
+             (query
+               "(search-choice-program
+                  (use rust scheme)
+                  (choice tier (mod level))
+                  (rule (closed (tier ?m) (resident provider)) (module-in-scope ?m))
+                  (rule (closed (tier ?m) ()) (hot-path-module ?m) (tier ?m 'provider))
+                  (solve tier state-budget: 64 provenance?: #t))")
+             (res (evaluate-search-dsl-over-edb query edb SearchLanguageRegistryValue))
+             (report (vector-ref res 3))
+             (world-count (vector-ref report 1))
+             (worlds (vector-ref report 4)))
+        ;; 2 hot-path modules (`edb_bridge/codec.rs`, `search-dsl/funcs.ss`) are forced
+        ;; to `resident`; 1 non-hot-path module (`cli/main.rs`) branches between
+        ;; `resident` and `provider` -> EXACTLY 2 consistent architecture worlds!
+        (check (vector-ref report 0) => 'choice-report)
+        (check world-count => 2)
+        (check (not (memq #f
+                          (map (lambda (w)
+                                 (let ((bindings (vector-ref w 2)))
+                                   (and (member '(crates/marlin-agent-search-engine/src/edb_bridge/codec.rs resident) bindings)
+                                        (member '(scheme/search-dsl/funcs.ss resident) bindings)
+                                        #t)))
+                               worlds)))
+               => #t)))
+
+    (test-case "Ascent ergonomics repair: ?var normalization, =/==/!= guards, literal let inlining, and bare lang quoting"
+      (let* ((edb
+               '((file . ((1 "rust" "src/a.rs")
+                          (2 "rust" "src/b.rs")
+                          (3 "scheme" "scheme/c.ss")))
+                 (entity . (("a#s1" 1 "rust" "struct" "struct_item" "Config" 10)
+                            ("a#e1" 1 "rust" "enum" "enum_item" "Mode" 20)
+                            ("b#s1" 2 "rust" "struct" "struct_item" "Config" 5)
+                            ("b#s2" 2 "rust" "struct" "struct_item" "Unique" 12)))
+                 (edge . ())
+                 (attr . ())))
+             (r1 (evaluate-search-dsl-over-edb
+                   "(ascent-fragment (limit 20)
+                      ((answer kind name line) <--
+                       (rust_struct ?id ?fid ?name ?line)
+                       (file ?fid rust ?path)
+                       (== ?path \"src/a.rs\")
+                       (let kind \"struct\"))
+                      ((answer kind name line) <--
+                       (rust_enum ?id ?fid ?name ?line)
+                       (file ?fid rust ?path)
+                       (= ?path \"src/a.rs\")
+                       (let kind \"enum\")))"
+                   edb SearchLanguageRegistryValue))
+             (r2 (evaluate-search-dsl-over-edb
+                   "(ascent-fragment (limit 20)
+                      ((answer name p1 p2) <--
+                       (rust_struct _ f1 name _)
+                       (rust_struct _ f2 name _)
+                       (file f1 rust p1)
+                       (file f2 rust p2)
+                       (!= f1 f2)
+                       (< f1 f2)))"
+                   edb SearchLanguageRegistryValue)))
+        (check (length (vector-ref r1 3)) => 2)
+        (check (and (member '("struct" "Config" 10) (vector-ref r1 3))
+                    (member '("enum" "Mode" 20) (vector-ref r1 3))
+                    #t)
+               => #t)
+        (check (vector-ref r2 3) => '(("Config" "src/a.rs" "src/b.rs")))))
+
+    (test-case "Ascent repair absorbs trailing = guard, inlines equality literals, and gives schema-aware arity & head-safety errors"
+      (let* ((edb
+               '((file . ((1 "rust" "src/gw.rs")))
+                 (entity . (("gw#i1" 1 "rust" "item" "impl_item" "WeaverModelGateway" 42)
+                            ("gw#i2" 1 "rust" "item" "impl_item" "OtherImpl" 80)))
+                 (edge . (("gw#i1" "ModelGateway" "implements" "src/gw.rs" 42)
+                          ("gw#i2" "OtherTrait" "implements" "src/gw.rs" 80)))
+                 (attr . (("gw#i1" "trait" "ModelGateway")
+                          ("gw#i2" "trait" "OtherTrait")))))
+             ;; Misplaced `(= trait "ModelGateway")` outside the rule is absorbed AND inlined into head+body!
+             (r-absorbed
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment (limit 20)
+                    ((answer type trait path line) <-- (impl_trait type trait path line))
+                    (= trait \"ModelGateway\"))"
+                 edb SearchLanguageRegistryValue))
+             ;; Arity overflow on `type_decl` (6 args instead of 5) reports expected arity & schema.
+             (arity-err
+               (with-catch
+                 (lambda (e) (call-with-output-string (lambda (p) (display-exception e p))))
+                 (lambda ()
+                   (repair-ascent-search-form
+                     "(ascent-fragment ((answer name) <-- (type_decl id fid \"rust\" kind name line)))")
+                   "unexpected-ok")))
+             ;; Unbound head variable `kind` reports actionable head-safety diagnostic.
+             (unsafe-err
+               (with-catch
+                 (lambda (e) (call-with-output-string (lambda (p) (display-exception e p))))
+                 (lambda ()
+                   (repair-ascent-search-form
+                     "(ascent-fragment ((answer kind name) <-- (rust_struct id fid name line)))")
+                   "unexpected-ok"))))
+        (check (vector-ref r-absorbed 3) => '(("WeaverModelGateway" "ModelGateway" "src/gw.rs" 42)))
+        (check (and (string-contains arity-err "DSL_REPAIR_DIAGNOSTIC")
+                    (string-contains arity-err "arity_mismatch")
+                    (string-contains arity-err "type_decl(id, file_id, lang, name, line)") #t) => #t)
+        (check (and (string-contains unsafe-err "DSL_REPAIR_DIAGNOSTIC")
+                    (string-contains unsafe-err "unsafe_head_variable")
+                    (string-contains unsafe-err "unsafe ASCENT head variable 'kind'") #t) => #t)))
+
+    (test-case "Principled Ascent repair hoists rule-body scope/limit/string-prefix and normalizes string=? / unsupported guards"
+      (let* ((edb
+               '((file . ((1 "rust" "crates/a/src/lib.rs")
+                          (2 "rust" "crates/b/src/lib.rs")))
+                 (entity . (("a#s1" 1 "rust" "struct" "struct_item" "Shared" 10)
+                            ("b#s1" 2 "rust" "struct" "struct_item" "Shared" 20)))
+                 (edge . ())
+                 (attr . ())))
+             (repaired-hoist
+               (repair-ascent-search-form
+                 "(ascent-fragment (limit 20)
+                    ((answer name p) <--
+                     (rust_struct _ f name _)
+                     (file f rust p)
+                     (scope \"crates/a/\")))"))
+             (prefilter-hoist
+               (compile-search-dsl-prefilter
+                 "(ascent-fragment
+                    ((answer name p) <--
+                     (rust_struct _ f name _)
+                     (file f rust p)
+                     (string-prefix? \"crates/a/\" p)))"))
+             (repaired-eq
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment (limit 20)
+                    ((answer name p) <--
+                     (rust_struct _ f name _)
+                     (file f rust p)
+                     (if (name) (string=? name \"Shared\"))))"
+                 edb SearchLanguageRegistryValue))
+             (bad-guard
+               (with-catch
+                 (lambda (e) (call-with-output-string (lambda (p) (display-exception e p))))
+                 (lambda ()
+                   (repair-ascent-search-form
+                     "(ascent-fragment ((answer p) <-- (file _ \"rust\" p) (if (p) (pregexp-match \"foo\" p))))")
+                   "unexpected-ok"))))
+        (check (and (memq 'hoist-rule-directive (vector-ref repaired-hoist 1))
+                    (memq 'normalize-scope-directive (vector-ref repaired-hoist 1))
+                    #t)
+               => #t)
+        (check (vector-ref prefilter-hoist 2) => "crates/a/")
+        (check (length (vector-ref repaired-eq 3)) => 2)
+        (check (and (string-contains bad-guard "DSL_REPAIR_DIAGNOSTIC")
+                    (string-contains bad-guard "unsupported_guard_operator") #t)
+               => #t)))
+
+    (test-case "Dusa choice repair infers/synthesizes choice arity and gives structured diagnostics for malformed heads and != guards"
+      (let ((repaired-arity
+              (repair-ascent-search-form
+                "(search-choice-program (choice dup (p)) (rule (open (dup ?n) ?p) (rust_struct ?i ?f ?n ?l) (file ?f \"rust\" ?p)))"))
+            (repaired-synth
+              (repair-ascent-search-form
+                "(search-choice-program (use rust) (scope \"crates/a/\") (rule (closed (tier ?m) (resident provider)) (module-in-scope ?m)) (solve tier state-budget: 16))"))
+            (bad-open
+              (with-catch
+                (lambda (e) (call-with-output-string (lambda (p) (display-exception e p))))
+                (lambda ()
+                  (repair-ascent-search-form
+                    "(search-choice-program (choice dup (k v)) (rule (open (dup ?n ?p1 ?p2)) (rust_struct ?i ?f ?n ?l)))")
+                  "unexpected-ok")))
+            (bad-tuple
+              (with-catch
+                (lambda (e) (call-with-output-string (lambda (p) (display-exception e p))))
+                (lambda ()
+                  (repair-ascent-search-form
+                    "(search-choice-program (choice dup (k v)) (rule (open (dup ?n) (?p ?q)) (rust_struct ?i ?f ?n ?l)))")
+                  "unexpected-ok")))
+            (bad-guard
+              (with-catch
+                (lambda (e) (call-with-output-string (lambda (p) (display-exception e p))))
+                (lambda ()
+                  (repair-ascent-search-form
+                    "(search-choice-program (choice dup (k v)) (rule (open (dup ?n) ?p) (rust_struct ?i ?f ?n ?l) (!= ?f ?g)))")
+                  "unexpected-ok"))))
+        (check (and (memq 'infer-choice-arity (vector-ref repaired-arity 1)) #t) => #t)
+        (check (and (memq 'synthesize-choice-decl (vector-ref repaired-synth 1))
+                    (memq 'normalize-scope-directive (vector-ref repaired-synth 1)) #t) => #t)
+        (check (and (string-contains bad-open "invalid_dusa_rule_head") #t) => #t)
+        (check (and (string-contains bad-tuple "invalid_dusa_open_value") #t) => #t)
+        (check (and (string-contains bad-guard "unsupported_dusa_guard") #t) => #t)))
+
+    (test-case "First-class (not (= a b)), (context N), calls_symbol view, and Dusa budget-exhausted combinatorics + partial witnesses"
+      (let* ((call-edb
+               '((file . ((1 "rust" "crates/a/src/lib.rs")
+                          (2 "rust" "crates/b/src/lib.rs")
+                          (3 "rust" "crates/c/src/lib.rs")
+                          (4 "rust" "crates/d/src/lib.rs")
+                          (5 "rust" "crates/e/src/lib.rs")
+                          (6 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/codec.rs")))
+                 (entity . (("a#fn:caller" 1 "rust" "function" "fn_item" "run_pipeline" 10)
+                            ("b#fn:callee" 2 "rust" "function" "fn_item" "verify_claim" 20)
+                            ("a#s1" 1 "rust" "struct" "struct_item" "Config" 3)
+                            ("b#s1" 2 "rust" "struct" "struct_item" "Config" 5)))
+                 (edge . (("a#fn:caller" "b#fn:callee" "calls" "crates/a/src/lib.rs" 12)
+                          ("a#fn:caller" "external_helper" "calls" "crates/a/src/lib.rs" 14)
+                          ("direct_caller" "direct_callee" "calls" "crates/b/src/lib.rs" 25)))
+                 (attr . ())))
+             ;; 1. `(not (= p1 p2))`, `(= name "Config")`, omitted `(relation ...)`, and `(context 2)` are silent first-class sugar!
+             (neg-eq-res
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment (limit 10) (context 2)
+                    ((answer name p1 p2) <--
+                     (rust_struct _ f1 name _)
+                     (rust_struct _ f2 name _)
+                     (file f1 \"rust\" p1)
+                     (file f2 \"rust\" p2)
+                     (= name \"Config\")
+                     (not (= p1 p2))))"
+                 call-edb SearchLanguageRegistryValue))
+             ;; 2. `calls_symbol` resolves entity_id->entity_id, entity_id->sym, and sym->sym cleanly!
+             (calls-res
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment
+                    ((answer caller callee path line) <-- (calls_symbol caller callee path line)))"
+                 call-edb SearchLanguageRegistryValue))
+             ;; 3. Dusa budget exhaustion reports combinatorics + partial SAT witness sample!
+             (dusa-exhausted
+               (evaluate-search-dsl-over-edb
+                 "(search-choice-program
+                    (use rust)
+                    (choice tier (mod lvl))
+                    (rule (closed (tier ?m) (resident provider)) (module-in-scope ?m))
+                    (rule (closed (tier ?m) ()) (hot-path-module ?m) (tier ?m provider))
+                    (solve tier state-budget: 8 provenance?: #t))"
+                 call-edb SearchLanguageRegistryValue))
+             (exhaust-payload (vector-ref dusa-exhausted 3)))
+        (check (length (vector-ref neg-eq-res 3)) => 2)
+        (check (vector-ref neg-eq-res 4) => '())
+        (check (vector-ref neg-eq-res 6) => #f)
+        (check (vector-ref neg-eq-res 7) => 2)
+        (check (and (member '("run_pipeline" "verify_claim" "crates/a/src/lib.rs" 12) (vector-ref calls-res 3))
+                    (member '("run_pipeline" "external_helper" "crates/a/src/lib.rs" 14) (vector-ref calls-res 3))
+                    (member '("direct_caller" "direct_callee" "crates/b/src/lib.rs" 25) (vector-ref calls-res 3))
+                    #t)
+               => #t)
+        (check (vector-ref exhaust-payload 0) => 'choice-budget-exhausted)
+        (check (vector-ref exhaust-payload 3) => 6)  ;; scoped_count = 6
+        (check (vector-ref exhaust-payload 4) => 1)  ;; constrained (hot-path) = 1
+        (check (vector-ref exhaust-payload 5) => 5)  ;; free_vars = 5
+        (check (vector-ref exhaust-payload 6) => 2)  ;; branch_factor = 2
+        (check (vector-ref exhaust-payload 7) => 32) ;; estimated_worlds = 2^5 = 32
+        (check (>= (vector-ref exhaust-payload 8) 1) => #t)
+        (check (> (length (vector-ref exhaust-payload 10)) 0) => #t)))
+
+    (test-case "Ascent (or ...) DNF expansion, sound multi-rule prefilter, negation wildcarding, and Dusa 5-hot-path closed-forbid deduction"
+      (let* ((edb
+               '((file . ((1 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/mod.rs")
+                          (2 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/types.rs")
+                          (3 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/codec.rs")
+                          (4 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/choice_codec.rs")
+                          (5 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/runner.rs")
+                          (6 "scheme" "scheme/policy/governance.ss")))
+                 (entity . (("e1" 1 "rust" "struct" "struct_item" "Alpha" 10)
+                            ("e2" 2 "rust" "struct" "struct_item" "Beta" 20)
+                            ("e3" 6 "scheme" "function" "def_proc" "evaluate-policy" 5)))
+                 (edge . (("e1" "foo_fn" "calls" "crates/marlin-agent-search-engine/src/edb_bridge/mod.rs" 12)
+                          ("e2" "bar_fn" "calls" "crates/marlin-agent-search-engine/src/edb_bridge/types.rs" 22)))
+                 (attr . (("e1" "trait" "ModelGateway")))))
+             ;; 1. `(or (= callee "foo_fn") (= callee "bar_fn"))` expands cleanly to 2 rules (silent)
+             ;;    AND prefilter intersects tokens across rules -> empty token list (never drops files!).
+             (or-query
+               "(ascent-fragment
+                  ((answer caller callee path line)
+                   <-- (calls_symbol caller callee path line)
+                       (or (= callee \"foo_fn\") (= callee \"bar_fn\"))))")
+             (or-pref (compile-search-dsl-prefilter or-query))
+             (or-res (evaluate-search-dsl-over-edb or-query edb SearchLanguageRegistryValue))
+             ;; 2. Cross-language multi-rule prefilter unions languages and intersects tokens!
+             (poly-pref
+               (compile-search-dsl-prefilter
+                 "(ascent-fragment
+                    ((answer lang name) <-- (rust_struct _ _ \"Alpha\" _) (= lang \"rust\") (= name \"Alpha\"))
+                    ((answer lang name) <-- (scheme_def _ _ \"evaluate-policy\" _) (= lang \"scheme\") (= name \"evaluate-policy\")))"))
+             ;; 3. Existential unbound negation variables `(not (impl_trait name tr p2 l2))` auto-wildcard to `_`!
+             (neg-res
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment
+                    ((answer name)
+                     <-- (rust_struct _ _ name _)
+                         (not (impl_trait name tr p2 l2))))"
+                 edb SearchLanguageRegistryValue))
+             ;; 4. Dusa 5 hot-path files in `edb_bridge/` previously blew up state-budget: 64;
+             ;;    closed-forbid deduction propagation now solves all 5 in 1 SAT world!
+             (dusa-5-hot
+               (evaluate-search-dsl-over-edb
+                 "(search-choice-program
+                    (use rust)
+                    (scope path-prefix: \"crates/marlin-agent-search-engine/src/edb_bridge/\" limit: 6)
+                    (choice tier (m lvl))
+                    (rule (closed (tier ?m) (resident provider)) (module-in-scope ?m))
+                    (rule (closed (tier ?m) ()) (hot-path-module ?m) (tier ?m provider))
+                    (solve tier state-budget: 64 provenance?: #t))"
+                 edb SearchLanguageRegistryValue))
+             (dusa-report (vector-ref dusa-5-hot 3)))
+        (check (vector-ref or-pref 3) => #())
+        (check (length (vector-ref or-res 3)) => 2)
+        (check (vector-ref or-res 4) => '())
+        (check (vector-ref poly-pref 1) => #("rust" "scheme"))
+        (check (vector-ref poly-pref 3) => #())
+        (check (vector-ref neg-res 3) => '(("Beta")))
+        (check (vector-ref dusa-report 0) => 'choice-report)
+        (check (vector-ref dusa-report 1) => 1)))
+
+    (test-case "High-level declarative L1/L2 forms lower directly into real Ascent & Dusa programs"
+      (let* ((edb
+               '((file . ((1 "rust" "crates/a/src/mod.rs")
+                          (2 "rust" "crates/b/src/mod.rs")
+                          (3 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/codec.rs")
+                          (4 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/runner.rs")))
+                 (entity . (("a#SharedCfg" 1 "rust" "struct" "struct_item" "SharedCfg" 10)
+                            ("b#SharedCfg" 2 "rust" "struct" "struct_item" "SharedCfg" 25)
+                            ("a#run"       1 "rust" "function" "function_item" "run" 40)
+                            ("b#run"       2 "rust" "function" "function_item" "run" 55)
+                            ("a#caller"    1 "rust" "function" "function_item" "caller_fn" 70)))
+                 (edge . (("a#caller" "run" "calls" "crates/a/src/mod.rs" 72)))
+                 (attr . ())))
+             (struct-colls
+               (evaluate-search-dsl-over-edb
+                 "(find-collisions kind: \"struct\" path-prefix: \"crates/\" lang: \"rust\" limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             (fn-colls-bare
+               (evaluate-search-dsl-over-edb
+                 "find-collisions kind: \"fn\" path-prefix: \"crates/\" lang: \"rust\" limit: 20"
+                 edb SearchLanguageRegistryValue))
+             (callers
+               (evaluate-search-dsl-over-edb
+                 "(find-callers \"run\" path-prefix: \"crates/\" limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             (placement
+               (evaluate-search-dsl-over-edb
+                 "(solve-placement path-prefix: \"crates/marlin-agent-search-engine/src/edb_bridge/\" limit: 6 choices: (resident provider) forbid-hot-path: provider state-budget: 64)"
+                 edb SearchLanguageRegistryValue))
+             (placement-report (vector-ref placement 3)))
+        (check (length (vector-ref struct-colls 3)) => 1)
+        (check (car (car (vector-ref struct-colls 3))) => "SharedCfg")
+        (check (length (vector-ref fn-colls-bare 3)) => 1)
+        (check (car (car (vector-ref fn-colls-bare 3))) => "run")
+        (check (length (vector-ref callers 3)) => 1)
+        (check (car (car (vector-ref callers 3))) => "caller_fn")
+        (check (vector-ref placement-report 0) => 'choice-report)
+        ;; Both hot-path files are forced to `resident` -> exact 1 SAT world!
+        (check (vector-ref placement-report 1) => 1))
+      ;; Balanced bounded slice: mixed asp_http_client/* + edb_bridge/* under limit: 6
+      ;; selects 4 constrained hot-path modules + 2 free modules -> exact 4 SAT worlds within budget 64!
+      (let* ((mixed-edb
+               '((file . ((1 "rust" "crates/marlin-agent-search-engine/src/asp_http_client/domain_types.rs")
+                          (2 "rust" "crates/marlin-agent-search-engine/src/asp_http_client/mod.rs")
+                          (3 "rust" "crates/marlin-agent-search-engine/src/asp_http_client/patch_client.rs")
+                          (4 "rust" "crates/marlin-agent-search-engine/src/asp_http_client/protocol_types.rs")
+                          (5 "rust" "crates/marlin-agent-search-engine/src/asp_http_client/sync.rs")
+                          (6 "rust" "crates/marlin-agent-search-engine/src/engine.rs")
+                          (7 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/choice_codec.rs")
+                          (8 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/codec.rs")
+                          (9 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/mod.rs")
+                          (10 "rust" "crates/marlin-agent-search-engine/src/edb_bridge/runner.rs")))
+                 (entity . ()) (edge . ()) (attr . ())))
+             (mixed-res
+               (evaluate-search-dsl-over-edb
+                 "(solve-placement path-prefix: \"crates/marlin-agent-search-engine/src/\" module-limit: 6 forbid-hot-path: provider state-budget: 64)"
+                 mixed-edb SearchLanguageRegistryValue))
+             (mixed-report (vector-ref mixed-res 3)))
+        (check (vector-ref mixed-report 0) => 'choice-report)
+        (check (vector-ref mixed-report 1) => 4)
+        (check (vector-ref mixed-report 5) => 6)
+        (check (vector-ref mixed-report 6) => 10)))
+
+    (test-case "Closed-Ascent path predicates, exclude-tests?, find-impact, and anti-mode-collapse diversity sampling"
+      (let* ((edb
+               '((file . ((1 "rust" "crates/a/src/core.rs")
+                          (2 "rust" "crates/b/src/core.rs")
+                          (3 "rust" "crates/a/tests/mock_core.rs")
+                          (4 "rust" "crates/c/src/adapter.rs")
+                          (5 "org"  "docs/shared-notes.org")))
+                 (entity . (("a#SharedCfg" 1 "rust" "struct" "struct_item" "SharedCfg" 10)
+                            ("b#SharedCfg" 2 "rust" "struct" "struct_item" "SharedCfg" 25)
+                            ("t#SharedCfg" 3 "rust" "struct" "struct_item" "SharedCfg" 5)
+                            ("c#Adapter"   4 "rust" "struct" "struct_item" "Adapter" 12)
+                            ("d#SharedDoc" 5 "org"  "heading" "org_heading" "SharedCfg Design Notes" 1)
+                            ("a#fn_new"    1 "rust" "function" "fn_item" "new" 40)
+                            ("b#fn_new"    2 "rust" "function" "fn_item" "new" 41)
+                            ("c#fn_new"    4 "rust" "function" "fn_item" "new" 42)
+                            ("a#fn_parse"  1 "rust" "function" "fn_item" "parse" 50)
+                            ("b#fn_parse"  2 "rust" "function" "fn_item" "parse" 51)
+                            ("a#fn_run"    1 "rust" "function" "fn_item" "run" 60)
+                            ("b#fn_run"    2 "rust" "function" "fn_item" "run" 61)
+                            ("t#test_call" 3 "rust" "function" "fn_item" "test_shared" 30)))
+                 (edge . (("c#Adapter" "SharedCfg" "calls" "crates/c/src/adapter.rs" 20)
+                          ("t#test_call" "SharedCfg" "calls" "crates/a/tests/mock_core.rs" 32)
+                          ("crates/c/src/adapter.rs" "SharedCfg" "imports" "crates/c/src/adapter.rs" 2)))
+                 (attr . (("c#Adapter" "implements" "SharedCfg")))
+                 (symbol_ref . (("SharedCfg" "crates/a/src/core.rs" 10)
+                                ("SharedCfg" "crates/c/src/adapter.rs" 44)
+                                ("SharedCfg" "crates/a/tests/mock_core.rs" 19)))))
+             (prod-colls
+               (evaluate-search-dsl-over-edb
+                 "(find-collisions kind: \"struct\" path-prefix: \"crates/\" lang: \"rust\" exclude-tests?: #t limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             (neg-str-pred
+               (evaluate-search-dsl-over-edb
+                 "(ascent-fragment
+                    ((answer name p)
+                     <-- (rust_struct _ f name _)
+                         (file f \"rust\" p)
+                         (not (str-prefix p \"crates/a/tests/\"))
+                         (not (str-contains p \"adapter\"))))"
+                 edb SearchLanguageRegistryValue))
+             (neg-pref
+               (compile-search-dsl-prefilter
+                 "(ascent-fragment
+                    ((answer p) <-- (file _ \"rust\" p) (not (path_has_prefix p \"crates/a/tests/\"))))"))
+             (impact-pref
+               (compile-search-dsl-prefilter
+                 "(find-impact \"SharedCfg\" path-prefix: \"crates/\" limit: 40)"))
+             (impact-res
+               (evaluate-search-dsl-over-edb
+                 "(find-impact \"SharedCfg\" path-prefix: \"crates/\" limit: 40)"
+                 edb SearchLanguageRegistryValue))
+             (impact-rows (vector-ref impact-res 3))
+             (impact-prod-only
+               (evaluate-search-dsl-over-edb
+                 "(find-impact \"SharedCfg\" path-prefix: \"crates/\" exclude-tests?: #t limit: 40)"
+                 edb SearchLanguageRegistryValue))
+             (name-contains-res
+               (evaluate-search-dsl-over-edb
+                 "(find-symbols name-contains: (\"shared\" \"adap\") lang: \"any\" exclude-tests?: #t limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             (name-contains-rows (vector-ref name-contains-res 3))
+             (name-prefix-res
+               (evaluate-search-dsl-over-edb
+                 "(find-symbols name-prefix: \"ada\" path-prefix: \"crates/\" exclude-tests?: #t limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             (name-prefix-rows (vector-ref name-prefix-res 3))
+             (org-doc-res
+               (evaluate-search-dsl-over-edb
+                 "(find-symbols name-contains: \"shared\" lang: \"org\" limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             (org-doc-rows (vector-ref org-doc-res 3))
+             (diverse-fn-colls
+               (evaluate-search-dsl-over-edb
+                 "(find-collisions kind: \"fn\" path-prefix: \"crates/\" lang: \"rust\" exclude-tests?: #t limit: 3)"
+                 edb SearchLanguageRegistryValue))
+             (min3-fn-colls
+               (evaluate-search-dsl-over-edb
+                 "(find-collisions kind: \"fn\" path-prefix: \"crates/\" lang: \"rust\" min-files: 3 exclude-tests?: #t limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             (min3-syms (map car (vector-ref min3-fn-colls 3)))
+             (copilot-rust-kws (vector->list (search-dsl-completions "(find-collisions lang: \"rust\" ")))
+             (copilot-rust-kw-names (map (lambda (v) (vector-ref v 0)) copilot-rust-kws))
+             (copilot-rust-kinds (vector->list (search-dsl-completions "(find-collisions lang: \"rust\" kind: ")))
+             (copilot-rust-kind-names (map (lambda (v) (vector-ref v 0)) copilot-rust-kinds))
+             (copilot-rust-lks (vector->list (search-dsl-completions "(find-symbols lang: \"rust\" languageKind: ")))
+             (copilot-rust-lk-names (map (lambda (v) (vector-ref v 0)) copilot-rust-lks))
+             (copilot-scheme-lks (vector->list (search-dsl-completions "(find-symbols lang: \"scheme\" languageKind: ")))
+             (copilot-scheme-lk-names (map (lambda (v) (vector-ref v 0)) copilot-scheme-lks))
+             (asp-proto-json
+               "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"$defs\":{\"UniversalSearchProjection\":{\"type\":\"string\",\"enum\":[\"matches\",\"source\",\"callable-skeleton\"]}},\"properties\":{\"mode\":{\"type\":\"string\",\"enum\":[\"selector\",\"syntax\",\"playbook\"]},\"projection\":{\"anyOf\":[{\"$ref\":\"#/$defs/UniversalSearchProjection\"},{\"type\":\"null\"}]},\"exclude-tests?\":{\"type\":[\"boolean\",\"null\"]}}}")
+             (yuanxu-proto-entries (json-schema-string->completion-entries "*" asp-proto-json))
+             (yuanxu-proto-forms (map car yuanxu-proto-entries))
+             (diverse-syms (map car (vector-ref diverse-fn-colls 3)))
+             (direct-diverse
+               (select-diverse-rows-up-to
+                 '(("new" "a" 1) ("new" "b" 2) ("new" "c" 3) ("new" "d" 4)
+                   ("parse" "a" 5) ("parse" "b" 6)
+                   ("run" "a" 7))
+                 3)))
+        (check (length (vector-ref prod-colls 3)) => 1)
+        (check (vector-ref prod-colls 4) => '())
+        (check (length (vector-ref neg-str-pred 3)) => 2)
+        (check (vector-ref neg-str-pred 4) => '())
+        (check (vector-ref neg-pref 2) => #f)
+        (check (vector-ref impact-pref 2) => "crates/")
+        (check (vector-ref impact-pref 3) => #("SharedCfg"))
+        (check (and (member '("def" "prod" "SharedCfg" "crates/a/src/core.rs" 10) impact-rows)
+                    (member '("def" "test" "SharedCfg" "crates/a/tests/mock_core.rs" 5) impact-rows)
+                    (member '("caller" "prod" "Adapter" "crates/c/src/adapter.rs" 20) impact-rows)
+                    (member '("caller" "test" "test_shared" "crates/a/tests/mock_core.rs" 32) impact-rows)
+                    (member '("impl" "prod" "Adapter" "crates/c/src/adapter.rs" 12) impact-rows)
+                    (member '("import" "prod" "crates/c/src/adapter.rs" "crates/c/src/adapter.rs" 2) impact-rows)
+                    (member '("ref" "prod" "SharedCfg" "crates/c/src/adapter.rs" 44) impact-rows)
+                    (member '("ref" "test" "SharedCfg" "crates/a/tests/mock_core.rs" 19) impact-rows)
+                    #t)
+               => #t)
+        ;; Def-site deduplication: symbol_ref at ("SharedCfg" "crates/a/src/core.rs" 10) must NOT duplicate def!
+        (check (member '("ref" "prod" "SharedCfg" "crates/a/src/core.rs" 10) impact-rows) => #f)
+        (check (ormap (lambda (r) (string=? (cadr r) "test")) (vector-ref impact-prod-only 3)) => #f)
+        ;; Polyglot case-insensitive name_contains + name_has_prefix with exclude-tests?: #t
+        ;; and automatic doc-heading exclusion under lang: "any" (while lang: "org" still matches docs).
+        (check (vector-ref name-contains-res 4) => '())
+        (check (and (member '("SharedCfg" "crates/a/src/core.rs" 10) name-contains-rows)
+                    (member '("Adapter" "crates/c/src/adapter.rs" 12) name-contains-rows)
+                    #t)
+               => #t)
+        (check (ormap (lambda (r) (string=? (cadr r) "crates/a/tests/mock_core.rs")) name-contains-rows) => #f)
+        (check (ormap (lambda (r) (string=? (cadr r) "docs/shared-notes.org")) name-contains-rows) => #f)
+        (check (vector-ref org-doc-res 4) => '())
+        (check org-doc-rows => '(("SharedCfg Design Notes" "docs/shared-notes.org" 1)))
+        (check (vector-ref name-prefix-res 4) => '())
+        (check name-prefix-rows => '(("Adapter" "crates/c/src/adapter.rs" 12)))
+        (check (length diverse-syms) => 3)
+        (check (and (member "new" diverse-syms)
+                    (member "parse" diverse-syms)
+                    (member "run" diverse-syms)
+                    #t)
+               => #t)
+        (check (map car direct-diverse) => '("new" "parse" "run"))
+        ;; `min-files: 3` isolates high-multiplicity hubs (`new` in 3 prod files) over 2-file duplicates!
+        (check (and (pair? min3-syms) (member "new" min3-syms) (not (member "parse" min3-syms)) (not (member "run" min3-syms)) #t) => #t)
+        ;; Yuanxu JSON-Schema-driven Copilot completions (zero hardcoded tables!):
+        ;;   - Rust language JSON Schema projects `kind:` + `languageKind:` and exact Rust enums
+        ;;   - Scheme language JSON Schema projects exact Scheme `languageKind:` enums (`def`, `poo_def`)
+        ;;   - Arbitrary ASP/gRPC JSON Schema string projects keywords (`mode:`, `projection:`, `excludeTests:`) + enum/boolean values!
+        (check (and (member "kind:" copilot-rust-kw-names)
+                    (member "languageKind:" copilot-rust-kw-names)
+                    (not (member "lang:" copilot-rust-kw-names))
+                    #t)
+               => #t)
+        (check (and (member "\"struct\"" copilot-rust-kind-names)
+                    (member "\"function\"" copilot-rust-kind-names)
+                    (member "\"trait\"" copilot-rust-kind-names)
+                    #t)
+               => #t)
+        (check (and (member "\"struct_item\"" copilot-rust-lk-names)
+                    (member "\"impl_item\"" copilot-rust-lk-names)
+                    (not (member "\"poo_def\"" copilot-rust-lk-names))
+                    #t)
+               => #t)
+        (check (and (member "\"def\"" copilot-scheme-lk-names)
+                    (member "\"poo_def\"" copilot-scheme-lk-names)
+                    (not (member "\"impl_item\"" copilot-scheme-lk-names))
+                    #t)
+               => #t)
+        (check (and (member "mode:" yuanxu-proto-forms)
+                    (member "\"playbook\"" yuanxu-proto-forms)
+                    (member "projection:" yuanxu-proto-forms)
+                    (member "\"callable-skeleton\"" yuanxu-proto-forms)
+                    (member "exclude-tests?:" yuanxu-proto-forms)
+                    (member "#t" yuanxu-proto-forms)
+                    #t)
+               => #t)))))

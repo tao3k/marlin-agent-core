@@ -374,6 +374,103 @@ fn recorded_thinking_is_visible_and_blocks_unverified_continuation() {
 }
 
 #[test]
+fn restored_anthropic_thinking_plus_tool_request_allows_subsequent_user_turns() {
+    use crate::harness::replay::{ReplayOutcome, ReplayTurn};
+    use marlin_agent_protocol::{
+        ModelDestinationBinding, ModelToolCall, ModelToolCallId, ModelToolName,
+        tool_gateway_message,
+    };
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let gateway = FixtureGateway {
+        requests: requests.clone(),
+    };
+    let (tx, _) = reply_channel(8, 4096);
+    let endpoint = ModelEndpoint::new("deepseek", "deepseek-flash");
+    let mut app = App::new(endpoint.clone());
+    install_test_commands(&mut app);
+
+    let mut tool_msg = assistant_gateway_message("");
+    tool_msg.tool_calls = vec![ModelToolCall {
+        id: ModelToolCallId::new("call_00").unwrap(),
+        name: ModelToolName::new("workspace_search").unwrap(),
+        arguments: serde_json::json!({"query": "(brute-search \"fn \")"})
+            .as_object()
+            .cloned()
+            .unwrap(),
+    }];
+    tool_msg.continuation = Some(ModelContinuation {
+        endpoint: endpoint.clone(),
+        kind: ModelContinuationKind::AnthropicMessages,
+        destination: Some(ModelDestinationBinding::new([7u8; 32])),
+        payload: serde_json::json!([
+            {"type": "thinking", "thinking": "Checking workspace functions", "signature": "sig-0"},
+            {"type": "tool_use", "id": "call_00", "name": "workspace_search", "input": {"query": "(brute-search \"fn \")"}}
+        ])
+        .to_string(),
+    });
+    let mut final_msg = assistant_gateway_message("Found 147 Rust functions.");
+    final_msg.continuation = Some(ModelContinuation {
+        endpoint,
+        kind: ModelContinuationKind::AnthropicMessages,
+        destination: Some(ModelDestinationBinding::new([7u8; 32])),
+        payload: serde_json::json!([
+            {"type": "thinking", "thinking": "Summarizing hits", "signature": "sig-1"},
+            {"type": "text", "text": "Found 147 Rust functions."}
+        ])
+        .to_string(),
+    });
+
+    app.restore(vec![
+        ReplayTurn {
+            id: serde_json::from_str("1").unwrap(),
+            prompt: Some("search rust fns".into()),
+            tool_messages: Some(vec![tool_gateway_message(
+                ModelToolCallId::new("call_00").unwrap(),
+                "hits: 147",
+            )]),
+            thinking: "Checking workspace functions".into(),
+            checkpoint_spans: vec![marlin_agent_sessions::ConversationCheckpointSpan {
+                channel: marlin_agent_sessions::ConversationCheckpointChannel::Thinking,
+                start: 0,
+                end: "Checking workspace functions".len(),
+            }],
+            outcome: ReplayOutcome::ToolRequested(tool_msg),
+        },
+        ReplayTurn {
+            id: serde_json::from_str("2").unwrap(),
+            prompt: None,
+            tool_messages: None,
+            thinking: "Summarizing hits".into(),
+            checkpoint_spans: vec![marlin_agent_sessions::ConversationCheckpointSpan {
+                channel: marlin_agent_sessions::ConversationCheckpointChannel::Thinking,
+                start: 0,
+                end: "Summarizing hits".len(),
+            }],
+            outcome: ReplayOutcome::Completed(final_msg),
+        },
+    ]);
+
+    assert!(
+        !app.messages
+            .iter()
+            .any(|(_, text)| text.contains("not yet verified")),
+        "verified thinking+tool continuation must not be flagged unverified: {:?}",
+        app.messages.iter().collect::<Vec<_>>()
+    );
+    app.composer.insert_text("follow-up search question");
+    app.submit(&gateway, &runtime, &tx);
+    assert!(
+        !app.messages
+            .iter()
+            .any(|(_, text)| text.contains("Continuation unavailable")),
+        "follow-up turn after thinking+tool call must not be blocked!"
+    );
+    assert!(app.composer.text().is_empty());
+}
+
+#[test]
 fn restored_session_reports_incompatible_model_route() {
     use crate::harness::replay::{ReplayOutcome, ReplayTurn};
     let original = ModelEndpoint::new("openai", "gpt-original");

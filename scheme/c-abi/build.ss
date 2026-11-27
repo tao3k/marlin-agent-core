@@ -16,7 +16,7 @@
         (cond-expand
           (darwin '((gxc: "roots" "-ld-options" "-Wl,-undefined,dynamic_lookup")))
           (else '("roots")))
-        '("context" "deck-runtime" "ui" "ui-helm" "tooling" "search-engine" "search-dsl" "ast-style" "graph-engine" "envrc" "context-admission"
+        '("context" "deck-runtime" "ui" "ui-helm" "tooling" "agent-testing" "search-engine" "search-dsl" "ast-style" "graph-engine" "envrc" "context-admission"
           "worktree-context" "artifacts")))
   .worktree-provider:
   (lambda () (and (module-build-feature-selected? 'gitops 'worktrunk) 'worktrunk))

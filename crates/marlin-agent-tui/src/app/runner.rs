@@ -5,15 +5,12 @@
 //! Terminal event loop and process entry.
 
 use super::{
-    AgentId, App, Arc, AtomicU64, FrameSchedule, HistorySearch, Instant, JournalGateway, Key,
-    MessageEvent, MessageSeverity, MessageSource, Ordering, ProjectId, REPLY_BATCH_LIMIT,
-    REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS, RUNTIME_EVENT_BATCH_LIMIT, RuntimeEdgePolicy,
-    RuntimeStreamGateway, ScrollAnchor, SessionBrowser, SessionId, SharedGateway, SignalMonitor,
-    TerminalInput, TerminalOwner, TranscriptViewportCache, TursoAgentStorage,
-    TursoAgentStorageConfig, TursoBatchTransactionMode, TursoOptimizationProfile,
-    UiBrowseDirection, UiHost, UiKeyAction, UiOpenFacts, WheelAccumulator, config,
-    draw_with_snapshot, frame_snapshot, io, load_session, mouse_over_minibuffer, mpsc,
-    publish_error, reply_channel,
+    App, Arc, AtomicU64, FrameSchedule, HistorySearch, Instant, Key, MessageEvent, MessageSeverity,
+    MessageSource, Ordering, REPLY_BATCH_LIMIT, REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS,
+    RUNTIME_EVENT_BATCH_LIMIT, RuntimeEdgePolicy, RuntimeStreamGateway, ScrollAnchor, SessionId,
+    SignalMonitor, TerminalInput, TerminalOwner, TranscriptViewportCache, UiBrowseDirection,
+    UiHost, UiKeyAction, UiOpenFacts, WheelAccumulator, config, draw_with_snapshot, frame_snapshot,
+    io, mouse_over_minibuffer, mpsc, publish_error, reply_channel,
 };
 use marlin_agent_ui::{UiEditorAction, UiPackageCommandSource};
 use std::{
@@ -58,9 +55,6 @@ pub(super) fn run(
     if config.process_budget.is_some() {
         return Err("process memory sampling is unavailable on this host".into());
     }
-    if selected_session.is_some() && config.session.is_none() {
-        return Err("--session requires a [session] storage configuration".into());
-    }
     let (endpoint, catalog) = config.catalog()?;
     trace_startup("configuration");
     let _ = writeln!(io::stderr(), "Starting interface…");
@@ -72,19 +66,39 @@ pub(super) fn run(
     #[cfg(not(feature = "linked-ui"))]
     scheme_runtime
         .set_package_resolution_progress(gerbil_scheme::PackageResolutionProgress::Quiet)?;
-    #[cfg(not(feature = "linked-ui"))]
     let directory = env::current_dir()?;
     #[cfg(not(feature = "linked-ui"))]
-    let directory = directory
+    let directory_utf8 = directory
         .to_str()
         .ok_or("UI package directory is not UTF-8")?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    trace_startup("Tokio runtime");
+    #[cfg(feature = "linked-ui")]
+    let (artifact_layout, artifact_layout_error) =
+        match super::asp_supervisor::discover_workspace_artifact_layout(
+            &scheme_runtime,
+            &runtime,
+            &directory,
+        ) {
+            Ok(layout) => (layout, None),
+            Err(err) => (None, Some(err)),
+        };
+    #[cfg(feature = "linked-ui")]
+    let effective_session =
+        super::startup::resolve_effective_session(config.session, artifact_layout.as_ref());
+    #[cfg(not(feature = "linked-ui"))]
+    let effective_session = config.session;
+    if selected_session.is_some() && effective_session.is_none() {
+        return Err("--session requires a [session] storage configuration".into());
+    }
     let model_label = format!("{}/{}", endpoint.provider.as_str(), endpoint.model.as_str());
     let session_label = selected_session
         .as_ref()
         .map(SessionId::as_str)
         .or_else(|| {
-            config
-                .session
+            effective_session
                 .as_ref()
                 .map(|session| session.session.as_str())
         })
@@ -113,7 +127,7 @@ pub(super) fn run(
         )?
     };
     #[cfg(not(feature = "linked-ui"))]
-    let ui_module = marlin_agent_ui::UiModule::resolve(&scheme_runtime, directory)?;
+    let ui_module = marlin_agent_ui::UiModule::resolve(&scheme_runtime, directory_utf8)?;
     let mut ui_package = config.tui_ui_package;
     let mut ui = UiHost::from_module(ui_module, &ui_facts)?;
     if let Some(status) = status.first()
@@ -124,37 +138,39 @@ pub(super) fn run(
         return Err("Scheme projection lost the Runtime budget status".into());
     }
     trace_startup("UI session projection");
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    trace_startup("Tokio runtime");
-    let directory = env::current_dir()?;
     #[cfg(feature = "linked-ui")]
-    let (search_dsl_runner, search_dsl_mailbox) = super::super::linked_ui::search_dsl_channel();
+    let (search_dsl_runner, mut search_dsl_mailbox) =
+        super::super::linked_ui::search_dsl_async_channel();
     #[cfg(feature = "linked-ui")]
     let search_tool_slot = marlin_agent_tooling::SharedSearchIndexSlot::empty();
     #[cfg(feature = "linked-ui")]
-    search_tool_slot.attach_dsl_runner(search_dsl_runner);
+    search_tool_slot.attach_async_dsl_runner(search_dsl_runner);
     #[cfg(feature = "linked-ui")]
-    let tool_catalog = if config.session.is_some() {
-        let declarations = super::super::linked_ui::tooling_declarations(&scheme_runtime)?;
-        Some(Arc::new(
-            marlin_agent_tooling::catalog_from_declarations_with_search(
-                declarations,
-                directory.clone(),
-                search_tool_slot.clone(),
-            )
-            .map_err(|error| format!("cannot bind Scheme tool catalog: {error:?}"))?,
-        ))
-    } else {
-        None
-    };
+    let tool_catalog = super::startup::build_tool_catalog(
+        &scheme_runtime,
+        &directory,
+        effective_session.as_ref(),
+        &search_tool_slot,
+    )?;
     #[cfg(not(feature = "linked-ui"))]
     let tool_catalog: Option<Arc<marlin_agent_runtime::ModelToolCatalog>> = None;
     trace_startup("tool catalog binding");
     let envrc_discovery = marlin_agent_runtime::ProjectEnvrcDiscovery::pending();
     let request = marlin_agent_runtime::TokioAgentRuntimeBuildRequest::runtime_root(64)
         .with_project_envrc_discovery(envrc_discovery.clone());
+    let ledger_path = env::var_os("MARLIN_PROCESS_LEDGER_PATH")
+        .map(PathBuf::from)
+        .or_else(|| {
+            effective_session.as_ref().map(|session| {
+                let mut os = session.path.as_os_str().to_os_string();
+                os.push(".processes.json");
+                PathBuf::from(os)
+            })
+        });
+    let request = match ledger_path {
+        Some(path) => request.with_process_ledger_path(path),
+        None => request,
+    };
     #[cfg(target_os = "macos")]
     let request = match config.process_budget {
         Some(budget) => request.with_process_budget(
@@ -164,7 +180,40 @@ pub(super) fn run(
         None => request,
     };
     let (owner, events) = marlin_agent_runtime::TokioAgentRuntime::from_build_request(request);
+    let reconciliation_outcome = owner.reconcile_persisted_processes();
     let mut app = App::with_runtime(endpoint, owner, events);
+    match reconciliation_outcome {
+        Ok(report) if report.has_survivors() => {
+            let pids = report
+                .survived
+                .iter()
+                .map(|item| item.entry.pid.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let detail = format!(
+                "Detected {} unkilled process(es) from prior run(s): PID {pids}. Inspect the Processes buffer.",
+                report.survived.len()
+            );
+            app.publish_message(MessageEvent {
+                source: MessageSource::Runtime,
+                severity: MessageSeverity::Warning,
+                summary: "Processes survived previous Marlin run",
+                detail: &detail,
+            });
+        }
+        Ok(_) => {}
+        Err(error) => {
+            let detail = format!(
+                "Persisted process ledger reconciliation failed (fail-visible): {error}"
+            );
+            app.publish_message(MessageEvent {
+                source: MessageSource::Runtime,
+                severity: MessageSeverity::Error,
+                summary: "Persisted process ledger reconciliation failed",
+                detail: &detail,
+            });
+        }
+    }
     #[cfg(feature = "linked-ui")]
     let launch_checkout = directory.clone();
     let mut worktree_probe = Some(app.runtime_owner.spawn_on(&runtime, async move {
@@ -178,7 +227,15 @@ pub(super) fn run(
     app.tool_catalog = tool_catalog.clone();
     #[cfg(feature = "linked-ui")]
     {
-        app.search_tool_slot = search_tool_slot;
+        if let Some(err) = artifact_layout_error {
+            app.publish_message(MessageEvent {
+                source: MessageSource::Workspace,
+                severity: MessageSeverity::Warning,
+                summary: "Workspace artifact layout unavailable",
+                detail: &err,
+            });
+        }
+        super::startup::bind_artifact_layout(&mut app, search_tool_slot, artifact_layout);
     }
     let runtime_probe = RuntimeProbe::start(&runtime, &app.runtime_owner);
     #[cfg(target_os = "macos")]
@@ -188,7 +245,14 @@ pub(super) fn run(
     {
         Ok(pulse) => pulse.map(Arc::new),
         Err(error) => {
-            eprintln!("marlin-tui: host observation unavailable: {error}");
+            let detail = error.to_string();
+            eprintln!("marlin-tui: host observation unavailable: {detail}");
+            app.publish_message(MessageEvent {
+                source: MessageSource::Runtime,
+                severity: MessageSeverity::Warning,
+                summary: "Host observation unavailable",
+                detail: &detail,
+            });
             None
         }
     };
@@ -218,47 +282,14 @@ pub(super) fn run(
     trace_startup("model gateway");
     app.set_runtime_edge(gateway.receipt().clone());
     let base_gateway = gateway.clone();
-    let mut gateway = if let Some(session) = config.session {
-        let session_id = match selected_session {
-            Some(id) => id,
-            None => SessionId::new(session.session)?,
-        };
-        let browser_owner = app.runtime_owner.clone();
-        let (journal, turns, browser) = runtime.block_on(async {
-            let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
-                path: session.path,
-                optimization_profile: TursoOptimizationProfile::AsyncIoOnlyCompatibility,
-                batch_transaction_mode: TursoBatchTransactionMode::Immediate,
-            })
-            .await?;
-            let project = ProjectId::new(session.project)?;
-            let agent = AgentId::new(session.agent)?;
-            let browser = SessionBrowser::with_runtime(
-                storage.clone(),
-                project.clone(),
-                agent.clone(),
-                browser_owner,
-            );
-            let (journal, turns) =
-                load_session(storage, project, session_id.clone(), agent).await?;
-            Ok::<_, Box<dyn std::error::Error>>((journal, turns, browser))
-        })?;
-        app.session_browser = Some(browser);
-        app.current_session = Some(session_id.clone());
-        app.transcript
-            .push(("Session".into(), session_id.as_str().to_owned()));
-        app.restore(turns);
-        let bound = JournalGateway::new(gateway, journal).with_tool_offer(
-            tool_catalog.as_ref().map_or_else(
-                || marlin_agent_runtime::ModelToolCatalog::new().offer(),
-                |catalog| catalog.offer(),
-            ),
-        );
-        app.tool_review = bound.tool_review_handle();
-        SharedGateway::new(bound)
-    } else {
-        SharedGateway::new(gateway)
-    };
+    let mut gateway = super::startup::open_session_gateway(
+        &mut app,
+        &runtime,
+        gateway,
+        effective_session,
+        selected_session,
+        tool_catalog.as_ref(),
+    )?;
     let signals = SignalMonitor::new(&runtime, &app.runtime_owner)?;
     trace_startup("session and signals");
     let mut terminal = TerminalOwner::open()?;
@@ -278,6 +309,7 @@ pub(super) fn run(
     let mut exit_reason = "unknown";
     #[cfg(feature = "linked-ui")]
     let mut git_context: Option<super::git_context::GitContext<'_>> = None;
+    let mut asp_supervisor: Option<super::asp_supervisor::AspGatewaySupervisor> = None;
     let result = (|| -> io::Result<()> {
         loop {
             if let Some(branch) = app.worktree_switch.take() {
@@ -443,7 +475,7 @@ pub(super) fn run(
                 .history_search
                 .as_mut()
                 .is_some_and(|search| search.step(&app.history));
-            let helm_updated = app.poll_search_index();
+            let helm_updated = app.poll_search_index(runtime.handle());
             if app.ui_request.is_some()
                 || app.command_history_request.is_some()
                 || app.transient_request.is_some()
@@ -526,7 +558,7 @@ pub(super) fn run(
                     }
                 }
                 let mut effective_scroll = app.scroll_up;
-                terminal.active().draw(|frame| {
+                terminal.draw_synchronized(|frame| {
                     if snapshot.area != frame.area() {
                         *snapshot = frame_snapshot(&app, ui.view(), frame.area());
                     }
@@ -547,32 +579,22 @@ pub(super) fn run(
                 app.minibuffer_drawn(drawn);
                 if first_frame_elapsed.is_none() {
                     first_frame_elapsed = Some(startup.elapsed());
-                    #[cfg(feature = "linked-ui")]
-                    {
-                        let helm_cfg = super::super::linked_ui::helm_index_config(&scheme_runtime)
-                            .unwrap_or_default();
-                        let _ = super::super::linked_ui::sync_asp_provider_descriptors_from_env(
-                            &scheme_runtime,
-                        );
-                        app.search_dsl_catalog =
-                            super::super::linked_ui::search_dsl_completions(&scheme_runtime, "")
-                                .unwrap_or_default();
-                        app.warm_search_index(helm_cfg, runtime.handle());
-                        if let Some(approved) = git_context_approval.as_ref() {
-                            git_context = Some(super::git_context::GitContext::new(
-                                &scheme_runtime,
-                                approved.clone(),
-                                launch_checkout.clone(),
-                                &app,
-                                &runtime,
-                            ));
-                        }
-                    }
-                    #[cfg(not(feature = "linked-ui"))]
-                    app.warm_search_index(
-                        marlin_agent_search_engine::WorkspaceIndexConfig::default(),
+                    asp_supervisor = super::asp_supervisor::bootstrap_first_frame_search_and_asp(
+                        &mut app,
+                        #[cfg(feature = "linked-ui")]
+                        &scheme_runtime,
                         runtime.handle(),
                     );
+                    #[cfg(feature = "linked-ui")]
+                    if let Some(approved) = git_context_approval.as_ref() {
+                        git_context = Some(super::git_context::GitContext::new(
+                            &scheme_runtime,
+                            approved.clone(),
+                            launch_checkout.clone(),
+                            &app,
+                            &runtime,
+                        ));
+                    }
                 }
             }
             let wait = if processed == REPLY_BATCH_LIMIT
@@ -598,7 +620,11 @@ pub(super) fn run(
             let received = keys_rx.recv_timeout(wait);
             #[cfg(feature = "linked-ui")]
             {
-                search_dsl_mailbox.drain(&scheme_runtime);
+                if search_dsl_mailbox
+                    .drain_budgeted(&scheme_runtime, std::time::Duration::from_millis(8))
+                {
+                    schedule.mark_dirty();
+                }
                 if super::super::linked_ui::service_helm_dsl(&scheme_runtime, &mut app) {
                     schedule.mark_dirty();
                 }
@@ -615,7 +641,9 @@ pub(super) fn run(
             #[cfg(unix)]
             let requested_suspend = signals.take_suspend_request();
             #[cfg(unix)]
-            if requested_suspend || matches!(&received, Ok(Ok(TerminalInput::Key(Key::Ctrl('z')))))
+            if requested_suspend
+                || (app.helm.is_none()
+                    && matches!(&received, Ok(Ok(TerminalInput::Key(Key::Ctrl('z'))))))
             {
                 terminal.suspend()?;
                 // SAFETY: SIGSTOP stops this process only after the terminal
@@ -650,17 +678,14 @@ pub(super) fn run(
                 &mut ui,
                 received.as_ref().ok().and_then(|input| input.as_ref().ok()),
             );
-            if let Ok(Ok(TerminalInput::MouseClick(column, row))) = &received {
-                if route_frame_click(&mut app, &mut ui, &painted_regions, *column, *row)
-                    && activate_deferred_command(&mut app, &mut ui, UiPackageCommandSource::Command)
-                {
-                    app.submit(&gateway, &runtime, &reply_tx);
-                    apply_ui_request(&mut app, &mut ui);
-                }
-                continue;
-            }
             if app.helm.is_some() {
-                match handle_helm_input(&mut app, &mut ui, runtime.handle(), received) {
+                match handle_helm_input(
+                    &mut app,
+                    &mut ui,
+                    runtime.handle(),
+                    last_size.unwrap_or((120, 30)),
+                    received,
+                ) {
                     Ok(true) => {
                         exit_reason = "ctrl-q";
                         break;
@@ -671,6 +696,15 @@ pub(super) fn run(
                         return Err(error);
                     }
                 }
+            }
+            if let Ok(Ok(TerminalInput::MouseClick(column, row))) = &received {
+                if route_frame_click(&mut app, &mut ui, &painted_regions, *column, *row)
+                    && activate_deferred_command(&mut app, &mut ui, UiPackageCommandSource::Command)
+                {
+                    app.submit(&gateway, &runtime, &reply_tx);
+                    apply_ui_request(&mut app, &mut ui);
+                }
+                continue;
             }
             if app.history_search.is_some() {
                 match handle_history_search_input(&mut app, received) {

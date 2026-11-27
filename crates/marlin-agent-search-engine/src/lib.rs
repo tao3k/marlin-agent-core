@@ -25,19 +25,23 @@ mod projection;
 mod storage_port;
 
 pub use asp_http_client::{
-    ASP_FORWARDING_TOKEN_ENV, ASP_FORWARDING_URL_ENV, AspForwardingEndpoint, AspHttpAstPatchOp,
-    AspHttpAstPatchReceipt, AspHttpAstPatchRequest, AspHttpAstPatchStatus, AspHttpHydrationReceipt,
-    AspHttpHydrationRequest, AspLanguageId, AspProviderId, DynamicLanguageDescriptorRequest,
-    DynamicProviderCapabilities, DynamicProviderDslPackRegistration,
-    DynamicProviderRegistrationAck, DynamicProviderRegistrationManifest,
-    DynamicProviderRegistrationRequest, DynamicProviderSyntaxSurface, DynamicProviderTransport,
-    DynamicSpecialRelationSpec, ForwardedDslPack, ForwardedKindMapping, ForwardedProviderCatalog,
-    ForwardedProviderEnvelope, ForwardedProviderManifest, GeneralOntologyKindName,
-    HttpEndpointPath, NativeAstKindName, ProviderRegistrationMode, ProviderRegistrationStatus,
-    ProviderTransportProtocol, TargetedJsonSchemaDocument, apply_ast_patch_via_asp_http,
-    fetch_asp_provider_catalog, hydrate_workspace_pending_via_asp_http,
-    register_dynamic_provider_on_asp, register_linked_dynamic_language_descriptor,
-    shutdown_asp_gateway, sync_linked_asp_provider_descriptors,
+    ASP_FORWARDING_TOKEN_ENV, ASP_FORWARDING_URL_ENV, AspChunkedHydrationRequest,
+    AspForwardingEndpoint, AspHttpAstPatchOp, AspHttpAstPatchReceipt, AspHttpAstPatchRequest,
+    AspHttpAstPatchStatus, AspHttpHydrationReceipt, AspHttpHydrationRequest, AspLanguageId,
+    AspProviderId, DynamicLanguageDescriptorRequest, DynamicProviderCapabilities,
+    DynamicProviderDslPackRegistration, DynamicProviderRegistrationAck,
+    DynamicProviderRegistrationManifest, DynamicProviderRegistrationRequest,
+    DynamicProviderSyntaxSurface, DynamicProviderTransport, DynamicSpecialRelationSpec,
+    ForwardedDslPack, ForwardedKindMapping, ForwardedProjectSurface, ForwardedProviderCatalog,
+    ForwardedProviderEnvelope, ForwardedProviderManifest, ForwardedSpecialExtension,
+    GeneralOntologyKindName, HttpEndpointPath, NativeAstKindName,
+    ProviderRegistrationMode, ProviderRegistrationStatus, ProviderTransportProtocol,
+    TargetedJsonSchemaDocument, apply_ast_patch_via_asp_http, fetch_asp_provider_catalog,
+    hydrate_workspace_chunked_via_asp_http, hydrate_workspace_pending_via_asp_http,
+    merge_completion_catalogs, project_json_schema_completions,
+    project_provider_catalog_completions, project_provider_envelope_completions, register_dynamic_provider_on_asp,
+    register_linked_dynamic_language_descriptor, shutdown_asp_gateway,
+    sync_linked_asp_provider_descriptors,
 };
 #[cfg(not(feature = "linked-ui"))]
 pub use asp_http_client::{
@@ -72,13 +76,15 @@ pub use agent_semantic_topology::{
     OrgOverlayDocumentProjection, OrgProjectionPortError, OrgPropertyEntry, OrgSectionProjection,
 };
 pub use edb_bridge::{
-    OwnedWorkspaceEdbPrefilter, SearchDslCompletionEntry, SearchDslCompletionKind,
-    SearchDslExecutionMode, SearchDslExecutionRequest, SearchDslLinkedExports, SearchDslRunner,
-    SearchDslStructuredResult, SearchDslStructuredRow, SearchDslStructuredRunner,
-    decode_edb_prefilter, decode_rooted_search_dsl_result, decode_search_dsl_completions,
-    default_marlin_scheme_dir, default_search_dsl_runner, default_search_dsl_structured_runner,
-    encode_edb_snapshot, execute_linked_search_dsl, execute_linked_search_dsl_structured,
-    format_rooted_search_dsl_result, project_linked_search_dsl_completions,
+    EdbHydrationMask, OwnedWorkspaceEdbPrefilter, SearchDslChoiceRuleKind, SearchDslChoiceWitness,
+    SearchDslChoiceWitnessKind, SearchDslChoiceWorld, SearchDslCompletionEntry,
+    SearchDslCompletionKind, SearchDslExecutionMode, SearchDslExecutionRequest,
+    SearchDslLinkedExports, SearchDslRunner, SearchDslStructuredResult, SearchDslStructuredRow,
+    SearchDslStructuredRunner, decode_edb_prefilter, decode_rooted_search_dsl_result,
+    decode_search_dsl_completions, default_marlin_scheme_dir, default_search_dsl_runner,
+    default_search_dsl_structured_runner, encode_edb_snapshot, execute_linked_search_dsl,
+    execute_linked_search_dsl_structured, format_rooted_search_dsl_result,
+    project_linked_search_dsl_completions,
 };
 #[cfg(not(feature = "linked-ui"))]
 pub use edb_bridge::{
@@ -88,6 +94,7 @@ pub use edb_bridge::{
 };
 pub use engine::{
     default_workspace_edb_cache_path, default_workspace_snapshot_path, marlin_search_engine,
+    open_or_build_workspace_index_safe, save_workspace_snapshot_atomic,
 };
 #[cfg(not(feature = "linked-ui"))]
 pub use open_edb_hydrator::hydrate_package_workspace_open_edb;
@@ -101,10 +108,13 @@ pub use org_port::{
     project_org_nodes_to_overlay,
 };
 pub use projection::{
-    SearchPlanProjectionError, admit_rooted_search_plan, decode_search_plan,
+    AspHydrationPolicy, HelmIndexPolicyProjection, HelmSearchPresetSpec, SearchPlanProjectionError,
+    admit_rooted_search_plan, decode_helm_index_policy, decode_search_plan,
     decode_workspace_index_config, project_linked, project_linked_helm_index_config,
-    project_linked_helm_prompt,
+    project_linked_helm_index_policy, project_linked_helm_prompt,
 };
 #[cfg(not(feature = "linked-ui"))]
-pub use projection::{project_from_package, project_helm_index_config, project_helm_prompt};
+pub use projection::{
+    project_from_package, project_helm_index_config, project_helm_index_policy, project_helm_prompt,
+};
 pub use storage_port::{MarlinAgentStorageSearchPort, MarlinSearchStorageProvenance};

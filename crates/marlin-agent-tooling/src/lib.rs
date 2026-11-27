@@ -5,12 +5,18 @@
 //! Native Scheme tooling projection and reusable resident-search tool bindings
 //! connecting declared capabilities to Marlin's `ModelToolCatalog`.
 
+mod brute_search;
 mod projection;
+mod search_scheduler;
 mod search_tool;
 
 pub use projection::{
     ToolingProjectionError, catalog_from_declarations, catalog_from_declarations_with_search,
     decode_tooling, project_linked,
+};
+pub use search_scheduler::{
+    AsyncSearchDslFuture, AsyncSearchDslRunner, CacheDependencyProfile, FencedCacheLookup,
+    QueryCacheKey, SearchQueryTier, SearchSchedulerMetrics,
 };
 pub use search_tool::{
     ResidentSearchToolHandler, SharedSearchIndexSlot, SharedWorkspaceSearchIndex,

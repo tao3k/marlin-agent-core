@@ -154,11 +154,97 @@ impl TargetedJsonSchemaDocument {
     /// Extract the allowed General Ontology `kind` enum entries from this schema.
     #[must_use]
     pub fn kind_enum(&self) -> Vec<&str> {
-        self.0
-            .pointer("/properties/kind/enum")
+        self.property_enum("kind")
+    }
+
+    /// Resolve a schema node, following a local `#/$defs/...` `$ref` pointer and
+    /// unwrapping nullable `anyOf` / `oneOf` wrappers (e.g. `schemars` `Option<T>`).
+    fn resolve_schema_node<'a>(&'a self, node: &'a Value) -> &'a Value {
+        if let Some(ref_str) = node.get("$ref").and_then(Value::as_str)
+            && let Some(pointer) = ref_str.strip_prefix('#')
+            && let Some(target) = self.0.pointer(pointer)
+        {
+            return self.resolve_schema_node(target);
+        }
+        for key in ["anyOf", "oneOf"] {
+            if let Some(branches) = node.get(key).and_then(Value::as_array) {
+                let non_null: Vec<&Value> = branches
+                    .iter()
+                    .filter(|b| b.get("type").and_then(Value::as_str) != Some("null"))
+                    .collect();
+                if non_null.len() == 1 {
+                    return self.resolve_schema_node(non_null[0]);
+                }
+            }
+        }
+        node
+    }
+
+    /// Resolve a property sub-schema, following local `#/$defs/...` `$ref` and
+    /// nullable `anyOf`/`oneOf` wrappers.
+    fn resolved_property_schema(&self, property: &str) -> Option<&Value> {
+        let raw = self.0.get("properties")?.get(property)?;
+        Some(self.resolve_schema_node(raw))
+    }
+
+    /// Return all declared JSON Schema property names under `/properties` in deterministic order.
+    #[must_use]
+    pub fn property_names(&self) -> Vec<&str> {
+        let Some(props) = self.0.get("properties").and_then(Value::as_object) else {
+            return Vec::new();
+        };
+        let mut names: Vec<&str> = props.keys().map(String::as_str).collect();
+        names.sort_unstable();
+        names
+    }
+
+    /// Extract the string `enum` values for `/properties/<property>/enum` (following local `$ref` and `anyOf`).
+    #[must_use]
+    pub fn property_enum(&self, property: &str) -> Vec<&str> {
+        self.resolved_property_schema(property)
+            .and_then(|s| s.get("enum"))
             .and_then(Value::as_array)
             .map(|items| items.iter().filter_map(Value::as_str).collect())
             .unwrap_or_default()
+    }
+
+    /// Extract a string `const` value for `/properties/<property>/const` (following local `$ref` and `anyOf`).
+    #[must_use]
+    pub fn property_const(&self, property: &str) -> Option<&str> {
+        self.resolved_property_schema(property)
+            .and_then(|s| s.get("const"))
+            .and_then(Value::as_str)
+    }
+
+    /// Extract the primary non-null JSON Schema `type` string for `/properties/<property>/type`
+    /// (supports both `"type": "boolean"` and `schemars` `"type": ["boolean", "null"]`).
+    #[must_use]
+    pub fn property_type(&self, property: &str) -> Option<&str> {
+        let resolved = self.resolved_property_schema(property)?;
+        let ty = resolved.get("type")?;
+        if let Some(s) = ty.as_str() {
+            return Some(s);
+        }
+        ty.as_array().and_then(|arr| {
+            arr.iter()
+                .filter_map(Value::as_str)
+                .find(|t| *t != "null")
+        })
+    }
+
+    /// Extract the optional `description` for `/properties/<property>/description`.
+    #[must_use]
+    pub fn property_description(&self, property: &str) -> Option<&str> {
+        self.0
+            .get("properties")
+            .and_then(|p| p.get(property))
+            .and_then(|s| s.get("description"))
+            .and_then(Value::as_str)
+            .or_else(|| {
+                self.resolved_property_schema(property)
+                    .and_then(|s| s.get("description"))
+                    .and_then(Value::as_str)
+            })
     }
 
     /// Validate an entity's `(kind, language_kind)` pair against any enum

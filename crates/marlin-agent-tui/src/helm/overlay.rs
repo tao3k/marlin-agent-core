@@ -19,24 +19,27 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use marlin_agent_search_engine::{
-    SearchDslCompletionEntry, SearchDslExecutionMode, SearchDslStructuredResult,
-    SearchDslStructuredRunner, WorkspaceIndexConfig, WorkspaceSearchIndex, WorkspaceSearchQuery,
-    default_search_dsl_structured_runner, default_workspace_edb_cache_path,
-    default_workspace_snapshot_path, hydrate_workspace_open_edb_org_and_cache,
+    HelmSearchPresetSpec, SearchDslCompletionEntry, SearchDslExecutionMode,
+    SearchDslStructuredResult, SearchDslStructuredRunner, WorkspaceIndexConfig,
+    WorkspaceSearchQuery, default_search_dsl_structured_runner,
+    default_workspace_edb_cache_path, default_workspace_snapshot_path,
+    hydrate_workspace_open_edb_org_and_cache,
 };
 use marlin_agent_ui::UiCommand;
 use tokio::sync::oneshot;
 
+use super::presets::preset_index_by_alias;
 use super::types::{
-    HelmAction, HelmCandidate, HelmDisplayRow, HelmMenuActionItem, HelmMenuActionKind,
-    HelmParsedInput, HelmSourceKind, SharedSearchIndex, admit_helm_playbook,
-    build_static_candidates, dsl_row_to_candidate, hit_to_candidate,
+    HelmCandidate, HelmDisplayRow, HelmParsedInput, HelmSourceKind, SharedSearchIndex,
+    admit_helm_playbook, build_static_candidates, dsl_row_to_candidate, hit_to_candidate,
 };
+use crate::composer::Composer;
 
 const MAX_HELM_HITS: usize = 64;
 const PREVIEW_CONTEXT_RADIUS: usize = 5;
 
 pub(crate) struct HelmOverlay {
+    pub(crate) editor: Composer,
     pub(crate) input: String,
     pub(crate) parsed: HelmParsedInput,
     pub(crate) epoch: u64,
@@ -61,6 +64,12 @@ pub(crate) struct HelmOverlay {
     pub(crate) last_dsl_repairs: Vec<String>,
     pub(crate) last_dsl_mode: Option<SearchDslExecutionMode>,
     pub(crate) last_dsl_relation: Option<String>,
+    pub(crate) last_choice_worlds: usize,
+    pub(crate) last_budget_exhausted: Option<String>,
+    pub(crate) asp_status_badge: String,
+    pub(crate) search_presets: Vec<HelmSearchPresetSpec>,
+    pub(crate) active_preset_label: Option<String>,
+    pub(crate) preset_cursor: Option<usize>,
     pub(crate) indexing: bool,
     workspace_root: PathBuf,
     snapshot_path: PathBuf,
@@ -83,6 +92,10 @@ impl HelmOverlay {
         runtime: &tokio::runtime::Handle,
     ) -> Self {
         let input = initial_query.unwrap_or("").trim().to_owned();
+        let mut editor = Composer::default();
+        if !input.is_empty() {
+            editor.insert_text(&input);
+        }
         let parsed = HelmParsedInput::parse(&input);
         let static_candidates = build_static_candidates(command_catalog);
         let snapshot_path = default_workspace_snapshot_path(&workspace_root);
@@ -98,6 +111,7 @@ impl HelmOverlay {
             });
 
         let mut overlay = Self {
+            editor,
             input,
             parsed,
             epoch: 1,
@@ -122,6 +136,12 @@ impl HelmOverlay {
             last_dsl_repairs: Vec::new(),
             last_dsl_mode: None,
             last_dsl_relation: None,
+            last_choice_worlds: 0,
+            last_budget_exhausted: None,
+            asp_status_badge: String::new(),
+            search_presets: Vec::new(),
+            active_preset_label: None,
+            preset_cursor: None,
             indexing: warm_index.is_none(),
             workspace_root,
             snapshot_path,
@@ -170,7 +190,11 @@ impl HelmOverlay {
                     let receipt = guard.sync_workspace_from_disk();
                     let _ = hydrate_workspace_open_edb_org_and_cache(&mut guard, &edb_cache_path);
                     if receipt.upserted_files > 0 || receipt.deleted_files > 0 {
-                        let _ = guard.save_snapshot(&snapshot_path);
+                        guard.compact();
+                        let _ = marlin_agent_search_engine::save_workspace_snapshot_atomic(
+                            &guard,
+                            &snapshot_path,
+                        );
                     }
                 }
                 let _ = tx.send(existing);
@@ -189,7 +213,11 @@ impl HelmOverlay {
         self.indexing = true;
         self.index_receiver = Some(rx);
         runtime.spawn_blocking(move || {
-            let mut idx = WorkspaceSearchIndex::open_or_build_cached(&root, &snapshot_path, config);
+            let mut idx = marlin_agent_search_engine::open_or_build_workspace_index_safe(
+                &root,
+                &snapshot_path,
+                config,
+            );
             let _ = hydrate_workspace_open_edb_org_and_cache(&mut idx, &edb_cache_path);
             let built = Arc::new(RwLock::new(idx));
             let _ = tx.send(built);
@@ -221,7 +249,7 @@ impl HelmOverlay {
         catalog: Vec<SearchDslCompletionEntry>,
     ) -> Self {
         self.completion_catalog = catalog;
-        if self.is_sexp_prompt() {
+        if super::completion::supports_copilot_completion(&self.input) {
             self.refresh_completions();
         }
         self
@@ -237,16 +265,93 @@ impl HelmOverlay {
         self
     }
 
-    /// Take a pending S-expression query for main-thread AOT `linked-ui` execution.
+    /// Take a pending S-expression query and its originating epoch for main-thread
+    /// AOT `linked-ui` execution (SM8 epoch fencing).
     #[cfg(feature = "linked-ui")]
-    pub(crate) fn take_pending_dsl_query(&mut self) -> Option<(SharedSearchIndex, String)> {
+    pub(crate) fn take_pending_dsl_query(&mut self) -> Option<(SharedSearchIndex, u64, String)> {
         let query = self.pending_dsl_query.take()?;
         let index = self.index.clone()?;
-        Some((index, query))
+        Some((index, self.epoch, query))
     }
 
-    /// Apply the outcome of a live `:gerbil-ascent` / Dusa query to Helm candidates.
-    pub(crate) fn apply_dsl_result(&mut self, outcome: Result<SearchDslStructuredResult, String>) {
+    /// Override cache paths (e.g. unified under `.data/marlin/search/` from Scheme Artifacts).
+    pub(crate) fn with_cache_paths(
+        mut self,
+        snapshot_path: PathBuf,
+        edb_cache_path: PathBuf,
+    ) -> Self {
+        self.snapshot_path = snapshot_path;
+        self.edb_cache_path = edb_cache_path;
+        self
+    }
+
+    /// Attach the live ASP gateway status badge (e.g. `ASP:5p·153e`).
+    pub(crate) fn with_asp_status_badge(mut self, badge: String) -> Self {
+        self.asp_status_badge = badge;
+        self
+    }
+
+    pub(crate) fn set_asp_status_badge(&mut self, badge: String) {
+        self.asp_status_badge = badge;
+    }
+
+    /// Attach the Scheme-projected Helm mode preset catalog (`HelmSearchPresets.`).
+    /// If the initial input matched a preset alias (e.g. `M-x helm dusa`), activates it immediately.
+    pub(crate) fn with_search_presets(mut self, presets: Vec<HelmSearchPresetSpec>) -> Self {
+        let initial_alias = preset_index_by_alias(&presets, &self.input);
+        self.search_presets = presets;
+        if let Some(idx) = initial_alias {
+            self.select_search_preset(idx);
+        }
+        self
+    }
+
+    /// Jump directly to a numbered Scheme-declared preset tab (`0..self.search_presets.len()`),
+    /// e.g. via `Alt-1`..`Alt-5`, `F1`–`F5`, or clicking a top-bar tab.
+    pub(crate) fn select_search_preset(&mut self, index: usize) {
+        let Some(preset) = self.search_presets.get(index).cloned() else {
+            return;
+        };
+        self.preset_cursor = Some(index);
+        self.active_preset_label = Some(preset.label);
+        self.completion_mode = false;
+        self.action_mode = false;
+        self.set_input(preset.query);
+    }
+
+    /// Step backward through Scheme-declared presets (`BackTab` / `Alt-[`).
+    pub(crate) fn cycle_search_preset_prev(&mut self) {
+        if self.search_presets.is_empty() {
+            return;
+        }
+        let prev = match self.preset_cursor {
+            Some(0) | None => self.search_presets.len() - 1,
+            Some(idx) => idx - 1,
+        };
+        self.select_search_preset(prev);
+    }
+
+    /// Cycle forward through Scheme-declared presets (`Ctrl-t`).
+    pub(crate) fn cycle_search_preset(&mut self) {
+        if self.search_presets.is_empty() {
+            return;
+        }
+        let next = self
+            .preset_cursor
+            .map_or(0, |idx| (idx + 1) % self.search_presets.len());
+        self.select_search_preset(next);
+    }
+
+    /// Apply the outcome of a live `:gerbil-ascent` / Dusa query to Helm candidates,
+    /// discarding stale results whose `expected_epoch` no longer matches `self.epoch` (SM8).
+    pub(crate) fn apply_dsl_result(
+        &mut self,
+        expected_epoch: u64,
+        outcome: Result<SearchDslStructuredResult, String>,
+    ) {
+        if expected_epoch != self.epoch {
+            return;
+        }
         match outcome {
             Ok(result) => {
                 let guard = self.index.as_ref().and_then(|shared| shared.read().ok());
@@ -257,7 +362,19 @@ impl HelmOverlay {
                 self.last_dsl_repairs = result.repairs.clone();
                 self.last_dsl_mode = Some(result.mode);
                 self.last_dsl_relation = Some(result.relation.clone());
-                self.last_error = None;
+                self.last_choice_worlds = result.choice_worlds.len();
+                self.last_budget_exhausted = result.budget_exhausted.clone();
+                self.last_error = if result.mode == SearchDslExecutionMode::Choice
+                    && result.choice_worlds.is_empty()
+                    && result.budget_exhausted.is_none()
+                {
+                    Some(
+                        "  Dusa UNSAT: constraints are mutually unsatisfiable under active EDB facts"
+                            .to_owned(),
+                    )
+                } else {
+                    None
+                };
                 self.search_candidates = result
                     .rows
                     .iter()
@@ -271,6 +388,8 @@ impl HelmOverlay {
                 self.last_dsl_repairs.clear();
                 self.last_dsl_mode = None;
                 self.last_dsl_relation = None;
+                self.last_choice_worlds = 0;
+                self.last_budget_exhausted = None;
                 self.last_error = Some(message);
                 self.search_candidates.clear();
             }
@@ -283,25 +402,12 @@ impl HelmOverlay {
     }
 
     pub(crate) fn refresh_completions(&mut self) {
-        let trimmed = self.input.trim();
-        let root_only = trimmed.is_empty() || trimmed == "(";
-        let needle = last_sexp_token(trimmed).to_ascii_lowercase();
-        self.completion_entries = self
-            .completion_catalog
-            .iter()
-            .filter(|entry| {
-                if root_only {
-                    matches!(entry.kind.as_str(), "ascent" | "dusa" | "parser" | "edb")
-                } else if needle.is_empty() {
-                    true
-                } else {
-                    entry.form.to_ascii_lowercase().contains(&needle)
-                        || entry.language.to_ascii_lowercase().contains(&needle)
-                        || entry.doc.to_ascii_lowercase().contains(&needle)
-                }
-            })
-            .cloned()
-            .collect();
+        let guard = self.index.as_ref().and_then(|shared| shared.read().ok());
+        self.completion_entries = super::completion::compute_copilot_completions(
+            &self.input,
+            &self.completion_catalog,
+            guard.as_deref(),
+        );
         if self.completion_entries.is_empty() {
             self.completion_selected = 0;
         } else if self.completion_selected >= self.completion_entries.len() {
@@ -309,15 +415,26 @@ impl HelmOverlay {
         }
     }
 
-    /// Context-aware `TAB`: opens/toggles the Scheme `:gerbil-ascent` / POO
-    /// completion table when editing an S-expression prompt (starting with `(`),
-    /// or falls back to the Emacs Helm Action Transformer menu otherwise.
+    pub(crate) fn copilot_ghost_suffix(&self) -> Option<String> {
+        super::completion::compute_ghost_suffix(
+            &self.input,
+            self.cursor_byte(),
+            &self.completion_entries,
+            self.completion_selected,
+        )
+    }
+
+    /// Context-aware `TAB`: opens/toggles Copilot keyword/value/relation
+    /// completion when editing an S-expression prompt (starting with `(`) or a
+    /// `@lang:` / `@prefix:` facet, falling back to Action Transformer otherwise.
     pub(crate) fn toggle_tab_mode(&mut self) {
         if self.completion_mode {
             self.completion_mode = false;
             return;
         }
-        if self.is_sexp_prompt() && !self.completion_catalog.is_empty() {
+        if super::completion::supports_copilot_completion(&self.input)
+            && (!self.completion_catalog.is_empty() || !self.is_sexp_prompt())
+        {
             self.action_mode = false;
             self.refresh_completions();
             if !self.completion_entries.is_empty() {
@@ -333,40 +450,17 @@ impl HelmOverlay {
         self.completion_mode = false;
     }
 
-    pub(crate) fn insert_text(&mut self, text: &str) {
-        if self.action_mode {
-            return;
-        }
-        let clean: String = text.chars().filter(|ch| !ch.is_control()).collect();
-        if clean.is_empty() {
-            return;
-        }
-        self.input.push_str(&clean);
-        self.on_input_changed();
-    }
-
-    pub(crate) fn backspace(&mut self) {
-        if self.action_mode {
-            self.action_mode = false;
-            return;
-        }
-        if self.input.pop().is_some() {
-            self.on_input_changed();
-        }
-    }
-
-    fn on_input_changed(&mut self) {
+    pub(super) fn on_input_changed(&mut self) {
         let next_parsed = HelmParsedInput::parse(&self.input);
         let async_changed = self.parsed.async_key() != next_parsed.async_key();
         self.parsed = next_parsed;
         self.action_mode = false;
         self.action_selected = 0;
-        if self.completion_mode {
-            if self.is_sexp_prompt() {
-                self.refresh_completions();
-            } else {
-                self.completion_mode = false;
-            }
+        if super::completion::supports_copilot_completion(&self.input) {
+            self.refresh_completions();
+        } else {
+            self.completion_entries.clear();
+            self.completion_mode = false;
         }
         if async_changed {
             self.epoch = self.epoch.saturating_add(1);
@@ -479,8 +573,9 @@ impl HelmOverlay {
             {
                 self.pending_dsl_query = None;
             }
+            let epoch = self.epoch;
             let outcome = runner(shared, trimmed, 16_384).map_err(|err| err.to_string());
-            self.apply_dsl_result(outcome);
+            self.apply_dsl_result(epoch, outcome);
         } else {
             #[cfg(feature = "linked-ui")]
             {
@@ -608,225 +703,6 @@ impl HelmOverlay {
         self.action_selected = 0;
     }
 
-    pub(crate) fn available_actions(&self) -> Vec<HelmMenuActionItem> {
-        let mut items = Vec::new();
-        let Some(selected) = self.selected_candidate() else {
-            return items;
-        };
-        let primary_label = match selected.source {
-            HelmSourceKind::Buffers => format!("Switch to buffer {}", selected.display),
-            HelmSourceKind::Commands => format!("Invoke command M-x {}", selected.display),
-            HelmSourceKind::Search | HelmSourceKind::Dsl | HelmSourceKind::All => {
-                if self.marked_ids.is_empty() {
-                    format!("Insert citation {} into Composer", selected.display)
-                } else {
-                    format!(
-                        "Insert {} marked citations into Composer",
-                        self.marked_ids.len()
-                    )
-                }
-            }
-        };
-        items.push(HelmMenuActionItem {
-            kind: HelmMenuActionKind::Primary,
-            key: "RET",
-            label: primary_label,
-            detail: "Default action".to_owned(),
-        });
-        if selected.citation.is_some() || !self.marked_ids.is_empty() {
-            items.push(HelmMenuActionItem {
-                kind: HelmMenuActionKind::ExportCitations,
-                key: "C-e",
-                label: "Export citations to Composer".to_owned(),
-                detail: "Append @path:line references".to_owned(),
-            });
-        }
-        if let Some(path) = selected.path.as_deref()
-            && let Some((dir, _)) = path.rsplit_once('/')
-        {
-            items.push(HelmMenuActionItem {
-                kind: HelmMenuActionKind::ScopeDirectory,
-                key: "d",
-                label: format!("Scope Helm to directory @prefix:{dir}/"),
-                detail: "Narrow live search to parent folder".to_owned(),
-            });
-        }
-        if let Some(lang) = selected.language.as_deref() {
-            items.push(HelmMenuActionItem {
-                kind: HelmMenuActionKind::ScopeLanguage,
-                key: "l",
-                label: format!("Scope Helm to language @lang:{lang}"),
-                detail: "Filter live search by language".to_owned(),
-            });
-        }
-        if let Some(sym) = selected.primary_symbol.as_deref() {
-            items.push(HelmMenuActionItem {
-                kind: HelmMenuActionKind::ScopeSymbol,
-                key: "s",
-                label: format!("Jump to symbol definition @sym:{sym}"),
-                detail: "Locate exact symbol definitions across workspace".to_owned(),
-            });
-            items.push(HelmMenuActionItem {
-                kind: HelmMenuActionKind::ScopeGraph,
-                key: "g",
-                label: format!("Explore call/import graph @graph:{sym}"),
-                detail: "Show definers, importers, callers, and dependencies".to_owned(),
-            });
-        } else if let Some(stem) = selected.path.as_deref().and_then(file_stem_for_graph) {
-            items.push(HelmMenuActionItem {
-                kind: HelmMenuActionKind::ScopeGraph,
-                key: "g",
-                label: format!("Explore module graph @graph:{stem}"),
-                detail: "Show importers and dependencies of this module".to_owned(),
-            });
-        }
-        items
-    }
-
-    /// Execute the active action. Returns `(true, Some(action))` when Helm should close
-    /// and hand off to the TUI host, or `(false, None)` when an in-Helm transformer
-    /// action (like scoping `@prefix:`, `@lang:`, `@sym:`, or `@graph:`) updated Helm live.
-    pub(crate) fn accept(&mut self, export_citations_only: bool) -> (bool, Option<HelmAction>) {
-        if self.completion_mode {
-            if let Some(entry) = self
-                .completion_entries
-                .get(self.completion_selected)
-                .cloned()
-            {
-                let trimmed = self.input.trim();
-                if trimmed == "(" || trimmed.is_empty() {
-                    self.input = entry.insert_text;
-                } else {
-                    let token = last_sexp_token(trimmed);
-                    if !token.is_empty() && self.input.ends_with(token) {
-                        let keep = self.input.len().saturating_sub(token.len());
-                        self.input.truncate(keep);
-                    }
-                    self.input.push_str(&entry.insert_text);
-                }
-                self.completion_mode = false;
-                self.on_input_changed();
-            } else {
-                self.completion_mode = false;
-            }
-            return (false, None);
-        }
-        if self.action_mode {
-            let actions = self.available_actions();
-            let chosen = actions
-                .get(self.action_selected)
-                .map(|item| item.kind)
-                .unwrap_or(HelmMenuActionKind::Primary);
-            self.action_mode = false;
-            return match chosen {
-                HelmMenuActionKind::Primary => (true, self.resolve_primary_action(false)),
-                HelmMenuActionKind::ExportCitations => (true, self.resolve_primary_action(true)),
-                HelmMenuActionKind::ScopeDirectory => {
-                    self.apply_directory_scope();
-                    (false, None)
-                }
-                HelmMenuActionKind::ScopeLanguage => {
-                    self.apply_language_scope();
-                    (false, None)
-                }
-                HelmMenuActionKind::ScopeSymbol => {
-                    self.apply_symbol_scope();
-                    (false, None)
-                }
-                HelmMenuActionKind::ScopeGraph => {
-                    self.apply_graph_scope();
-                    (false, None)
-                }
-            };
-        }
-        (true, self.resolve_primary_action(export_citations_only))
-    }
-
-    fn apply_symbol_scope(&mut self) {
-        let Some(sym) = self
-            .selected_candidate()
-            .and_then(|c| c.primary_symbol.clone())
-        else {
-            return;
-        };
-        self.input = format!("@sym:{sym}");
-        self.on_input_changed();
-    }
-
-    fn apply_graph_scope(&mut self) {
-        let target = self.selected_candidate().and_then(|c| {
-            c.primary_symbol
-                .clone()
-                .or_else(|| c.path.as_deref().and_then(file_stem_for_graph))
-        });
-        let Some(target) = target else {
-            return;
-        };
-        self.input = format!("@graph:{target}");
-        self.on_input_changed();
-    }
-
-    fn apply_directory_scope(&mut self) {
-        let Some(path) = self.selected_candidate().and_then(|c| c.path.clone()) else {
-            return;
-        };
-        let Some((dir, _)) = path.rsplit_once('/') else {
-            return;
-        };
-        let token = format!("@prefix:{dir}/");
-        if !self.input.contains(&token) {
-            let prefix = if self.input.is_empty() {
-                token
-            } else {
-                format!("{token} {}", self.input)
-            };
-            self.input = prefix;
-            self.on_input_changed();
-        }
-    }
-
-    fn apply_language_scope(&mut self) {
-        let Some(lang) = self.selected_candidate().and_then(|c| c.language.clone()) else {
-            return;
-        };
-        let token = format!("@lang:{lang}");
-        if !self.input.contains(&token) {
-            let prefix = if self.input.is_empty() {
-                token
-            } else {
-                format!("{token} {}", self.input)
-            };
-            self.input = prefix;
-            self.on_input_changed();
-        }
-    }
-
-    fn resolve_primary_action(&self, export_citations_only: bool) -> Option<HelmAction> {
-        if !self.marked_ids.is_empty() {
-            let citations: Vec<String> = self
-                .all_candidates()
-                .filter(|cand| self.marked_ids.iter().any(|mid| mid == &cand.id))
-                .filter_map(|cand| cand.citation.clone().or_else(|| Some(cand.display.clone())))
-                .collect();
-            if !citations.is_empty() {
-                return Some(HelmAction::InsertCitations(citations.join(" ")));
-            }
-        }
-        let selected = self.selected_candidate()?.clone();
-        if export_citations_only {
-            let text = selected.citation.unwrap_or(selected.display);
-            return Some(HelmAction::InsertCitations(text));
-        }
-        if let Some(buffer_id) = selected.buffer_id {
-            return Some(HelmAction::SelectBuffer(buffer_id));
-        }
-        if let Some(command_name) = selected.command_name {
-            return Some(HelmAction::PrepareCommand(command_name));
-        }
-        let text = selected.citation.unwrap_or(selected.display);
-        Some(HelmAction::InsertCitations(text))
-    }
-
     pub(crate) fn all_candidates(&self) -> impl Iterator<Item = &HelmCandidate> {
         self.search_candidates
             .iter()
@@ -902,11 +778,22 @@ impl HelmOverlay {
                     let mode = self
                         .last_dsl_mode
                         .map_or("ascent", SearchDslExecutionMode::as_str);
+                    let world_part = if self.last_dsl_mode == Some(SearchDslExecutionMode::Choice) {
+                        if self.last_budget_exhausted.is_some() {
+                            " · budget-exhausted".to_owned()
+                        } else if self.last_choice_worlds == 0 {
+                            " · UNSAT".to_owned()
+                        } else {
+                            format!(" · {} worlds (SAT)", self.last_choice_worlds)
+                        }
+                    } else {
+                        String::new()
+                    };
                     if self.last_dsl_repairs.is_empty() {
-                        format!("{mode}:{rel} · {latency}")
+                        format!("{mode}:{rel}{world_part} · {latency}")
                     } else {
                         format!(
-                            "{mode}:{rel} · {latency} · repaired[{}]",
+                            "{mode}:{rel}{world_part} · {latency} · repaired[{}]",
                             self.last_dsl_repairs.join(",")
                         )
                     }
@@ -944,10 +831,18 @@ impl HelmOverlay {
             .collect();
         self.marked_ids
             .retain(|mid| valid_ids.iter().any(|valid| valid == mid));
+
+        let action_len = self.available_actions().len();
+        if action_len == 0 {
+            self.action_selected = 0;
+            self.action_mode = false;
+        } else if self.action_selected >= action_len {
+            self.action_selected = action_len - 1;
+        }
     }
 }
 
-fn last_sexp_token(text: &str) -> &str {
+pub(super) fn last_sexp_token(text: &str) -> &str {
     let bytes = text.as_bytes();
     let mut idx = bytes.len();
     while idx > 0 {
@@ -958,10 +853,4 @@ fn last_sexp_token(text: &str) -> &str {
         idx -= 1;
     }
     &text[idx..]
-}
-
-fn file_stem_for_graph(path: &str) -> Option<String> {
-    let base = path.rsplit('/').next().unwrap_or(path);
-    let stem = base.rsplit_once('.').map_or(base, |(s, _)| s);
-    (!stem.is_empty() && stem != "mod" && stem != "lib" && stem != "index").then(|| stem.to_owned())
 }

@@ -139,7 +139,7 @@ fn echo_bindings(app: &App) -> [(&'static str, &str); 2] {
                 .as_ref()
                 .map_or("", |echo| echo.text.as_str()),
         ),
-        ("notice", app.echo_area.message().unwrap_or("").trim_start()),
+        ("notice", app.echo_area.message().map_or("", str::trim_start)),
     ]
 }
 
@@ -330,7 +330,7 @@ pub(crate) fn editor_measurements<'a>(
         .frame_tree
         .region_child(policy.regions.id(UiFrameRole::Editor).as_str())
         .and_then(|editor| super::ui_elements::input_insets(editor, facts))
-        .unwrap_or_default();
+        .map_or_else(Default::default, |insets| insets);
     EditorMeasurements {
         fixed: frame.fixed_editor_rows,
         measured: std::cell::Cell::new(None),
@@ -473,6 +473,7 @@ pub(crate) fn frame_snapshot_with_bindings(
 struct FrameMeasurements<'a> {
     editor: EditorMeasurements<'a>,
     review_count: u16,
+    review_detail_rows: u16,
     command_count: u16,
     command_limit: u16,
     extension_count: u16,
@@ -487,6 +488,16 @@ impl<'a> FrameMeasurements<'a> {
     ) -> Self {
         let review_count = app.tool_review_prompt.as_ref().map_or(0, |prompt| {
             u16::try_from(prompt.menu.choices.len()).unwrap_or(u16::MAX)
+        });
+        let review_detail_rows = app.tool_review_prompt.as_ref().map_or(0, |prompt| {
+            let mut rows = 0usize;
+            for (role, body) in prompt.details.iter() {
+                if !role.is_empty() {
+                    rows += 1;
+                }
+                rows += body.lines().count().max(usize::from(!body.is_empty()));
+            }
+            u16::try_from(rows.clamp(1, 6)).unwrap_or(6)
         });
         let extension_count = u16::try_from(
             ui.regions
@@ -506,6 +517,7 @@ impl<'a> FrameMeasurements<'a> {
         Self {
             editor: editor_measurements(app, &ui.layout, area.width, area.height, facts),
             review_count,
+            review_detail_rows,
             command_count: u16::try_from(app.command_candidates.len()).unwrap_or(u16::MAX),
             command_limit: ui.layout.max_command_rows,
             extension_count,
@@ -516,6 +528,7 @@ impl<'a> FrameMeasurements<'a> {
         use super::ui_elements::Extent;
         match id.as_str() {
             "review-count" => Extent::Cells(self.review_count),
+            "review-detail-rows" => Extent::Cells(self.review_detail_rows),
             "command-count" => Extent::Cells(self.command_count),
             "command-limit" => Extent::Cells(self.command_limit),
             "extension-count" => Extent::Cells(self.extension_count),

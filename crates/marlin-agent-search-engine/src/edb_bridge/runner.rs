@@ -16,9 +16,10 @@ use gerbil_scheme::GerbilRuntime;
 use gerbil_scheme::{IdentifierKind, RootedSchemeObject};
 
 use super::codec::{
-    decode_edb_prefilter, decode_rooted_search_dsl_result, decode_search_dsl_completions,
-    encode_edb_snapshot, make_string, make_vector, native,
+    collect_symbol_ref_rows, decode_edb_prefilter, decode_rooted_search_dsl_result_with_context,
+    decode_search_dsl_completions, encode_edb_snapshot_with_refs, make_string, make_vector, native,
 };
+use super::types::SearchDslDecodeContext;
 use super::{
     SearchDslCompletionEntry, SearchDslExecutionRequest, SearchDslLinkedExports, SearchDslRunner,
     SearchDslStructuredResult, SearchDslStructuredRunner,
@@ -42,12 +43,30 @@ pub unsafe fn execute_linked_search_dsl_structured(
     let snapshot = request
         .index
         .project_prefiltered_edb(&owned_prefilter.as_prefilter());
-    let edb_obj = encode_edb_snapshot(runtime, &snapshot)?;
+    let symbol_refs = if owned_prefilter.hydration.includes_symbol_refs() {
+        collect_symbol_ref_rows(request.index, &snapshot, &owned_prefilter)
+    } else {
+        Vec::new()
+    };
+    let edb_obj = encode_edb_snapshot_with_refs(
+        runtime,
+        &snapshot,
+        owned_prefilter.hydration,
+        &symbol_refs,
+    )?;
     let eval_input = make_vector(runtime, &[query_obj, edb_obj])?;
 
     let eval_fn = native(unsafe { runtime.bind_object_export(exports.eval_edb) })?;
     let result_obj = native(eval_fn.call(&eval_input).into_result())?;
-    decode_rooted_search_dsl_result(result_obj, &snapshot, request.output_limit)
+    decode_rooted_search_dsl_result_with_context(
+        result_obj,
+        &snapshot,
+        SearchDslDecodeContext {
+            index: Some(request.index),
+            prefilter: Some(&owned_prefilter),
+            output_limit: request.output_limit,
+        },
+    )
 }
 
 /// Execute a native `:gerbil-ascent` query through AOT-linked C-ABI exports
@@ -134,10 +153,28 @@ fn execute_with_bound_package_exports(
     let snapshot = request
         .index
         .project_prefiltered_edb(&owned_prefilter.as_prefilter());
-    let edb_obj = encode_edb_snapshot(runtime, &snapshot)?;
+    let symbol_refs = if owned_prefilter.hydration.includes_symbol_refs() {
+        collect_symbol_ref_rows(request.index, &snapshot, &owned_prefilter)
+    } else {
+        Vec::new()
+    };
+    let edb_obj = encode_edb_snapshot_with_refs(
+        runtime,
+        &snapshot,
+        owned_prefilter.hydration,
+        &symbol_refs,
+    )?;
     let eval_input = make_vector(runtime, &[query_obj, edb_obj])?;
     let result_obj = native(runtime.call_rooted(eval_fn, &eval_input))?;
-    decode_rooted_search_dsl_result(result_obj, &snapshot, request.output_limit)
+    decode_rooted_search_dsl_result_with_context(
+        result_obj,
+        &snapshot,
+        SearchDslDecodeContext {
+            index: Some(request.index),
+            prefilter: Some(&owned_prefilter),
+            output_limit: request.output_limit,
+        },
+    )
 }
 
 /// Execute a native `:gerbil-ascent` query by resolving `:marlin-agent-core/c-abi/search-dsl`

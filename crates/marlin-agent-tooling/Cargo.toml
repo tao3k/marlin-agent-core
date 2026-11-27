@@ -15,6 +15,7 @@ gerbil-scheme.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-agent-search-engine.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 asp-rust.workspace = true

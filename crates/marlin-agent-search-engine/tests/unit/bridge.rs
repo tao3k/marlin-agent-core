@@ -403,11 +403,12 @@ fn rooted_scheme_plans_and_compiled_module_project_into_asp() {
             assert_eq!(poo_res.mode, SearchDslExecutionMode::Ascent);
             assert!(poo_res.repairs.iter().any(|r| r == "wrap-bare-rule"));
             assert!(
-                poo_res
+                !poo_res
                     .repairs
                     .iter()
                     .any(|r| r == "synthesize-head-relation")
             );
+            assert!(poo_res.canonical_query.is_some());
             assert!(
                 poo_res.rows.iter().any(|row| {
                     row.path.as_deref() == Some("scheme/sample.ss")
