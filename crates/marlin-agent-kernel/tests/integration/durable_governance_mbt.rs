@@ -691,21 +691,49 @@ fn mbt_durable_governance_overlay_refines_tamper_evident_checkpoint_recovery() {
                 break;
             }
             if missing_context_bypassed {
-                // Real Rust compiled Cedar engine MUST fail closed when context keys required by
-                // `when { ... && context.channel_scope != "untrusted" }` are omitted!
-                let req = CedarEvaluationRequest {
+                // Real Rust compiled Cedar engine MUST fail closed when context keys are omitted:
+                // 1) Missing `declassified` on external scope MUST keep `forbid ... unless` active (Deny),
+                //    even when `channel_scope == "workspace"` satisfies the `permit` clause (SM29)!
+                let missing_forbid_key_req = CedarEvaluationRequest {
                     principal: CedarEntityRef::actor("ops-alice"),
                     principal_roles: vec![CedarEntityRef::role("VerifiedHuman")],
                     action: CedarEntityRef::action("export"),
                     resource: CedarEntityRef::resource("ext-sibling-mirror"),
                     resource_groups: vec![CedarEntityRef::scope("external")],
-                    context: BTreeMap::from([(
-                        "step_up_fresh".to_owned(),
-                        CedarContextValue::Bool(true),
-                    )]),
+                    context: BTreeMap::from([
+                        ("step_up_fresh".to_owned(), CedarContextValue::Bool(true)),
+                        (
+                            "channel_scope".to_owned(),
+                            CedarContextValue::Str("workspace".to_owned()),
+                        ),
+                    ]),
                 };
                 assert_eq!(
-                    gate.evaluate_cedar_request(&req).unwrap(),
+                    gate.evaluate_cedar_request(&missing_forbid_key_req).unwrap(),
+                    CedarEvaluationDecision::Deny {
+                        matching_forbids: vec![
+                            CedarPolicyId::new(
+                                "marlin.ascent.forbid.scope.external-unless-declassified"
+                            )
+                            .unwrap()
+                        ],
+                    }
+                );
+                // 2) Missing `channel_scope` required by `when { ... && context.channel_scope != "untrusted" }`
+                //    (with `declassified == true`) MUST fail closed as `ImplicitDeny`!
+                let missing_when_key_req = CedarEvaluationRequest {
+                    principal: CedarEntityRef::actor("ops-alice"),
+                    principal_roles: vec![CedarEntityRef::role("VerifiedHuman")],
+                    action: CedarEntityRef::action("export"),
+                    resource: CedarEntityRef::resource("ext-sibling-mirror"),
+                    resource_groups: vec![CedarEntityRef::scope("external")],
+                    context: BTreeMap::from([
+                        ("step_up_fresh".to_owned(), CedarContextValue::Bool(true)),
+                        ("declassified".to_owned(), CedarContextValue::Bool(true)),
+                    ]),
+                };
+                assert_eq!(
+                    gate.evaluate_cedar_request(&missing_when_key_req).unwrap(),
                     CedarEvaluationDecision::ImplicitDeny
                 );
                 countermodels_refused += 1;

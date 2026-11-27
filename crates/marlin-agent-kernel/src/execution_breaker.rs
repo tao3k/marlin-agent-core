@@ -289,6 +289,9 @@ struct BreakerInner {
     last_trip_reason: Option<BreakerTripReason>,
 }
 
+/// Upper bound on concurrent in-flight leases when `single_lease_enforced == false` (SM29).
+const MAX_ACTIVE_LEASES: usize = 4096;
+
 /// Authoritative fail-closed AI/Tool Execution Circuit Breaker.
 #[derive(Debug)]
 pub struct ExecutionCircuitBreaker {
@@ -366,6 +369,17 @@ impl ExecutionCircuitBreaker {
 
         if guard.active_leases.contains_key(&lease_id) {
             return Err(BreakerRejectionReason::ActiveLeaseExists(lease_id));
+        }
+
+        if guard.active_leases.len() >= MAX_ACTIVE_LEASES {
+            let current_epoch = guard.trip_epoch;
+            guard.active_leases.retain(|_, ep| *ep == current_epoch);
+            if guard.active_leases.len() >= MAX_ACTIVE_LEASES {
+                return Err(BreakerRejectionReason::BudgetExhausted {
+                    used: guard.active_leases.len() as u32,
+                    limit: MAX_ACTIVE_LEASES as u32,
+                });
+            }
         }
 
         let epoch = guard.trip_epoch;
@@ -550,10 +564,21 @@ impl ExecutionCircuitBreaker {
                 current_epoch: guard.trip_epoch,
             });
         }
+        if trip_epoch == guard.trip_epoch && guard.tripped && !tripped {
+            return Err(BreakerRejectionReason::BreakerTripped {
+                trip_epoch: guard.trip_epoch,
+                reason: guard.last_trip_reason.clone(),
+            });
+        }
+        let same_epoch = trip_epoch == guard.trip_epoch;
         guard.active_leases.clear();
         guard.tripped = tripped;
         guard.trip_epoch = trip_epoch;
-        guard.budget_used = budget_used.min(guard.budget_limit);
+        guard.budget_used = if same_epoch {
+            guard.budget_used.max(budget_used).min(guard.budget_limit)
+        } else {
+            budget_used.min(guard.budget_limit)
+        };
         guard.last_trip_reason = last_trip_reason;
 
         Ok(ExecutionBreakerSnapshot {

@@ -33,6 +33,7 @@ use crate::governance_cedar::{
 pub const GOVERNANCE_ADMISSION_SCHEMA_VERSION: u32 = 1;
 pub const GOVERNANCE_DURABLE_CHECKPOINT_MAGIC: &[u8; 4] = b"MGV1";
 pub const GOVERNANCE_DURABLE_CHECKPOINT_VERSION: u32 = 2;
+const MAX_ACTIVE_DERIVATIONS: usize = 4096;
 
 /// Validated canonical SHA-256 content digest (`sha256:<64 lowercase hex>`).
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -460,7 +461,8 @@ impl GovernanceAdmissionGate {
             guard.min_revocation_epoch = next_epoch;
             guard.last_admitted = true;
             guard.rejection_reasons.clear();
-            guard.retracted_derivations.clear();
+            // SM29: Permanently preserve Bi-Temporal Truth Maintenance `retracted_derivations`
+            // across human re-arm so invalidated causal derivations can never be resurrected.
         }
         Ok((receipt, self.snapshot()?))
     }
@@ -476,6 +478,21 @@ impl GovernanceAdmissionGate {
             .inner
             .lock()
             .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
+        let breaker_snap = self.breaker.snapshot()?;
+        if breaker_snap.tripped {
+            return Err(BreakerRejectionReason::BreakerTripped {
+                trip_epoch: breaker_snap.trip_epoch,
+                reason: breaker_snap.last_trip_reason,
+            }
+            .into());
+        }
+        if lease.trip_epoch != breaker_snap.trip_epoch {
+            return Err(BreakerRejectionReason::StaleLeaseEpoch {
+                lease_epoch: lease.trip_epoch,
+                current_epoch: breaker_snap.trip_epoch,
+            }
+            .into());
+        }
         if guard.retracted_derivations.contains(&derivation_id) {
             return Err(GovernanceAdmissionError::DerivationRetractedDenied(
                 derivation_id,
@@ -485,6 +502,18 @@ impl GovernanceAdmissionGate {
             return Err(GovernanceAdmissionError::DerivationAlreadyRegistered(
                 derivation_id,
             ));
+        }
+        if guard.active_derivations.len() >= MAX_ACTIVE_DERIVATIONS {
+            guard
+                .active_derivations
+                .retain(|_, l| l.trip_epoch == breaker_snap.trip_epoch);
+            if guard.active_derivations.len() >= MAX_ACTIVE_DERIVATIONS {
+                return Err(BreakerRejectionReason::BudgetExhausted {
+                    used: guard.active_derivations.len() as u32,
+                    limit: MAX_ACTIVE_DERIVATIONS as u32,
+                }
+                .into());
+            }
         }
         guard.active_derivations.insert(derivation_id, lease);
         Ok(())
@@ -526,6 +555,25 @@ impl GovernanceAdmissionGate {
                 supplied: envelope.revocation_epoch,
                 current_floor: guard.min_revocation_epoch,
             });
+        }
+        if envelope.revocation_epoch == guard.min_revocation_epoch
+            && envelope.policy_revision < guard.policy_revision
+        {
+            return Err(GovernanceAdmissionError::ProofEnvelopeRejected(vec![
+                format!(
+                    "stale-policy-revision:{}<{}",
+                    envelope.policy_revision, guard.policy_revision
+                ),
+            ]));
+        }
+        if envelope.revocation_epoch == guard.min_revocation_epoch
+            && !guard.last_admitted
+            && envelope.admitted
+            && self.breaker.snapshot()?.tripped
+        {
+            return Err(GovernanceAdmissionError::ProofEnvelopeRejected(vec![
+                "same-epoch-undeny-while-tripped".to_owned(),
+            ]));
         }
         guard.min_revocation_epoch = envelope.revocation_epoch;
         guard.policy_revision = envelope.policy_revision;
@@ -844,7 +892,7 @@ impl GovernanceAdmissionGate {
         };
 
         {
-            let guard = self
+            let mut guard = self
                 .inner
                 .lock()
                 .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
@@ -854,20 +902,27 @@ impl GovernanceAdmissionGate {
                     current_floor: guard.min_revocation_epoch,
                 });
             }
-        }
+            if cp.min_revocation_epoch == guard.min_revocation_epoch
+                && cp.policy_revision < guard.policy_revision
+            {
+                return Err(GovernanceAdmissionError::ProofEnvelopeRejected(vec![
+                    format!(
+                        "stale-checkpoint-policy-revision:{}<{}",
+                        cp.policy_revision, guard.policy_revision
+                    ),
+                ]));
+            }
 
-        self.breaker.restore_durable_state(
-            cp.breaker_tripped,
-            cp.breaker_trip_epoch,
-            cp.breaker_budget_used,
-            cp.breaker_last_trip_reason.clone(),
-        )?;
+            // Hold `self.inner` across `self.breaker.restore_durable_state` (canonical lock order
+            // `inner -> breaker`) so no concurrent trip/sync can race through a lock gap.
+            self.breaker.restore_durable_state(
+                cp.breaker_tripped,
+                cp.breaker_trip_epoch,
+                cp.breaker_budget_used,
+                cp.breaker_last_trip_reason.clone(),
+            )?;
 
-        {
-            let mut guard = self
-                .inner
-                .lock()
-                .map_err(|_| GovernanceAdmissionError::LockPoisoned)?;
+            let same_proof_epoch = cp.min_revocation_epoch == guard.min_revocation_epoch;
             guard.active_derivations.clear();
             guard.min_revocation_epoch = cp.min_revocation_epoch;
             guard.policy_revision = cp.policy_revision;
@@ -880,7 +935,11 @@ impl GovernanceAdmissionGate {
             guard.rejection_reasons = cp.rejection_reasons;
             guard.fenced_actors = cp.fenced_actors.into_iter().collect();
             guard.blocked_tools = cp.blocked_tools.into_iter().collect();
-            guard.retracted_derivations = cp.retracted_conclusions.into_iter().collect();
+            if same_proof_epoch {
+                guard.retracted_derivations.extend(cp.retracted_conclusions);
+            } else {
+                guard.retracted_derivations = cp.retracted_conclusions.into_iter().collect();
+            }
             guard.cedar_policies = cp.cedar_policies;
             guard.compiled_cedar_policies = compiled_cedar;
             guard.resource_scopes = cp.resource_scopes;
@@ -1039,7 +1098,7 @@ impl GovernanceDurableCheckpoint {
         }
         let (body, tag) = bytes.split_at(bytes.len() - 32);
         let expected_tag = sha256_bytes(body);
-        if tag != expected_tag {
+        if !constant_time_eq_32(tag, &expected_tag) {
             return Err(GovernanceAdmissionError::CorruptDurableCheckpoint(
                 "SHA-256 integrity verification mismatch".to_owned(),
             ));
@@ -1305,6 +1364,18 @@ impl<'a> ByteCursor<'a> {
         }
         Ok(out)
     }
+}
+
+/// Constant-time 32-byte digest comparison avoiding short-circuit timing leaks (SM29).
+fn constant_time_eq_32(lhs: &[u8], rhs: &[u8; 32]) -> bool {
+    if lhs.len() != 32 {
+        return false;
+    }
+    let mut diff = 0u8;
+    for i in 0..32 {
+        diff |= std::hint::black_box(lhs[i] ^ rhs[i]);
+    }
+    std::hint::black_box(diff) == 0
 }
 
 /// Zero-dependency FIPS 180-4 SHA-256 exposed for sealing canonical durable governance artifacts

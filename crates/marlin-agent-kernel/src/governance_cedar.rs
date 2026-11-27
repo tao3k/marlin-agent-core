@@ -153,7 +153,15 @@ impl CompiledCedarPolicy {
             return false;
         }
         for block in &self.unless_clauses {
-            if eval_condition_block(block, &req.context) != Some(false) {
+            let waived = match self.effect {
+                // `forbid ... unless { B }` stays active unless the exemption `B` is explicitly
+                // proven true (`Some(true)`). Missing context keys (`None`) fail closed.
+                CedarEffect::Forbid => eval_condition_block(block, &req.context) == Some(true),
+                // `permit ... unless { B }` fails closed on missing context keys (`None`),
+                // matching only when `B` is explicitly proven false (`Some(false)`).
+                CedarEffect::Permit => eval_condition_block(block, &req.context) != Some(false),
+            };
+            if waived {
                 return false;
             }
         }
