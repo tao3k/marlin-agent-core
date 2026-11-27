@@ -52,10 +52,34 @@ pub struct SupplyChainBuildClaim {
     pub builder_b_digest: String,
 }
 
+fn canonical_pin_key(package_name: &str, version: &str) -> (String, String) {
+    (
+        package_name.trim().to_ascii_lowercase(),
+        version.trim().to_ascii_lowercase(),
+    )
+}
+
 /// Machine-checkable failure reasons for B14 supply-chain admission.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SupplyChainRejection {
     EmptyDependencies,
+    InvalidPackageCoordinate {
+        package_name: String,
+        version: String,
+    },
+    ConflictingPinOverwrite {
+        package_name: String,
+        version: String,
+        existing_digest: String,
+        attempted_digest: String,
+    },
+    DuplicateDependency {
+        package_name: String,
+        version: String,
+    },
+    InvalidOrReplayedReleaseId {
+        release_id: String,
+    },
     InvalidArtifactDigest {
         digest: String,
     },
@@ -118,6 +142,13 @@ impl SupplyChainProvenanceGate {
     ) -> Result<(), SupplyChainRejection> {
         let pkg = package_name.into();
         let ver = version.into();
+        let (pkg_key, ver_key) = canonical_pin_key(&pkg, &ver);
+        if pkg_key.is_empty() || ver_key.is_empty() {
+            return Err(SupplyChainRejection::InvalidPackageCoordinate {
+                package_name: pkg,
+                version: ver,
+            });
+        }
         let digest = sha256_digest.into().to_ascii_lowercase();
         if !is_valid_sha256_hex(&digest) {
             return Err(SupplyChainRejection::UnpinnedOrMismatchedDependencyDigest {
@@ -127,7 +158,32 @@ impl SupplyChainProvenanceGate {
                 actual: digest,
             });
         }
-        self.allowlist_pins.insert((pkg, ver), digest);
+        let coord = format!("{pkg_key}@{ver_key}");
+        if let Some(cve_id) = self.cve_tombstones.get(&coord) {
+            return Err(SupplyChainRejection::CveTombstoneMatched {
+                identifier: coord,
+                cve_id: cve_id.clone(),
+            });
+        }
+        if let Some(cve_id) = self.cve_tombstones.get(&digest) {
+            return Err(SupplyChainRejection::CveTombstoneMatched {
+                identifier: digest,
+                cve_id: cve_id.clone(),
+            });
+        }
+        let key = (pkg_key, ver_key);
+        if let Some(existing) = self.allowlist_pins.get(&key) {
+            if existing != &digest {
+                return Err(SupplyChainRejection::ConflictingPinOverwrite {
+                    package_name: pkg,
+                    version: ver,
+                    existing_digest: existing.clone(),
+                    attempted_digest: digest,
+                });
+            }
+            return Ok(());
+        }
+        self.allowlist_pins.insert(key, digest);
         Ok(())
     }
 
@@ -137,8 +193,10 @@ impl SupplyChainProvenanceGate {
         identifier: impl Into<String>,
         cve_id: impl Into<String>,
     ) {
-        self.cve_tombstones
-            .insert(identifier.into().to_ascii_lowercase(), cve_id.into());
+        self.cve_tombstones.insert(
+            identifier.into().trim().to_ascii_lowercase(),
+            cve_id.into(),
+        );
     }
 
     /// Evaluate and admit a B14 supply-chain build claim fail-closed.
@@ -146,6 +204,12 @@ impl SupplyChainProvenanceGate {
         &mut self,
         claim: &SupplyChainBuildClaim,
     ) -> Result<SupplyChainAdmissionReceipt, SupplyChainRejection> {
+        let release_id = claim.release_id.trim();
+        if release_id.is_empty() || self.admitted_releases.contains(release_id) {
+            return Err(SupplyChainRejection::InvalidOrReplayedReleaseId {
+                release_id: claim.release_id.clone(),
+            });
+        }
         let artifact_digest = claim.artifact_digest.to_ascii_lowercase();
         if !is_valid_sha256_hex(&artifact_digest) {
             return Err(SupplyChainRejection::InvalidArtifactDigest {
@@ -162,10 +226,25 @@ impl SupplyChainProvenanceGate {
             return Err(SupplyChainRejection::EmptyDependencies);
         }
 
+        let mut seen_deps: BTreeSet<(String, String)> = BTreeSet::new();
         let mut canonical_deps = Vec::with_capacity(claim.dependencies.len());
         for dep in &claim.dependencies {
+            let (pkg_key, ver_key) = canonical_pin_key(&dep.package_name, &dep.version);
+            if pkg_key.is_empty() || ver_key.is_empty() {
+                return Err(SupplyChainRejection::InvalidPackageCoordinate {
+                    package_name: dep.package_name.clone(),
+                    version: dep.version.clone(),
+                });
+            }
+            let dep_key = (pkg_key.clone(), ver_key.clone());
+            if !seen_deps.insert(dep_key.clone()) {
+                return Err(SupplyChainRejection::DuplicateDependency {
+                    package_name: dep.package_name.clone(),
+                    version: dep.version.clone(),
+                });
+            }
             let dep_digest = dep.sha256_digest.to_ascii_lowercase();
-            let coord = format!("{}@{}", dep.package_name, dep.version).to_ascii_lowercase();
+            let coord = format!("{pkg_key}@{ver_key}");
 
             if let Some(cve_id) = self.cve_tombstones.get(&coord) {
                 return Err(SupplyChainRejection::CveTombstoneMatched {
@@ -180,10 +259,7 @@ impl SupplyChainProvenanceGate {
                 });
             }
 
-            let Some(expected_digest) = self
-                .allowlist_pins
-                .get(&(dep.package_name.clone(), dep.version.clone()))
-            else {
+            let Some(expected_digest) = self.allowlist_pins.get(&dep_key) else {
                 return Err(SupplyChainRejection::SlopsquattedOrUnregisteredPackage {
                     package_name: dep.package_name.clone(),
                     version: dep.version.clone(),
@@ -211,16 +287,18 @@ impl SupplyChainProvenanceGate {
             });
         }
 
-        if claim.builder_a_id.trim().is_empty() || claim.builder_b_id.trim().is_empty() {
+        let builder_a = claim.builder_a_id.trim();
+        let builder_b = claim.builder_b_id.trim();
+        if builder_a.is_empty() || builder_b.is_empty() {
             return Err(SupplyChainRejection::BuilderParityFailed {
                 reason: "both independent builder identities must be non-empty".to_owned(),
             });
         }
-        if claim.builder_a_id == claim.builder_b_id {
+        if builder_a.eq_ignore_ascii_case(builder_b) {
             return Err(SupplyChainRejection::BuilderParityFailed {
                 reason: format!(
                     "two distinct builders required; got duplicate builder '{}'",
-                    claim.builder_a_id
+                    builder_a
                 ),
             });
         }
@@ -236,22 +314,18 @@ impl SupplyChainProvenanceGate {
 
         canonical_deps.sort();
         let receipt_payload = format!(
-            "b14|release={}|artifact={}|builders={},{}|deps={}",
-            claim.release_id,
-            artifact_digest,
-            claim.builder_a_id,
-            claim.builder_b_id,
+            "b14|release={release_id}|artifact={artifact_digest}|builders={builder_a},{builder_b}|deps={}",
             canonical_deps.join(",")
         );
         let receipt_digest = sha256_hex(receipt_payload.as_bytes());
-        self.admitted_releases.insert(claim.release_id.clone());
+        self.admitted_releases.insert(release_id.to_owned());
 
         Ok(SupplyChainAdmissionReceipt {
-            release_id: claim.release_id.clone(),
+            release_id: release_id.to_owned(),
             artifact_digest,
             verified_dependency_count: canonical_deps.len(),
-            builder_a_id: claim.builder_a_id.clone(),
-            builder_b_id: claim.builder_b_id.clone(),
+            builder_a_id: builder_a.to_owned(),
+            builder_b_id: builder_b.to_owned(),
             receipt_digest,
         })
     }

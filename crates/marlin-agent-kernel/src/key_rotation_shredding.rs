@@ -52,11 +52,18 @@ pub struct CryptoRewrapClaim {
 /// Machine-checkable refusal reasons for B16 key rotation & crypto-shredding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyRotationRejection {
+    InvalidTenantId {
+        tenant_id: String,
+    },
     TenantMismatch {
         expected: String,
         actual: String,
     },
     NonMonotonicEpochRotation {
+        active_epoch: u64,
+        requested_epoch: u64,
+    },
+    InvalidShredEpoch {
         active_epoch: u64,
         requested_epoch: u64,
     },
@@ -129,6 +136,9 @@ impl KeyRotationShreddingGate {
         initial_key_commitment: impl Into<String>,
     ) -> Result<Self, KeyRotationRejection> {
         let tenant_id = tenant_id.into();
+        if tenant_id.trim().is_empty() {
+            return Err(KeyRotationRejection::InvalidTenantId { tenant_id });
+        }
         let commitment = initial_key_commitment.into().to_ascii_lowercase();
         if !is_valid_sha256_hex(&commitment) {
             return Err(KeyRotationRejection::InvalidDigest { digest: commitment });
@@ -165,7 +175,12 @@ impl KeyRotationShreddingGate {
         next_epoch: u64,
         next_key_commitment: impl Into<String>,
     ) -> Result<KeyRotationReceipt, KeyRotationRejection> {
-        let expected = self.active_epoch.saturating_add(1);
+        let Some(expected) = self.active_epoch.checked_add(1) else {
+            return Err(KeyRotationRejection::NonMonotonicEpochRotation {
+                active_epoch: self.active_epoch,
+                requested_epoch: next_epoch,
+            });
+        };
         if next_epoch != expected {
             return Err(KeyRotationRejection::NonMonotonicEpochRotation {
                 active_epoch: self.active_epoch,
@@ -194,7 +209,7 @@ impl KeyRotationShreddingGate {
         })
     }
 
-    /// Permanently shred a retired key epoch (`epoch < active_epoch`).
+    /// Permanently shred a retired key epoch (`0 < epoch < active_epoch`).
     pub fn shred_retired_epoch(
         &mut self,
         epoch: u64,
@@ -206,6 +221,12 @@ impl KeyRotationShreddingGate {
                     active_epoch: self.active_epoch,
                 },
             );
+        }
+        if epoch == 0 || epoch > self.active_epoch {
+            return Err(KeyRotationRejection::InvalidShredEpoch {
+                active_epoch: self.active_epoch,
+                requested_epoch: epoch,
+            });
         }
         if let Some(existing) = self.shredded_epochs.get(&epoch) {
             return Ok(existing.clone());
@@ -298,7 +319,11 @@ impl KeyRotationShreddingGate {
                 tombstone_digest: tombstone.tombstone_digest.clone(),
             });
         }
-        if claim.from_epoch >= claim.to_epoch || claim.to_epoch != self.active_epoch {
+        if claim.from_epoch == 0
+            || claim.from_epoch >= claim.to_epoch
+            || claim.to_epoch != self.active_epoch
+            || !self.epoch_commitments.contains_key(&claim.from_epoch)
+        {
             return Err(KeyRotationRejection::InvalidRewrapEpochs {
                 from_epoch: claim.from_epoch,
                 to_epoch: claim.to_epoch,

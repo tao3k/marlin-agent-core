@@ -58,6 +58,14 @@ pub struct FederatedOpClaim {
 /// Machine-checkable refusal reasons for B20 federated reciprocity enforcement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FederatedOrgRejection {
+    InvalidTreatyId {
+        treaty_id: String,
+    },
+    TreatyEpochRollback {
+        treaty_id: String,
+        current_epoch: u64,
+        requested_epoch: u64,
+    },
     SelfReciprocitySpoofing {
         org: String,
     },
@@ -114,17 +122,46 @@ impl FederatedOrgReciprocityGate {
     }
 
     /// Register a bilateral treaty between two distinct organizations.
+    ///
+    /// Re-registering an existing treaty preserves active dispute freezes
+    /// (which may only be cleared via `resolve_dispute_freeze`) and enforces
+    /// monotonic `treaty_epoch` progression.
     pub fn register_treaty(
         &mut self,
         treaty: BilateralTreaty,
     ) -> Result<(), FederatedOrgRejection> {
-        if treaty.org_a.trim().is_empty()
-            || treaty.org_b.trim().is_empty()
-            || treaty.org_a == treaty.org_b
-        {
+        let treaty_id = treaty.treaty_id.trim();
+        if treaty_id.is_empty() {
+            return Err(FederatedOrgRejection::InvalidTreatyId {
+                treaty_id: treaty.treaty_id,
+            });
+        }
+        let org_a = treaty.org_a.trim();
+        let org_b = treaty.org_b.trim();
+        if org_a.is_empty() || org_b.is_empty() || org_a.eq_ignore_ascii_case(org_b) {
             return Err(FederatedOrgRejection::SelfReciprocitySpoofing { org: treaty.org_a });
         }
-        self.treaties.insert(treaty.treaty_id.clone(), treaty);
+        if let Some(existing) = self.treaties.get(treaty_id) {
+            if existing.dispute_freeze_active && !treaty.dispute_freeze_active {
+                return Err(FederatedOrgRejection::DisputeFreezeActive {
+                    treaty_id: existing.treaty_id.clone(),
+                });
+            }
+            if treaty.treaty_epoch < existing.treaty_epoch {
+                return Err(FederatedOrgRejection::TreatyEpochRollback {
+                    treaty_id: existing.treaty_id.clone(),
+                    current_epoch: existing.treaty_epoch,
+                    requested_epoch: treaty.treaty_epoch,
+                });
+            }
+        }
+        let normalized = BilateralTreaty {
+            treaty_id: treaty_id.to_owned(),
+            org_a: org_a.to_owned(),
+            org_b: org_b.to_owned(),
+            ..treaty
+        };
+        self.treaties.insert(normalized.treaty_id.clone(), normalized);
         Ok(())
     }
 
@@ -160,7 +197,12 @@ impl FederatedOrgReciprocityGate {
         &mut self,
         claim: &FederatedOpClaim,
     ) -> Result<FederatedOpReceipt, FederatedOrgRejection> {
-        if claim.origin_org == claim.target_org {
+        let origin_org = claim.origin_org.trim();
+        let target_org = claim.target_org.trim();
+        if origin_org.is_empty()
+            || target_org.is_empty()
+            || origin_org.eq_ignore_ascii_case(target_org)
+        {
             return Err(FederatedOrgRejection::SelfReciprocitySpoofing {
                 org: claim.origin_org.clone(),
             });
@@ -171,7 +213,7 @@ impl FederatedOrgReciprocityGate {
                 digest: claim.payload_digest.clone(),
             });
         }
-        let Some(treaty) = self.treaties.get(&claim.treaty_id) else {
+        let Some(treaty) = self.treaties.get(claim.treaty_id.trim()) else {
             return Err(FederatedOrgRejection::UnknownTreaty {
                 treaty_id: claim.treaty_id.clone(),
             });
@@ -188,8 +230,8 @@ impl FederatedOrgReciprocityGate {
                 observed_unix_ms: claim.observed_unix_ms,
             });
         }
-        let pair_matches = (claim.origin_org == treaty.org_a && claim.target_org == treaty.org_b)
-            || (claim.origin_org == treaty.org_b && claim.target_org == treaty.org_a);
+        let pair_matches = (origin_org == treaty.org_a && target_org == treaty.org_b)
+            || (origin_org == treaty.org_b && target_org == treaty.org_a);
         if !pair_matches {
             return Err(FederatedOrgRejection::OrgPairMismatch {
                 treaty_id: treaty.treaty_id.clone(),

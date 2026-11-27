@@ -38,8 +38,30 @@ fn sha256_prefixed_digest(bytes: &[u8]) -> GovernanceProofDigest {
     GovernanceProofDigest::new(hex).expect("32-byte SHA-256 hex always forms a valid digest")
 }
 
-/// Computes a deterministic binary Merkle root (`sha256:<64 hex>`) over non-empty
-/// tensor shard digests in sorted order (domain-separated leaf & internal nodes).
+fn largest_power_of_two_less_than(n: usize) -> usize {
+    debug_assert!(n >= 2);
+    1usize << (usize::BITS - 1 - (n - 1).leading_zeros())
+}
+
+fn shard_mth(leaves: &[[u8; 32]]) -> [u8; 32] {
+    match leaves.len() {
+        1 => leaves[0],
+        n => {
+            let k = largest_power_of_two_less_than(n);
+            let left = shard_mth(&leaves[..k]);
+            let right = shard_mth(&leaves[k..]);
+            let mut buf = [0u8; 16 + 64];
+            buf[..16].copy_from_slice(b"marlin:b21:node:");
+            buf[16..48].copy_from_slice(&left);
+            buf[48..80].copy_from_slice(&right);
+            governance_sha256_bytes(&buf)
+        }
+    }
+}
+
+/// Computes a deterministic RFC 6962-structured binary Merkle root (`sha256:<64 hex>`) over
+/// non-empty tensor shard digests in sorted order (domain-separated leaf & internal nodes,
+/// never duplicating trailing odd nodes).
 pub fn compute_shard_merkle_root(
     shard_digests: &[GovernanceProofDigest],
 ) -> Result<GovernanceProofDigest, ModelWeightRejection> {
@@ -49,7 +71,7 @@ pub fn compute_shard_merkle_root(
     let mut sorted: Vec<&str> = shard_digests.iter().map(GovernanceProofDigest::as_str).collect();
     sorted.sort_unstable();
 
-    let mut level: Vec<[u8; 32]> = sorted
+    let leaves: Vec<[u8; 32]> = sorted
         .into_iter()
         .map(|digest| {
             let mut buf = Vec::with_capacity(16 + digest.len());
@@ -59,23 +81,11 @@ pub fn compute_shard_merkle_root(
         })
         .collect();
 
-    while level.len() > 1 {
-        let mut next = Vec::with_capacity(level.len().div_ceil(2));
-        for pair in level.chunks(2) {
-            let left = pair[0];
-            let right = if pair.len() == 2 { pair[1] } else { pair[0] };
-            let mut buf = Vec::with_capacity(16 + 64);
-            buf.extend_from_slice(b"marlin:b21:node:");
-            buf.extend_from_slice(&left);
-            buf.extend_from_slice(&right);
-            next.push(governance_sha256_bytes(&buf));
-        }
-        level = next;
-    }
+    let root = shard_mth(&leaves);
 
     let mut hex = String::with_capacity(7 + 64);
     hex.push_str("sha256:");
-    for b in level[0] {
+    for b in root {
         let _ = write!(&mut hex, "{b:02x}");
     }
     GovernanceProofDigest::new(hex).map_err(ModelWeightRejection::InvalidDigest)

@@ -314,17 +314,24 @@ pub fn verify_tree_head_progression(
                 },
             ));
         }
-        if !proof.consistency_path.is_empty() {
+        if (prev.tree_size == 0 && prev.root_hash != governance_sha256_bytes(&[]))
+            || proof.first_size != prev.tree_size
+            || proof.second_size != next.tree_size
+            || !proof.consistency_path.is_empty()
+        {
             return Err(TransparencyLogRejection::ConsistencyProofMismatch);
         }
         return Ok(());
     }
     if prev.tree_size == 0 {
-        return if proof.consistency_path.is_empty() {
-            Ok(())
-        } else {
-            Err(TransparencyLogRejection::ConsistencyProofMismatch)
-        };
+        if prev.root_hash != governance_sha256_bytes(&[])
+            || proof.first_size != 0
+            || proof.second_size != next.tree_size
+            || !proof.consistency_path.is_empty()
+        {
+            return Err(TransparencyLogRejection::ConsistencyProofMismatch);
+        }
+        return Ok(());
     }
     if proof.first_size != prev.tree_size
         || proof.second_size != next.tree_size

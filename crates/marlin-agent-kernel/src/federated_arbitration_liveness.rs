@@ -157,10 +157,10 @@ impl FederatedArbitrationLivenessGate {
             None
         }
         for node in nodes {
-            if color.get(node).copied().unwrap_or(0) == 0 {
-                if let Some(witness) = dfs(node, &adj, &mut color) {
-                    return Some(witness);
-                }
+            if color.get(node).copied().unwrap_or(0) == 0
+                && let Some(witness) = dfs(node, &adj, &mut color)
+            {
+                return Some(witness);
             }
         }
         None

@@ -65,12 +65,17 @@ pub struct ZkDisclosureReceipt {
     pub receipt_digest: String,
 }
 
+fn canonical_field_key(raw: &str) -> String {
+    raw.trim().to_ascii_lowercase()
+}
+
 /// Stateful B18 zero-knowledge selective-disclosure compliance gate.
 #[derive(Debug, Clone, Default)]
 pub struct ZkSelectiveDisclosureGate {
     forbidden_secret_fields: BTreeSet<String>,
     required_predicates: BTreeSet<String>,
     pending_challenges: BTreeSet<String>,
+    consumed_challenges: BTreeSet<String>,
     spent_nullifiers: BTreeSet<String>,
     verified_disclosures: u64,
 }
@@ -81,18 +86,30 @@ impl ZkSelectiveDisclosureGate {
         forbidden_secret_fields: BTreeSet<String>,
         required_predicates: BTreeSet<String>,
     ) -> Self {
+        let normalized_forbidden = forbidden_secret_fields
+            .into_iter()
+            .map(|field| canonical_field_key(&field))
+            .filter(|field| !field.is_empty())
+            .collect();
         Self {
-            forbidden_secret_fields,
+            forbidden_secret_fields: normalized_forbidden,
             required_predicates,
             pending_challenges: BTreeSet::new(),
+            consumed_challenges: BTreeSet::new(),
             spent_nullifiers: BTreeSet::new(),
             verified_disclosures: 0,
         }
     }
 
     /// Issue a fresh verifier challenge nonce that binds the Sigma/ZK transcript.
+    ///
+    /// Blank nonces and previously consumed nonces are ignored fail-closed to
+    /// prevent verifier challenge replay.
     pub fn issue_challenge_nonce(&mut self, nonce: impl Into<String>) {
-        self.pending_challenges.insert(nonce.into());
+        let n = nonce.into();
+        if !n.trim().is_empty() && !self.consumed_challenges.contains(&n) {
+            self.pending_challenges.insert(n);
+        }
     }
 
     #[must_use]
@@ -133,7 +150,8 @@ impl ZkSelectiveDisclosureGate {
             });
         }
         for field in &claim.disclosed_fields {
-            if self.forbidden_secret_fields.contains(field) {
+            let canonical = canonical_field_key(field);
+            if self.forbidden_secret_fields.contains(&canonical) {
                 return Err(ZkDisclosureRejection::SecretFieldOverDisclosed {
                     field: field.clone(),
                 });
@@ -158,6 +176,8 @@ impl ZkSelectiveDisclosureGate {
         // Consume single-use challenge and burn nullifier permanently.
         self.pending_challenges
             .remove(&claim.verifier_challenge_nonce);
+        self.consumed_challenges
+            .insert(claim.verifier_challenge_nonce.clone());
         self.spent_nullifiers.insert(nullifier.clone());
         self.verified_disclosures = self.verified_disclosures.saturating_add(1);
 
