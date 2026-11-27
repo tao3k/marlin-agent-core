@@ -4,11 +4,14 @@
 
 (import (only-in :clan/poo/object .get .o)
         (only-in :std/list/list filter find)
+        (only-in :std/string/misc string-trim)
         (only-in "../ui-elements/funcs.ss"
                  ui-bar ui-template ui-choice
                  ui-size-binding ui-size-cells ui-size-subtract)
         "./objects.ss")
-(export marlin-ui-modeline-nodes marlin-ui-modeline-nodes-for marlin-ui-modeline-bar-for)
+(export marlin-ui-modeline-nodes marlin-ui-modeline-nodes-for marlin-ui-modeline-bar-for
+        marlin-ui-modeline-preset-spec marlin-ui-modeline-visible-segments
+        marlin-ui-modeline-shrink-path)
 
 (def (modeline-node catalog entry)
   (def identity (car entry))
@@ -138,3 +141,63 @@
     (ui-bar 'bar 3 (append segments
                            (list (list 'left 0 0 #f mode)
                                  (list 'left 0 0 'multi-window window-number))))))
+
+;;; Return the declarative LHS/RHS segment layout for a Modern Doom Modeline
+;;; preset ('main, 'dashboard, 'helm, or 'minimal).
+(def (marlin-ui-modeline-preset-spec preset)
+  (def entry
+    (or (assq preset (.get ModernDoomModelinePresets. presets))
+        (assq 'main (.get ModernDoomModelinePresets. presets))))
+  (.o preset: (car entry)
+      lhs: (cadr entry)
+      rhs: (caddr entry)))
+
+;;; Filter a preset's LHS/RHS segments by pane column budget, multi-window
+;;; presence, and window focus (matching Doom Emacs doom-modeline-window-width-limit).
+(def (marlin-ui-modeline-visible-segments preset width-cols multi-window? focused?)
+  (def spec (marlin-ui-modeline-preset-spec preset))
+  (def rules (.get ModernDoomSegmentRules. rules))
+  (def (admit? seg)
+    (def rule (assq seg rules))
+    (def min-w (if rule (caddr rule) 0))
+    (cond
+      ((eq? seg 'window-number) multi-window?)
+      ((not focused?)
+       (memq seg '(bar window-state window-number buffer-info major-mode)))
+      (else (or (<= width-cols 0) (>= width-cols min-w)))))
+  (.o preset: (.get spec preset)
+      lhs: (filter admit? (.get spec lhs))
+      rhs: (filter admit? (.get spec rhs))))
+
+;;; Doom Emacs `shrink-path` projection: collapses intermediate directory
+;;; segments to their leading character while preserving root (~ or /) and
+;;; the final leaf segment (e.g. "~/ghq/github.com/tao3k/marlin-agent-core/"
+;;; => "~/g/g/t/marlin-agent-core/").
+(def (marlin-ui-modeline-shrink-path raw-path)
+  (def trimmed (string-trim raw-path))
+  (if (or (string-empty? trimmed) (not (string-index trimmed #\/)))
+    trimmed
+    (let* ((trailing-slash? (and (> (string-length trimmed) 1)
+                                 (char=? (string-ref trimmed (- (string-length trimmed) 1)) #\/)))
+           (body (if trailing-slash?
+                   (substring trimmed 0 (- (string-length trimmed) 1))
+                   trimmed))
+           (parts (string-split body #\/))
+           (total (length parts))
+           (shrunk
+             (let loop ((rest parts) (idx 0) (acc '()))
+               (if (null? rest)
+                 (reverse acc)
+                 (let* ((seg (car rest))
+                        (last? (= idx (- total 1)))
+                        (first? (= idx 0))
+                        (kept (cond
+                                ((or last? (string-empty? seg)) seg)
+                                ((and first? (or (string=? seg "~") (string=? seg ".") (string=? seg ".."))) seg)
+                                ((<= (string-length seg) 1) seg)
+                                ((and (char=? (string-ref seg 0) #\.) (> (string-length seg) 1))
+                                 (substring seg 0 2))
+                                (else (substring seg 0 1)))))
+                   (loop (cdr rest) (+ idx 1) (cons kept acc))))))
+           (joined (string-join shrunk "/")))
+      (if trailing-slash? (string-append joined "/") joined))))

@@ -3,7 +3,8 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 (import (only-in :clan/poo/object .def .mix seal-object!))
-(export NerdModelineIcons. DoomModeline PiModeline.)
+(export NerdModelineIcons. DoomModeline PiModeline.
+        ModernDoomModelinePresets. ModernDoomSegmentRules.)
 
 ;;; Material Design code points with semantic foreground tones.
 (.def NerdModelineIcons.
@@ -62,3 +63,41 @@
            (modeline/state/history "history" muted muted 0 48 0)
            (modeline/state/working "working" info info 0 48 0)
            (modeline/state/reading "reading" info info 0 48 0)))
+
+;;; Declarative Modern Doom Modeline presets (mirroring doom-modeline.el v4.3
+;;; + AI-native telemetry) shared between Scheme, Rust TUI, and MyGo Desktop.
+(.def ModernDoomModelinePresets.
+  presets: '((main
+               (bar window-state window-number modals buffer-info remote-host position)
+               (status-items deep-think workspace gates model vcs major-mode))
+             (dashboard
+               (bar window-state window-number modals workspace-path remote-host)
+               (status-items workspace gates model vcs brand))
+             (helm
+               (bar modals helm-title helm-count)
+               (helm-help))
+             (minimal
+               (bar window-number modals buffer-info)
+               (major-mode))))
+
+;;; Segment admission rules: (id side min-width compact-below keep-priority).
+(.def ModernDoomSegmentRules.
+  rules: '((bar left 0 0 100)
+           (window-state left 0 0 95)
+           (window-number left 0 0 95)
+           (modals left 0 96 95)
+           (buffer-info left 0 56 90)
+           (workspace-path left 0 72 85)
+           (remote-host left 72 0 45)
+           (position left 96 0 40)
+           (helm-title left 0 0 95)
+           (helm-count left 56 0 70)
+           (helm-help right 72 0 60)
+           (status-items right 72 96 55)
+           (deep-think right 72 0 50)
+           (workspace right 64 0 65)
+           (gates right 0 0 88)
+           (model right 0 64 92)
+           (vcs right 96 0 45)
+           (major-mode right 0 56 80)
+           (brand right 96 0 35)))

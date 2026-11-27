@@ -9,4 +9,7 @@
 (def UiModelineScope
   (.new/checked UiModelineScopeContract
     identity: 'marlin/ui-modeline nodes: marlin-ui-modeline-nodes
-    nodes-for: marlin-ui-modeline-nodes-for bar-for: marlin-ui-modeline-bar-for))
+    nodes-for: marlin-ui-modeline-nodes-for bar-for: marlin-ui-modeline-bar-for
+    preset-spec: marlin-ui-modeline-preset-spec
+    visible-segments: marlin-ui-modeline-visible-segments
+    shrink-path: marlin-ui-modeline-shrink-path))
