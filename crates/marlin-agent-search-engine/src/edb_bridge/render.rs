@@ -309,6 +309,123 @@ fn format_truncation_next_query_hint(
     hints.join(", ")
 }
 
+fn is_collision_row_shape(rows: &[SearchDslStructuredRow]) -> bool {
+    !rows.is_empty()
+        && rows.iter().all(|r| {
+            r.cells.len() == 5
+                && r.cells[2].parse::<usize>().is_ok()
+                && r.cells[4].parse::<usize>().is_ok()
+        })
+}
+
+fn format_grouped_collision_entry(
+    name: &str,
+    sites: &std::collections::BTreeSet<(&str, usize)>,
+) -> String {
+    let preview: Vec<String> = sites
+        .iter()
+        .take(6)
+        .map(|(path, line)| format!("{path}:L{line}"))
+        .collect();
+    let extra = sites
+        .len()
+        .checked_sub(6)
+        .filter(|&n| n > 0)
+        .map_or_else(String::new, |n| format!(", +{n} more"));
+    format!(
+        "- {name} [{} file(s)]: {}{extra}\n",
+        sites.len(),
+        preview.join(", ")
+    )
+}
+
+fn is_boilerplate_collision_name(name: &str) -> bool {
+    name.len() < 3
+        || matches!(
+            name,
+            "new"
+                | "default"
+                | "fmt"
+                | "from"
+                | "into"
+                | "drop"
+                | "as_str"
+                | "clone"
+                | "eq"
+                | "ne"
+                | "cmp"
+                | "partial_cmp"
+                | "hash"
+                | "deref"
+                | "deref_mut"
+                | "as_ref"
+                | "borrow"
+                | "len"
+                | "is_empty"
+                | "id"
+                | "name"
+                | "value"
+                | "build"
+                | "run"
+                | "parse"
+                | "next"
+                | "try_from"
+                | "try_into"
+                | "display"
+                | "to_string"
+                | "main"
+                | "init"
+                | "get"
+                | "set"
+        )
+}
+
+fn render_grouped_collision_lines(
+    rows: &[SearchDslStructuredRow],
+    body_budget: usize,
+) -> (Vec<String>, usize) {
+    let mut order: Vec<&str> = Vec::new();
+    let mut grouped: HashMap<&str, std::collections::BTreeSet<(&str, usize)>> = HashMap::new();
+    rows.iter().for_each(|row| {
+        let name = row.cells[0].as_str();
+        let entry = grouped.entry(name).or_insert_with(|| {
+            order.push(name);
+            std::collections::BTreeSet::new()
+        });
+        if let Ok(l1) = row.cells[2].parse::<usize>() {
+            entry.insert((row.cells[1].as_str(), l1));
+        }
+        if let Ok(l2) = row.cells[4].parse::<usize>() {
+            entry.insert((row.cells[3].as_str(), l2));
+        }
+    });
+    let distinct_symbols = order.len();
+    order.sort_by(|a, b| {
+        let a_boiler = is_boilerplate_collision_name(a);
+        let b_boiler = is_boilerplate_collision_name(b);
+        let a_sites = grouped.get(a).map_or(0, std::collections::BTreeSet::len);
+        let b_sites = grouped.get(b).map_or(0, std::collections::BTreeSet::len);
+        a_boiler
+            .cmp(&b_boiler)
+            .then_with(|| b_sites.cmp(&a_sites))
+            .then_with(|| a.cmp(b))
+    });
+    let mut body_bytes = 0usize;
+    let lines: Vec<String> = order
+        .into_iter()
+        .filter_map(|name| grouped.get(name).map(|sites| format_grouped_collision_entry(name, sites)))
+        .take_while(|line| {
+            if body_bytes + line.len() <= body_budget {
+                body_bytes += line.len();
+                true
+            } else {
+                false
+            }
+        })
+        .collect();
+    (lines, distinct_symbols)
+}
+
 pub(super) fn render_ascent_search_text(inputs: AscentRenderInputs<'_>) -> String {
     let AscentRenderInputs {
         snapshot,
@@ -322,34 +439,44 @@ pub(super) fn render_ascent_search_text(inputs: AscentRenderInputs<'_>) -> Strin
         explicit_context,
     } = inputs;
 
-    let header_reserve = 384usize;
-    let footer_reserve = 128usize;
+    let header_reserve = 448usize;
+    let footer_reserve = 160usize;
     let body_budget = ctx.output_limit.saturating_sub(header_reserve + footer_reserve);
 
-    // Attach zero-I/O RAM source snippets automatically for concise L1 Ascent results
-    // (or whenever the query explicitly requests `(context N)`), eliminating follow-up grep rounds.
-    let effective_context = match explicit_context {
-        Some(n) => Some(n.min(8)),
-        None if ctx.index.is_some() && !rows.is_empty() && rows.len() <= 8 => Some(1),
-        None if ctx.index.is_some() && !rows.is_empty() && rows.len() <= 20 => Some(0),
-        None => None,
+    let grouped_collision_mode = is_collision_row_shape(rows) && explicit_context.is_none();
+    let (body_lines, grouped_distinct_symbols) = if grouped_collision_mode {
+        let (lines, distinct) = render_grouped_collision_lines(rows, body_budget);
+        (lines, Some(distinct))
+    } else {
+        // Attach zero-I/O RAM source snippets automatically for concise L1 Ascent results
+        // (or whenever the query explicitly requests `(context N)`), eliminating follow-up grep rounds.
+        let effective_context = match explicit_context {
+            Some(n) => Some(n.min(8)),
+            None if ctx.index.is_some() && !rows.is_empty() && rows.len() <= 8 => Some(1),
+            None if ctx.index.is_some() && !rows.is_empty() && rows.len() <= 20 => Some(0),
+            None => None,
+        };
+        let mut body_bytes = 0usize;
+        let lines: Vec<String> = rows
+            .iter()
+            .map(|row| format_ascent_row_with_context(row, ctx.index, effective_context))
+            .take_while(|line| {
+                if body_bytes + line.len() <= body_budget {
+                    body_bytes += line.len();
+                    true
+                } else {
+                    false
+                }
+            })
+            .collect();
+        (lines, None)
     };
 
-    let mut body_bytes = 0usize;
-    let body_lines: Vec<String> = rows
-        .iter()
-        .map(|row| format_ascent_row_with_context(row, ctx.index, effective_context))
-        .take_while(|line| {
-            if body_bytes + line.len() <= body_budget {
-                body_bytes += line.len();
-                true
-            } else {
-                false
-            }
-        })
-        .collect();
-
-    let returned_results = body_lines.len();
+    let returned_results = if grouped_collision_mode {
+        rows.len()
+    } else {
+        body_lines.len()
+    };
     let truncated = returned_results < total_results;
     let mut rendered_text = format_snapshot_header(snapshot, ctx.prefilter);
     let _ = writeln!(
@@ -357,6 +484,19 @@ pub(super) fn render_ascent_search_text(inputs: AscentRenderInputs<'_>) -> Strin
         "mode: {}\nrelation: {relation}\nresults: {total_results}\nreturned: {returned_results}\ntruncated: {truncated}",
         mode.as_str(),
     );
+    if let Some(distinct_symbols) = grouped_distinct_symbols {
+        let _ = writeln!(
+            rendered_text,
+            "grouped_collisions: {distinct_symbols} distinct symbol(s) (deduplicated from {} sampled pair(s) out of {total_results} raw pairs)",
+            rows.len()
+        );
+        if total_results > rows.len().saturating_mul(4) {
+            let _ = writeln!(
+                rendered_text,
+                "high_cardinality: true (narrow via exclude-tests?: #t, name-all: (\"stem\"), or tighter path-prefix:)"
+            );
+        }
+    }
     if ctx
         .prefilter
         .is_some_and(|pf| pf.hydration.includes_symbol_refs())
@@ -402,3 +542,7 @@ pub(super) fn render_ascent_search_text(inputs: AscentRenderInputs<'_>) -> Strin
     }
     rendered_text
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/render_collisions.rs"]
+mod render_collisions_tests;

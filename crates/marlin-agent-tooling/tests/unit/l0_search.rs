@@ -431,4 +431,99 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
             && kind_summary.contains("enum(1): EngineMode"),
         "expected compact kind-summary inventory across hydrated + unhydrated files: {kind_summary}"
     );
+
+    // 19. `(file-outline ... projection: "struct-enum-detail")` emits inline struct fields & enum variants in 1 pass.
+    let ModelToolOutcome::Completed(type_detail) = run(
+        "c18",
+        "(file-outline \"crates/\" projection: \"struct-enum-detail\" kind: (\"struct\" \"enum\") exclude-tests?: #t)",
+    )
+    .await
+    else {
+        panic!("expected Completed for struct-enum-detail outline");
+    };
+    assert!(
+        type_detail.contains("SearchEngine :: { pub active: bool }")
+            && type_detail.contains("EngineMode :: { Fast, Safe }"),
+        "expected inline struct fields and enum variants in struct-enum-detail: {type_detail}"
+    );
+
+    // 20. Cursor-aware `(read-file ... cursor: 1 max-lines: 3)` emits exact executable `next_query:` cursor continuation.
+    let ModelToolOutcome::Completed(cursor_read) = run(
+        "c19",
+        "(read-file \"crates/core/src/engine.rs\" cursor: 1 max-lines: 3)",
+    )
+    .await
+    else {
+        panic!("expected Completed for cursor-based read-file");
+    };
+    assert!(
+        cursor_read.contains("range: L1..=L3")
+            && cursor_read.contains("next_query: (read-file \"crates/core/src/engine.rs\" cursor: 4 max-lines: 120)"),
+        "expected exact cursor continuation next_query: {cursor_read}"
+    );
+
+    // 21. Truncated `(brute-search ...)` emits `top_files:` and one-hop `(file-outline ...)` suggestion.
+    let ModelToolOutcome::Completed(trunc_brute) = run(
+        "c20",
+        "(brute-search \"pub\" path-prefix: \"crates/\" limit: 1)",
+    )
+    .await
+    else {
+        panic!("expected Completed for truncated brute-search");
+    };
+    assert!(
+        trunc_brute.contains("top_files:")
+            && trunc_brute.contains("projection: \"callable-skeleton\""),
+        "expected top_files and one-hop file-outline transition on truncated brute-search: {trunc_brute}"
+    );
+
+    // 22. `struct-enum-detail` defaults to struct/enum kinds even when `kind:` is omitted.
+    let ModelToolOutcome::Completed(default_type_detail) = run(
+        "c21",
+        "(file-outline \"crates/\" projection: \"struct-enum-detail\" exclude-tests?: #t)",
+    )
+    .await
+    else {
+        panic!("expected Completed for default-kind struct-enum-detail outline");
+    };
+    assert!(
+        default_type_detail.contains("[struct] SearchEngine")
+            && default_type_detail.contains("[enum] EngineMode")
+            && !default_type_detail.contains("[function] run_engine"),
+        "expected struct-enum-detail without kind: to omit functions: {default_type_detail}"
+    );
+
+    // 23. `(workspace-map "./" ...)` normalizes POSIX root alias `./` to workspace root, and
+    // `(read-file ... max-lines: 400)` reports `range_clamped: true`.
+    let ModelToolOutcome::Completed(root_map) = run("c22", "(workspace-map \"./\" depth: 2)").await
+    else {
+        panic!("expected Completed for normalized root workspace-map");
+    };
+    assert!(
+        root_map.contains("crates/core/") && !root_map.contains("matched 0 indexed files"),
+        "expected ./ to normalize to workspace root: {root_map}"
+    );
+    let ModelToolOutcome::Completed(clamped_read) = run(
+        "c23",
+        "(read-file \"crates/core/src/engine.rs\" cursor: 1 max-lines: 400)",
+    )
+    .await
+    else {
+        panic!("expected Completed for clamped max-lines read-file");
+    };
+    assert!(
+        clamped_read.contains("range_clamped: true"),
+        "expected range_clamped header when max-lines exceeds 200: {clamped_read}"
+    );
+
+    // 24. Accidental `(workspace_search "pattern")` wrapper auto-repairs to `(brute-search ...)`.
+    let ModelToolOutcome::Completed(repaired_ws) =
+        run("c24", "(workspace_search \"SearchEngine\")").await
+    else {
+        panic!("expected Completed for repaired workspace_search wrapper");
+    };
+    assert!(
+        repaired_ws.contains("crates/core/src/engine.rs") && repaired_ws.contains("repairs:"),
+        "expected repaired workspace_search wrapper to match and emit repairs receipt: {repaired_ws}"
+    );
 }

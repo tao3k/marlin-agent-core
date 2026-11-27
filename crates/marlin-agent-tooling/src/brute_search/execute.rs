@@ -520,8 +520,26 @@ fn execute_brute_search_only(
     } else {
         None
     };
+    let top_files_ranked: Vec<(&str, usize)> = if truncated {
+        let mut ranked: Vec<(&str, usize)> = filtered_hits
+            .iter()
+            .map(|h| (h.path.as_str(), h.line_matches.len()))
+            .collect();
+        ranked.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+        ranked.truncate(5);
+        ranked
+    } else {
+        Vec::new()
+    };
     if let Some(top_dirs) = top_dirs_opt.as_deref() {
         let _ = writeln!(out, "top_dirs: {top_dirs}");
+    }
+    if !top_files_ranked.is_empty() {
+        let top_files_str: Vec<String> = top_files_ranked
+            .iter()
+            .map(|(p, c)| format!("{p}({c})"))
+            .collect();
+        let _ = writeln!(out, "top_files: {}", top_files_str.join(", "));
     }
     if !repairs.is_empty() {
         let _ = writeln!(out, "repairs: {}", repairs.join(", "));
@@ -550,15 +568,32 @@ fn execute_brute_search_only(
                     "(brute-search \"{effective_pattern}\" path-prefix: \"{top_dir}/\" exclude-tests?: #t limit: 24)"
                 )
             });
-        match scoped_suggestion {
-            Some(next_q) => {
+        let top_file_outline = top_files_ranked.first().map(|(path, _)| {
+            format!("(file-outline \"{path}\" projection: \"callable-skeleton\")")
+        });
+        match (scoped_suggestion, top_file_outline) {
+            (Some(next_q), Some(outline_q)) => {
+                let _ = writeln!(
+                    out,
+                    "  ... (+{} omitted; next_query: {next_q} or inspect top file via {outline_q})",
+                    total_hits - returned_hits
+                );
+            }
+            (Some(next_q), None) => {
                 let _ = writeln!(
                     out,
                     "  ... (+{} omitted; next_query: {next_q} or use `structural_query` (find-impact ...) / (find-symbols name-all: (...)))",
                     total_hits - returned_hits
                 );
             }
-            None => {
+            (None, Some(outline_q)) => {
+                let _ = writeln!(
+                    out,
+                    "  ... (+{} omitted; next_query: {outline_q} or narrow path-prefix: / exclude-tests?: #t)",
+                    total_hits - returned_hits
+                );
+            }
+            (None, None) => {
                 let _ = writeln!(
                     out,
                     "  ... (+{} omitted; next_query: narrow path-prefix: to one crate from top_dirs, add exclude-tests?: #t, or use `structural_query` (find-impact ...) / (find-symbols ...))",

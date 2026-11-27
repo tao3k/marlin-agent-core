@@ -214,6 +214,7 @@
            (exclude-tests? (if (kw-ref kwargs '(exclude-tests? exclude-tests prod-only? prod-only) #f) #t #f))
            (exclude-prefixes (datum->string-list (kw-ref kwargs '(exclude-path-prefix exclude-prefix) #f)))
            (contains-str (kw-ref kwargs '(path-contains) #f))
+           (name-all-list (datum->string-list (kw-ref kwargs '(name-all all-of) #f)))
            (name-contains-list (datum->string-list (kw-ref kwargs '(name-contains name) #f)))
            (name-prefixes (datum->string-list (kw-ref kwargs '(name-prefix) #f)))
            (min-files (max 2 (min 4 (positive-int-or (kw-ref kwargs '(min-files min-occurrences) 2) 2))))
@@ -234,7 +235,7 @@
                   ,r4 (file f4 ,lang-pat p4) (< f3 f4)
                   ,@(build-path-filter-atoms '(p3 p4) exclude-tests? exclude-prefixes contains-str)))))
            (path-filters (build-path-filter-atoms '(p1 p2) exclude-tests? exclude-prefixes contains-str))
-           (name-filters (build-name-filter-atoms 'name name-contains-list name-prefixes)))
+           (name-filters (build-name-filter-atoms 'name name-contains-list name-prefixes name-all-list)))
       `(ascent-fragment
          ,@(build-scope-clause prefix)
          (limit ,lim)

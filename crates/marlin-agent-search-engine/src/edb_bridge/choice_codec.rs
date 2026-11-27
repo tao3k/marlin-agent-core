@@ -108,6 +108,55 @@ fn format_witness_tag(binding: &[String], witnesses: &[SearchDslChoiceWitness]) 
     tag
 }
 
+fn summarize_forced_and_free_bindings(worlds: &[SearchDslChoiceWorld]) -> Option<String> {
+    if worlds.is_empty() {
+        return None;
+    }
+    let mut values_by_key: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
+        std::collections::BTreeMap::new();
+    worlds
+        .iter()
+        .flat_map(|w| w.bindings.iter())
+        .filter(|b| b.len() == 2)
+        .for_each(|b| {
+            values_by_key
+                .entry(b[0].as_str())
+                .or_default()
+                .insert(b[1].as_str());
+        });
+    if values_by_key.is_empty() {
+        return None;
+    }
+    let forced: Vec<String> = values_by_key
+        .iter()
+        .filter(|(_, vals)| vals.len() == 1)
+        .map(|(k, vals)| format!("{k}={}", vals.iter().next().copied().unwrap_or("")))
+        .collect();
+    let free: Vec<String> = values_by_key
+        .iter()
+        .filter(|(_, vals)| vals.len() > 1)
+        .map(|(k, vals)| {
+            let joined = vals.iter().copied().collect::<Vec<_>>().join("|");
+            format!("{k}={{{joined}}}")
+        })
+        .collect();
+    Some(format!(
+        "forced({}): {} | free({}): {}",
+        forced.len(),
+        if forced.is_empty() {
+            "none".to_owned()
+        } else {
+            forced.join(", ")
+        },
+        free.len(),
+        if free.is_empty() {
+            "none".to_owned()
+        } else {
+            free.join(", ")
+        },
+    ))
+}
+
 fn append_world_rows(
     world: &SearchDslChoiceWorld,
     known_paths: &HashSet<&str>,
@@ -301,8 +350,11 @@ pub(super) fn decode_choice_payload(
     if let Some((slice_modules, total_scoped)) = module_slice_counts {
         let _ = writeln!(
             rendered_text,
-            "module_slice: {slice_modules}/{total_scoped} scoped file(s) (hot_path_source: path-predicate 100% file coverage, independent of native_ast_files)"
+            "module_slice: {slice_modules}/{total_scoped} scoped file(s) (hot_path_source: path-predicate 100% file coverage, independent of native_ast_files)\nhot_path_predicate: path_contains(search-dsl | edb_bridge | converged_resident_index | c-abi | span_overlay | linked_ui | hot_path | hot-path | kernel)"
         );
+    }
+    if let Some(partition) = summarize_forced_and_free_bindings(&choice_worlds) {
+        let _ = writeln!(rendered_text, "deduction_vs_branch: {partition}");
     }
 
     let mut rows = Vec::new();
@@ -332,3 +384,7 @@ pub(super) fn decode_choice_payload(
         rendered_text,
     })
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/choice_codec_provenance.rs"]
+mod choice_codec_provenance_tests;

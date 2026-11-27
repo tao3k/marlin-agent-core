@@ -92,10 +92,23 @@
         (reverse acc)
         (loop (cdr rest) (- n 1) (cons (car rest) acc))))))
 
+(def +boilerplate-symbol-keys+
+  '("new" "default" "fmt" "from" "into" "drop" "as_str" "clone" "eq" "ne"
+    "cmp" "partial_cmp" "hash" "deref" "deref_mut" "as_ref" "borrow"
+    "len" "is_empty" "id" "name" "value" "build" "run" "parse" "next"
+    "try_from" "try_into" "display" "to_string" "main" "init" "get" "set"))
+
+(def (boilerplate-symbol-key? k)
+  (and (string? k)
+       (or (member k +boilerplate-symbol-keys+)
+           (< (string-length k) 3))))
+
 ;;; Anti-mode-collapse Quality-Diversity / MAP-Elites niche round-robin selector:
 ;;; When a query returns more rows than `limit` and each row has >= 2 columns,
 ;;; partition rows by their primary semantic niche key `(car row)` and draw
 ;;; round-robin across niches so no single high-frequency niche starves others.
+;;; Domain-specific symbols are prioritized ahead of ubiquitous boilerplate
+;;; trait/constructor names (`new`, `default`, `fmt`, `as_str`, `drop`, ...).
 (def (select-diverse-rows-up-to rows limit)
   (cond
     ((or (not limit) (<= (length rows) limit) (null? rows)) rows)
@@ -114,7 +127,11 @@
                  (hash-put! buckets k (list row))
                  (set! order (cons k order))))))
          rows)
-       (let ((queues (map (lambda (k) (reverse (hash-ref buckets k))) (reverse order))))
+       (let* ((rev-order (reverse order))
+              (domain-keys (filter (lambda (k) (not (boilerplate-symbol-key? k))) rev-order))
+              (boiler-keys (filter boilerplate-symbol-key? rev-order))
+              (prioritized (append domain-keys boiler-keys))
+              (queues (map (lambda (k) (reverse (hash-ref buckets k))) prioritized)))
          (let loop ((cur queues) (next '()) (rem limit) (acc '()))
            (cond
              ((<= rem 0) (reverse acc))

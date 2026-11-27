@@ -210,15 +210,81 @@ fn format_skeleton_signature(
     (end_line, clean_sig)
 }
 
+fn extract_type_member_preview(
+    index: &WorkspaceSearchIndex,
+    path: &str,
+    line: usize,
+) -> (Option<usize>, Option<String>) {
+    let window = index.live_file_context(path, line.saturating_add(24), 26);
+    if window.is_empty() {
+        return (None, None);
+    }
+    let mut delim = DelimScanState::default();
+    let mut end_line: Option<usize> = None;
+    let mut members: Vec<String> = Vec::new();
+    let mut total_members = 0usize;
+
+    for row in window.iter().filter(|r| r.line_number >= line) {
+        let trimmed = row.text.trim();
+        let in_body = delim.brace_depth == 1
+            && !trimmed.is_empty()
+            && !trimmed.starts_with("//")
+            && !trimmed.starts_with('#')
+            && !trimmed.starts_with('}');
+        if in_body {
+            total_members += 1;
+            if members.len() < 6 {
+                let compact = trimmed.trim_end_matches([',', '{']).trim();
+                let clipped = if compact.len() > 42 {
+                    format!("{}…", &compact[..compact.floor_char_boundary(41)])
+                } else {
+                    compact.to_owned()
+                };
+                if !clipped.is_empty() {
+                    members.push(clipped);
+                }
+            }
+        }
+        scan_line_delimiters(trimmed, &mut delim);
+        if (delim.saw_delim && delim.brace_depth <= 0 && delim.paren_depth <= 0)
+            || (!delim.saw_delim && trimmed.ends_with(';'))
+        {
+            end_line = Some(row.line_number);
+            break;
+        }
+    }
+    let preview = if members.is_empty() {
+        format_skeleton_signature(index, path, line).1
+    } else {
+        let suffix = total_members
+            .checked_sub(members.len())
+            .filter(|&n| n > 0)
+            .map_or_else(String::new, |n| format!(", +{n} more"));
+        Some(format!("{{ {}{suffix} }}", members.join(", ")))
+    };
+    (end_line, preview)
+}
+
 fn format_outline_symbol_row(
     index: &WorkspaceSearchIndex,
     path: &str,
     line: usize,
     kind: &str,
     name: &str,
-    use_skeleton: bool,
+    cfg: &OutlineRenderConfig,
 ) -> String {
-    if !use_skeleton {
+    if cfg.use_type_detail && matches!(kind, "struct" | "enum" | "trait" | "type") {
+        let (end_line, preview) = extract_type_member_preview(index, path, line);
+        let span_label = match end_line {
+            Some(end) if end > line => format!("L{line}..L{end}"),
+            _ => format!("L{line}"),
+        };
+        return match preview {
+            Some(p) => format!("      {span_label:<10} [{kind}] {name} :: {p}\n"),
+            None => format!("      {span_label:<10} [{kind}] {name}\n"),
+        };
+    }
+    if !cfg.use_skeleton && !cfg.use_type_detail {
         return format!("      L{line:<4} [{kind}] {name}\n");
     }
     let (end_line, sig) = format_skeleton_signature(index, path, line);
@@ -236,6 +302,7 @@ struct OutlineRenderConfig {
     max_symbols: usize,
     per_file_cap: Option<usize>,
     use_skeleton: bool,
+    use_type_detail: bool,
     body_budget: usize,
 }
 
@@ -271,7 +338,7 @@ fn append_outline_file_block(
         .into_iter()
         .take(allowed)
         .map(|(line, kind, name)| {
-            format_outline_symbol_row(index, path, line, kind, name, cfg.use_skeleton)
+            format_outline_symbol_row(index, path, line, kind, name, cfg)
         })
         .take_while(|row| {
             if cur_len + row.len() <= cfg.body_budget {
@@ -485,6 +552,7 @@ pub(super) fn execute_file_outline(
         max_symbols: req.max_symbols,
         per_file_cap,
         use_skeleton: req.skeleton || total_files == 1,
+        use_type_detail: req.type_detail,
         body_budget: output_limit.saturating_sub(out.len() + 220),
     };
     let mut emitted_symbols = 0usize;
@@ -814,14 +882,23 @@ pub(super) fn execute_read_file(
     if let (Some(sym), Some(anchor_line)) = (single_symbol, symbol_anchor_line) {
         let _ = writeln!(out, "symbol_anchor: {sym} @ L{anchor_line}");
     }
+    if req.requested_end_clamped {
+        let _ = writeln!(out, "range_clamped: true (max 200 lines per call)");
+    }
     if has_more {
-        let _ = writeln!(out, "next_start: {}", actual_end.saturating_add(1));
+        let next_start = actual_end.saturating_add(1);
+        let _ = writeln!(out, "next_start: {next_start}");
+        let _ = writeln!(
+            out,
+            "next_query: (read-file \"{}\" cursor: {next_start} max-lines: {DEFAULT_READ_LINES})",
+            req.path
+        );
     }
     if req.wrapped_bare_form {
         let _ = writeln!(out, "repairs: wrap-read-file-parens");
     }
 
-    let body_budget = output_limit.saturating_sub(out.len() + 128);
+    let body_budget = output_limit.saturating_sub(out.len() + 192);
     let mut body_bytes = 0usize;
     let formatted_lines: Vec<String> = slice
         .iter()
@@ -841,10 +918,17 @@ pub(super) fn execute_read_file(
     out.extend(formatted_lines);
     if has_more {
         let next_start = actual_end.saturating_add(1);
-        let next_end = next_start.saturating_add(DEFAULT_READ_LINES - 1);
+        let outline_tip = if single_symbol.is_none() && actual_end >= DEFAULT_READ_LINES {
+            format!(
+                " or inspect compactly with (file-outline \"{}\" projection: \"callable-skeleton\") / (read-file \"{}\" symbols: (...))",
+                req.path, req.path
+            )
+        } else {
+            String::new()
+        };
         let _ = writeln!(
             out,
-            "  ... (more lines available; continue with (read-file \"{}\" start: {next_start} end: {next_end}))",
+            "  ... (more lines available; continue with (read-file \"{}\" cursor: {next_start} max-lines: {DEFAULT_READ_LINES}){outline_tip})",
             req.path
         );
     }

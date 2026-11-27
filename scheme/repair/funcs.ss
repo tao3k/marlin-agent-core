@@ -22,15 +22,37 @@
         suggest-similar-relations
         format-canonical-search-form)
 
+(def +wrapped-tool-heads+
+  '(structural_query structural-query constraint_solve constraint-solve))
+
+;;; Unwrap accidental tool-name wrapper calls such as
+;;; `(structural_query "(find-symbols ...)")` or `(constraint_solve "(solve-placement ...)")`
+;;; while recording an explicit `unwrap-tool-wrapper` repair receipt.
+(def (unwrap-tool-wrapper-form form tags)
+  (if (and (pair? form)
+           (list? form)
+           (= (length form) 2)
+           (memq (car form) +wrapped-tool-heads+))
+    (let ((inner (cadr form)))
+      (cond
+        ((string? inner)
+         (let-values (((parsed inner-tags) (read-bounded-search-sexp inner)))
+           (values parsed (add-repair-tag (append tags inner-tags) 'unwrap-tool-wrapper))))
+        ((pair? inner)
+         (values inner (add-repair-tag tags 'unwrap-tool-wrapper)))
+        (else (values form tags))))
+    (values form tags)))
+
 ;;; Pure AST-to-AST safe repair pass over an already-read Scheme datum.
 ;;; Returns `(values repaired-form repair-tags)`.
 (def (repair-ascent-ast form registry (initial-tags '()))
-  (let*-values (((desugared) (desugar-high-level-search-form form))
+  (let*-values (((unwrapped t-wrap) (unwrap-tool-wrapper-form form initial-tags))
+                ((desugared) (desugar-high-level-search-form unwrapped))
                 ((f0 t0)
                  (if (rule-clause? desugared)
                    (values (list 'ascent-fragment desugared)
-                           (add-repair-tag initial-tags 'wrap-bare-rule))
-                   (values desugared initial-tags))))
+                           (add-repair-tag t-wrap 'wrap-bare-rule))
+                   (values desugared t-wrap))))
     (unless (and (pair? f0)
                  (list? f0)
                  (memq (car f0) +admitted-top-heads+))

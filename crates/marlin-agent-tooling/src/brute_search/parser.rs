@@ -42,6 +42,7 @@ pub(crate) struct FileOutlineRequest {
     pub(crate) max_per_file: Option<usize>,
     pub(crate) skeleton: bool,
     pub(crate) kind_summary: bool,
+    pub(crate) type_detail: bool,
     pub(crate) wrapped_bare_form: bool,
 }
 
@@ -61,6 +62,7 @@ pub(crate) struct ReadFileRequest {
     pub(crate) path: String,
     pub(crate) start_line: usize,
     pub(crate) end_line: usize,
+    pub(crate) requested_end_clamped: bool,
     pub(crate) symbols: Vec<String>,
     pub(crate) symbol_context: usize,
     pub(crate) wrapped_bare_form: bool,
@@ -72,6 +74,19 @@ pub(crate) enum L0FormKind {
     FileOutline,
     ReadFile,
     WorkspaceMap,
+}
+
+fn normalize_scope_prefix(raw: &str) -> Option<String> {
+    let mut normalized = raw.trim().replace('\\', "/");
+    while let Some(stripped) = normalized.strip_prefix("./") {
+        normalized = stripped.to_owned();
+    }
+    let trimmed = normalized.trim_start_matches('/');
+    if trimmed.is_empty() || trimmed == "." {
+        None
+    } else {
+        Some(trimmed.to_owned())
+    }
 }
 
 pub(crate) fn classify_l0_form(raw_query: &str) -> Option<L0FormKind> {
@@ -88,7 +103,10 @@ pub(crate) fn classify_l0_form(raw_query: &str) -> Option<L0FormKind> {
                 || after.starts_with('"')
         })
     };
-    if matches_head("brute-search") {
+    if matches_head("brute-search")
+        || matches_head("workspace_search")
+        || matches_head("workspace-search")
+    {
         Some(L0FormKind::BruteSearch)
     } else if matches_head("file-outline") || matches_head("outline") {
         Some(L0FormKind::FileOutline)
@@ -299,7 +317,8 @@ pub(crate) fn parse_brute_search_form(raw_query: &str) -> Result<BruteSearchRequ
     let Some(SexpAtom::Text(head)) = atoms.first() else {
         return Err("expected (brute-search \"pattern\" ...)".to_owned());
     };
-    if head != "brute-search" {
+    let repaired_wrapper_head = matches!(head.as_str(), "workspace_search" | "workspace-search");
+    if head != "brute-search" && !repaired_wrapper_head {
         return Err("expected (brute-search \"pattern\" ...)".to_owned());
     }
     let mut req = BruteSearchRequest {
@@ -314,7 +333,7 @@ pub(crate) fn parse_brute_search_form(raw_query: &str) -> Result<BruteSearchRequ
         graph_target: None,
         max_hits: DEFAULT_BRUTE_MAX_HITS,
         context_lines: None,
-        wrapped_bare_form,
+        wrapped_bare_form: wrapped_bare_form || repaired_wrapper_head,
     };
     let mut idx = 1usize;
     while idx < atoms.len() {
@@ -345,8 +364,8 @@ pub(crate) fn parse_brute_search_form(raw_query: &str) -> Result<BruteSearchRequ
                     };
                     match kw.as_str() {
                         "path-prefix" | "prefix" | "scope" | "path" | "file" => {
-                            if !val.is_empty() {
-                                req.path_prefix = Some(val.clone());
+                            if let Some(norm) = normalize_scope_prefix(val) {
+                                req.path_prefix = Some(norm);
                             }
                         }
                         "ext" | "extension" => {
@@ -428,6 +447,7 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
         max_per_file: None,
         skeleton: false,
         kind_summary: false,
+        type_detail: false,
         wrapped_bare_form,
     };
     let mut idx = 1usize;
@@ -466,8 +486,8 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
                     let Some(SexpAtom::Text(val)) = atoms.get(idx + 1) else {
                         return Err(format!("missing value for `{kw}:` in (file-outline ...)"));
                     };
-                    if !val.is_empty() {
-                        req.path_prefix = Some(val.clone());
+                    if let Some(norm) = normalize_scope_prefix(val) {
+                        req.path_prefix = Some(norm);
                     }
                     idx += 2;
                 }
@@ -511,6 +531,10 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
                         lc.as_str(),
                         "kind-summary" | "summary" | "inventory" | "kinds"
                     );
+                    req.type_detail = matches!(
+                        lc.as_str(),
+                        "struct-enum-detail" | "type-detail" | "detail" | "fields"
+                    );
                     idx += 2;
                 }
                 "skeleton?" | "skeleton" => {
@@ -527,13 +551,18 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
                 }
             },
             SexpAtom::Text(text) => {
-                if req.path_prefix.is_none() && !text.is_empty() {
-                    req.path_prefix = Some(text.clone());
+                if req.path_prefix.is_none()
+                    && let Some(norm) = normalize_scope_prefix(text)
+                {
+                    req.path_prefix = Some(norm);
                 }
                 idx += 1;
             }
             SexpAtom::ListStart | SexpAtom::ListEnd => idx += 1,
         }
+    }
+    if req.type_detail && req.kinds.is_empty() {
+        req.kinds = vec!["struct".to_owned(), "enum".to_owned()];
     }
     if req.path_prefix.is_none() && req.languages.is_empty() {
         return Err(
@@ -577,8 +606,8 @@ pub(crate) fn parse_workspace_map_form(raw_query: &str) -> Result<WorkspaceMapRe
                     let Some(SexpAtom::Text(val)) = atoms.get(idx + 1) else {
                         return Err(format!("missing value for `{kw}:` in (workspace-map ...)"));
                     };
-                    if !val.is_empty() {
-                        req.path_prefix = Some(val.clone());
+                    if let Some(norm) = normalize_scope_prefix(val) {
+                        req.path_prefix = Some(norm);
                     }
                     idx += 2;
                 }
@@ -616,8 +645,10 @@ pub(crate) fn parse_workspace_map_form(raw_query: &str) -> Result<WorkspaceMapRe
                 }
             },
             SexpAtom::Text(text) => {
-                if req.path_prefix.is_none() && !text.is_empty() {
-                    req.path_prefix = Some(text.clone());
+                if req.path_prefix.is_none()
+                    && let Some(norm) = normalize_scope_prefix(text)
+                {
+                    req.path_prefix = Some(norm);
                 }
                 idx += 1;
             }
@@ -651,7 +682,7 @@ pub(crate) fn parse_read_file_form(raw_query: &str) -> Result<ReadFileRequest, S
                     };
                     match kw.as_str() {
                         "path" | "file" => path = val.clone(),
-                        "start" | "start-line" | "from" | "line" => {
+                        "start" | "start-line" | "from" | "line" | "cursor" | "offset" => {
                             let parsed = val
                                 .parse::<usize>()
                                 .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
@@ -675,15 +706,15 @@ pub(crate) fn parse_read_file_form(raw_query: &str) -> Result<ReadFileRequest, S
                                 .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
                             around_context = Some(parsed.min(MAX_READ_LINES / 2));
                         }
-                        "lines" | "limit" | "count" => {
+                        "lines" | "max-lines" | "limit" | "count" => {
                             let parsed = val
                                 .parse::<usize>()
                                 .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
-                            line_count = Some(parsed.clamp(1, MAX_READ_LINES));
+                            line_count = Some(parsed.max(1));
                         }
                         other => {
                             return Err(format!(
-                                "unknown keyword `{other}:` in (read-file ...); allowed: path:, symbol:, symbols:, start:, end:, around:, context:, lines:"
+                                "unknown keyword `{other}:` in (read-file ...); allowed: path:, symbol:, symbols:, start:, cursor:, end:, around:, context:, max-lines:, lines:"
                             ));
                         }
                     }
@@ -733,6 +764,7 @@ pub(crate) fn parse_read_file_form(raw_query: &str) -> Result<ReadFileRequest, S
         path: path.replace('\\', "/"),
         start_line: start,
         end_line: requested_end.min(max_end),
+        requested_end_clamped: requested_end > max_end,
         symbols,
         symbol_context: around_context.unwrap_or(30),
         wrapped_bare_form,
