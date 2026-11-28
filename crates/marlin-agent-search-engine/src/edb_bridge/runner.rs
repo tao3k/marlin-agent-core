@@ -117,6 +117,27 @@ pub unsafe fn execute_linked_search_dsl_structured(
     unsafe { execute_linked_search_dsl_opt_session(runtime, exports, request, None) }
 }
 
+/// Execute a session-scoped native `:gerbil-ascent` / Dusa query through
+/// AOT-linked C-ABI exports, preserving live Scheme `evidence-chain.ss` M1
+/// harvesting and open-frontier receipts across turns.
+///
+/// # Safety
+/// `exports` must originate from `runtime`'s live Marlin programme.
+pub unsafe fn execute_linked_search_dsl_session_structured(
+    runtime: &GerbilRuntime,
+    exports: SearchDslLinkedExports,
+    request: &SearchDslSessionExecutionRequest<'_>,
+) -> Result<SearchDslStructuredResult, SearchPlanProjectionError> {
+    unsafe {
+        execute_linked_search_dsl_opt_session(
+            runtime,
+            exports,
+            &request.execution,
+            Some(request.session_id),
+        )
+    }
+}
+
 unsafe fn execute_linked_search_dsl_opt_session(
     runtime: &GerbilRuntime,
     exports: SearchDslLinkedExports,
@@ -183,26 +204,30 @@ pub unsafe fn project_linked_search_dsl_completions(
     decode_search_dsl_completions(rows)
 }
 
+fn is_non_symlink_scheme_dir(candidate: &Path) -> bool {
+    std::fs::symlink_metadata(candidate)
+        .is_ok_and(|m| !m.file_type().is_symlink() && m.file_type().is_dir())
+        && std::fs::symlink_metadata(candidate.join("gerbil.pkg"))
+            .is_ok_and(|m| !m.file_type().is_symlink() && m.file_type().is_file())
+}
+
 /// Locate the compiled Marlin `scheme/` directory for non-AOT package execution.
 #[must_use]
 pub fn default_marlin_scheme_dir() -> Option<PathBuf> {
     if let Ok(env_dir) = std::env::var("MARLIN_SCHEME_DIR") {
         let candidate = PathBuf::from(env_dir);
-        if candidate.join("gerbil.pkg").is_file() {
+        if candidate.is_absolute() && is_non_symlink_scheme_dir(&candidate) {
             return Some(candidate);
         }
     }
     let manifest_scheme = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("scheme");
-    if manifest_scheme.join("gerbil.pkg").is_file() {
+    if is_non_symlink_scheme_dir(&manifest_scheme) {
         return Some(manifest_scheme);
     }
     let cwd_scheme = std::env::current_dir().ok()?.join("scheme");
-    cwd_scheme
-        .join("gerbil.pkg")
-        .is_file()
-        .then_some(cwd_scheme)
+    is_non_symlink_scheme_dir(&cwd_scheme).then_some(cwd_scheme)
 }
 
 #[cfg(not(feature = "linked-ui"))]
@@ -375,12 +400,15 @@ struct PackageDslJob {
 }
 
 #[cfg(not(feature = "linked-ui"))]
-fn package_search_dsl_worker() -> &'static std::sync::mpsc::Sender<PackageDslJob> {
+const MAX_PENDING_PACKAGE_DSL_JOBS: usize = 64;
+
+#[cfg(not(feature = "linked-ui"))]
+fn package_search_dsl_worker() -> &'static std::sync::mpsc::SyncSender<PackageDslJob> {
     use std::sync::{OnceLock, mpsc};
 
-    static WORKER: OnceLock<mpsc::Sender<PackageDslJob>> = OnceLock::new();
+    static WORKER: OnceLock<mpsc::SyncSender<PackageDslJob>> = OnceLock::new();
     WORKER.get_or_init(|| {
-        let (tx, rx) = mpsc::channel::<PackageDslJob>();
+        let (tx, rx) = mpsc::sync_channel::<PackageDslJob>(MAX_PENDING_PACKAGE_DSL_JOBS);
         std::thread::Builder::new()
             .name("marlin-search-dsl-vm".to_owned())
             .spawn(move || {
@@ -469,7 +497,7 @@ fn dispatch_package_dsl_job(
         .to_owned();
     let (reply_tx, reply_rx) = std::sync::mpsc::sync_channel(1);
     package_search_dsl_worker()
-        .send(PackageDslJob {
+        .try_send(PackageDslJob {
             scheme_dir: scheme_dir_str,
             index: shared_index,
             query: query.to_owned(),
@@ -477,7 +505,14 @@ fn dispatch_package_dsl_job(
             session_id,
             reply: reply_tx,
         })
-        .map_err(|_| SearchPlanProjectionError::Invalid("search DSL worker thread stopped"))?;
+        .map_err(|err| match err {
+            std::sync::mpsc::TrySendError::Full(_) => {
+                SearchPlanProjectionError::Invalid("search DSL worker queue saturated")
+            }
+            std::sync::mpsc::TrySendError::Disconnected(_) => {
+                SearchPlanProjectionError::Invalid("search DSL worker thread stopped")
+            }
+        })?;
     reply_rx
         .recv()
         .map_err(|_| SearchPlanProjectionError::Invalid("search DSL worker reply dropped"))?

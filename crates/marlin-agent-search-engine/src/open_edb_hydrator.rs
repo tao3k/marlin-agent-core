@@ -250,6 +250,25 @@ fn encode_pending_files<'a>(
     make_vector(runtime, &rows)
 }
 
+pub(crate) fn is_non_symlink_cache_path(cache_path: &Path) -> bool {
+    if cache_path.as_os_str().is_empty() {
+        return false;
+    }
+    if let Ok(meta) = std::fs::symlink_metadata(cache_path)
+        && (meta.file_type().is_symlink() || !meta.file_type().is_file())
+    {
+        return false;
+    }
+    if let Some(parent) = cache_path.parent()
+        && !parent.as_os_str().is_empty()
+        && let Ok(meta) = std::fs::symlink_metadata(parent)
+        && (meta.file_type().is_symlink() || !meta.file_type().is_dir())
+    {
+        return false;
+    }
+    true
+}
+
 fn ingest_extracted_scheme_batch(
     index: &mut WorkspaceSearchIndex,
     cache_path: &Path,
@@ -262,7 +281,7 @@ fn ingest_extracted_scheme_batch(
     receipt.scheme_files_hydrated = ing.updated_files;
     receipt.total_ingested_entities += ing.ingested_entities;
     receipt.total_ingested_edges += ing.ingested_edges;
-    if ing.updated_files > 0 {
+    if ing.updated_files > 0 && is_non_symlink_cache_path(cache_path) {
         receipt.cache_saved = index.save_open_edb_cache(cache_path).is_ok();
     }
     Ok(())
@@ -285,7 +304,9 @@ fn hydrate_pending_org_files(
     receipt.org_files_hydrated = ing.updated_files;
     receipt.total_ingested_entities += ing.ingested_entities;
     receipt.total_ingested_edges += ing.ingested_edges;
-    receipt.cache_saved = index.save_open_edb_cache(cache_path).is_ok();
+    if is_non_symlink_cache_path(cache_path) {
+        receipt.cache_saved = index.save_open_edb_cache(cache_path).is_ok();
+    }
 }
 
 /// Restore matching BLAKE3-verified Open EDB cache entries and hydrate any
@@ -300,7 +321,8 @@ pub fn hydrate_workspace_open_edb_org_and_cache(
     cache_path: &Path,
 ) -> WorkspaceOpenEdbHydrationReceipt {
     let mut receipt = WorkspaceOpenEdbHydrationReceipt::default();
-    if cache_path.is_file()
+    if is_non_symlink_cache_path(cache_path)
+        && std::fs::symlink_metadata(cache_path).is_ok_and(|m| m.file_type().is_file())
         && let Ok(restored) = index.load_and_restore_open_edb_cache(cache_path)
     {
         receipt.restored_files = restored.restored_files;

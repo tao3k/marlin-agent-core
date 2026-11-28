@@ -4,7 +4,7 @@
 
 //! Converged Marlin search engine constructor.
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -18,17 +18,42 @@ use agent_semantic_topology::OrgDocumentProjectionPort;
 
 static SNAPSHOT_TMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
+fn verify_non_symlink_snapshot_path(snapshot_path: &Path) -> Result<(), TrigramSnapshotError> {
+    if snapshot_path.as_os_str().is_empty() {
+        return Err(TrigramSnapshotError::Io("empty snapshot path".to_owned()));
+    }
+    if let Ok(meta) = std::fs::symlink_metadata(snapshot_path)
+        && (meta.file_type().is_symlink() || !meta.file_type().is_file())
+    {
+        return Err(TrigramSnapshotError::Io(
+            "snapshot path must not be a symlink or non-regular file".to_owned(),
+        ));
+    }
+    if let Some(parent) = snapshot_path.parent()
+        && !parent.as_os_str().is_empty()
+        && let Ok(meta) = std::fs::symlink_metadata(parent)
+        && (meta.file_type().is_symlink() || !meta.file_type().is_dir())
+    {
+        return Err(TrigramSnapshotError::Io(
+            "snapshot parent directory must not be a symlink".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 /// Atomically persist a resident search snapshot via a sibling temp file + rename
 /// so any concurrent or active `mmap` reader on the old inode is never truncated.
 pub fn save_workspace_snapshot_atomic(
     index: &WorkspaceSearchIndex,
     snapshot_path: &Path,
 ) -> Result<(), TrigramSnapshotError> {
+    verify_non_symlink_snapshot_path(snapshot_path)?;
     let bytes = index.encode_snapshot_bytes();
     if let Some(parent) = snapshot_path.parent()
         && !parent.as_os_str().is_empty()
     {
         std::fs::create_dir_all(parent).map_err(|e| TrigramSnapshotError::Io(e.to_string()))?;
+        verify_non_symlink_snapshot_path(snapshot_path)?;
     }
     let nonce = SNAPSHOT_TMP_NONCE.fetch_add(1, Ordering::Relaxed);
     let tmp_name = format!(
@@ -41,7 +66,10 @@ pub fn save_workspace_snapshot_atomic(
     );
     let tmp_path = snapshot_path.with_file_name(tmp_name);
     let write_res = (|| -> Result<(), std::io::Error> {
-        let mut file = File::create(&tmp_path)?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)?;
         file.write_all(&bytes)?;
         file.sync_all()?;
         Ok(())
@@ -50,9 +78,19 @@ pub fn save_workspace_snapshot_atomic(
         let _ = std::fs::remove_file(&tmp_path);
         return Err(TrigramSnapshotError::Io(err.to_string()));
     }
+    if let Err(err) = verify_non_symlink_snapshot_path(snapshot_path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(err);
+    }
     if let Err(err) = std::fs::rename(&tmp_path, snapshot_path) {
         let _ = std::fs::remove_file(&tmp_path);
         return Err(TrigramSnapshotError::Io(err.to_string()));
+    }
+    if let Some(parent) = snapshot_path.parent()
+        && !parent.as_os_str().is_empty()
+        && let Ok(dir) = File::open(parent)
+    {
+        let _ = dir.sync_all();
     }
     Ok(())
 }
@@ -66,7 +104,8 @@ pub fn open_or_build_workspace_index_safe(
     snapshot_path: &Path,
     config: WorkspaceIndexConfig,
 ) -> WorkspaceSearchIndex {
-    if snapshot_path.is_file()
+    if verify_non_symlink_snapshot_path(snapshot_path).is_ok()
+        && std::fs::symlink_metadata(snapshot_path).is_ok_and(|m| m.file_type().is_file())
         && let Ok(mut idx) =
             WorkspaceSearchIndex::load_mmap_snapshot(root.to_path_buf(), snapshot_path, config.clone())
     {

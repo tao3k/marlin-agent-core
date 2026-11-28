@@ -497,7 +497,9 @@ fn inspect_and_ingest_pending_files(
         let ing = index.ingest_open_edb_facts(normalized);
         receipt.http_ingested_entities += ing.ingested_entities;
     }
-    if receipt.http_ingested_entities > 0 {
+    if receipt.http_ingested_entities > 0
+        && crate::open_edb_hydrator::is_non_symlink_cache_path(cache_path)
+    {
         receipt.cache_saved = index.save_open_edb_cache(cache_path).is_ok();
     }
     Ok(())
@@ -559,7 +561,13 @@ fn discover_package_anchors(
             } else {
                 workspace_root.join(dir)
             };
-            if markers.iter().any(|marker| abs_dir.join(marker).is_file()) {
+            if markers.iter().any(|marker| {
+                !marker.is_empty()
+                    && !marker.contains(['/', '\\'])
+                    && marker != "."
+                    && marker != ".."
+                    && abs_dir.join(marker).is_file()
+            }) {
                 let norm = dir.to_string_lossy().replace('\\', "/");
                 anchors_by_lang
                     .entry(lang.to_owned())
@@ -713,7 +721,10 @@ fn hydrate_single_chunk(
             let ing = guard.ingest_open_edb_facts(batch);
             receipt.http_ingested_entities += ing.ingested_entities;
         }
-        if persist_cache && receipt.http_ingested_entities > 0 {
+        if persist_cache
+            && receipt.http_ingested_entities > 0
+            && crate::open_edb_hydrator::is_non_symlink_cache_path(target.cache_path)
+        {
             receipt.cache_saved = guard.save_open_edb_cache(target.cache_path).is_ok();
         }
     }

@@ -8,7 +8,8 @@
 //! calibration + immediate Open EDB refresh.
 
 use std::fs;
-use std::path::Path;
+use std::io::Read as _;
+use std::path::{Component, Path, PathBuf};
 
 use agent_semantic_search::{
     WorkspaceFileDelta, WorkspaceOpenEdbIngestBatch, WorkspaceSearchIndex,
@@ -19,6 +20,92 @@ use crate::SearchPlanProjectionError;
 
 use super::domain_types::{AspForwardingEndpoint, AspLanguageId, AspProviderId};
 use super::transport::http_loopback_request;
+
+const MAX_AST_PATCH_SOURCE_BYTES: usize = 8 * 1024 * 1024;
+
+fn confine_workspace_patch_path(
+    workspace_root: &Path,
+    rel_path: &str,
+) -> Result<PathBuf, SearchPlanProjectionError> {
+    if rel_path.trim().is_empty()
+        || rel_path.chars().any(char::is_control)
+        || rel_path.contains('\\')
+    {
+        return Err(SearchPlanProjectionError::Invalid(
+            "AST patch path must be a non-empty relative path without control characters",
+        ));
+    }
+    let rel = Path::new(rel_path);
+    if rel.is_absolute() {
+        return Err(SearchPlanProjectionError::Invalid(
+            "AST patch path must be relative to workspace_root",
+        ));
+    }
+    let canonical_root = fs::canonicalize(workspace_root).map_err(|e| {
+        SearchPlanProjectionError::Native(format!("canonicalize workspace root: {e}"))
+    })?;
+    let mut current = canonical_root.clone();
+    let mut saw_normal = false;
+    for comp in rel.components() {
+        match comp {
+            Component::Normal(part) => {
+                saw_normal = true;
+                current.push(part);
+                if let Ok(meta) = fs::symlink_metadata(&current)
+                    && meta.file_type().is_symlink()
+                {
+                    return Err(SearchPlanProjectionError::Invalid(
+                        "AST patch path must not traverse or target a symlink",
+                    ));
+                }
+            }
+            Component::CurDir | Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(SearchPlanProjectionError::Invalid(
+                    "AST patch path must not contain traversal or root components",
+                ));
+            }
+        }
+    }
+    if !saw_normal || !current.starts_with(&canonical_root) {
+        return Err(SearchPlanProjectionError::Invalid(
+            "AST patch path escapes workspace_root",
+        ));
+    }
+    Ok(current)
+}
+
+fn read_bounded_non_symlink(
+    path: &Path,
+    max_bytes: usize,
+) -> Result<String, SearchPlanProjectionError> {
+    let meta = fs::symlink_metadata(path)
+        .map_err(|e| SearchPlanProjectionError::Native(format!("stat {}: {e}", path.display())))?;
+    if meta.file_type().is_symlink() || !meta.file_type().is_file() {
+        return Err(SearchPlanProjectionError::Invalid(
+            "AST patch target must be a regular non-symlink file",
+        ));
+    }
+    if meta.len() > max_bytes as u64 {
+        return Err(SearchPlanProjectionError::Invalid(
+            "AST patch source file exceeds maximum byte cap",
+        ));
+    }
+    let file = fs::File::open(path)
+        .map_err(|e| SearchPlanProjectionError::Native(format!("read {}: {e}", path.display())))?;
+    let mut bytes = Vec::new();
+    let cap = (max_bytes as u64).saturating_add(1);
+    file.take(cap)
+        .read_to_end(&mut bytes)
+        .map_err(|e| SearchPlanProjectionError::Native(format!("read {}: {e}", path.display())))?;
+    if bytes.len() > max_bytes {
+        return Err(SearchPlanProjectionError::Invalid(
+            "AST patch source file exceeds maximum byte cap",
+        ));
+    }
+    String::from_utf8(bytes).map_err(|e| {
+        SearchPlanProjectionError::Native(format!("decode UTF-8 {}: {e}", path.display()))
+    })
+}
 
 /// Typed structural AST edit operation forwarded to ASP `POST /v1/ast/patch`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -99,6 +186,13 @@ fn atomic_write_file(target: &Path, bytes: &[u8]) -> Result<(), SearchPlanProjec
     static PATCH_TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
     let parent = target.parent().unwrap_or_else(|| Path::new("."));
+    if fs::symlink_metadata(parent).is_ok_and(|m| m.file_type().is_symlink())
+        || fs::symlink_metadata(target).is_ok_and(|m| m.file_type().is_symlink())
+    {
+        return Err(SearchPlanProjectionError::Invalid(
+            "atomic AST patch refuses symlink target or parent directory",
+        ));
+    }
     let file_name = target
         .file_name()
         .and_then(|n| n.to_str())
@@ -159,6 +253,11 @@ fn commit_and_sync_patched_file(
     let Some(patched) = receipt.patched_source_utf8.as_deref() else {
         return Ok(());
     };
+    if patched.len() > MAX_AST_PATCH_SOURCE_BYTES {
+        return Err(SearchPlanProjectionError::Invalid(
+            "patched AST source exceeds maximum byte cap",
+        ));
+    }
     atomic_write_file(abs_path, patched.as_bytes())?;
     let _ = index.apply_file_delta(WorkspaceFileDelta {
         upserts: vec![(rel_path.to_owned(), patched.as_bytes().to_vec())],
@@ -184,10 +283,8 @@ pub fn apply_ast_patch_via_asp_http(
     index: &mut WorkspaceSearchIndex,
     request: &AspHttpAstPatchRequest<'_>,
 ) -> Result<AspHttpAstPatchReceipt, SearchPlanProjectionError> {
-    let abs_path = request.workspace_root.join(request.path);
-    let source_utf8 = fs::read_to_string(&abs_path).map_err(|e| {
-        SearchPlanProjectionError::Native(format!("read {}: {e}", abs_path.display()))
-    })?;
+    let abs_path = confine_workspace_patch_path(request.workspace_root, request.path)?;
+    let source_utf8 = read_bounded_non_symlink(&abs_path, MAX_AST_PATCH_SOURCE_BYTES)?;
     let wire = WireAstPatchRequest {
         path: request.path,
         source_utf8,
@@ -217,7 +314,15 @@ pub fn apply_ast_patch_via_asp_http(
             AspHttpAstPatchStatus::Applied | AspHttpAstPatchStatus::CalibratedAndApplied
         );
     if should_commit {
-        commit_and_sync_patched_file(endpoint, &abs_path, request.path, index, &mut receipt)?;
+        let verified_commit_path =
+            confine_workspace_patch_path(request.workspace_root, request.path)?;
+        commit_and_sync_patched_file(
+            endpoint,
+            &verified_commit_path,
+            request.path,
+            index,
+            &mut receipt,
+        )?;
     }
     Ok(receipt)
 }

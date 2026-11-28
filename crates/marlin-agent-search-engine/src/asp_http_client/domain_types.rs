@@ -113,10 +113,16 @@ pub struct HttpEndpointPath(String);
 impl HttpEndpointPath {
     /// Construct a validated non-empty HTTP route path starting with `'/'`.
     pub fn new(raw: impl Into<String>) -> Result<Self, SearchPlanProjectionError> {
-        let trimmed = raw.into().trim().to_owned();
-        if !trimmed.starts_with('/') {
+        let input = raw.into();
+        if input.chars().any(char::is_control) {
             return Err(SearchPlanProjectionError::Invalid(
-                "HTTP endpoint path must start with '/'",
+                "HTTP endpoint path must not contain control characters",
+            ));
+        }
+        let trimmed = input.trim().to_owned();
+        if !trimmed.starts_with('/') || trimmed.chars().any(char::is_whitespace) {
+            return Err(SearchPlanProjectionError::Invalid(
+                "HTTP endpoint path must start with '/' and contain no whitespace",
             ));
         }
         Ok(Self(trimmed))
@@ -157,14 +163,30 @@ impl TargetedJsonSchemaDocument {
         self.property_enum("kind")
     }
 
-    /// Resolve a schema node, following a local `#/$defs/...` `$ref` pointer and
-    /// unwrapping nullable `anyOf` / `oneOf` wrappers (e.g. `schemars` `Option<T>`).
+    /// Resolve a schema node, following local `#/$defs/...` `$ref` pointers and
+    /// unwrapping nullable `anyOf` / `oneOf` wrappers under a strict cycle/depth guard.
     fn resolve_schema_node<'a>(&'a self, node: &'a Value) -> &'a Value {
+        let mut visited = Vec::new();
+        self.resolve_schema_node_bounded(node, 0, &mut visited)
+    }
+
+    fn resolve_schema_node_bounded<'a>(
+        &'a self,
+        node: &'a Value,
+        depth: usize,
+        visited: &mut Vec<*const Value>,
+    ) -> &'a Value {
+        const MAX_SCHEMA_REF_DEPTH: usize = 32;
+        let ptr = std::ptr::from_ref(node);
+        if depth >= MAX_SCHEMA_REF_DEPTH || visited.contains(&ptr) {
+            return node;
+        }
+        visited.push(ptr);
         if let Some(ref_str) = node.get("$ref").and_then(Value::as_str)
             && let Some(pointer) = ref_str.strip_prefix('#')
             && let Some(target) = self.0.pointer(pointer)
         {
-            return self.resolve_schema_node(target);
+            return self.resolve_schema_node_bounded(target, depth + 1, visited);
         }
         for key in ["anyOf", "oneOf"] {
             if let Some(branches) = node.get(key).and_then(Value::as_array) {
@@ -173,7 +195,7 @@ impl TargetedJsonSchemaDocument {
                     .filter(|b| b.get("type").and_then(Value::as_str) != Some("null"))
                     .collect();
                 if non_null.len() == 1 {
-                    return self.resolve_schema_node(non_null[0]);
+                    return self.resolve_schema_node_bounded(non_null[0], depth + 1, visited);
                 }
             }
         }
@@ -279,30 +301,58 @@ pub struct AspForwardingEndpoint {
 impl AspForwardingEndpoint {
     /// Validate and wrap a loopback `http://127.0.0.1:<port>` or `http://localhost:<port>` URL.
     pub fn new(raw: impl Into<String>) -> Result<Self, SearchPlanProjectionError> {
-        let trimmed = raw.into().trim().trim_end_matches('/').to_owned();
+        let input = raw.into();
+        if input.chars().any(char::is_control) {
+            return Err(SearchPlanProjectionError::Invalid(
+                "ASP forwarding endpoint must not contain control characters",
+            ));
+        }
+        let trimmed = input.trim().trim_end_matches('/');
         let Some(rest) = trimmed.strip_prefix("http://") else {
             return Err(SearchPlanProjectionError::Invalid(
                 "ASP forwarding endpoint must use http:// loopback URL",
             ));
         };
-        let authority = rest.split('/').next().unwrap_or("");
-        let host = authority.split(':').next().unwrap_or("");
-        if !matches!(host, "127.0.0.1" | "localhost") || !authority.contains(':') {
+        if rest.contains(['@', '/', '?', '#', '\\']) || rest.chars().any(char::is_whitespace) {
+            return Err(SearchPlanProjectionError::Invalid(
+                "ASP forwarding endpoint must be a bare loopback host:port without userinfo or path",
+            ));
+        }
+        let Some((host, port_raw)) = rest.split_once(':') else {
+            return Err(SearchPlanProjectionError::Invalid(
+                "ASP forwarding endpoint requires loopback host:port",
+            ));
+        };
+        if port_raw.contains(':') || !matches!(host, "127.0.0.1" | "localhost") {
             return Err(SearchPlanProjectionError::Invalid(
                 "ASP forwarding endpoint requires loopback host:port",
             ));
         }
+        let port = port_raw.parse::<u16>().map_err(|_| {
+            SearchPlanProjectionError::Invalid("ASP forwarding endpoint port must be a valid u16")
+        })?;
+        if port == 0 {
+            return Err(SearchPlanProjectionError::Invalid(
+                "ASP forwarding endpoint port must be non-zero",
+            ));
+        }
+        let authority = format!("{host}:{port}");
         Ok(Self {
-            authority: authority.to_owned(),
             raw_url: format!("http://{authority}"),
+            authority,
             control_token: None,
         })
     }
 
-    /// Attach a loopback Bearer control-plane token to this endpoint.
+    /// Attach a validated CR/LF-free loopback Bearer control-plane token to this endpoint.
     #[must_use]
     pub fn with_control_token(mut self, token: impl Into<String>) -> Self {
-        let trimmed = token.into().trim().to_owned();
+        let input = token.into();
+        if input.chars().any(char::is_control) {
+            self.control_token = None;
+            return self;
+        }
+        let trimmed = input.trim().to_owned();
         if !trimmed.is_empty() {
             self.control_token = Some(trimmed);
         }

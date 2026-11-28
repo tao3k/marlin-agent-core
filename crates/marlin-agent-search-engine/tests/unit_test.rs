@@ -8,5 +8,7 @@ mod bridge;
 mod engine;
 #[path = "unit/policy.rs"]
 mod policy;
+#[path = "unit/sm40_search_engine_confinement.rs"]
+mod sm40_search_engine_confinement;
 #[path = "unit/state_machine.rs"]
 mod state_machine;

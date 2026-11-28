@@ -5,7 +5,7 @@
 //! Loopback HTTP/1.1 client calls for ASP's forwarding gateway.
 
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 use crate::SearchPlanProjectionError;
@@ -15,8 +15,38 @@ use super::protocol_types::{
     DynamicProviderRegistrationAck, DynamicProviderRegistrationRequest, ForwardedProviderCatalog,
 };
 
+const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const HTTP_IO_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_HTTP_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+
+fn connect_loopback_stream(authority: &str) -> Result<TcpStream, SearchPlanProjectionError> {
+    let addrs = authority
+        .to_socket_addrs()
+        .map_err(|e| SearchPlanProjectionError::Native(format!("resolve ASP HTTP: {e}")))?;
+    let mut last_err = None;
+    let mut saw_loopback = false;
+    for addr in addrs {
+        if !addr.ip().is_loopback() {
+            continue;
+        }
+        saw_loopback = true;
+        match TcpStream::connect_timeout(&addr, HTTP_CONNECT_TIMEOUT) {
+            Ok(stream) => return Ok(stream),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    if !saw_loopback {
+        return Err(SearchPlanProjectionError::Invalid(
+            "ASP endpoint resolved only to non-loopback addresses",
+        ));
+    }
+    let detail = last_err
+        .map(|e| e.to_string())
+        .unwrap_or_else(|| "no reachable loopback address".to_owned());
+    Err(SearchPlanProjectionError::Native(format!(
+        "connect ASP HTTP: {detail}"
+    )))
+}
 
 pub(super) fn http_loopback_request(
     endpoint: &AspForwardingEndpoint,
@@ -24,8 +54,24 @@ pub(super) fn http_loopback_request(
     path: &str,
     body: Option<&[u8]>,
 ) -> Result<(u16, Vec<u8>), SearchPlanProjectionError> {
-    let mut stream = TcpStream::connect(endpoint.authority())
-        .map_err(|e| SearchPlanProjectionError::Native(format!("connect ASP HTTP: {e}")))?;
+    if method.is_empty()
+        || method.chars().any(|c| c.is_control() || c.is_whitespace())
+        || !path.starts_with('/')
+        || path.chars().any(|c| c.is_control() || c.is_whitespace())
+    {
+        return Err(SearchPlanProjectionError::Invalid(
+            "invalid ASP HTTP method or route path",
+        ));
+    }
+    if endpoint
+        .control_token()
+        .is_some_and(|tok| tok.chars().any(char::is_control))
+    {
+        return Err(SearchPlanProjectionError::Invalid(
+            "invalid control token containing control characters",
+        ));
+    }
+    let mut stream = connect_loopback_stream(endpoint.authority())?;
     let _ = stream.set_read_timeout(Some(HTTP_IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(HTTP_IO_TIMEOUT));
     let _ = stream.set_nodelay(true);
@@ -46,10 +92,16 @@ pub(super) fn http_loopback_request(
         .map_err(|e| SearchPlanProjectionError::Native(format!("write ASP HTTP: {e}")))?;
 
     let mut raw = Vec::new();
+    let cap = (MAX_HTTP_RESPONSE_BYTES as u64).saturating_add(1);
     stream
-        .take(MAX_HTTP_RESPONSE_BYTES as u64)
+        .take(cap)
         .read_to_end(&mut raw)
         .map_err(|e| SearchPlanProjectionError::Native(format!("read ASP HTTP: {e}")))?;
+    if raw.len() > MAX_HTTP_RESPONSE_BYTES {
+        return Err(SearchPlanProjectionError::Native(
+            "ASP HTTP response exceeded maximum byte cap".to_owned(),
+        ));
+    }
 
     let Some(split) = raw.windows(4).position(|w| w == b"\r\n\r\n") else {
         return Err(SearchPlanProjectionError::Native(
@@ -78,11 +130,17 @@ fn decode_http_body(headers: &str, body: &[u8]) -> Result<Vec<u8>, SearchPlanPro
     }
     let mut out = Vec::new();
     let mut pos = 0usize;
+    let mut saw_terminator = false;
     while pos < body.len() {
         let Some(rel_end) = body[pos..].windows(2).position(|w| w == b"\r\n") else {
-            break;
+            return Err(SearchPlanProjectionError::Native(
+                "malformed HTTP chunk header".to_owned(),
+            ));
         };
-        let size_hex = std::str::from_utf8(&body[pos..pos + rel_end])
+        let header_end = pos.checked_add(rel_end).ok_or_else(|| {
+            SearchPlanProjectionError::Native("chunk header offset overflow".to_owned())
+        })?;
+        let size_hex = std::str::from_utf8(&body[pos..header_end])
             .map_err(|e| SearchPlanProjectionError::Native(format!("chunk size UTF-8: {e}")))?
             .split(';')
             .next()
@@ -90,17 +148,36 @@ fn decode_http_body(headers: &str, body: &[u8]) -> Result<Vec<u8>, SearchPlanPro
             .trim();
         let size = usize::from_str_radix(size_hex, 16)
             .map_err(|e| SearchPlanProjectionError::Native(format!("chunk size hex: {e}")))?;
-        pos += rel_end + 2;
+        pos = header_end.checked_add(2).ok_or_else(|| {
+            SearchPlanProjectionError::Native("chunk offset overflow".to_owned())
+        })?;
         if size == 0 {
+            saw_terminator = true;
             break;
         }
-        if pos + size > body.len() {
+        let chunk_end = pos.checked_add(size).ok_or_else(|| {
+            SearchPlanProjectionError::Native("chunk size overflow".to_owned())
+        })?;
+        let next_pos = chunk_end.checked_add(2).ok_or_else(|| {
+            SearchPlanProjectionError::Native("chunk terminator offset overflow".to_owned())
+        })?;
+        if next_pos > body.len() || &body[chunk_end..next_pos] != b"\r\n" {
             return Err(SearchPlanProjectionError::Native(
-                "truncated HTTP chunked body".to_owned(),
+                "truncated or malformed HTTP chunked body".to_owned(),
             ));
         }
-        out.extend_from_slice(&body[pos..pos + size]);
-        pos += size + 2;
+        if out.len().checked_add(size).is_none_or(|n| n > MAX_HTTP_RESPONSE_BYTES) {
+            return Err(SearchPlanProjectionError::Native(
+                "HTTP chunked body exceeded maximum byte cap".to_owned(),
+            ));
+        }
+        out.extend_from_slice(&body[pos..chunk_end]);
+        pos = next_pos;
+    }
+    if !saw_terminator {
+        return Err(SearchPlanProjectionError::Native(
+            "truncated HTTP chunked stream missing terminator".to_owned(),
+        ));
     }
     Ok(out)
 }
