@@ -6,6 +6,7 @@
 //! razor-thin `ToolRuntime` client replacing ad hoc cross-layer search glue.
 
 mod client;
+mod frontier;
 pub mod proto;
 mod service;
 

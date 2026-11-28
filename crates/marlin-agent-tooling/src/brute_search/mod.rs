@@ -16,3 +16,5 @@ mod workspace_map;
 
 pub(crate) use execute::execute_l0_search;
 pub(crate) use parser::is_l0_search_form;
+#[cfg(feature = "grpc")]
+pub(crate) use parser::parse_read_file_form;

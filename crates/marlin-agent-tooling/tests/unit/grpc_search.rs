@@ -354,5 +354,36 @@ mod grpc_tests {
             "expected file-outline page 2 to resume at runner.rs without truncation: {}",
             page2.rendered_text
         );
+
+        // 10. Regression: overlapping `(read-file ...)` cursor range within the same
+        //     session automatically advances to the first unread line instead of repeating lines!
+        let r_first = client
+            .search_step(SearchStepRequest {
+                session_id: "sess-grpc-overlap".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(read-file \"crates/marlin-agent-search-engine/src/edb_bridge/runner.rs\" cursor: 1 max-lines: 1)".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("first read-file")
+            .into_inner();
+        assert!(r_first.rendered_text.contains("range: L1..=L1"));
+        let r_overlap = client
+            .search_step(SearchStepRequest {
+                session_id: "sess-grpc-overlap".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(read-file \"crates/marlin-agent-search-engine/src/edb_bridge/runner.rs\" cursor: 1 max-lines: 1)".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("overlapping read-file auto-advances")
+            .into_inner();
+        assert!(
+            r_overlap.rendered_text.contains("auto_advanced_cursor:")
+                && r_overlap.rendered_text.contains("range: L2..=L2")
+                && r_overlap.rendered_text.contains("execute_dsl"),
+            "expected overlapping read-file to auto-advance to L2: {}",
+            r_overlap.rendered_text
+        );
     }
 }
