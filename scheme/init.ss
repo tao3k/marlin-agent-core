@@ -25,6 +25,7 @@
   (ui-layout)
   (ui-workspaces)
   (ui-modes)
+  (ui-emacs)
   (ui-magit)
   (search-engine)
   (repair +ast-patch)

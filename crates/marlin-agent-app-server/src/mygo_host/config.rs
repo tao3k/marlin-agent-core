@@ -358,14 +358,16 @@ fn build_route_entry(
 /// with authentic Rust HELM multi-axis queries (`@lang:`, `@doc:`, `@prefix:`, `@ext:`, `@sym:`, `@graph:`).
 #[derive(Clone)]
 pub struct WorkspaceHelmSearchBridge {
-    index: Arc<RwLock<Option<WorkspaceSearchIndex>>>,
+    index: Arc<RwLock<Option<Arc<WorkspaceSearchIndex>>>>,
 }
 
 impl WorkspaceHelmSearchBridge {
     /// Creates a bridge backed by an already-opened `WorkspaceSearchIndex`.
     pub fn from_index(idx: WorkspaceSearchIndex) -> Self {
+        let arc = Arc::new(idx);
+        super::fs_bridge::register_resident_search_index(arc.root().to_path_buf(), Arc::clone(&arc));
         Self {
-            index: Arc::new(RwLock::new(Some(idx))),
+            index: Arc::new(RwLock::new(Some(arc))),
         }
     }
 
@@ -374,11 +376,12 @@ impl WorkspaceHelmSearchBridge {
         let slot = Arc::clone(&index);
         tokio::task::spawn_blocking(move || {
             let snapshot_path = default_snapshot_path(&workspace_root);
-            let idx = WorkspaceSearchIndex::open_or_build_cached(
+            let idx = Arc::new(WorkspaceSearchIndex::open_or_build_cached(
                 &workspace_root,
                 &snapshot_path,
                 WorkspaceIndexConfig::default(),
-            );
+            ));
+            super::fs_bridge::register_resident_search_index(workspace_root, Arc::clone(&idx));
             if let Ok(mut guard) = slot.write() {
                 *guard = Some(idx);
             }
@@ -422,11 +425,11 @@ impl WorkspaceHelmSearchBridge {
 pub struct ParsedHelmQuery {
     pub pattern: String,
     pub languages: Vec<String>,
-    documents: Vec<String>,
+    pub documents: Vec<String>,
     pub path_prefix: Option<String>,
     pub extension: Option<String>,
     pub symbol: Option<String>,
-    graph_target: Option<String>,
+    pub graph_target: Option<String>,
 }
 
 impl ParsedHelmQuery {
@@ -526,7 +529,7 @@ fn hit_to_graph_record(idx: usize, hit: WorkspaceSearchHit, digest: &str) -> Gra
     }
 }
 
-fn default_snapshot_path(workspace_root: &Path) -> PathBuf {
+pub(crate) fn default_snapshot_path(workspace_root: &Path) -> PathBuf {
     let canonical =
         fs::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;

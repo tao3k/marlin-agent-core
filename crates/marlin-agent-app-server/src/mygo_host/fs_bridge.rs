@@ -2,14 +2,15 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! High-performance Rust-owned filesystem, live grep, and project discovery
-//! projection (`fs:ls`, `fs:project-files`, `fs:grep`, `fs:projects`, `fs:read`)
-//! over native HTTP/2 gRPC (`ProjectionQueryService::QueryProjectGraph`).
+//! High-performance Rust-owned filesystem, ASP resident search (`consult-ripgrep`),
+//! AST symbol index (`consult-imenu`), and project discovery (`fs:ls`,
+//! `fs:project-files`, `fs:grep`, `fs:imenu`, `fs:projects`, `fs:read`) over
+//! native HTTP/2 gRPC (`ProjectionQueryService::QueryProjectGraph`).
 //!
-//! Serves both local sidecar and remote Marlin Authority Host workspaces uniformly
-//! over typed protobuf streams, backed by VCS-native (`git ls-files -z`) project
-//! indexing, TTL caches, pre-lowercased SIMD Orderless filtering, and native `rg`
-//! live project grep (`consult-ripgrep`).
+//! Zero external `rg` subprocess spawning: `fs:grep` and `fs:imenu` run directly
+//! in-process against ASP's resident zero-copy mmap `WorkspaceSearchIndex`
+//! (3-byte trigram posting lists + SIMD `memchr::memmem` + `regex::Regex` +
+//! in-RAM Tantivy BM25 + AST Symbol Extractor), shared with `WorkspaceHelmSearchBridge`.
 
 use std::{
     cmp::Ordering,
@@ -21,12 +22,17 @@ use std::{
     time::{Duration, Instant, UNIX_EPOCH},
 };
 
+use agent_semantic_search::{WorkspaceIndexConfig, WorkspaceSearchIndex, WorkspaceSearchQuery};
+
 use crate::wire::marlin::projection::v1::{GraphRecordView, GraphVisibleSurface};
+
+use super::config::{ParsedHelmQuery, default_snapshot_path};
 
 const MAX_DIR_ENTRIES: usize = 512;
 const MAX_PROJECT_FILES: usize = 8192;
 const MAX_SERVER_FILTER_RESULTS: usize = 256;
 const MAX_GREP_HITS: usize = 200;
+const MAX_IMENU_HITS: usize = 200;
 const MAX_READ_BYTES: usize = 256 * 1024;
 const PROJECT_INDEX_TTL: Duration = Duration::from_secs(5);
 const KNOWN_PROJECTS_TTL: Duration = Duration::from_secs(15);
@@ -73,6 +79,8 @@ struct CachedProjectList {
 
 static PROJECT_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedProjectIndex>>> = OnceLock::new();
 static KNOWN_PROJECTS_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedProjectList>>> = OnceLock::new();
+static RESIDENT_SEARCH_INDEXES: OnceLock<Mutex<HashMap<PathBuf, Arc<WorkspaceSearchIndex>>>> =
+    OnceLock::new();
 
 fn project_cache() -> &'static Mutex<HashMap<PathBuf, CachedProjectIndex>> {
     PROJECT_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -82,9 +90,42 @@ fn known_projects_cache() -> &'static Mutex<HashMap<PathBuf, CachedProjectList>>
     KNOWN_PROJECTS_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn resident_search_indexes() -> &'static Mutex<HashMap<PathBuf, Arc<WorkspaceSearchIndex>>> {
+    RESIDENT_SEARCH_INDEXES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Registers an already-opened resident `WorkspaceSearchIndex` (e.g. from
+/// `WorkspaceHelmSearchBridge`) so Helm, `consult-ripgrep`, and `consult-imenu`
+/// share one zero-copy mmap + in-RAM Tantivy BM25 index with zero duplication.
+pub(crate) fn register_resident_search_index(root: PathBuf, idx: Arc<WorkspaceSearchIndex>) {
+    let canon = canonical_or_self(&root);
+    if let Ok(mut guard) = resident_search_indexes().lock() {
+        guard.insert(canon, idx);
+    }
+}
+
+fn load_or_open_search_index(root: &Path) -> Arc<WorkspaceSearchIndex> {
+    let canon = canonical_or_self(root);
+    if let Ok(guard) = resident_search_indexes().lock()
+        && let Some(existing) = guard.get(&canon)
+    {
+        return Arc::clone(existing);
+    }
+    let snapshot_path = default_snapshot_path(&canon);
+    let idx = Arc::new(WorkspaceSearchIndex::open_or_build_cached(
+        &canon,
+        &snapshot_path,
+        WorkspaceIndexConfig::default(),
+    ));
+    if let Ok(mut guard) = resident_search_indexes().lock() {
+        guard.insert(canon, Arc::clone(&idx));
+    }
+    idx
+}
+
 /// Handles `fs:ls[@dir]`, `fs:project-files[!][@root][?q=<orderless>]`,
-/// `fs:grep[@root]?q=<pattern>`, `fs:projects[@root]`, and `fs:read@<path>`
-/// queries against the live host filesystem rooted at `default_root`.
+/// `fs:grep[@root]?q=<pattern>`, `fs:imenu[@root][?q=<sym>]`, `fs:projects[@root]`,
+/// and `fs:read@<path>` queries against the live host workspace rooted at `default_root`.
 pub fn query_fs_records(
     query: &str,
     default_root: &Path,
@@ -118,6 +159,14 @@ pub fn query_fs_records(
         };
         let arg = root_part.strip_prefix('@').map(str::trim).unwrap_or("");
         return Some(grep_project_records(arg, default_root, pattern));
+    }
+    if let Some(rest) = q.strip_prefix("fs:imenu") {
+        let (root_part, pattern) = match rest.split_once("?q=") {
+            Some((r, pat)) => (r, pat.trim()),
+            None => (rest, ""),
+        };
+        let arg = root_part.strip_prefix('@').map(str::trim).unwrap_or("");
+        return Some(imenu_symbol_records(arg, default_root, pattern));
     }
     if let Some(rest) = q.strip_prefix("fs:projects") {
         let (force_refresh, after_bang) = match rest.strip_prefix('!') {
@@ -535,8 +584,9 @@ fn list_project_file_records(
 }
 
 /// Live Doom Emacs `consult-ripgrep` (`fs:grep[@root]?q=<pattern>`) executed
-/// natively in Rust via `rg --vimgrep` (respecting `.gitignore` + smart-case),
-/// with an automatic pure-Rust fallback over the cached project index.
+/// 100% in-process against ASP's resident zero-copy mmap `WorkspaceSearchIndex`
+/// (Trigram + SIMD `memchr::memmem` + `regex::Regex` + in-RAM Tantivy BM25) —
+/// ZERO external `rg` subprocess overhead!
 fn grep_project_records(
     raw_root: &str,
     default_root: &Path,
@@ -545,141 +595,218 @@ fn grep_project_records(
     let base = resolve_path(raw_root, default_root);
     let root = discover_project_root(&base);
 
-    let mut meta_facets = HashMap::with_capacity(2);
+    let mut meta_facets = HashMap::with_capacity(4);
     meta_facets.insert("root".to_owned(), root.display().to_string());
     meta_facets.insert("query".to_owned(), pattern.to_owned());
+    meta_facets.insert("engine".to_owned(), "asp-trigram+tantivy".to_owned());
 
-    let mut records = vec![GraphRecordView {
+    if pattern.is_empty() {
+        return Ok(vec![GraphRecordView {
+            record_id: "fs.grep_meta".to_owned(),
+            surface: GraphVisibleSurface::Workspace as i32,
+            kind: "fs.grep_meta".to_owned(),
+            title: root.display().to_string(),
+            summary: "consult-ripgrep (ASP Trigram + Tantivy BM25)".to_owned(),
+            source_path: Some(root.display().to_string()),
+            start_line: None,
+            end_line: None,
+            facets: meta_facets,
+        }]);
+    }
+
+    let idx = load_or_open_search_index(&root);
+    let parsed = ParsedHelmQuery::parse(pattern);
+    let report = idx.query(&WorkspaceSearchQuery {
+        pattern: &parsed.pattern,
+        languages: &parsed.languages,
+        documents: &parsed.documents,
+        path_prefix: parsed.path_prefix.as_deref(),
+        extension: parsed.extension.as_deref(),
+        symbol: parsed.symbol.as_deref(),
+        graph_target: parsed.graph_target.as_deref(),
+        max_hits: 64,
+        context_radius: 0,
+    });
+    meta_facets.insert("elapsed_us".to_owned(), report.elapsed_micros.to_string());
+
+    let mut records = Vec::with_capacity(report.hits.len().saturating_mul(2) + 1);
+    records.push(GraphRecordView {
         record_id: "fs.grep_meta".to_owned(),
         surface: GraphVisibleSurface::Workspace as i32,
         kind: "fs.grep_meta".to_owned(),
         title: root.display().to_string(),
-        summary: format!("consult-ripgrep: {pattern}"),
+        summary: format!(
+            "ASP+Tantivy: {} files ({}µs)",
+            report.matched_files, report.elapsed_micros
+        ),
         source_path: Some(root.display().to_string()),
         start_line: None,
         end_line: None,
         facets: meta_facets,
-    }];
-
-    if pattern.is_empty() {
-        return Ok(records);
-    }
+    });
 
     let root_prefix = {
         let s = root.to_string_lossy();
         format!("{}/", s.trim_end_matches('/'))
     };
 
-    if let Some(hits) = run_ripgrep(&root, pattern) {
-        for (idx, (rel, line, col, snippet)) in hits.into_iter().take(MAX_GREP_HITS).enumerate() {
-            let abs = format!("{root_prefix}{rel}");
-            let mut facets = HashMap::with_capacity(5);
-            facets.insert("rel_path".to_owned(), rel.clone());
-            facets.insert("path".to_owned(), abs.clone());
-            facets.insert("line".to_owned(), line.to_string());
-            facets.insert("col".to_owned(), col.to_string());
-            facets.insert("snippet".to_owned(), snippet.clone());
-            records.push(GraphRecordView {
-                record_id: format!("fs.grep:{idx}:{rel}:{line}"),
-                surface: GraphVisibleSurface::Workspace as i32,
-                kind: "fs.grep_hit".to_owned(),
-                title: format!("{rel}:{line}"),
-                summary: snippet,
-                source_path: Some(abs),
-                start_line: Some(line),
-                end_line: Some(line),
-                facets,
-            });
-        }
-        return Ok(records);
-    }
-
-    // Pure-Rust fallback over cached VCS project index when `rg` is not on PATH.
-    let needle = pattern.to_lowercase();
-    let indexed = load_or_refresh_project_index(&root, false);
-    let mut hit_idx = 0usize;
-    'outer: for item in indexed.iter() {
-        let Ok(bytes) = fs::read(&item.abs_path) else {
-            continue;
+    let mut emitted = 0usize;
+    'outer: for hit in report.hits {
+        let abs = if Path::new(&hit.path).is_absolute() {
+            hit.path.clone()
+        } else {
+            format!("{root_prefix}{}", hit.path)
         };
-        if bytes.len() > MAX_READ_BYTES || bytes.iter().take(2048).any(|&b| b == 0) {
-            continue;
-        }
-        let text = String::from_utf8_lossy(&bytes);
-        for (ln0, line_text) in text.lines().enumerate() {
-            if line_text.to_lowercase().contains(&needle) {
-                let line_num = (ln0 + 1) as u32;
-                let snippet = trim_snippet(line_text, 200);
-                let mut facets = HashMap::with_capacity(5);
-                facets.insert("rel_path".to_owned(), item.rel_path.clone());
-                facets.insert("path".to_owned(), item.abs_path.clone());
+        let axes = hit.matched_axes.join("+");
+        if !hit.line_matches.is_empty() {
+            for lm in hit.line_matches {
+                let line_num = lm.line_number.max(1) as u32;
+                let snippet = trim_snippet(&lm.line_text, 200);
+                let mut facets = HashMap::with_capacity(6);
+                facets.insert("rel_path".to_owned(), hit.path.clone());
+                facets.insert("path".to_owned(), abs.clone());
                 facets.insert("line".to_owned(), line_num.to_string());
                 facets.insert("col".to_owned(), "1".to_owned());
                 facets.insert("snippet".to_owned(), snippet.clone());
+                facets.insert("axes".to_owned(), axes.clone());
                 records.push(GraphRecordView {
-                    record_id: format!("fs.grep:{hit_idx}:{}:{line_num}", item.rel_path),
+                    record_id: format!("fs.grep:{emitted}:{}:{line_num}", hit.path),
                     surface: GraphVisibleSurface::Workspace as i32,
                     kind: "fs.grep_hit".to_owned(),
-                    title: format!("{}:{line_num}", item.rel_path),
+                    title: format!("{}:{line_num}", hit.path),
                     summary: snippet,
-                    source_path: Some(item.abs_path.clone()),
+                    source_path: Some(abs.clone()),
                     start_line: Some(line_num),
                     end_line: Some(line_num),
                     facets,
                 });
-                hit_idx += 1;
-                if hit_idx >= MAX_GREP_HITS {
+                emitted += 1;
+                if emitted >= MAX_GREP_HITS {
                     break 'outer;
                 }
             }
+        } else {
+            let line_num = hit.first_line.unwrap_or(1).max(1) as u32;
+            let snippet = trim_snippet(&hit.first_line_text, 200);
+            let mut facets = HashMap::with_capacity(6);
+            facets.insert("rel_path".to_owned(), hit.path.clone());
+            facets.insert("path".to_owned(), abs.clone());
+            facets.insert("line".to_owned(), line_num.to_string());
+            facets.insert("col".to_owned(), "1".to_owned());
+            facets.insert("snippet".to_owned(), snippet.clone());
+            facets.insert("axes".to_owned(), axes);
+            records.push(GraphRecordView {
+                record_id: format!("fs.grep:{emitted}:{}:{line_num}", hit.path),
+                surface: GraphVisibleSurface::Workspace as i32,
+                kind: "fs.grep_hit".to_owned(),
+                title: format!("{}:{line_num}", hit.path),
+                summary: snippet,
+                source_path: Some(abs),
+                start_line: Some(line_num),
+                end_line: Some(line_num),
+                facets,
+            });
+            emitted += 1;
+            if emitted >= MAX_GREP_HITS {
+                break;
+            }
         }
     }
+
     Ok(records)
 }
 
-fn run_ripgrep(root: &Path, pattern: &str) -> Option<Vec<(String, u32, u32, String)>> {
-    let output = Command::new("rg")
-        .current_dir(root)
-        .args([
-            "--vimgrep",
-            "--no-heading",
-            "--color=never",
-            "--smart-case",
-            "--fixed-strings",
-            "--max-columns=240",
-            "--max-count=32",
-            "--",
-            pattern,
-        ])
-        .output()
-        .ok()?;
-    // rg exits 0 (matches), 1 (no matches), 2 (error).
-    if output.status.code() == Some(2) {
-        return None;
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut hits = Vec::new();
-    for line in stdout.lines() {
-        let mut parts = line.splitn(4, ':');
-        let Some(rel) = parts.next() else { continue };
-        let Some(line_s) = parts.next() else { continue };
-        let Some(col_s) = parts.next() else { continue };
-        let Some(text) = parts.next() else { continue };
-        let Ok(line_num) = line_s.parse::<u32>() else {
-            continue;
+/// Live Doom Emacs `consult-imenu` / `consult-imenu-multi` (`fs:imenu[@root][?q=<sym>]`)
+/// executed 100% in-process against ASP's resident AST Symbol Index (`hit.symbols`).
+fn imenu_symbol_records(
+    raw_root: &str,
+    default_root: &Path,
+    raw_query: &str,
+) -> Result<Vec<GraphRecordView>, String> {
+    let base = resolve_path(raw_root, default_root);
+    let root = discover_project_root(&base);
+    let idx = load_or_open_search_index(&root);
+    let parsed = ParsedHelmQuery::parse(raw_query);
+
+    let sym_filter = parsed
+        .symbol
+        .as_deref()
+        .or_else(|| (!parsed.pattern.is_empty()).then_some(parsed.pattern.as_str()));
+
+    let report = idx.query(&WorkspaceSearchQuery {
+        pattern: "",
+        languages: &parsed.languages,
+        documents: &parsed.documents,
+        path_prefix: parsed.path_prefix.as_deref(),
+        extension: parsed.extension.as_deref(),
+        symbol: sym_filter,
+        graph_target: None,
+        max_hits: 96,
+        context_radius: 0,
+    });
+
+    let mut meta_facets = HashMap::with_capacity(3);
+    meta_facets.insert("root".to_owned(), root.display().to_string());
+    meta_facets.insert("engine".to_owned(), "asp-symbol-index".to_owned());
+    meta_facets.insert("elapsed_us".to_owned(), report.elapsed_micros.to_string());
+
+    let mut records = Vec::with_capacity(report.hits.len().saturating_mul(2) + 1);
+    records.push(GraphRecordView {
+        record_id: "fs.imenu_meta".to_owned(),
+        surface: GraphVisibleSurface::Workspace as i32,
+        kind: "fs.imenu_meta".to_owned(),
+        title: root.display().to_string(),
+        summary: format!("ASP Imenu ({}µs)", report.elapsed_micros),
+        source_path: Some(root.display().to_string()),
+        start_line: None,
+        end_line: None,
+        facets: meta_facets,
+    });
+
+    let root_prefix = {
+        let s = root.to_string_lossy();
+        format!("{}/", s.trim_end_matches('/'))
+    };
+
+    let mut emitted = 0usize;
+    'outer: for hit in report.hits {
+        let abs = if Path::new(&hit.path).is_absolute() {
+            hit.path.clone()
+        } else {
+            format!("{root_prefix}{}", hit.path)
         };
-        let col_num = col_s.parse::<u32>().unwrap_or(1);
-        hits.push((
-            rel.replace('\\', "/"),
-            line_num,
-            col_num,
-            trim_snippet(text, 200),
-        ));
-        if hits.len() >= MAX_GREP_HITS {
-            break;
+        let lang = hit.language.as_deref().unwrap_or("");
+        for sym in hit.symbols {
+            let line_num = sym.line_number.max(1) as u32;
+            let sym_kind = sym.kind.as_str();
+            let mut facets = HashMap::with_capacity(6);
+            facets.insert("symbol".to_owned(), sym.name.clone());
+            facets.insert("sym_kind".to_owned(), sym_kind.to_owned());
+            facets.insert("rel_path".to_owned(), hit.path.clone());
+            facets.insert("path".to_owned(), abs.clone());
+            facets.insert("line".to_owned(), line_num.to_string());
+            if !lang.is_empty() {
+                facets.insert("language".to_owned(), lang.to_owned());
+            }
+            records.push(GraphRecordView {
+                record_id: format!("fs.imenu:{emitted}:{}:{}:{line_num}", hit.path, sym.name),
+                surface: GraphVisibleSurface::Workspace as i32,
+                kind: "fs.symbol_hit".to_owned(),
+                title: sym.name,
+                summary: format!("{sym_kind} · {}:{line_num}", hit.path),
+                source_path: Some(abs.clone()),
+                start_line: Some(line_num),
+                end_line: Some(line_num),
+                facets,
+            });
+            emitted += 1;
+            if emitted >= MAX_IMENU_HITS {
+                break 'outer;
+            }
         }
     }
-    Some(hits)
+
+    Ok(records)
 }
 
 fn trim_snippet(s: &str, max_chars: usize) -> String {
@@ -868,75 +995,78 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fs_bridge_workspace_project_index_grep_projects_and_orderless_perf() {
+    fn fs_bridge_asp_tantivy_grep_imenu_projects_and_orderless_perf() {
         let ws = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .and_then(Path::parent)
             .expect("workspace root")
             .to_path_buf();
 
-        // 1. Cold VCS-native project file scan.
-        let t0 = Instant::now();
-        let cold = load_or_refresh_project_index(&ws, true);
-        let cold_ms = t0.elapsed().as_secs_f64() * 1000.0;
-        assert!(
-            !cold.is_empty(),
-            "expected non-empty project file index for {}",
-            ws.display()
-        );
+        // Warm the resident ASP Trigram + Tantivy BM25 + AST Symbol index once.
+        let t_open = Instant::now();
+        let idx = load_or_open_search_index(&ws);
+        let index_open_ms = t_open.elapsed().as_secs_f64() * 1000.0;
+        assert!(idx.file_count() > 0, "expected indexed files in ASP index");
 
-        // 2. Warm TTL cache hit.
-        let t1 = Instant::now();
-        let warm = load_or_refresh_project_index(&ws, false);
-        let warm_us = t1.elapsed().as_secs_f64() * 1_000_000.0;
-        assert_eq!(cold.len(), warm.len());
-
-        // 3. Server-side SIMD Rust Orderless filter over the pre-lowercased index.
-        let t2 = Instant::now();
-        let mut last_hits = 0usize;
-        for _ in 0..200 {
-            let hits = filter_project_files_orderless(&warm, "ui-meow key !test", 64);
-            last_hits = hits.len();
+        // 1. In-process ASP Trigram + Tantivy BM25 consult-ripgrep (`fs:grep?q=...`).
+        let t_grep = Instant::now();
+        let mut grep_hits = 0usize;
+        for _ in 0..20 {
+            let grep_recs = query_fs_records("fs:grep?q=query_fs_records", &ws)
+                .expect("grep handled")
+                .expect("grep ok");
+            grep_hits = grep_recs
+                .iter()
+                .filter(|r| r.kind == "fs.grep_hit")
+                .count();
         }
-        let orderless_us = (t2.elapsed().as_secs_f64() * 1_000_000.0) / 200.0;
+        let asp_grep_ms = (t_grep.elapsed().as_secs_f64() * 1000.0) / 20.0;
         assert!(
-            last_hits > 0,
-            "expected Orderless match for `ui-meow key !test`"
+            grep_hits > 0,
+            "expected live ASP+Tantivy grep hits for query_fs_records"
         );
 
-        // 4. Live consult-ripgrep (`fs:grep?q=...`).
-        let t3 = Instant::now();
-        let grep_recs = query_fs_records("fs:grep?q=query_fs_records", &ws)
-            .expect("grep handled")
-            .expect("grep ok");
-        let grep_ms = t3.elapsed().as_secs_f64() * 1000.0;
-        let grep_hits = grep_recs
-            .iter()
-            .filter(|r| r.kind == "fs.grep_hit")
-            .count();
-        assert!(grep_hits > 0, "expected live grep hits for query_fs_records");
+        // 2. In-process ASP AST Symbol Index consult-imenu (`fs:imenu?q=...`).
+        let t_imenu = Instant::now();
+        let mut sym_hits = 0usize;
+        for _ in 0..20 {
+            let imenu_recs = query_fs_records("fs:imenu?q=query_fs_records", &ws)
+                .expect("imenu handled")
+                .expect("imenu ok");
+            sym_hits = imenu_recs
+                .iter()
+                .filter(|r| r.kind == "fs.symbol_hit")
+                .count();
+        }
+        let asp_imenu_ms = (t_imenu.elapsed().as_secs_f64() * 1000.0) / 20.0;
+        assert!(
+            sym_hits > 0,
+            "expected live ASP Imenu symbol hit for query_fs_records"
+        );
 
-        // 5. Project discovery (`fs:projects`).
-        let t4 = Instant::now();
-        let proj_recs = query_fs_records("fs:projects!", &ws)
+        // 3. VCS-native project index + warm TTL cache + SIMD Orderless.
+        let warm = load_or_refresh_project_index(&ws, false);
+        let t_ord = Instant::now();
+        let hits = filter_project_files_orderless(&warm, "ui-emacs funcs !test", 64);
+        let ord_us = t_ord.elapsed().as_secs_f64() * 1_000_000.0;
+        assert!(!hits.is_empty(), "expected ui-emacs/funcs.ss in project index");
+
+        // 4. Project discovery (`fs:projects`).
+        let proj_recs = query_fs_records("fs:projects", &ws)
             .expect("projects handled")
             .expect("projects ok");
-        let projects_ms = t4.elapsed().as_secs_f64() * 1000.0;
-        assert!(
-            proj_recs.iter().any(|r| r.kind == "fs.project"),
-            "expected at least one discovered Git/jj project"
-        );
+        assert!(proj_recs.iter().any(|r| r.kind == "fs.project"));
 
         eprintln!(
-            "[fs_bridge bench] files={} cold_scan={:.2}ms warm_cache={:.1}µs rust_orderless={:.1}µs/op grep={}hits/{:.2}ms projects={}/{:.2}ms",
-            cold.len(),
-            cold_ms,
-            warm_us,
-            orderless_us,
+            "[fs_bridge ASP+Tantivy bench] indexed_files={} index_open={:.1}ms asp_grep={}hits/{:.2}ms asp_imenu={}syms/{:.2}ms orderless={:.1}µs projects={}",
+            idx.file_count(),
+            index_open_ms,
             grep_hits,
-            grep_ms,
-            proj_recs.len(),
-            projects_ms
+            asp_grep_ms,
+            sym_hits,
+            asp_imenu_ms,
+            ord_us,
+            proj_recs.len()
         );
     }
 }

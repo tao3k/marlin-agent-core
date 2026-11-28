@@ -207,6 +207,9 @@
         display-action: 'split-right
         dedicated: #f
         local-keymap: (list
+                        (.o key: "i" command: "cmd:consult-imenu" label: "Jump to symbol (ASP Imenu)" exit: #t)
+                        (.o key: "/" command: "cmd:consult-line" label: "Search lines in file" exit: #t)
+                        (.o key: "m" command: "cmd:bookmark-set" label: "Bookmark current file:line" exit: #t)
                         (.o key: "a" command: "cmd:magit-ai-audit" label: "AI audit previewed file" exit: #t))
         default-minor-modes: '(meow-normal-mode read-only-mode aitia-audit-minor-mode)
         modeline-segments: '(key-mode buffer-name major-mode workspace-path gate-badge)
