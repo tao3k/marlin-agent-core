@@ -138,23 +138,6 @@ pub(super) fn run(
         return Err("Scheme projection lost the Runtime budget status".into());
     }
     trace_startup("UI session projection");
-    #[cfg(feature = "linked-ui")]
-    let (search_dsl_runner, mut search_dsl_mailbox) =
-        super::super::linked_ui::search_dsl_async_channel();
-    #[cfg(feature = "linked-ui")]
-    let search_tool_slot = marlin_agent_tooling::SharedSearchIndexSlot::empty();
-    #[cfg(feature = "linked-ui")]
-    search_tool_slot.attach_async_dsl_runner(search_dsl_runner);
-    #[cfg(feature = "linked-ui")]
-    let tool_catalog = super::startup::build_tool_catalog(
-        &scheme_runtime,
-        &directory,
-        effective_session.as_ref(),
-        &search_tool_slot,
-    )?;
-    #[cfg(not(feature = "linked-ui"))]
-    let tool_catalog: Option<Arc<marlin_agent_runtime::ModelToolCatalog>> = None;
-    trace_startup("tool catalog binding");
     let envrc_discovery = marlin_agent_runtime::ProjectEnvrcDiscovery::pending();
     let request = marlin_agent_runtime::TokioAgentRuntimeBuildRequest::runtime_root(64)
         .with_project_envrc_discovery(envrc_discovery.clone());
@@ -181,6 +164,23 @@ pub(super) fn run(
     };
     let (owner, events) = marlin_agent_runtime::TokioAgentRuntime::from_build_request(request);
     let reconciliation_outcome = owner.reconcile_persisted_processes();
+    #[cfg(feature = "linked-ui")]
+    let (search_dsl_runner, mut search_dsl_mailbox) =
+        super::super::linked_ui::search_dsl_async_channel();
+    #[cfg(feature = "linked-ui")]
+    let bound_tools = super::startup::build_tool_catalog(super::startup::ToolCatalogRequest {
+        scheme_runtime: &scheme_runtime,
+        directory: &directory,
+        effective_session: effective_session.as_ref(),
+        search_dsl_runner,
+        runtime_handle: runtime.handle(),
+        runtime_owner: &owner,
+    })?;
+    #[cfg(feature = "linked-ui")]
+    let tool_catalog = bound_tools.catalog.clone();
+    #[cfg(not(feature = "linked-ui"))]
+    let tool_catalog: Option<Arc<marlin_agent_runtime::ModelToolCatalog>> = None;
+    trace_startup("tool catalog binding");
     let mut app = App::with_runtime(endpoint, owner, events);
     match reconciliation_outcome {
         Ok(report) if report.has_survivors() => {
@@ -235,7 +235,7 @@ pub(super) fn run(
                 detail: &err,
             });
         }
-        super::startup::bind_artifact_layout(&mut app, search_tool_slot, artifact_layout);
+        super::startup::bind_artifact_layout(&mut app, bound_tools, artifact_layout);
     }
     let runtime_probe = RuntimeProbe::start(&runtime, &app.runtime_owner);
     #[cfg(target_os = "macos")]

@@ -227,13 +227,37 @@ pub(crate) fn execute_search_dsl_structured(
     }
 }
 
-pub(crate) fn execute_search_dsl(
+pub(crate) fn execute_search_dsl_session_structured(
     runtime: &GerbilRuntime,
     index: &marlin_agent_search_engine::WorkspaceSearchIndex,
     query: &str,
     output_limit: usize,
-) -> Result<String, marlin_agent_search_engine::SearchPlanProjectionError> {
-    Ok(execute_search_dsl_structured(runtime, index, query, output_limit)?.rendered_text)
+    session_id: &marlin_agent_search_engine::SearchDslSessionId,
+) -> Result<
+    marlin_agent_search_engine::SearchDslStructuredResult,
+    marlin_agent_search_engine::SearchPlanProjectionError,
+> {
+    let exports = marlin_agent_search_engine::SearchDslLinkedExports {
+        compile_prefilter: marlin_search_dsl_compile_prefilter,
+        eval_edb: marlin_search_dsl_eval_edb,
+        extract_facts: marlin_search_dsl_extract_facts,
+        completions: marlin_search_dsl_completions,
+        register_provider_descriptor: marlin_search_dsl_register_provider_descriptor,
+    };
+    let request = marlin_agent_search_engine::SearchDslSessionExecutionRequest {
+        execution: marlin_agent_search_engine::SearchDslExecutionRequest {
+            index,
+            query,
+            output_limit,
+        },
+        session_id,
+    };
+    // SAFETY: `exports` belong to the linked Marlin TUI programme initialized in `runtime`.
+    unsafe {
+        marlin_agent_search_engine::execute_linked_search_dsl_session_structured(
+            runtime, exports, &request,
+        )
+    }
 }
 
 /// Service any pending Helm `:gerbil-ascent` / Dusa query directly on the TUI's
@@ -268,8 +292,12 @@ struct LinkedSearchDslJob {
     index: std::sync::Arc<std::sync::RwLock<marlin_agent_search_engine::WorkspaceSearchIndex>>,
     query: String,
     output_limit: usize,
+    session_id: marlin_agent_search_engine::SearchDslSessionId,
     reply: tokio::sync::oneshot::Sender<
-        Result<String, marlin_agent_search_engine::SearchPlanProjectionError>,
+        Result<
+            marlin_agent_search_engine::SearchDslStructuredResult,
+            marlin_agent_search_engine::SearchPlanProjectionError,
+        >,
     >,
 }
 
@@ -308,7 +336,13 @@ impl LinkedSearchDslMailbox {
                 break;
             };
             let outcome = match job.index.read() {
-                Ok(index) => execute_search_dsl(runtime, &index, &job.query, job.output_limit),
+                Ok(index) => execute_search_dsl_session_structured(
+                    runtime,
+                    &index,
+                    &job.query,
+                    job.output_limit,
+                    &job.session_id,
+                ),
                 Err(_) => Err(
                     marlin_agent_search_engine::SearchPlanProjectionError::Invalid(
                         "resident search index lock poisoned",
@@ -378,16 +412,16 @@ impl LinkedSearchDslMailbox {
     }
 }
 
-/// Create a non-blocking, priority-isolated bounded `AsyncSearchDslRunner` paired
-/// with its time-sliced VM-thread [`LinkedSearchDslMailbox`].
+/// Create a non-blocking, priority-isolated bounded `AsyncSearchDslSessionRunner`
+/// paired with its time-sliced VM-thread [`LinkedSearchDslMailbox`].
 pub(crate) fn search_dsl_async_channel() -> (
-    marlin_agent_tooling::AsyncSearchDslRunner,
+    marlin_agent_tooling::AsyncSearchDslSessionRunner,
     LinkedSearchDslMailbox,
 ) {
     let (fast_tx, fast_rx) = tokio::sync::mpsc::channel::<LinkedSearchDslJob>(MAX_FAST_DSL_JOBS);
     let (dusa_tx, dusa_rx) = tokio::sync::mpsc::channel::<LinkedSearchDslJob>(MAX_DUSA_DSL_JOBS);
-    let runner: marlin_agent_tooling::AsyncSearchDslRunner =
-        std::sync::Arc::new(move |index, query, output_limit, tier| {
+    let runner: marlin_agent_tooling::AsyncSearchDslSessionRunner =
+        std::sync::Arc::new(move |index, query, output_limit, tier, session_id| {
             let tx = match tier {
                 marlin_agent_tooling::SearchQueryTier::DusaSolver => dusa_tx.clone(),
                 marlin_agent_tooling::SearchQueryTier::FastAscent
@@ -399,6 +433,7 @@ pub(crate) fn search_dsl_async_channel() -> (
                     index,
                     query,
                     output_limit,
+                    session_id,
                     reply: reply_tx,
                 })
                 .map_err(|err| match err {

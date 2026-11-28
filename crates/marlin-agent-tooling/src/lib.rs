@@ -20,7 +20,8 @@ pub use aitia_review_tool::{
 };
 #[cfg(feature = "grpc")]
 pub use grpc_search::{
-    GrpcSearchToolHandler, LoopbackSearchGrpcServer, SearchGatewayClient, SearchGatewayServer,
+    AsyncSearchDslSessionFuture, AsyncSearchDslSessionRunner, GrpcSearchToolHandler,
+    LoopbackSearchGrpcServer, SearchGatewayClient, SearchGatewayIndexHandle, SearchGatewayServer,
     SearchGatewayService, tool_schema_entries_from_declarations,
 };
 #[cfg(feature = "grpc")]

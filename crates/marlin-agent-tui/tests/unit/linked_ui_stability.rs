@@ -8,7 +8,7 @@
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use marlin_agent_search_engine::{WorkspaceIndexConfig, WorkspaceSearchIndex};
+use marlin_agent_search_engine::{SearchDslSessionId, WorkspaceIndexConfig, WorkspaceSearchIndex};
 use marlin_agent_tooling::SearchQueryTier;
 
 fn empty_shared_index() -> (
@@ -36,12 +36,14 @@ fn dusa_flood_sheds_excess_load_without_starving_fast_ascent_queries() {
     let mut dusa_handles = Vec::with_capacity(128);
     let mut shed_count = 0usize;
     rt.block_on(async {
+        let sid = SearchDslSessionId::new("sm11-dusa").expect("session id");
         for i in 0..128 {
             let fut = runner(
                 Arc::clone(&idx),
                 format!("(search-choice-program (solve r{i}))"),
                 512,
                 SearchQueryTier::DusaSolver,
+                sid.clone(),
             );
             dusa_handles.push(tokio::spawn(fut));
         }
@@ -66,12 +68,14 @@ fn dusa_flood_sheds_excess_load_without_starving_fast_ascent_queries() {
     let mut fast_handles = Vec::new();
     let mut fast_shed = 0usize;
     rt.block_on(async {
+        let fast_sid = SearchDslSessionId::new("sm11-fast").expect("session id");
         for i in 0..8 {
             let fut = runner(
                 Arc::clone(&idx),
                 format!("(ascent-fragment ((x) <-- (sym x)) ; {i})"),
                 512,
                 SearchQueryTier::FastAscent,
+                fast_sid.clone(),
             );
             fast_handles.push(tokio::spawn(fut));
         }
@@ -120,6 +124,7 @@ fn cancelled_dusa_callers_are_compacted_and_queues_stay_bounded() {
 
     // Enqueue 40 Dusa jobs, ingest them, then cancel all callers.
     let mut handles = Vec::new();
+    let sid = SearchDslSessionId::new("sm11-cancel").expect("session id");
     rt.block_on(async {
         for i in 0..40 {
             let fut = runner(
@@ -127,6 +132,7 @@ fn cancelled_dusa_callers_are_compacted_and_queues_stay_bounded() {
                 format!("(search-choice-program (solve c{i}))"),
                 256,
                 SearchQueryTier::DusaSolver,
+                sid.clone(),
             );
             handles.push(tokio::spawn(fut));
         }
@@ -151,17 +157,17 @@ fn cancelled_dusa_callers_are_compacted_and_queues_stay_bounded() {
     });
 
     // Next fresh L2 job must reclaim zombie slots and enqueue cleanly.
-    let fresh = rt.block_on(async {
-        let handle = tokio::spawn(runner(
-            Arc::clone(&idx),
-            "(search-choice-program (solve fresh))".to_owned(),
-            256,
-            SearchQueryTier::DusaSolver,
-        ));
+    let fresh = rt.spawn(runner(
+        Arc::clone(&idx),
+        "(search-choice-program (solve fresh))".to_owned(),
+        256,
+        SearchQueryTier::DusaSolver,
+        sid.clone(),
+    ));
+    rt.block_on(async {
         for _ in 0..4 {
             tokio::task::yield_now().await;
         }
-        handle
     });
     assert!(
         !fresh.is_finished(),

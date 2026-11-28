@@ -30,32 +30,118 @@ pub(super) fn resolve_effective_session(
 }
 
 #[cfg(feature = "linked-ui")]
-pub(super) fn build_tool_catalog(
-    scheme_runtime: &gerbil_scheme::GerbilRuntime,
-    directory: &std::path::Path,
-    effective_session: Option<&config::SessionConfig>,
-    search_tool_slot: &marlin_agent_tooling::SharedSearchIndexSlot,
-) -> Result<Option<Arc<marlin_agent_runtime::ModelToolCatalog>>, Box<dyn std::error::Error>> {
-    if effective_session.is_none() {
-        return Ok(None);
+pub(super) struct ToolCatalogRequest<'a> {
+    pub(super) scheme_runtime: &'a gerbil_scheme::GerbilRuntime,
+    pub(super) directory: &'a std::path::Path,
+    pub(super) effective_session: Option<&'a config::SessionConfig>,
+    pub(super) search_dsl_runner: marlin_agent_tooling::AsyncSearchDslSessionRunner,
+    pub(super) runtime_handle: &'a tokio::runtime::Handle,
+    pub(super) runtime_owner: &'a marlin_agent_runtime::TokioAgentRuntime,
+}
+
+#[cfg(feature = "linked-ui")]
+pub(super) struct BoundToolCatalog {
+    pub(super) catalog: Option<Arc<marlin_agent_runtime::ModelToolCatalog>>,
+    pub(super) search_index_handle: marlin_agent_tooling::SearchGatewayIndexHandle,
+    pub(super) grpc_server: Option<marlin_agent_tooling::LoopbackSearchGrpcServer>,
+    pub(super) active_search_session:
+        Arc<std::sync::RwLock<marlin_agent_search_engine::SearchDslSessionId>>,
+}
+
+#[cfg(feature = "linked-ui")]
+pub(super) fn search_session_id_for(
+    raw: &str,
+) -> marlin_agent_search_engine::SearchDslSessionId {
+    let sanitized: String = raw
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .take(64)
+        .collect();
+    let candidate = if sanitized.is_empty() {
+        "tui-session".to_owned()
+    } else {
+        format!("tui-{sanitized}")
+    };
+    marlin_agent_search_engine::SearchDslSessionId::new(candidate).unwrap_or_else(|_| {
+        marlin_agent_search_engine::SearchDslSessionId::new("tui-default")
+            .expect("static search session ID")
+    })
+}
+
+#[cfg(feature = "linked-ui")]
+pub(super) fn sync_active_search_session(
+    cell: &Arc<std::sync::RwLock<marlin_agent_search_engine::SearchDslSessionId>>,
+    raw_session_id: &str,
+) {
+    let next = search_session_id_for(raw_session_id);
+    if let Ok(mut guard) = cell.write() {
+        *guard = next;
     }
-    let declarations = super::super::linked_ui::tooling_declarations(scheme_runtime)?;
-    let catalog = marlin_agent_tooling::catalog_from_declarations_with_search(
+}
+
+#[cfg(feature = "linked-ui")]
+pub(super) fn build_tool_catalog(
+    req: ToolCatalogRequest<'_>,
+) -> Result<BoundToolCatalog, Box<dyn std::error::Error>> {
+    let search_index_handle =
+        marlin_agent_tooling::SearchGatewayIndexHandle::lazy(req.directory.to_path_buf());
+    let active_search_session = Arc::new(std::sync::RwLock::new(search_session_id_for("default")));
+    if req.effective_session.is_none() {
+        return Ok(BoundToolCatalog {
+            catalog: None,
+            search_index_handle,
+            grpc_server: None,
+            active_search_session,
+        });
+    }
+    let declarations = super::super::linked_ui::tooling_declarations(req.scheme_runtime)?;
+    let search_decls: Vec<_> = declarations
+        .iter()
+        .filter(|decl| decl.capability() == marlin_agent_runtime::ModelToolCapability::Search)
+        .cloned()
+        .collect();
+    let service = marlin_agent_tooling::SearchGatewayService::with_lazy_async_runner(
+        search_index_handle.clone(),
+        marlin_agent_tooling::tool_schema_entries_from_declarations(&search_decls),
+        req.search_dsl_runner,
+        req.runtime_owner.context(),
+    );
+    let server = marlin_agent_tooling::LoopbackSearchGrpcServer::spawn_on(
+        req.runtime_handle,
+        service,
+        req.runtime_owner,
+    )
+    .map_err(|error| format!("cannot start loopback search gRPC server: {error}"))?;
+    let catalog = marlin_agent_tooling::catalog_from_declarations_with_grpc_search(
         declarations,
-        directory.to_path_buf(),
-        search_tool_slot.clone(),
+        req.directory.to_path_buf(),
+        server.client(),
+        Arc::clone(&active_search_session),
     )
     .map_err(|error| format!("cannot bind Scheme tool catalog: {error:?}"))?;
-    Ok(Some(Arc::new(catalog)))
+    Ok(BoundToolCatalog {
+        catalog: Some(Arc::new(catalog)),
+        search_index_handle,
+        grpc_server: Some(server),
+        active_search_session,
+    })
 }
 
 #[cfg(feature = "linked-ui")]
 pub(super) fn bind_artifact_layout(
     app: &mut App,
-    search_tool_slot: marlin_agent_tooling::SharedSearchIndexSlot,
+    bound_tools: BoundToolCatalog,
     artifact_layout: Option<marlin_agent_context::artifacts::WorkspaceArtifactLayout>,
 ) {
-    app.search_tool_slot = search_tool_slot;
+    app.search_index_handle = bound_tools.search_index_handle;
+    app._search_grpc_server = bound_tools.grpc_server;
+    app.active_search_session = bound_tools.active_search_session;
     if let Some(layout) = artifact_layout {
         app.search_cache_dir = Some(layout.search_dir.clone());
         let detail = format!(
@@ -110,6 +196,8 @@ pub(super) fn open_session_gateway(
     })?;
     app.session_browser = Some(browser);
     app.current_session = Some(session_id.clone());
+    #[cfg(feature = "linked-ui")]
+    sync_active_search_session(&app.active_search_session, session_id.as_str());
     app.transcript
         .push(("Session".into(), session_id.as_str().to_owned()));
     app.restore(turns);

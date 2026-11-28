@@ -20,7 +20,8 @@ pub(crate) use codec::{decode_string, decode_usize, make_string, make_vector, na
 pub use runner::{
     default_marlin_scheme_dir, default_search_dsl_runner, default_search_dsl_session_runner,
     default_search_dsl_structured_runner, execute_linked_search_dsl,
-    execute_linked_search_dsl_structured, project_linked_search_dsl_completions,
+    execute_linked_search_dsl_session_structured, execute_linked_search_dsl_structured,
+    project_linked_search_dsl_completions,
 };
 #[cfg(not(feature = "linked-ui"))]
 pub use runner::{

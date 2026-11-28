@@ -43,7 +43,7 @@ marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-agent-search-engine.workspace = true
 marlin-agent-telemetry.workspace = true
-marlin-agent-tooling = { workspace = true, optional = true }
+marlin-agent-tooling = { workspace = true, features = ["grpc"], optional = true }
 marlin-agent-sessions.workspace = true
 marlin-agent-storage = { workspace = true, features = ["turso"] }
 marlin-agent-stream = { path = "../marlin-agent-stream" }

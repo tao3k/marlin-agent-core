@@ -108,7 +108,12 @@ pub(crate) struct App {
         Option<tokio::sync::oneshot::Receiver<crate::helm::SharedSearchIndex>>,
     pub(super) search_index_syncing: Option<tokio::sync::oneshot::Receiver<bool>>,
     #[cfg(feature = "linked-ui")]
-    pub(crate) search_tool_slot: marlin_agent_tooling::SharedSearchIndexSlot,
+    pub(crate) search_index_handle: marlin_agent_tooling::SearchGatewayIndexHandle,
+    #[cfg(feature = "linked-ui")]
+    pub(super) _search_grpc_server: Option<marlin_agent_tooling::LoopbackSearchGrpcServer>,
+    #[cfg(feature = "linked-ui")]
+    pub(crate) active_search_session:
+        Arc<std::sync::RwLock<marlin_agent_search_engine::SearchDslSessionId>>,
     pub(crate) command_draft: Option<Composer>,
     pub(crate) command_menu: Option<CommandMenu>,
     pub(crate) command_selection: Option<(String, UiCommandName)>,
@@ -227,7 +232,16 @@ impl App {
             search_index_warming: None,
             search_index_syncing: None,
             #[cfg(feature = "linked-ui")]
-            search_tool_slot: marlin_agent_tooling::SharedSearchIndexSlot::empty(),
+            search_index_handle: marlin_agent_tooling::SearchGatewayIndexHandle::lazy(
+                std::path::PathBuf::from("."),
+            ),
+            #[cfg(feature = "linked-ui")]
+            _search_grpc_server: None,
+            #[cfg(feature = "linked-ui")]
+            active_search_session: Arc::new(std::sync::RwLock::new(
+                marlin_agent_search_engine::SearchDslSessionId::new("tui-default")
+                    .expect("static search session ID"),
+            )),
             command_draft: None,
             command_menu: None,
             command_selection: None,
@@ -810,6 +824,11 @@ impl App {
                 self.unverified_thinking = false;
                 self.scroll_up = 0;
                 self.current_session = Some(opened.id.clone());
+                #[cfg(feature = "linked-ui")]
+                super::startup::sync_active_search_session(
+                    &self.active_search_session,
+                    opened.id.as_str(),
+                );
                 self.ui_request = Some(UiEvent::SelectBuffer(
                     UiBufferId::new("conversation").expect("static buffer ID"),
                 ));

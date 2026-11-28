@@ -10,12 +10,16 @@
 //! server-side state machine. Clients are purely thin tonic RPC callers.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::future::Future;
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
 use marlin_agent_runtime::RuntimeContext;
 use marlin_agent_search_engine::{
     SearchDslExecutionMode, SearchDslSessionId, SearchDslSessionRunner, SearchDslStructuredResult,
+    SearchPlanProjectionError, WorkspaceIndexConfig, WorkspaceSearchIndex,
 };
 use tonic::{Request, Response, Status};
 
@@ -33,12 +37,100 @@ use super::proto::{
 const DEFAULT_OUTPUT_LIMIT: usize = 65_536;
 const MAX_ACTIVE_SESSIONS: usize = 32;
 
+/// Boxed future returned by an [`AsyncSearchDslSessionRunner`].
+pub type AsyncSearchDslSessionFuture = Pin<
+    Box<dyn Future<Output = Result<SearchDslStructuredResult, SearchPlanProjectionError>> + Send>,
+>;
+
+/// Non-blocking session-scoped Search DSL runner (used by thread-affine Scheme
+/// VM hosts such as the TUI's priority-isolated mailbox without blocking Tokio).
+pub type AsyncSearchDslSessionRunner = Arc<
+    dyn Fn(
+            SharedWorkspaceSearchIndex,
+            String,
+            usize,
+            SearchQueryTier,
+            SearchDslSessionId,
+        ) -> AsyncSearchDslSessionFuture
+        + Send
+        + Sync,
+>;
+
+/// Thread-safe resident index handle supporting both pre-warmed indexes and
+/// lazy background warm-up attachment for [`SearchGatewayService`].
+#[derive(Clone)]
+pub struct SearchGatewayIndexHandle {
+    workspace_root: Option<PathBuf>,
+    slot: Arc<RwLock<Option<SharedWorkspaceSearchIndex>>>,
+}
+
+impl SearchGatewayIndexHandle {
+    /// Wrap an already-built resident [`SharedWorkspaceSearchIndex`].
+    #[must_use]
+    pub fn from_index(index: SharedWorkspaceSearchIndex) -> Self {
+        Self {
+            workspace_root: None,
+            slot: Arc::new(RwLock::new(Some(index))),
+        }
+    }
+
+    /// Construct a lazily attached handle backed by `workspace_root` on demand.
+    #[must_use]
+    pub fn lazy(workspace_root: PathBuf) -> Self {
+        Self {
+            workspace_root: Some(workspace_root),
+            slot: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Attach or refresh the resident index once background warm-up or sync finishes.
+    pub fn attach(&self, index: SharedWorkspaceSearchIndex) {
+        let mut guard = self
+            .slot
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *guard = Some(index);
+    }
+
+    fn current(&self) -> Option<SharedWorkspaceSearchIndex> {
+        self.slot
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn resolve_or_build(&self) -> Result<SharedWorkspaceSearchIndex, String> {
+        if let Some(existing) = self.current() {
+            return Ok(existing);
+        }
+        let root = self
+            .workspace_root
+            .as_ref()
+            .ok_or_else(|| "resident search index not attached".to_owned())?;
+        let built = Arc::new(RwLock::new(WorkspaceSearchIndex::build_with_config(
+            root,
+            WorkspaceIndexConfig::default(),
+        )));
+        let mut guard = self
+            .slot
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Ok(guard.get_or_insert_with(|| built).clone())
+    }
+}
+
+#[derive(Clone)]
+enum SearchGatewayDslBackend {
+    Blocking(SearchDslSessionRunner),
+    Async(AsyncSearchDslSessionRunner),
+}
+
 /// Authoritative tonic gRPC implementation of `marlin.search.v1.SearchGateway`.
 #[derive(Clone)]
 pub struct SearchGatewayService {
-    index: SharedWorkspaceSearchIndex,
+    index_handle: SearchGatewayIndexHandle,
     tool_schemas: Arc<Vec<ToolSchemaEntry>>,
-    dsl_session_runner: SearchDslSessionRunner,
+    dsl_backend: SearchGatewayDslBackend,
     runtime_context: RuntimeContext,
     sessions: Arc<Mutex<HashMap<String, SessionFrontierState>>>,
 }
@@ -54,12 +146,43 @@ impl SearchGatewayService {
         runtime_context: RuntimeContext,
     ) -> Self {
         Self {
-            index,
+            index_handle: SearchGatewayIndexHandle::from_index(index),
             tool_schemas: Arc::new(tool_schemas),
-            dsl_session_runner,
+            dsl_backend: SearchGatewayDslBackend::Blocking(dsl_session_runner),
             runtime_context,
             sessions: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Construct a search gRPC service over a lazily attached
+    /// [`SearchGatewayIndexHandle`] and non-blocking [`AsyncSearchDslSessionRunner`].
+    #[must_use]
+    pub fn with_lazy_async_runner(
+        index_handle: SearchGatewayIndexHandle,
+        tool_schemas: Vec<ToolSchemaEntry>,
+        async_session_runner: AsyncSearchDslSessionRunner,
+        runtime_context: RuntimeContext,
+    ) -> Self {
+        Self {
+            index_handle,
+            tool_schemas: Arc::new(tool_schemas),
+            dsl_backend: SearchGatewayDslBackend::Async(async_session_runner),
+            runtime_context,
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    async fn resolve_shared_index(&self) -> Result<SharedWorkspaceSearchIndex, Status> {
+        if let Some(existing) = self.index_handle.current() {
+            return Ok(existing);
+        }
+        let handle = self.index_handle.clone();
+        self.runtime_context
+            .spawn_blocking(move || handle.resolve_or_build())
+            .join()
+            .await
+            .map_err(|e| Status::internal(format!("index builder task failed: {e}")))?
+            .map_err(Status::internal)
     }
 
     fn resolve_scheme_session_id(&self, logical_id: &str) -> SearchDslSessionId {
@@ -79,6 +202,7 @@ impl SearchGatewayService {
 
     fn dedup_or_advance_read_file_query(
         &self,
+        shared_index: &SharedWorkspaceSearchIndex,
         session_id: &str,
         raw_query: &str,
     ) -> (String, Option<String>) {
@@ -112,8 +236,7 @@ impl SearchGatewayService {
             .max()
             .unwrap_or(rf.end_line);
         let new_start = max_end.saturating_add(1);
-        let has_unread = self
-            .index
+        let has_unread = shared_index
             .read()
             .ok()
             .is_some_and(|guard| !guard.live_file_context(&rf.path, new_start, 0).is_empty());
@@ -187,11 +310,13 @@ impl SearchGateway for SearchGatewayService {
         let tier = SearchQueryTier::classify(&query);
         let started = Instant::now();
 
+        let shared_index = self.resolve_shared_index().await?;
+
         let (raw_body, structured, tier_label, generation_digest) = match tier {
             SearchQueryTier::BruteForce => {
                 let (effective_query, overlap_note) =
-                    self.dedup_or_advance_read_file_query(&session_id, &query);
-                let index = Arc::clone(&self.index);
+                    self.dedup_or_advance_read_file_query(&shared_index, &session_id, &query);
+                let index = Arc::clone(&shared_index);
                 let (mut body, gen_digest) = self
                     .runtime_context
                     .spawn_blocking(move || {
@@ -213,18 +338,33 @@ impl SearchGateway for SearchGatewayService {
             }
             SearchQueryTier::FastAscent | SearchQueryTier::DusaSolver => {
                 let scheme_sid = self.resolve_scheme_session_id(&session_id);
-                let runner = Arc::clone(&self.dsl_session_runner);
-                let index = Arc::clone(&self.index);
+                let index = Arc::clone(&shared_index);
                 let q = query.clone();
-                let structured = self
-                    .runtime_context
-                    .spawn_blocking(move || {
-                        runner(index, &q, output_limit, &scheme_sid).map_err(|e| e.to_string())
-                    })
-                    .join()
+                let structured = match &self.dsl_backend {
+                    SearchGatewayDslBackend::Blocking(runner) => {
+                        let runner = Arc::clone(runner);
+                        self.runtime_context
+                            .spawn_blocking(move || {
+                                runner(index, &q, output_limit, &scheme_sid)
+                                    .map_err(|e| e.to_string())
+                            })
+                            .join()
+                            .await
+                            .map_err(|e| {
+                                Status::internal(format!("Search DSL worker failed: {e}"))
+                            })?
+                            .map_err(Status::invalid_argument)?
+                    }
+                    SearchGatewayDslBackend::Async(runner) => runner(
+                        index,
+                        q,
+                        output_limit,
+                        tier,
+                        scheme_sid,
+                    )
                     .await
-                    .map_err(|e| Status::internal(format!("Search DSL worker failed: {e}")))?
-                    .map_err(Status::invalid_argument)?;
+                    .map_err(|e| Status::invalid_argument(e.to_string()))?,
+                };
                 let tier_name = match structured.mode {
                     SearchDslExecutionMode::Ascent => "L1-Ascent",
                     SearchDslExecutionMode::Choice => "L2-Dusa",
@@ -237,8 +377,7 @@ impl SearchGateway for SearchGatewayService {
         };
 
         let (frontier, footer) = {
-            let guard = self
-                .index
+            let guard = shared_index
                 .read()
                 .map_err(|_| Status::internal("resident search index lock poisoned"))?;
             let mut sessions = self

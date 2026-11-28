@@ -33,12 +33,23 @@ pub struct LoopbackSearchGrpcServer {
 }
 
 impl LoopbackSearchGrpcServer {
-    /// Bind on `127.0.0.1:0` and spawn the tonic gRPC server onto `runtime`,
-    /// returning a connected lazy-HTTP/2 [`SearchGatewayClient`].
+    /// Bind on `127.0.0.1:0` and spawn the tonic gRPC server onto the current
+    /// Tokio runtime, returning a connected lazy-HTTP/2 [`SearchGatewayClient`].
     pub fn spawn(
         service: SearchGatewayService,
         runtime: &TokioAgentRuntime,
     ) -> Result<Self, String> {
+        Self::spawn_on(&tokio::runtime::Handle::current(), service, runtime)
+    }
+
+    /// Bind on `127.0.0.1:0` and spawn the tonic gRPC server onto an explicit
+    /// Tokio `handle` (usable from synchronous startup code such as TUI boot).
+    pub fn spawn_on(
+        handle: &tokio::runtime::Handle,
+        service: SearchGatewayService,
+        runtime: &TokioAgentRuntime,
+    ) -> Result<Self, String> {
+        let _enter = handle.enter();
         let std_listener = std::net::TcpListener::bind("127.0.0.1:0")
             .map_err(|e| format!("bind loopback search gRPC listener: {e}"))?;
         std_listener

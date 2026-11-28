@@ -19,4 +19,7 @@ pub use proto::{
     EvidenceFrontier, GetToolSchemaRequest, GetToolSchemaResponse, ResetSessionRequest,
     ResetSessionResponse, SearchStepRequest, SearchStepResponse, ToolSchemaEntry,
 };
-pub use service::SearchGatewayService;
+pub use service::{
+    AsyncSearchDslSessionFuture, AsyncSearchDslSessionRunner, SearchGatewayIndexHandle,
+    SearchGatewayService,
+};

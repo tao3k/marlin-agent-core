@@ -617,6 +617,7 @@ fn helm_live_ascent_dsl_mode_projects_rows_ram_preview_repair_badge_and_citation
                 }],
                 choice_worlds: Vec::new(),
                 budget_exhausted: None,
+                evidence_receipt: None,
                 rendered_text: "mode: ascent\n".to_owned(),
             })
         });
@@ -811,6 +812,7 @@ fn helm_dusa_multi_world_provenance_preview_and_preset_cycling() {
                     },
                 ],
                 budget_exhausted: None,
+                evidence_receipt: None,
                 rendered_text: "worlds: 2 (SAT)\n".to_owned(),
             })
         },

@@ -18,8 +18,9 @@ mod grpc_tests {
         default_marlin_scheme_dir, execute_package_search_dsl_session_structured,
     };
     use marlin_agent_tooling::grpc_search::{
-        GetToolSchemaRequest, GrpcSearchToolHandler, LoopbackSearchGrpcServer,
-        SearchGatewayService, SearchStepRequest, tool_schema_entries_from_declarations,
+        AsyncSearchDslSessionRunner, GetToolSchemaRequest, GrpcSearchToolHandler,
+        LoopbackSearchGrpcServer, SearchGatewayIndexHandle, SearchGatewayService,
+        SearchStepRequest, tool_schema_entries_from_declarations,
     };
 
     fn test_session_runner() -> SearchDslSessionRunner {
@@ -384,6 +385,122 @@ mod grpc_tests {
                 && r_overlap.rendered_text.contains("execute_dsl"),
             "expected overlapping read-file to auto-advance to L2: {}",
             r_overlap.rendered_text
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn tonic_grpc_search_gateway_lazy_handle_attach_and_async_session_runner() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let src_dir = dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        std::fs::write(
+            src_dir.join("gateway.rs"),
+            "pub fn handle_grpc_step() -> bool { true }\n",
+        )
+        .unwrap();
+
+        let decl = ModelToolDeclaration::search(SearchToolDeclarationRequest {
+            name: ModelToolName::new("workspace_search").unwrap(),
+            description: "gRPC unified search".to_owned(),
+            argument: "query".to_owned(),
+            timeout_seconds: 15,
+            output_limit: 16384,
+        })
+        .unwrap();
+
+        let (rt, _ev) =
+            TokioAgentRuntime::from_build_request(TokioAgentRuntimeBuildRequest::runtime_root(8));
+        let index_handle = SearchGatewayIndexHandle::lazy(dir.path().to_path_buf());
+        let blocking_runner = test_session_runner();
+        let observed_sessions = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let observed_ref = Arc::clone(&observed_sessions);
+        let async_runner: AsyncSearchDslSessionRunner =
+            Arc::new(move |idx, query, output_limit, _tier, sid| {
+                let runner = Arc::clone(&blocking_runner);
+                let observed = Arc::clone(&observed_ref);
+                Box::pin(async move {
+                    observed
+                        .lock()
+                        .expect("observed sessions lock")
+                        .push(sid.as_str().to_owned());
+                    tokio::task::spawn_blocking(move || runner(idx, &query, output_limit, &sid))
+                        .await
+                        .map_err(|_| SearchPlanProjectionError::Invalid("async test runner join"))?
+                })
+            });
+
+        let service = SearchGatewayService::with_lazy_async_runner(
+            index_handle.clone(),
+            tool_schema_entries_from_declarations(std::slice::from_ref(&decl)),
+            async_runner,
+            rt.context(),
+        );
+        let server = LoopbackSearchGrpcServer::spawn_on(
+            &tokio::runtime::Handle::current(),
+            service,
+            &rt,
+        )
+        .expect("spawn_on loopback gRPC");
+        let mut client = server.client();
+
+        // Turn 1: Before any `attach(...)`, lazy handle builds on demand for L0 queries!
+        let t1 = client
+            .search_step(SearchStepRequest {
+                session_id: "tui-lazy-1".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(file-outline \"src/gateway.rs\")".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("lazy L0 SearchStep")
+            .into_inner();
+        assert!(t1.rendered_text.contains("handle_grpc_step"));
+        assert!(t1.frontier.expect("t1 frontier").teaching_kit_active);
+
+        // Hot-attach a hydrated index (matching TUI background warm-up completion)
+        let mut hydrated =
+            WorkspaceSearchIndex::build_with_config(dir.path(), WorkspaceIndexConfig::default());
+        hydrated.ingest_open_edb_facts(WorkspaceOpenEdbIngestBatch {
+            language_id: Some("rust".to_owned()),
+            provider_id: Some("test-rust".to_owned()),
+            entities: vec![WorkspaceEdbEntityFact {
+                entity_id: "e-handle".to_owned(),
+                file_id: 0,
+                language: "rust".to_owned(),
+                kind: "function".to_owned(),
+                language_kind: "function_item".to_owned(),
+                name: "handle_grpc_step".to_owned(),
+                path: "src/gateway.rs".to_owned(),
+                line: 1,
+                source: "test-rust".to_owned(),
+                attrs: Vec::new(),
+            }],
+            ..Default::default()
+        });
+        index_handle.attach(Arc::new(RwLock::new(hydrated)));
+
+        // Turn 2: L1 Ascent runs through `AsyncSearchDslSessionRunner` with the hot-attached
+        // index, forwards `SearchDslSessionId`, and auto-unloads into `compact_mode: true`.
+        let t2 = client
+            .search_step(SearchStepRequest {
+                session_id: "tui-lazy-1".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(find-symbols name-contains: \"handle_grpc\" lang: \"rust\" limit: 10)"
+                    .to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("async L1 SearchStep")
+            .into_inner();
+        let f2 = t2.frontier.expect("t2 frontier");
+        assert!(f2.compact_mode);
+        assert!(t2.rendered_text.contains("handle_grpc_step"));
+        let seen = observed_sessions.lock().expect("observed lock");
+        assert_eq!(seen.len(), 1);
+        assert!(
+            seen[0].starts_with("tui-lazy-1-"),
+            "expected monotonic Scheme session ID derived from tui-lazy-1, got {:?}",
+            seen.as_slice()
         );
     }
 }

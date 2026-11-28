@@ -704,7 +704,7 @@ impl super::App {
                     self.search_index_warming = None;
                     self.search_index = Some(built.clone());
                     #[cfg(feature = "linked-ui")]
-                    self.search_tool_slot.attach(built.clone());
+                    self.search_index_handle.attach(built.clone());
                     if let Some(helm) = self.helm.as_mut() {
                         helm.attach_warm_index(built);
                     }
@@ -763,7 +763,7 @@ impl super::App {
                     self.search_index_syncing = None;
                     if synced_changes && let Some(existing) = self.search_index.clone() {
                         #[cfg(feature = "linked-ui")]
-                        self.search_tool_slot.attach(existing.clone());
+                        self.search_index_handle.attach(existing.clone());
                         if let Some(helm) = self.helm.as_mut() {
                             helm.attach_warm_index(existing);
                         }
@@ -779,7 +779,7 @@ impl super::App {
         }
         if let Some(built) = self.helm.as_mut().and_then(super::HelmOverlay::poll) {
             #[cfg(feature = "linked-ui")]
-            self.search_tool_slot.attach(built.clone());
+            self.search_index_handle.attach(built.clone());
             self.search_index = Some(built);
             self.kick_asp_http_hydration(runtime);
             changed = true;
