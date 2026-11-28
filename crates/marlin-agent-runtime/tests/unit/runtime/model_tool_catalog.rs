@@ -229,6 +229,14 @@ fn multi_parameter_declaration_synthesizes_typed_llm_json_schema_and_enforces_ad
             })
             .unwrap(),
             ToolParameterSpec::from_request(ToolParameterSpecRequest {
+                name: ToolParameterName::new("threshold").unwrap(),
+                param_type: ToolParameterType::Number,
+                description: "Confidence threshold".into(),
+                required: false,
+                allowed_values: Vec::new(),
+            })
+            .unwrap(),
+            ToolParameterSpec::from_request(ToolParameterSpecRequest {
                 name: ToolParameterName::new("max_hits").unwrap(),
                 param_type: ToolParameterType::Integer,
                 description: "Result cap".into(),
@@ -290,6 +298,7 @@ fn multi_parameter_declaration_synthesizes_typed_llm_json_schema_and_enforces_ad
     assert!(decl.admits(&make_call(serde_json::json!({
         "query": "(find-symbols)",
         "mode": "deep",
+        "threshold": 0.85,
         "max_hits": 40,
         "include_tests": false,
         "paths": ["crates/a", "scheme/b"]
@@ -297,6 +306,7 @@ fn multi_parameter_declaration_synthesizes_typed_llm_json_schema_and_enforces_ad
 
     // Rejected: invalid enum value, wrong type, unknown field, missing required, empty array item
     assert!(!decl.admits(&make_call(serde_json::json!({ "query": "ok", "mode": "turbo" }))));
+    assert!(!decl.admits(&make_call(serde_json::json!({ "query": "ok", "threshold": "0.85" }))));
     assert!(!decl.admits(&make_call(serde_json::json!({ "query": "ok", "max_hits": "40" }))));
     assert!(!decl.admits(&make_call(serde_json::json!({ "query": "ok", "unknown": 1 }))));
     assert!(!decl.admits(&make_call(serde_json::json!({ "mode": "fast" }))));

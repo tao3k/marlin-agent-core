@@ -12,14 +12,16 @@ pub mod proto;
 mod service;
 
 pub use client::{
-    GrpcSearchToolHandler, LoopbackSearchGrpcServer, tool_schema_entries_from_declarations,
+    GrpcSearchToolHandler, LoopbackSearchGrpcServer, declaration_from_tool_schema_entry,
+    tool_schema_entries_from_declarations,
 };
 pub use index_handle::SearchGatewayIndexHandle;
 pub use proto::search_gateway_client::SearchGatewayClient;
 pub use proto::search_gateway_server::SearchGatewayServer;
 pub use proto::{
     EvidenceFrontier, GetToolSchemaRequest, GetToolSchemaResponse, ResetSessionRequest,
-    ResetSessionResponse, SearchStepRequest, SearchStepResponse, ToolSchemaEntry,
+    ResetSessionResponse, SearchStepRequest, SearchStepResponse, ToolParameterEntry,
+    ToolSchemaEntry,
 };
 pub use service::{
     AsyncSearchDslSessionFuture, AsyncSearchDslSessionRunner, SearchGatewayService,

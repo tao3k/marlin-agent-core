@@ -15,7 +15,7 @@ use marlin_agent_protocol::{ModelToolCall, ModelToolCallId, ModelToolName};
 use marlin_agent_runtime::{
     ModelToolDeclaration, ModelToolGovernance, ModelToolOutcome, TokioAgentRuntime,
     TokioAgentRuntimeBuildRequest, ToolDeclarationRequest, ToolParameterName, ToolParameterSpec,
-    ToolRuntime,
+    ToolRuntime, schema_digest_for_definition,
 };
 #[cfg(feature = "grpc")]
 use marlin_agent_search_engine::{
@@ -26,10 +26,12 @@ use marlin_agent_search_engine::{
     execute_package_search_dsl_session_structured,
 };
 #[cfg(feature = "grpc")]
+use marlin_agent_tooling::grpc_search::GetToolSchemaRequest;
+#[cfg(feature = "grpc")]
 use marlin_agent_tooling::{
     GrpcSearchToolHandler, LoopbackSearchGrpcServer, SearchGatewayIndexHandle,
     SearchGatewayService, catalog_from_declarations_with_grpc_search,
-    tool_schema_entries_from_declarations,
+    declaration_from_tool_schema_entry, tool_schema_entries_from_declarations,
 };
 #[cfg(feature = "grpc")]
 use std::sync::{Arc, RwLock};
@@ -207,6 +209,14 @@ fn native_projection_admits_only_unique_ask_declarations() {
                     false,
                     Some(&["fast", "deep"]),
                 ),
+                param_entry(
+                    runtime,
+                    "threshold",
+                    "number",
+                    "Confidence threshold",
+                    false,
+                    None,
+                ),
                 param_entry(runtime, "max_hits", "integer", "Result cap", false, None),
                 param_entry(
                     runtime,
@@ -245,7 +255,7 @@ fn native_projection_admits_only_unique_ask_declarations() {
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].capability(), ModelToolCapability::Search);
         assert_eq!(decoded[0].argument(), "query");
-        assert_eq!(decoded[0].parameters().len(), 5);
+        assert_eq!(decoded[0].parameters().len(), 6);
         let schema = decoded[0].definition().parameters;
         assert_eq!(schema["required"], serde_json::json!(["query"]));
         assert_eq!(
@@ -253,11 +263,16 @@ fn native_projection_admits_only_unique_ask_declarations() {
             serde_json::json!(["fast", "deep"])
         );
         assert_eq!(
+            schema["properties"]["threshold"]["type"],
+            serde_json::json!("number")
+        );
+        assert_eq!(
             schema["properties"]["paths"]["items"]["type"],
             serde_json::json!("string")
         );
         #[cfg(feature = "grpc")]
         {
+            let original_digest = schema_digest_for_definition(&decoded[0].definition());
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
                 .enable_all()
@@ -273,6 +288,24 @@ fn native_projection_admits_only_unique_ask_declarations() {
             );
             let server = LoopbackSearchGrpcServer::spawn_on(rt.handle(), service, &owner)
                 .expect("spawn loopback gRPC");
+            // Remote HTTP/2 gRPC GetToolSchema -> declaration_from_tool_schema_entry MUST preserve
+            // the exact bit-for-bit B11 SHA-256 JSON Schema digest from Scheme FFI!
+            let remote_entries = rt
+                .block_on(async {
+                    let mut client = server.client();
+                    client.get_tool_schema(GetToolSchemaRequest {}).await
+                })
+                .expect("GetToolSchema RPC")
+                .into_inner()
+                .tools;
+            assert_eq!(remote_entries.len(), 1);
+            let reconstructed =
+                declaration_from_tool_schema_entry(&remote_entries[0]).expect("reconstruct decl");
+            assert_eq!(
+                schema_digest_for_definition(&reconstructed.definition()),
+                original_digest,
+                "gRPC GetToolSchema must preserve bit-for-bit B11 SHA-256 schema digest"
+            );
             let sid = Arc::new(RwLock::new(SearchDslSessionId::new("proj-decode").unwrap()));
             let catalog = catalog_from_declarations_with_grpc_search(
                 decoded,

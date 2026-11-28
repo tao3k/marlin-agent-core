@@ -8,10 +8,11 @@
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 
-use marlin_agent_protocol::ModelToolCall;
+use marlin_agent_protocol::{ModelToolCall, ModelToolName};
 use marlin_agent_runtime::{
-    ModelToolDeclaration, ModelToolOutcome, RuntimeContext, RuntimeFuture, RuntimeTask,
-    TokioAgentRuntime, ToolRuntime,
+    ModelToolCapability, ModelToolDeclaration, ModelToolOutcome, RuntimeContext, RuntimeFuture,
+    RuntimeTask, TokioAgentRuntime, ToolDeclarationRequest, ToolParameterName, ToolParameterSpec,
+    ToolParameterSpecRequest, ToolParameterType, ToolRuntime,
 };
 use marlin_agent_search_engine::SearchDslSessionId;
 use tokio::sync::oneshot;
@@ -20,7 +21,9 @@ use tonic::transport::{Channel, Endpoint, Server};
 
 use super::proto::search_gateway_client::SearchGatewayClient;
 use super::proto::search_gateway_server::SearchGatewayServer;
-use super::proto::{ResetSessionRequest, SearchStepRequest, ToolSchemaEntry};
+use super::proto::{
+    ResetSessionRequest, SearchStepRequest, ToolParameterEntry, ToolSchemaEntry,
+};
 use super::service::SearchGatewayService;
 
 /// Loopback HTTP/2 `tonic` gRPC server hosting [`SearchGatewayService`] on an
@@ -119,7 +122,8 @@ impl Drop for LoopbackSearchGrpcServer {
 }
 
 /// Convert declared read-only search [`ModelToolDeclaration`]s into protobuf
-/// [`ToolSchemaEntry`] records served by `GetToolSchema`.
+/// [`ToolSchemaEntry`] records served by `GetToolSchema`, preserving the full
+/// multi-parameter typed schema declared in Scheme.
 #[must_use]
 pub fn tool_schema_entries_from_declarations(
     declarations: &[ModelToolDeclaration],
@@ -133,8 +137,52 @@ pub fn tool_schema_entries_from_declarations(
             timeout_seconds: u32::try_from(decl.timeout().as_secs()).unwrap_or(u32::MAX),
             output_limit: u32::try_from(decl.output_limit()).unwrap_or(u32::MAX),
             read_only: true,
+            parameters: decl
+                .parameters()
+                .iter()
+                .map(|param| ToolParameterEntry {
+                    name: param.name().as_str().to_owned(),
+                    param_type: param.param_type().as_str().to_owned(),
+                    description: param.description().to_owned(),
+                    required: param.required(),
+                    allowed_values: param.allowed_values().to_vec(),
+                })
+                .collect(),
         })
         .collect()
+}
+
+/// Reconstruct a validated read-only search [`ModelToolDeclaration`] from a
+/// remote `marlin.search.v1.SearchGateway/GetToolSchema` [`ToolSchemaEntry`],
+/// preserving the exact B11 SHA-256 [`marlin_agent_runtime::schema_digest_for_definition`].
+pub fn declaration_from_tool_schema_entry(
+    entry: &ToolSchemaEntry,
+) -> Result<ModelToolDeclaration, &'static str> {
+    if !entry.read_only {
+        return Err("search gateway schema entry must certify read_only=true");
+    }
+    let name = ModelToolName::new(entry.name.clone())?;
+    let parameters = entry
+        .parameters
+        .iter()
+        .map(|param| {
+            ToolParameterSpec::from_request(ToolParameterSpecRequest {
+                name: ToolParameterName::new(param.name.clone())?,
+                param_type: ToolParameterType::parse_str(&param.param_type)?,
+                description: param.description.clone(),
+                required: param.required,
+                allowed_values: param.allowed_values.clone(),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    ModelToolDeclaration::from_request(ToolDeclarationRequest {
+        name,
+        description: entry.description.clone(),
+        capability: ModelToolCapability::Search,
+        parameters,
+        timeout_seconds: u64::from(entry.timeout_seconds),
+        output_limit: usize::try_from(entry.output_limit).map_err(|_| "output limit overflow")?,
+    })
 }
 
 /// Thin `ToolRuntime` client forwarding search tool invocations directly over

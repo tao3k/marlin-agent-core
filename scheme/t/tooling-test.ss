@@ -4,10 +4,12 @@
 (import (only-in :clan/poo/object .get)
         (only-in :std/string/misc string-contains)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
+        (only-in :marlin-agent-core/tooling/objects ToolingCatalogValue)
         (only-in :marlin-agent-core/tooling/funcs
-                 make-tool-param
-                 make-tool-declaration
-                 project-tool))
+                 deftool
+                 extend-tooling-catalog
+                 project-tool
+                 project-tooling))
 
 (def tooling (.get marlin-agent-core.init.exports Marlin tooling))
 (def declarations ((.get tooling project)))
@@ -68,29 +70,32 @@
              (= (vector-ref search-decl 6) 65536))
   (error "selected tooling declaration changed" declarations))
 
-;; Declarative multi-parameter tool construction & pure Scheme FFI projection
-(def custom-tool
-  (make-tool-declaration
-    name: 'workspace_audit
-    description: "Run a structured multi-parameter workspace audit."
-    capability: 'search
-    parameters:
-    (list (make-tool-param 'query type: 'string description: "Primary query" required?: #t)
-          (make-tool-param 'mode type: 'string description: "Audit mode" required?: #f
-                           enum: '("fast" "deep"))
-          (make-tool-param 'max_hits type: 'integer description: "Result cap" required?: #f)
-          (make-tool-param 'include_tests type: 'boolean description: "Include tests" required?: #f)
-          (make-tool-param 'paths type: 'string-array description: "Scoped paths" required?: #f))
-    timeout-seconds: 20
-    output-bytes: 32768))
-(def custom-proj (project-tool custom-tool))
+;; Declarative `deftool` macro + functional catalog composition (`extend-tooling-catalog`)
+(deftool WorkspaceAuditTool
+  name: workspace_audit
+  description: "Run a structured multi-parameter workspace audit."
+  capability: search
+  timeout-seconds: 20
+  output-bytes: 32768
+  params:
+  ((query string "Primary query" required?: #t)
+   (mode string "Audit mode" required?: #f enum: ("fast" "deep"))
+   (threshold number "Confidence threshold" required?: #f)
+   (max_hits integer "Result cap" required?: #f)
+   (include_tests boolean "Include tests" required?: #f)
+   (paths string-array "Scoped paths" required?: #f)))
+(def custom-proj (project-tool WorkspaceAuditTool))
 (def custom-params (vector-ref custom-proj 4))
+(def extended-proj (project-tooling (extend-tooling-catalog ToolingCatalogValue (list WorkspaceAuditTool))))
 (unless (and (eq? (vector-ref custom-proj 0) 'workspace_audit)
-             (= (vector-length custom-params) 5)
+             (= (vector-length custom-params) 6)
              (equal? (vector-ref custom-params 0) '#(query string "Primary query" #t #f))
              (equal? (vector-ref custom-params 1) '#(mode string "Audit mode" #f #("fast" "deep")))
-             (equal? (vector-ref custom-params 2) '#(max_hits integer "Result cap" #f #f))
-             (equal? (vector-ref custom-params 3) '#(include_tests boolean "Include tests" #f #f))
-             (equal? (vector-ref custom-params 4) '#(paths string-array "Scoped paths" #f #f)))
-  (error "multi-parameter tool projection mismatch" custom-proj))
+             (equal? (vector-ref custom-params 2) '#(threshold number "Confidence threshold" #f #f))
+             (equal? (vector-ref custom-params 3) '#(max_hits integer "Result cap" #f #f))
+             (equal? (vector-ref custom-params 4) '#(include_tests boolean "Include tests" #f #f))
+             (equal? (vector-ref custom-params 5) '#(paths string-array "Scoped paths" #f #f))
+             (= (vector-length extended-proj) 3)
+             (eq? (vector-ref (vector-ref extended-proj 2) 0) 'workspace_audit))
+  (error "multi-parameter deftool or extend-tooling-catalog mismatch" custom-proj))
 (displayln "TOOLING-OK")

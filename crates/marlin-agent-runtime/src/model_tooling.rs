@@ -72,8 +72,35 @@ impl ToolParameterName {
 pub enum ToolParameterType {
     String,
     Integer,
+    Number,
     Boolean,
     StringArray,
+}
+
+impl ToolParameterType {
+    /// Canonical wire/Scheme identifier for this parameter type.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Integer => "integer",
+            Self::Number => "number",
+            Self::Boolean => "boolean",
+            Self::StringArray => "string-array",
+        }
+    }
+
+    /// Parse a canonical wire/Scheme parameter type identifier.
+    pub fn parse_str(raw: &str) -> Result<Self, &'static str> {
+        match raw {
+            "string" => Ok(Self::String),
+            "integer" => Ok(Self::Integer),
+            "number" => Ok(Self::Number),
+            "boolean" => Ok(Self::Boolean),
+            "string-array" => Ok(Self::StringArray),
+            _ => Err("unsupported tool parameter type"),
+        }
+    }
 }
 
 /// Named fields for admitting one typed [`ToolParameterSpec`].
@@ -182,6 +209,9 @@ impl ToolParameterSpec {
                     serde_json::Value::String("integer".into()),
                 );
             }
+            ToolParameterType::Number => {
+                obj.insert("type".to_owned(), serde_json::Value::String("number".into()));
+            }
             ToolParameterType::Boolean => {
                 obj.insert(
                     "type".to_owned(),
@@ -227,6 +257,7 @@ impl ToolParameterSpec {
                         || self.allowed_values.iter().any(|allowed| allowed == text))
             }),
             ToolParameterType::Integer => value.is_i64(),
+            ToolParameterType::Number => value.as_f64().is_some_and(f64::is_finite),
             ToolParameterType::Boolean => value.is_boolean(),
             ToolParameterType::StringArray => value.as_array().is_some_and(|items| {
                 items.len() <= MAX_ARRAY_ARG_ITEMS

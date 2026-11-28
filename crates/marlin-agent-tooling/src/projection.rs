@@ -84,15 +84,7 @@ fn boolean(value: RootedSchemeObject<'_>) -> Result<bool, ToolingProjectionError
 }
 
 fn decode_parameter_type(value: RootedSchemeObject<'_>) -> Result<ToolParameterType, ToolingProjectionError> {
-    match symbol(value)?.as_str() {
-        "string" => Ok(ToolParameterType::String),
-        "integer" => Ok(ToolParameterType::Integer),
-        "boolean" => Ok(ToolParameterType::Boolean),
-        "string-array" => Ok(ToolParameterType::StringArray),
-        _ => Err(ToolingProjectionError::Invalid(
-            "unsupported tool parameter type",
-        )),
-    }
+    ToolParameterType::parse_str(&symbol(value)?).map_err(ToolingProjectionError::Invalid)
 }
 
 fn decode_enum_values(value: RootedSchemeObject<'_>) -> Result<Vec<String>, ToolingProjectionError> {

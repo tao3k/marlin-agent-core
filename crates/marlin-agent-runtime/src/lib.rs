@@ -64,6 +64,7 @@ pub use model_gateway::{
 };
 pub use model_tool_catalog::{
     ModelToolCatalog, ModelToolCatalogError, ModelToolHandler, ModelToolOffer, ModelToolOutcome,
+    schema_digest_for_definition,
 };
 pub use model_tooling::{
     ModelToolCapability, ModelToolDeclaration, ModelToolGovernance, ShellToolHandler,
