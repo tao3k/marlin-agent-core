@@ -15,11 +15,65 @@
 use std::env;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 /// Upper bound on the single JSON handshake line emitted by `asp-gateway` at boot (SM20).
 const MAX_ASP_BOOT_LINE_BYTES: usize = 64 * 1024;
+/// Upper bound on waiting for `asp-gateway` to emit its single JSON boot line (SM39).
+const ASP_GATEWAY_BOOT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Minimal allowlisted toolchain environment variables forwarded to managed `asp-gateway` (SM39).
+/// Excludes host API/cloud/bridge secrets and dynamic-loader hijack variables.
+const ASP_GATEWAY_ENV_ALLOWLIST: &[&str] = &[
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "USER",
+    "LOGNAME",
+    "LANG",
+    "LC_ALL",
+    "GERBIL_PATH",
+    "GERBIL_LOADPATH",
+    "RUSTUP_HOME",
+    "CARGO_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_RUNTIME_DIR",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+];
+
+fn apply_scrubbed_asp_env(cmd: &mut Command) {
+    cmd.env_clear();
+    for key in ASP_GATEWAY_ENV_ALLOWLIST {
+        if let Some(value) = env::var_os(key) {
+            cmd.env(key, value);
+        }
+    }
+}
+
+/// Strictly validates a managed child's reported loopback endpoint (`http://127.0.0.1:<port>`
+/// or `http://localhost:<port>`), rejecting `@` userinfo, control bytes, paths, and invalid ports.
+fn validate_managed_asp_endpoint(raw: &str) -> Option<AspForwardingEndpoint> {
+    let trimmed = raw.trim();
+    if trimmed.chars().any(char::is_control) {
+        return None;
+    }
+    let rest = trimmed.strip_prefix("http://")?;
+    if rest.contains(['@', '/', '?', '#', '\\']) || rest.chars().any(char::is_whitespace) {
+        return None;
+    }
+    let (host, port_raw) = rest.split_once(':')?;
+    if port_raw.contains(':') || !matches!(host, "127.0.0.1" | "localhost") {
+        return None;
+    }
+    let port: u16 = port_raw.parse().ok()?;
+    if port == 0 {
+        return None;
+    }
+    AspForwardingEndpoint::new(format!("http://{host}:{port}")).ok()
+}
 
 /// Reads a single newline-delimited handshake frame without allowing an unbounded
 /// delimiter-free child payload to exhaust host memory (SM20).
@@ -150,10 +204,17 @@ impl Drop for AspGatewaySupervisor {
 fn discover_asp_gateway_binary(workspace_root: &Path) -> Option<PathBuf> {
     if let Some(explicit) = env::var_os("MARLIN_ASP_GATEWAY_BIN") {
         let p = PathBuf::from(explicit);
-        if p.is_file() {
+        if p.is_absolute() && p.is_file() {
             return Some(p);
         }
     }
+    discover_asp_gateway_binary_with_path(workspace_root, env::var_os("PATH").as_deref())
+}
+
+pub(crate) fn discover_asp_gateway_binary_with_path(
+    workspace_root: &Path,
+    path_var: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
     let mut candidates = Vec::new();
     if let Some(parent) = workspace_root.parent() {
         candidates.push(parent.join("agent-semantic-protocols/target/release/asp-gateway"));
@@ -169,8 +230,11 @@ fn discover_asp_gateway_binary(workspace_root: &Path) -> Option<PathBuf> {
             return Some(candidate);
         }
     }
-    if let Some(path_var) = env::var_os("PATH") {
-        for dir in env::split_paths(&path_var) {
+    if let Some(path_var) = path_var {
+        for dir in env::split_paths(path_var) {
+            if !dir.is_absolute() {
+                continue;
+            }
             let candidate = dir.join("asp-gateway");
             if candidate.is_file() {
                 return Some(candidate);
@@ -178,6 +242,23 @@ fn discover_asp_gateway_binary(workspace_root: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+#[cfg(unix)]
+fn terminate_child_process_group(child_pid: u32) {
+    let Ok(pgid_i32) = i32::try_from(child_pid) else {
+        return;
+    };
+    let Ok(host_pid) = i32::try_from(std::process::id()) else {
+        return;
+    };
+    let host_pgid = unsafe { libc::getpgrp() };
+    if pgid_i32 <= 1 || pgid_i32 == host_pid || pgid_i32 == host_pgid {
+        return;
+    }
+    unsafe {
+        let _ = libc::kill(-pgid_i32, libc::SIGKILL);
+    }
 }
 
 struct SpawnedChildGuard {
@@ -192,20 +273,55 @@ impl SpawnedChildGuard {
     fn take(&mut self) -> Option<Child> {
         self.child.take()
     }
-}
 
-impl Drop for SpawnedChildGuard {
-    fn drop(&mut self) {
+    fn kill_and_reap_now(&mut self) {
         if let Some(mut child) = self.child.take() {
+            #[cfg(unix)]
+            terminate_child_process_group(child.id());
             let _ = child.kill();
             let _ = child.wait();
         }
     }
 }
 
-fn spawn_managed_asp_gateway(bin: &Path) -> Option<AspGatewaySupervisor> {
+impl Drop for SpawnedChildGuard {
+    fn drop(&mut self) {
+        self.kill_and_reap_now();
+    }
+}
+
+fn read_bounded_boot_line_with_timeout(
+    stdout: ChildStdout,
+    max_line_bytes: usize,
+    boot_timeout: Duration,
+    child_guard: &mut SpawnedChildGuard,
+    stdin_watchdog: &mut Option<ChildStdin>,
+) -> Option<String> {
+    let (tx, rx) = mpsc::sync_channel(1);
+    let reader = std::thread::spawn(move || {
+        let _ = tx.send(read_bounded_boot_line(stdout, max_line_bytes));
+    });
+    match rx.recv_timeout(boot_timeout) {
+        Ok(line) => {
+            let _ = reader.join();
+            line
+        }
+        Err(_) => {
+            let _ = stdin_watchdog.take();
+            child_guard.kill_and_reap_now();
+            let _ = reader.join();
+            None
+        }
+    }
+}
+
+pub(crate) fn spawn_managed_asp_gateway_with_timeout(
+    bin: &Path,
+    boot_timeout: Duration,
+) -> Option<AspGatewaySupervisor> {
     let started = Instant::now();
     let mut cmd = Command::new(bin);
+    apply_scrubbed_asp_env(&mut cmd);
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -221,7 +337,7 @@ fn spawn_managed_asp_gateway(bin: &Path) -> Option<AspGatewaySupervisor> {
         .spawn()
         .ok()?;
     let mut child_guard = SpawnedChildGuard::new(child);
-    let stdin_watchdog = child_guard
+    let mut stdin_watchdog = child_guard
         .child
         .as_mut()
         .and_then(|child| child.stdin.take());
@@ -229,11 +345,17 @@ fn spawn_managed_asp_gateway(bin: &Path) -> Option<AspGatewaySupervisor> {
         .child
         .as_mut()
         .and_then(|child| child.stdout.take())?;
-    let line = read_bounded_boot_line(stdout, MAX_ASP_BOOT_LINE_BYTES)?;
+    let line = read_bounded_boot_line_with_timeout(
+        stdout,
+        MAX_ASP_BOOT_LINE_BYTES,
+        boot_timeout,
+        &mut child_guard,
+        &mut stdin_watchdog,
+    )?;
     let boot_micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
     let boot: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
     let raw_endpoint = boot["endpoint"].as_str()?;
-    let mut endpoint = AspForwardingEndpoint::new(raw_endpoint).ok()?;
+    let mut endpoint = validate_managed_asp_endpoint(raw_endpoint)?;
     if let Some(token) = boot["controlToken"].as_str() {
         endpoint = endpoint.with_control_token(token);
     }
@@ -259,6 +381,10 @@ fn spawn_managed_asp_gateway(bin: &Path) -> Option<AspGatewaySupervisor> {
         child: child_guard.take(),
         stdin_watchdog,
     })
+}
+
+pub(crate) fn spawn_managed_asp_gateway(bin: &Path) -> Option<AspGatewaySupervisor> {
+    spawn_managed_asp_gateway_with_timeout(bin, ASP_GATEWAY_BOOT_TIMEOUT)
 }
 
 /// Discover `WorkspaceArtifacts` (dev `.data/marlin/` via `.envrc`'s
@@ -802,15 +928,24 @@ mod stability_tests {
             .parse()
             .expect("pid int");
         // Verify child was killed and reaped (kill -0 must fail with ESRCH).
-        let alive = std::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .status()
-            .expect("kill -0")
-            .success();
+        let alive = is_pid_alive(pid);
         assert!(
             !alive,
             "SM4 orphan child leak: bad-asp-gateway PID {pid} survived malformed boot JSON"
         );
+    }
+
+    #[cfg(unix)]
+    fn is_pid_alive(pid: i32) -> bool {
+        if pid <= 1 {
+            return false;
+        }
+        // SAFETY: signal 0 probes process existence without delivering a signal.
+        let rc = unsafe { libc::kill(pid, 0) };
+        if rc == 0 {
+            return true;
+        }
+        std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
     }
 
     #[cfg(unix)]
@@ -856,11 +991,7 @@ mod stability_tests {
             .trim()
             .parse()
             .expect("pid int");
-        let alive = std::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .status()
-            .expect("kill -0")
-            .success();
+        let alive = is_pid_alive(pid);
         assert!(
             !alive,
             "SM20 orphan child leak: giant-boot-asp-gateway PID {pid} survived oversize boot frame refusal"

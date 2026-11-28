@@ -35,6 +35,8 @@ mod prompt_history_cases;
 mod replay_cases;
 #[path = "session_browser.rs"]
 mod session_browser_cases;
+#[path = "sm39_tui_confinement.rs"]
+mod sm39_tui_confinement;
 #[path = "streaming.rs"]
 mod streaming;
 #[path = "ui_elements/mod.rs"]

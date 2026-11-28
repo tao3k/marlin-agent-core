@@ -7,11 +7,12 @@
 use std::sync::Arc;
 
 use super::{
-    AgentId, App, JournalGateway, MessageEvent, MessageSeverity, MessageSource, ProjectId,
-    RuntimeStreamGateway, SessionBrowser, SessionId, SharedGateway, TursoAgentStorage,
-    TursoAgentStorageConfig, TursoBatchTransactionMode, TursoOptimizationProfile, config,
-    load_session,
+    AgentId, App, JournalGateway, ProjectId, RuntimeStreamGateway, SessionBrowser, SessionId,
+    SharedGateway, TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode,
+    TursoOptimizationProfile, config, load_session,
 };
+#[cfg(feature = "linked-ui")]
+use super::{MessageEvent, MessageSeverity, MessageSource};
 
 #[cfg(feature = "linked-ui")]
 pub(super) fn resolve_effective_session(

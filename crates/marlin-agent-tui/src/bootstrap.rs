@@ -5,12 +5,25 @@
 //! Resolve a local development Scheme package before the terminal runtime starts.
 
 #[cfg(any(test, all(unix, not(feature = "linked-ui"))))]
-fn has_marlin_scheme_package(prefix: &std::path::Path) -> bool {
-    prefix.join("lib/marlin-agent-core/init.ssi").is_file()
+fn is_non_symlink_dir(path: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_dir())
 }
 
 #[cfg(any(test, all(unix, not(feature = "linked-ui"))))]
-fn resolve_local_scheme_prefix(
+fn is_non_symlink_file(path: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file())
+}
+
+#[cfg(any(test, all(unix, not(feature = "linked-ui"))))]
+fn has_marlin_scheme_package(prefix: &std::path::Path) -> bool {
+    is_non_symlink_dir(prefix)
+        && is_non_symlink_dir(&prefix.join("lib"))
+        && is_non_symlink_dir(&prefix.join("lib/marlin-agent-core"))
+        && is_non_symlink_file(&prefix.join("lib/marlin-agent-core/init.ssi"))
+}
+
+#[cfg(any(test, all(unix, not(feature = "linked-ui"))))]
+pub(crate) fn resolve_local_scheme_prefix(
     current_gerbil_path: Option<&std::path::Path>,
     cwd: &std::path::Path,
     exe: Option<&std::path::Path>,
@@ -18,20 +31,23 @@ fn resolve_local_scheme_prefix(
     if current_gerbil_path.is_some_and(has_marlin_scheme_package) {
         return None;
     }
-    let mut candidates = vec![cwd.join("scheme")];
+    let mut candidates = Vec::new();
+    // Always prioritize the compiled binary's own repository prefix ahead of untrusted CWD (SM39).
     if let Some(repo_root) = exe
         .and_then(|path| path.parent())
         .and_then(|profile_dir| profile_dir.parent())
         .and_then(|target_dir| target_dir.parent())
     {
-        let from_exe = repo_root.join("scheme");
-        if from_exe != candidates[0] {
-            candidates.push(from_exe);
-        }
+        candidates.push(repo_root.join("scheme"));
+    }
+    let from_cwd = cwd.join("scheme");
+    if !candidates.contains(&from_cwd) {
+        candidates.push(from_cwd);
     }
     for package in candidates {
         let prefix = package.join(".gerbil");
-        if package.join("gerbil.pkg").is_file()
+        if is_non_symlink_dir(&package)
+            && is_non_symlink_file(&package.join("gerbil.pkg"))
             && has_marlin_scheme_package(&prefix)
             && current_gerbil_path != Some(prefix.as_path())
         {

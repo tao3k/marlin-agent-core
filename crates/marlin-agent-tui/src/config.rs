@@ -7,6 +7,7 @@
 use std::{
     collections::BTreeMap,
     env, fs,
+    io::Read,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -18,6 +19,116 @@ use serde::Deserialize;
 use weaver_llm::{Client, Endpoint, Protocol};
 
 use super::model_catalog::{DEFAULT_MODEL_ALIAS, MAX_MODEL_CHOICES, ModelCatalog, ModelRoute};
+
+/// Hard ceiling on TUI TOML configuration file reads (SM39).
+const MAX_TUI_CONFIG_BYTES: usize = 256 * 1024;
+/// Hard ceiling on configured HTTP client timeout seconds (SM39).
+const MAX_TUI_TIMEOUT_SECONDS: u64 = 600;
+
+fn validate_timeout_seconds(timeout_seconds: u64) -> Result<(), String> {
+    if timeout_seconds == 0 || timeout_seconds > MAX_TUI_TIMEOUT_SECONDS {
+        return Err(format!(
+            "timeout_seconds must be within 1..={MAX_TUI_TIMEOUT_SECONDS}, got {timeout_seconds}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_tui_credential_env(name: &str) -> Result<(), String> {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return Err("credential_env must not be empty".to_owned());
+    };
+    if !(first.is_ascii_alphabetic() || first == '_')
+        || !chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(format!("credential_env '{name}' is not a valid env identifier"));
+    }
+    let upper = name.to_ascii_uppercase();
+    const FORBIDDEN_EXACT: &[&str] = &[
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "PWD",
+        "OLDPWD",
+        "TMPDIR",
+        "TERM",
+        "BASH_ENV",
+        "ENV",
+        "IFS",
+        "RUSTFLAGS",
+        "NODE_OPTIONS",
+        "PYTHONPATH",
+    ];
+    const FORBIDDEN_PREFIXES: &[&str] = &[
+        "LD_",
+        "DYLD_",
+        "SSH_",
+        "GIT_",
+        "XDG_",
+        "CARGO_",
+        "GERBIL_",
+    ];
+    if FORBIDDEN_EXACT.contains(&upper.as_str())
+        || FORBIDDEN_PREFIXES
+            .iter()
+            .any(|prefix| upper.starts_with(prefix))
+    {
+        return Err(format!(
+            "credential_env '{name}' references a forbidden ambient system variable"
+        ));
+    }
+    Ok(())
+}
+
+fn read_bounded_non_symlink_config(path: &Path) -> Result<String, String> {
+    let meta = fs::symlink_metadata(path).map_err(|e| format!("cannot stat config: {e}"))?;
+    if meta.file_type().is_symlink() || !meta.file_type().is_file() {
+        return Err("config path must be a regular non-symlink file".to_owned());
+    }
+    if meta.len() > MAX_TUI_CONFIG_BYTES as u64 {
+        return Err(format!(
+            "config exceeds maximum size of {MAX_TUI_CONFIG_BYTES} bytes"
+        ));
+    }
+    let mut opts = fs::OpenOptions::new();
+    opts.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = opts
+        .open(path)
+        .map_err(|e| format!("cannot read config: {e}"))?;
+    let mut content = String::new();
+    file.take((MAX_TUI_CONFIG_BYTES + 1) as u64)
+        .read_to_string(&mut content)
+        .map_err(|e| format!("cannot read config: {e}"))?;
+    if content.len() > MAX_TUI_CONFIG_BYTES {
+        return Err(format!(
+            "config exceeds maximum size of {MAX_TUI_CONFIG_BYTES} bytes"
+        ));
+    }
+    Ok(content)
+}
+
+fn validate_tui_ui_package(pkg: &TuiUiPackageConfig) -> Result<(), String> {
+    if !pkg.directory.is_absolute() {
+        return Err("tui_ui_package.directory must be an absolute path".to_owned());
+    }
+    for (label, value) in [("module", &pkg.module), ("export", &pkg.export)] {
+        if value.trim().is_empty()
+            || value.contains("..")
+            || value.chars().any(char::is_control)
+        {
+            return Err(format!("tui_ui_package.{label} is invalid"));
+        }
+    }
+    Ok(())
+}
 
 /// Credentials are read from the named environment variable, never from TOML.
 #[derive(Deserialize)]
@@ -92,8 +203,16 @@ fn default_timeout() -> u64 {
 
 impl Config {
     pub fn load(path: &Path) -> Result<Self, String> {
-        let content = fs::read_to_string(path).map_err(|e| format!("cannot read config: {e}"))?;
+        let content = read_bounded_non_symlink_config(path)?;
         let config: Self = toml::from_str(&content).map_err(|e| format!("invalid config: {e}"))?;
+        validate_timeout_seconds(config.timeout_seconds)?;
+        validate_tui_credential_env(&config.credential_env)?;
+        for profile in config.models.values() {
+            validate_tui_credential_env(&profile.credential_env)?;
+        }
+        if let Some(pkg) = config.tui_ui_package.as_ref() {
+            validate_tui_ui_package(pkg)?;
+        }
         if config
             .git_context
             .as_ref()
@@ -112,6 +231,7 @@ impl Config {
         &self,
         read_env: impl Fn(&str) -> Option<String>,
     ) -> Result<(ModelEndpoint, ModelCatalog), String> {
+        validate_timeout_seconds(self.timeout_seconds)?;
         if self.models.len() >= MAX_MODEL_CHOICES {
             return Err(format!(
                 "at most {MAX_MODEL_CHOICES} models including default"
@@ -185,6 +305,7 @@ impl ModelProfile {
         identity.validate_contract().map_err(|e| e.to_string())?;
         let endpoint = Endpoint::new(protocol, &resolved_endpoint)
             .map_err(|e| format!("invalid endpoint: {e}"))?;
+        validate_tui_credential_env(&self.credential_env)?;
         let credential = read_env(&self.credential_env).filter(|value| !value.is_empty());
         if required && credential.is_none() {
             return Err(format!(

@@ -60,7 +60,7 @@ use marlin_agent_ui::{
 use termion::event::Key;
 
 #[path = "asp_supervisor.rs"]
-mod asp_supervisor;
+pub(crate) mod asp_supervisor;
 mod echo_area;
 #[path = "editor.rs"]
 mod editor;
@@ -78,7 +78,7 @@ mod restore;
 #[path = "runner.rs"]
 mod runner;
 #[path = "runtime_probe.rs"]
-mod runtime_probe;
+pub(crate) mod runtime_probe;
 #[path = "startup.rs"]
 mod startup;
 #[path = "state.rs"]
