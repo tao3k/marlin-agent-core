@@ -9,8 +9,8 @@ use std::{hint::black_box, sync::Arc, time::Duration};
 use criterion::{Criterion, criterion_group, criterion_main};
 use marlin_agent_protocol::{ModelToolCall, ModelToolCallId, ModelToolName};
 use marlin_agent_runtime::{
-    ModelToolCatalog, ModelToolDeclaration, ModelToolOutcome, RuntimeContext, RuntimeFuture,
-    ShellToolDeclarationRequest, ToolRuntime,
+    ModelToolCapability, ModelToolCatalog, ModelToolDeclaration, ModelToolOutcome, RuntimeContext,
+    RuntimeFuture, ToolDeclarationRequest, ToolParameterName, ToolParameterSpec, ToolRuntime,
 };
 
 struct Handler;
@@ -33,10 +33,17 @@ fn admission(c: &mut Criterion) {
     let name = ModelToolName::new("read_workspace").unwrap();
     catalog
         .register(
-            ModelToolDeclaration::shell(ShellToolDeclarationRequest {
+            ModelToolDeclaration::from_request(ToolDeclarationRequest {
                 name: name.clone(),
                 description: "Read a bounded workspace fact".into(),
-                argument: "command".into(),
+                capability: ModelToolCapability::Shell,
+                parameters: vec![
+                    ToolParameterSpec::required_string(
+                        ToolParameterName::new("command").unwrap(),
+                        "",
+                    )
+                    .unwrap(),
+                ],
                 timeout_seconds: 5,
                 output_limit: 1024,
             })

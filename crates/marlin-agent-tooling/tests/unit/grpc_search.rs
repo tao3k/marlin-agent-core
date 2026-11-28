@@ -8,8 +8,9 @@ mod grpc_tests {
 
     use marlin_agent_protocol::{ModelToolCall, ModelToolCallId, ModelToolName};
     use marlin_agent_runtime::{
-        ModelToolDeclaration, ModelToolOutcome, SearchToolDeclarationRequest, TokioAgentRuntime,
-        TokioAgentRuntimeBuildRequest, ToolRuntime,
+        ModelToolCapability, ModelToolDeclaration, ModelToolOutcome, TokioAgentRuntime,
+        TokioAgentRuntimeBuildRequest, ToolDeclarationRequest, ToolParameterName,
+        ToolParameterSpec, ToolRuntime,
     };
     use marlin_agent_search_engine::{
         SearchDslExecutionRequest, SearchDslSessionExecutionRequest, SearchDslSessionId,
@@ -89,10 +90,14 @@ mod grpc_tests {
             ..Default::default()
         });
 
-        let decl = ModelToolDeclaration::search(SearchToolDeclarationRequest {
+        let decl = ModelToolDeclaration::from_request(ToolDeclarationRequest {
             name: ModelToolName::new("workspace_search").unwrap(),
             description: "gRPC unified search".to_owned(),
-            argument: "query".to_owned(),
+            capability: ModelToolCapability::Search,
+            parameters: vec![
+                ToolParameterSpec::required_string(ToolParameterName::new("query").unwrap(), "")
+                    .unwrap(),
+            ],
             timeout_seconds: 15,
             output_limit: 16384,
         })
@@ -399,10 +404,14 @@ mod grpc_tests {
         )
         .unwrap();
 
-        let decl = ModelToolDeclaration::search(SearchToolDeclarationRequest {
+        let decl = ModelToolDeclaration::from_request(ToolDeclarationRequest {
             name: ModelToolName::new("workspace_search").unwrap(),
             description: "gRPC unified search".to_owned(),
-            argument: "query".to_owned(),
+            capability: ModelToolCapability::Search,
+            parameters: vec![
+                ToolParameterSpec::required_string(ToolParameterName::new("query").unwrap(), "")
+                    .unwrap(),
+            ],
             timeout_seconds: 15,
             output_limit: 16384,
         })
@@ -593,10 +602,14 @@ mod grpc_tests {
             ..Default::default()
         });
 
-        let decl = ModelToolDeclaration::search(SearchToolDeclarationRequest {
+        let decl = ModelToolDeclaration::from_request(ToolDeclarationRequest {
             name: ModelToolName::new("workspace_search").unwrap(),
             description: "gRPC unified search".to_owned(),
-            argument: "query".to_owned(),
+            capability: ModelToolCapability::Search,
+            parameters: vec![
+                ToolParameterSpec::required_string(ToolParameterName::new("query").unwrap(), "")
+                    .unwrap(),
+            ],
             timeout_seconds: 15,
             output_limit: 16384,
         })

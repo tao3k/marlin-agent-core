@@ -15,8 +15,9 @@ use marlin_agent_protocol::{ModelToolCall, ModelToolName};
 use tempfile::TempDir;
 
 use crate::{
-    ModelToolDeclaration, ModelToolOutcome, ShellToolDeclarationRequest, ShellToolHandler,
-    TokioAgentRuntime, TokioAgentRuntimeBuildRequest, ToolRuntime,
+    ModelToolCapability, ModelToolDeclaration, ModelToolOutcome, ShellToolHandler,
+    TokioAgentRuntime, TokioAgentRuntimeBuildRequest, ToolDeclarationRequest, ToolParameterName,
+    ToolParameterSpec, ToolRuntime,
 };
 
 use super::{EnvrcIntent, EnvrcPlan, EnvrcStatus, ProjectEnvrc, ProjectEnvrcDiscovery};
@@ -66,10 +67,14 @@ fn worktree(path: &Path, state: &Path) -> (ProjectEnvrc, TokioAgentRuntime) {
 
 async fn execute(runtime: &TokioAgentRuntime, path: &Path) -> ModelToolOutcome {
     let name = ModelToolName::new("shell").unwrap();
-    let declaration = ModelToolDeclaration::shell(ShellToolDeclarationRequest {
+    let declaration = ModelToolDeclaration::from_request(ToolDeclarationRequest {
         name: name.clone(),
         description: "Read the worktree environment".to_owned(),
-        argument: "command".to_owned(),
+        capability: ModelToolCapability::Shell,
+        parameters: vec![
+            ToolParameterSpec::required_string(ToolParameterName::new("command").unwrap(), "")
+                .unwrap(),
+        ],
         timeout_seconds: 5,
         output_limit: 1024,
     })

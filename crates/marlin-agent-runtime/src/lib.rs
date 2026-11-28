@@ -66,8 +66,9 @@ pub use model_tool_catalog::{
     ModelToolCatalog, ModelToolCatalogError, ModelToolHandler, ModelToolOffer, ModelToolOutcome,
 };
 pub use model_tooling::{
-    ModelToolCapability, ModelToolDeclaration, ModelToolGovernance, SearchToolDeclarationRequest,
-    ShellToolDeclarationRequest, ShellToolHandler,
+    ModelToolCapability, ModelToolDeclaration, ModelToolGovernance, ShellToolHandler,
+    ToolDeclarationRequest, ToolParameterName, ToolParameterSpec, ToolParameterSpecRequest,
+    ToolParameterType,
 };
 pub use process::{
     AsyncManagedChildProcess, FileProcessLedgerStore, InMemoryProcessLedgerStore,

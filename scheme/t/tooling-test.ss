@@ -3,14 +3,22 @@
 
 (import (only-in :clan/poo/object .get)
         (only-in :std/string/misc string-contains)
-        (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
+        (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
+        (only-in :marlin-agent-core/tooling/funcs
+                 make-tool-param
+                 make-tool-declaration
+                 project-tool))
 
 (def tooling (.get marlin-agent-core.init.exports Marlin tooling))
 (def declarations ((.get tooling project)))
 (def bash-decl (vector-ref declarations 0))
 (def bash-desc (vector-ref bash-decl 1))
+(def bash-params (vector-ref bash-decl 4))
+(def bash-p0 (vector-ref bash-params 0))
 (def search-decl (vector-ref declarations 1))
 (def search-desc (vector-ref search-decl 1))
+(def search-params (vector-ref search-decl 4))
+(def search-p0 (vector-ref search-params 0))
 (unless (and (eq? (.get tooling identity) 'marlin/tooling)
              (= (vector-length declarations) 2)
              (eq? (vector-ref bash-decl 0) 'bash)
@@ -18,7 +26,13 @@
              (string-contains bash-desc "workspace_search")
              (eq? (vector-ref bash-decl 2) 'shell)
              (eq? (vector-ref bash-decl 3) 'ask)
-             (eq? (vector-ref bash-decl 4) 'command)
+             (vector? bash-params)
+             (= (vector-length bash-params) 1)
+             (eq? (vector-ref bash-p0 0) 'command)
+             (eq? (vector-ref bash-p0 1) 'string)
+             (string? (vector-ref bash-p0 2))
+             (eq? (vector-ref bash-p0 3) #t)
+             (eq? (vector-ref bash-p0 4) #f)
              (= (vector-ref bash-decl 5) 30)
              (= (vector-ref bash-decl 6) 65536)
              ;; Unified 1:1 SearchGateway tool: workspace_search (L0 + L1 + L2)
@@ -43,8 +57,40 @@
              (not (string-contains search-desc "@sym:"))
              (eq? (vector-ref search-decl 2) 'search)
              (eq? (vector-ref search-decl 3) 'ask)
-             (eq? (vector-ref search-decl 4) 'query)
+             (vector? search-params)
+             (= (vector-length search-params) 1)
+             (eq? (vector-ref search-p0 0) 'query)
+             (eq? (vector-ref search-p0 1) 'string)
+             (string? (vector-ref search-p0 2))
+             (eq? (vector-ref search-p0 3) #t)
+             (eq? (vector-ref search-p0 4) #f)
              (= (vector-ref search-decl 5) 15)
              (= (vector-ref search-decl 6) 65536))
   (error "selected tooling declaration changed" declarations))
+
+;; Declarative multi-parameter tool construction & pure Scheme FFI projection
+(def custom-tool
+  (make-tool-declaration
+    name: 'workspace_audit
+    description: "Run a structured multi-parameter workspace audit."
+    capability: 'search
+    parameters:
+    (list (make-tool-param 'query type: 'string description: "Primary query" required?: #t)
+          (make-tool-param 'mode type: 'string description: "Audit mode" required?: #f
+                           enum: '("fast" "deep"))
+          (make-tool-param 'max_hits type: 'integer description: "Result cap" required?: #f)
+          (make-tool-param 'include_tests type: 'boolean description: "Include tests" required?: #f)
+          (make-tool-param 'paths type: 'string-array description: "Scoped paths" required?: #f))
+    timeout-seconds: 20
+    output-bytes: 32768))
+(def custom-proj (project-tool custom-tool))
+(def custom-params (vector-ref custom-proj 4))
+(unless (and (eq? (vector-ref custom-proj 0) 'workspace_audit)
+             (= (vector-length custom-params) 5)
+             (equal? (vector-ref custom-params 0) '#(query string "Primary query" #t #f))
+             (equal? (vector-ref custom-params 1) '#(mode string "Audit mode" #f #("fast" "deep")))
+             (equal? (vector-ref custom-params 2) '#(max_hits integer "Result cap" #f #f))
+             (equal? (vector-ref custom-params 3) '#(include_tests boolean "Include tests" #f #f))
+             (equal? (vector-ref custom-params 4) '#(paths string-array "Scoped paths" #f #f)))
+  (error "multi-parameter tool projection mismatch" custom-proj))
 (displayln "TOOLING-OK")

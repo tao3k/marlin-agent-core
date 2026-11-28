@@ -13,8 +13,9 @@ use std::sync::{OnceLock, mpsc};
 use marlin_agent_protocol::{ModelToolCall, ModelToolCallId, ModelToolName};
 #[cfg(feature = "grpc")]
 use marlin_agent_runtime::{
-    ModelToolDeclaration, ModelToolGovernance, ModelToolOutcome, SearchToolDeclarationRequest,
-    ShellToolDeclarationRequest, TokioAgentRuntime, TokioAgentRuntimeBuildRequest, ToolRuntime,
+    ModelToolDeclaration, ModelToolGovernance, ModelToolOutcome, TokioAgentRuntime,
+    TokioAgentRuntimeBuildRequest, ToolDeclarationRequest, ToolParameterName, ToolParameterSpec,
+    ToolRuntime,
 };
 #[cfg(feature = "grpc")]
 use marlin_agent_search_engine::{
@@ -102,11 +103,54 @@ fn symbol<'a>(runtime: &'a GerbilRuntime, value: &str) -> RootedSchemeObject<'a>
         .unwrap()
 }
 
+fn param_entry<'a>(
+    runtime: &'a GerbilRuntime,
+    name: &str,
+    param_type: &str,
+    description: &str,
+    required: bool,
+    allowed: Option<&[&str]>,
+) -> RootedSchemeObject<'a> {
+    let enum_obj = match allowed {
+        Some(values) => {
+            let items: Vec<_> = values
+                .iter()
+                .map(|v| runtime.string_from_utf8(v).unwrap().into_object())
+                .collect();
+            vector(runtime, &items)
+        }
+        None => runtime.scalar_object(SchemeScalar::Boolean(false)).unwrap(),
+    };
+    vector(
+        runtime,
+        &[
+            symbol(runtime, name),
+            symbol(runtime, param_type),
+            runtime.string_from_utf8(description).unwrap().into_object(),
+            runtime
+                .scalar_object(SchemeScalar::Boolean(required))
+                .unwrap(),
+            enum_obj,
+        ],
+    )
+}
+
 fn declaration<'a>(
     runtime: &'a GerbilRuntime,
     name: &str,
     governance: &str,
 ) -> RootedSchemeObject<'a> {
+    let params = vector(
+        runtime,
+        &[param_entry(
+            runtime,
+            "command",
+            "string",
+            "Shell command",
+            true,
+            None,
+        )],
+    );
     vector(
         runtime,
         &[
@@ -117,7 +161,7 @@ fn declaration<'a>(
                 .into_object(),
             symbol(runtime, "shell"),
             symbol(runtime, governance),
-            symbol(runtime, "command"),
+            params,
             runtime.scalar_object(SchemeScalar::Fixnum(5)).unwrap(),
             runtime.scalar_object(SchemeScalar::Fixnum(1024)).unwrap(),
         ],
@@ -151,6 +195,37 @@ fn native_projection_admits_only_unique_ask_declarations() {
             .is_err()
         );
 
+        let search_params = vector(
+            runtime,
+            &[
+                param_entry(runtime, "query", "string", "Search DSL query", true, None),
+                param_entry(
+                    runtime,
+                    "mode",
+                    "string",
+                    "Optional search mode",
+                    false,
+                    Some(&["fast", "deep"]),
+                ),
+                param_entry(runtime, "max_hits", "integer", "Result cap", false, None),
+                param_entry(
+                    runtime,
+                    "include_tests",
+                    "boolean",
+                    "Include test files",
+                    false,
+                    None,
+                ),
+                param_entry(
+                    runtime,
+                    "paths",
+                    "string-array",
+                    "Scoped paths",
+                    false,
+                    None,
+                ),
+            ],
+        );
         let search_decl = vector(
             runtime,
             &[
@@ -161,7 +236,7 @@ fn native_projection_admits_only_unique_ask_declarations() {
                     .into_object(),
                 symbol(runtime, "search"),
                 symbol(runtime, "ask"),
-                symbol(runtime, "query"),
+                search_params,
                 runtime.scalar_object(SchemeScalar::Fixnum(10)).unwrap(),
                 runtime.scalar_object(SchemeScalar::Fixnum(4096)).unwrap(),
             ],
@@ -169,6 +244,18 @@ fn native_projection_admits_only_unique_ask_declarations() {
         let decoded = decode_tooling(vector(runtime, &[search_decl])).unwrap();
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].capability(), ModelToolCapability::Search);
+        assert_eq!(decoded[0].argument(), "query");
+        assert_eq!(decoded[0].parameters().len(), 5);
+        let schema = decoded[0].definition().parameters;
+        assert_eq!(schema["required"], serde_json::json!(["query"]));
+        assert_eq!(
+            schema["properties"]["mode"]["enum"],
+            serde_json::json!(["fast", "deep"])
+        );
+        assert_eq!(
+            schema["properties"]["paths"]["items"]["type"],
+            serde_json::json!("string")
+        );
         #[cfg(feature = "grpc")]
         {
             let rt = tokio::runtime::Builder::new_multi_thread()
@@ -219,10 +306,14 @@ async fn grpc_search_gateway_executes_symbol_and_graph_queries_with_generation_e
         tmp.path(),
         WorkspaceIndexConfig::default(),
     )));
-    let decl = marlin_agent_runtime::ModelToolDeclaration::search(SearchToolDeclarationRequest {
+    let decl = ModelToolDeclaration::from_request(ToolDeclarationRequest {
         name: ModelToolName::new("workspace_search").unwrap(),
         description: "Resident search tool".into(),
-        argument: "query".into(),
+        capability: ModelToolCapability::Search,
+        parameters: vec![
+            ToolParameterSpec::required_string(ToolParameterName::new("query").unwrap(), "")
+                .unwrap(),
+        ],
         timeout_seconds: 10,
         output_limit: 8192,
     })
@@ -444,18 +535,26 @@ async fn workspace_search_auto_syncs_disk_edits_across_grpc_gateway_and_offer_go
     .unwrap();
 
     let declarations = vec![
-        ModelToolDeclaration::shell(ShellToolDeclarationRequest {
+        ModelToolDeclaration::from_request(ToolDeclarationRequest {
             name: ModelToolName::new("bash").unwrap(),
             description: "bounded shell".into(),
-            argument: "command".into(),
+            capability: ModelToolCapability::Shell,
+            parameters: vec![
+                ToolParameterSpec::required_string(ToolParameterName::new("command").unwrap(), "")
+                    .unwrap(),
+            ],
             timeout_seconds: 10,
             output_limit: 4096,
         })
         .unwrap(),
-        ModelToolDeclaration::search(SearchToolDeclarationRequest {
+        ModelToolDeclaration::from_request(ToolDeclarationRequest {
             name: ModelToolName::new("workspace_search").unwrap(),
             description: "resident search".into(),
-            argument: "query".into(),
+            capability: ModelToolCapability::Search,
+            parameters: vec![
+                ToolParameterSpec::required_string(ToolParameterName::new("query").unwrap(), "")
+                    .unwrap(),
+            ],
             timeout_seconds: 10,
             output_limit: 8192,
         })

@@ -14,11 +14,10 @@ use gerbil_scheme::{
 };
 use marlin_agent_protocol::ModelToolName;
 #[cfg(feature = "grpc")]
+use marlin_agent_runtime::{ModelToolCatalog, ModelToolCatalogError, ModelToolHandler};
 use marlin_agent_runtime::{
-    ModelToolCapability, ModelToolCatalog, ModelToolCatalogError, ModelToolHandler,
-};
-use marlin_agent_runtime::{
-    ModelToolDeclaration, SearchToolDeclarationRequest, ShellToolDeclarationRequest,
+    ModelToolCapability, ModelToolDeclaration, ToolDeclarationRequest, ToolParameterName,
+    ToolParameterSpec, ToolParameterSpecRequest, ToolParameterType,
 };
 use marlin_agent_search_engine::WorkspaceSearchIndex;
 
@@ -77,6 +76,77 @@ fn positive_integer(value: RootedSchemeObject<'_>) -> Result<u64, ToolingProject
     }
 }
 
+fn boolean(value: RootedSchemeObject<'_>) -> Result<bool, ToolingProjectionError> {
+    match native(value.as_ref().scalar())? {
+        SchemeScalar::Boolean(flag) => Ok(flag),
+        _ => Err(ToolingProjectionError::Invalid("expected boolean")),
+    }
+}
+
+fn decode_parameter_type(value: RootedSchemeObject<'_>) -> Result<ToolParameterType, ToolingProjectionError> {
+    match symbol(value)?.as_str() {
+        "string" => Ok(ToolParameterType::String),
+        "integer" => Ok(ToolParameterType::Integer),
+        "boolean" => Ok(ToolParameterType::Boolean),
+        "string-array" => Ok(ToolParameterType::StringArray),
+        _ => Err(ToolingProjectionError::Invalid(
+            "unsupported tool parameter type",
+        )),
+    }
+}
+
+fn decode_enum_values(value: RootedSchemeObject<'_>) -> Result<Vec<String>, ToolingProjectionError> {
+    if matches!(native(value.as_ref().kind())?, ObjectKind::Boolean) {
+        if !boolean(value)? {
+            return Ok(Vec::new());
+        }
+        return Err(ToolingProjectionError::Invalid(
+            "enum slot must be #f or string vector",
+        ));
+    }
+    let items = native(value.into_collection(CollectionKind::Vector))?;
+    if items.len() > 32 {
+        return Err(ToolingProjectionError::Invalid("too many enum values"));
+    }
+    let mut out = Vec::with_capacity(items.len());
+    for index in 0..items.len() {
+        out.push(string(native(items.element(index))?)?);
+    }
+    Ok(out)
+}
+
+fn decode_tool_parameters(
+    value: RootedSchemeObject<'_>,
+) -> Result<Vec<ToolParameterSpec>, ToolingProjectionError> {
+    let params = native(value.into_collection(CollectionKind::Vector))?;
+    if params.is_empty() || params.len() > 16 {
+        return Err(ToolingProjectionError::Invalid("tool parameter count"));
+    }
+    let mut specs = Vec::with_capacity(params.len());
+    for index in 0..params.len() {
+        let entry = native(native(params.element(index))?.into_collection(CollectionKind::Vector))?;
+        if entry.len() != 5 {
+            return Err(ToolingProjectionError::Invalid("tool parameter arity"));
+        }
+        let name = ToolParameterName::new(symbol(native(entry.element(0))?)?)
+            .map_err(ToolingProjectionError::Invalid)?;
+        let param_type = decode_parameter_type(native(entry.element(1))?)?;
+        let description = string(native(entry.element(2))?)?;
+        let required = boolean(native(entry.element(3))?)?;
+        let allowed_values = decode_enum_values(native(entry.element(4))?)?;
+        let spec = ToolParameterSpec::from_request(ToolParameterSpecRequest {
+            name,
+            param_type,
+            description,
+            required,
+            allowed_values,
+        })
+        .map_err(ToolingProjectionError::Invalid)?;
+        specs.push(spec);
+    }
+    Ok(specs)
+}
+
 /// Admit a bounded native value projection without granting execution.
 pub fn decode_tooling(
     value: RootedSchemeObject<'_>,
@@ -108,37 +178,32 @@ fn decode_tool_entry(
         return Err(ToolingProjectionError::Invalid("duplicate tool name"));
     }
     let description = string(native(entry.element(1))?)?;
-    let capability = symbol(native(entry.element(2))?)?;
-    if symbol(native(entry.element(3))?)? != "ask" {
-        return Err(ToolingProjectionError::Invalid("tool must ask"));
-    }
-    let argument = symbol(native(entry.element(4))?)?;
-    let timeout = positive_integer(native(entry.element(5))?)?;
-    let output_limit = positive_integer(native(entry.element(6))?)?;
-    let name = ModelToolName::new(name).map_err(ToolingProjectionError::Invalid)?;
-    let output_limit = usize::try_from(output_limit)
-        .map_err(|_| ToolingProjectionError::Invalid("output limit overflow"))?;
-    match capability.as_str() {
-        "shell" => ModelToolDeclaration::shell(ShellToolDeclarationRequest {
-            name,
-            description,
-            argument,
-            timeout_seconds: timeout,
-            output_limit,
-        }),
-        "search" => ModelToolDeclaration::search(SearchToolDeclarationRequest {
-            name,
-            description,
-            argument,
-            timeout_seconds: timeout,
-            output_limit,
-        }),
+    let capability = match symbol(native(entry.element(2))?)?.as_str() {
+        "shell" => ModelToolCapability::Shell,
+        "search" => ModelToolCapability::Search,
         _ => {
             return Err(ToolingProjectionError::Invalid(
                 "unsupported tool capability",
             ));
         }
+    };
+    if symbol(native(entry.element(3))?)? != "ask" {
+        return Err(ToolingProjectionError::Invalid("tool must ask"));
     }
+    let parameters = decode_tool_parameters(native(entry.element(4))?)?;
+    let timeout_seconds = positive_integer(native(entry.element(5))?)?;
+    let output_limit = positive_integer(native(entry.element(6))?)?;
+    let name = ModelToolName::new(name).map_err(ToolingProjectionError::Invalid)?;
+    let output_limit = usize::try_from(output_limit)
+        .map_err(|_| ToolingProjectionError::Invalid("output limit overflow"))?;
+    ModelToolDeclaration::from_request(ToolDeclarationRequest {
+        name,
+        description,
+        capability,
+        parameters,
+        timeout_seconds,
+        output_limit,
+    })
     .map_err(ToolingProjectionError::Invalid)
 }
 

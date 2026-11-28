@@ -11,8 +11,9 @@ use std::sync::{Arc, RwLock};
 
 use marlin_agent_protocol::{ModelToolCall, ModelToolCallId, ModelToolName};
 use marlin_agent_runtime::{
-    ModelToolDeclaration, ModelToolOutcome, SearchToolDeclarationRequest, TokioAgentRuntime,
-    TokioAgentRuntimeBuildRequest, ToolRuntime,
+    ModelToolCapability, ModelToolDeclaration, ModelToolOutcome, TokioAgentRuntime,
+    TokioAgentRuntimeBuildRequest, ToolDeclarationRequest, ToolParameterName, ToolParameterSpec,
+    ToolRuntime,
 };
 use marlin_agent_search_engine::{
     SearchDslSessionId, SearchDslSessionRunner, SearchPlanProjectionError, WorkspaceEdbEntityFact,
@@ -91,10 +92,14 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
         edges: Vec::new(),
     });
 
-    let declaration = ModelToolDeclaration::search(SearchToolDeclarationRequest {
+    let declaration = ModelToolDeclaration::from_request(ToolDeclarationRequest {
         name: ModelToolName::new("workspace_search").expect("name"),
         description: "search".to_owned(),
-        argument: "query".to_owned(),
+        capability: ModelToolCapability::Search,
+        parameters: vec![
+            ToolParameterSpec::required_string(ToolParameterName::new("query").expect("param"), "")
+                .expect("spec"),
+        ],
         timeout_seconds: 10,
         output_limit: 16_384,
     })
