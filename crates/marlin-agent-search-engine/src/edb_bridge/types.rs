@@ -398,18 +398,6 @@ pub struct SearchDslLinkedExports {
     pub register_provider_descriptor: unsafe extern "C" fn(i64) -> i64,
 }
 
-/// Host-supplied runner executing a native `:gerbil-ascent` query against a
-/// shared resident [`WorkspaceSearchIndex`] and returning formatted evidence.
-pub type SearchDslRunner = Arc<
-    dyn Fn(
-            Arc<RwLock<WorkspaceSearchIndex>>,
-            &str,
-            usize,
-        ) -> Result<String, SearchPlanProjectionError>
-        + Send
-        + Sync,
->;
-
 /// Host-supplied runner returning structured [`SearchDslStructuredResult`] rows
 /// for interactive Helm navigation, preview, and Embark dispatch.
 pub type SearchDslStructuredRunner = Arc<

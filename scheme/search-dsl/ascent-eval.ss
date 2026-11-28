@@ -289,11 +289,86 @@
       (and (>= (string-length needle-norm) 3)
            (string-contains ident-norm needle-norm))))
 
+;;; Canonicalize and deduplicate needles by normalized identifier key so case
+;;; or punctuation duplicates (e.g. "cedar" + "Cedar", "bitemporal" + "bi-temporal")
+;;; never double-count hits and starve distinct needles.
+(def (dedup-needle-specs needles)
+  (let ((seen (make-hash-table))
+        (ordered '()))
+    (for-each
+      (lambda (n)
+        (let* ((nlc (string-downcase n))
+               (nnorm (normalize-ident-key n))
+               (key (if (>= (string-length nnorm) 3) nnorm nlc)))
+          (unless (hash-get seen key)
+            (hash-put! seen key #t)
+            (set! ordered (cons (cons nlc nnorm) ordered)))))
+      needles)
+    (reverse ordered)))
+
+;;; Extract the top-two-segment directory niche (e.g. "crates/marlin-agent-kernel",
+;;; "scheme/policy") so polyglot queries preserve representation across every
+;;; matching subsystem instead of letting one high-density file monopolize `limit`.
+(def (path-dir-niche path-str)
+  (let ((len (string-length path-str)))
+    (let loop ((i 0) (slashes 0))
+      (cond
+        ((>= i len) path-str)
+        ((char=? (string-ref path-str i) #\/)
+         (if (= slashes 1)
+           (substring path-str 0 i)
+           (loop (+ i 1) (+ slashes 1))))
+        (else (loop (+ i 1) slashes))))))
+
+;;; Round-robin across score-ordered directory niches while capping repeated
+;;; identical symbol names to 3 slots (deferring overflow to fill remaining room).
+(def (round-robin-by-dir-niche rows limit per-name)
+  (let ((buckets (make-hash-table))
+        (order '()))
+    (for-each
+      (lambda (row)
+        (let* ((niche (path-dir-niche (cadr row)))
+               (prev (hash-get buckets niche)))
+          (if prev
+            (hash-put! buckets niche (cons row prev))
+            (begin
+              (hash-put! buckets niche (list row))
+              (set! order (cons niche order))))))
+      rows)
+    (let ((queues (map (lambda (k) (reverse (hash-ref buckets k))) (reverse order))))
+      (let loop ((cur queues) (next '()) (rem limit) (acc '()) (overflow '()))
+        (cond
+          ((<= rem 0) (reverse acc))
+          ((null? cur)
+           (if (null? next)
+             (append (reverse acc) (take-rows-up-to (reverse overflow) rem))
+             (loop (reverse next) '() rem acc overflow)))
+          (else
+           (let* ((q (car cur))
+                  (row (car q))
+                  (tail (cdr q))
+                  (nm (car row))
+                  (cnt (or (hash-get per-name nm) 0)))
+             (if (< cnt 3)
+               (begin
+                 (hash-put! per-name nm (+ cnt 1))
+                 (loop (cdr cur)
+                       (if (pair? tail) (cons tail next) next)
+                       (- rem 1)
+                       (cons row acc)
+                       overflow))
+               (loop (cdr cur)
+                     (if (pair? tail) (cons tail next) next)
+                     rem
+                     acc
+                     (cons row overflow))))))))))
+
 ;;; Rank 3-column `(name path line)` symbol locator rows by:
 ;;;   1. production paths ahead of test paths
-;;;   2. multi-needle match count + IDF specificity (rare needles crush ubiquitous stems)
+;;;   2. deduplicated multi-needle match count + IDF specificity
 ;;;   3. path+name synergy (path also contains a matched needle) + concise non-boilerplate names
-;;; while capping any single repeated symbol name to 3 slots before round-robin diversity.
+;;;   4. score-ordered directory-niche round-robin so polyglot subsystems (e.g. `scheme/policy`
+;;;      and `crates/marlin-agent-kernel`) all surface before one dense file fills `limit`.
 (def (rank-symbol-locator-rows rows limit needles)
   (if (or (null? needles) (null? rows))
     (let* ((prod-rows (filter (lambda (r) (not (path-is-test-file? (cadr r)))) rows))
@@ -303,8 +378,7 @@
       (if (or (<= rem 0) (null? test-rows))
         picked-prod
         (append picked-prod (round-robin-diverse-by-key test-rows rem))))
-    (let* ((needle-specs
-             (map (lambda (n) (cons (string-downcase n) (normalize-ident-key n))) needles))
+    (let* ((needle-specs (dedup-needle-specs needles))
            (df-table (make-hash-table))
            (_ (for-each
                 (lambda (row)
@@ -360,21 +434,14 @@
                      ((< as bs) #f)
                      (else (string<? (car (car a)) (car (car b)))))))
                scored))
-           (per-name (make-hash-table)))
-      (let loop ((rest sorted) (rem limit) (acc '()) (overflow '()))
-        (cond
-          ((<= rem 0) (reverse acc))
-          ((null? rest)
-           (append (reverse acc) (take-rows-up-to (reverse overflow) rem)))
-          (else
-           (let* ((row (car (car rest)))
-                  (nm (car row))
-                  (cnt (or (hash-get per-name nm) 0)))
-             (if (< cnt 3)
-               (begin
-                 (hash-put! per-name nm (+ cnt 1))
-                 (loop (cdr rest) (- rem 1) (cons row acc) overflow))
-               (loop (cdr rest) rem acc (cons row overflow))))))))))
+           (prod-rows (map car (filter cadr sorted)))
+           (test-rows (map car (filter (lambda (x) (not (cadr x))) sorted)))
+           (per-name (make-hash-table))
+           (picked-prod (round-robin-by-dir-niche prod-rows limit per-name))
+           (rem (- limit (length picked-prod))))
+      (if (or (<= rem 0) (null? test-rows))
+        picked-prod
+        (append picked-prod (round-robin-by-dir-niche test-rows rem per-name))))))
 
 ;;; Anti-mode-collapse Quality-Diversity / MAP-Elites niche round-robin selector:
 ;;; - For 6-column typed collision pairs `(kind name p1 l1 p2 l2)`, partitions

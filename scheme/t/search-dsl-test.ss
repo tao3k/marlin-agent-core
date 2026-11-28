@@ -1428,4 +1428,36 @@
         (check (and (member '("run_search_tool" "crates/tooling/src/handler.rs" 30) rows)
                     (member '("<ref>" "crates/harness/src/eval.rs" 44) rows)
                     #t)
+               => #t)))
+
+    (test-case "Polyglot find-symbols deduplicates case/hyphen needles and preserves directory-niche diversity"
+      (let* ((edb
+               '((file
+                   (1 "rust" "crates/kernel/src/governance_cedar.rs")
+                   (2 "scheme" "scheme/policy/governance.ss")
+                   (3 "scheme" "scheme/agent-testing/trajectory.ss"))
+                 (entity
+                   ("e1" 1 "rust" "function" "fn_item" "compile_cedar_policy" 10)
+                   ("e2" 1 "rust" "function" "fn_item" "parse_cedar_stmt" 20)
+                   ("e3" 1 "rust" "function" "fn_item" "parse_cedar_expr" 30)
+                   ("e4" 1 "rust" "function" "fn_item" "parse_cedar_clause" 40)
+                   ("e5" 1 "rust" "function" "fn_item" "parse_cedar_scope" 50)
+                   ("e6" 1 "rust" "function" "fn_item" "parse_cedar_ident" 60)
+                   ("e7" 2 "scheme" "function" "def" "evaluate-temporal-causal-governance" 488)
+                   ("e8" 3 "scheme" "function" "def" "verify-testing-trajectory" 75))
+                 (edge)
+                 (attr)
+                 (symbol_ref)))
+             (res
+               (evaluate-search-dsl-over-edb
+                 "(find-symbols name-contains: (\"cedar\" \"Cedar\" \"policy\" \"governance\" \"trajectory\" \"bitemporal\" \"bi-temporal\") lang: \"any\" limit: 4)"
+                 edb SearchLanguageRegistryValue))
+             (names (map car (vector-ref res 3))))
+        ;; Case-variant duplicates ("cedar" + "Cedar") must NOT double-count hits to starve
+        ;; Scheme subsystems: all 3 directory niches surface within `limit: 4`!
+        (check (length names) => 4)
+        (check (and (member "compile_cedar_policy" names)
+                    (member "evaluate-temporal-causal-governance" names)
+                    (member "verify-testing-trajectory" names)
+                    #t)
                => #t)))))

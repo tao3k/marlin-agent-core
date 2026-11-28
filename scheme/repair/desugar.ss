@@ -367,7 +367,7 @@
           'missing_callee_name
           "(find-callers ...) requires a target function name string"
           "(find-callers \"target_fn\" path-prefix: \"crates/\" exclude-tests?: #t limit: 40)"
-          "(find-callers \"execute_package_search_dsl\" path-prefix: \"crates/\")"))
+          "(find-callers \"execute_package_search_dsl_session_structured\" path-prefix: \"crates/\")"))
       `(ascent-fragment
          ,@(build-scope-clause prefix)
          (limit ,lim)

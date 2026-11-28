@@ -21,7 +21,7 @@ use super::codec::{
 };
 use super::types::{OwnedWorkspaceEdbPrefilter, SearchDslDecodeContext};
 use super::{
-    SearchDslCompletionEntry, SearchDslExecutionRequest, SearchDslLinkedExports, SearchDslRunner,
+    SearchDslCompletionEntry, SearchDslExecutionRequest, SearchDslLinkedExports,
     SearchDslSessionExecutionRequest, SearchDslSessionId, SearchDslSessionRunner,
     SearchDslStructuredResult, SearchDslStructuredRunner,
 };
@@ -175,19 +175,6 @@ unsafe fn execute_linked_search_dsl_opt_session(
     )
 }
 
-/// Execute a native `:gerbil-ascent` query through AOT-linked C-ABI exports
-/// over a resident [`WorkspaceSearchIndex`].
-///
-/// # Safety
-/// `exports` must originate from `runtime`'s live Marlin programme.
-pub unsafe fn execute_linked_search_dsl(
-    runtime: &GerbilRuntime,
-    exports: SearchDslLinkedExports,
-    request: &SearchDslExecutionRequest<'_>,
-) -> Result<String, SearchPlanProjectionError> {
-    Ok(unsafe { execute_linked_search_dsl_structured(runtime, exports, request) }?.rendered_text)
-}
-
 /// Project context-aware Helm TAB completion rows through an AOT-linked
 /// `marlin_search_dsl_completions` export.
 ///
@@ -316,17 +303,6 @@ pub fn execute_package_search_dsl_session_structured(
     )
 }
 
-/// Execute a native `:gerbil-ascent` query by resolving
-/// `:marlin-agent-core/c-abi/search-dsl` from a compiled Gerbil package tree.
-#[cfg(not(feature = "linked-ui"))]
-pub fn execute_package_search_dsl(
-    runtime: &GerbilRuntime,
-    scheme_dir: &str,
-    request: &SearchDslExecutionRequest<'_>,
-) -> Result<String, SearchPlanProjectionError> {
-    Ok(execute_package_search_dsl_structured(runtime, scheme_dir, request)?.rendered_text)
-}
-
 /// Project context-aware Helm TAB completion rows from a compiled package directory.
 #[cfg(not(feature = "linked-ui"))]
 pub fn project_package_search_dsl_completions(
@@ -344,20 +320,6 @@ pub fn project_package_search_dsl_completions(
     let prefix_obj = make_string(runtime, prefix)?;
     let rows = native(runtime.call_rooted(&comp_fn, &prefix_obj))?;
     decode_search_dsl_completions(rows)
-}
-
-/// Return the default package-backed [`SearchDslRunner`] when `linked-ui` is not
-/// active, or `None` under AOT `linked-ui` (where the host attaches the linked runner).
-#[must_use]
-pub fn default_search_dsl_runner() -> Option<SearchDslRunner> {
-    #[cfg(not(feature = "linked-ui"))]
-    {
-        Some(default_package_search_dsl_runner())
-    }
-    #[cfg(feature = "linked-ui")]
-    {
-        None
-    }
 }
 
 /// Return the default package-backed [`SearchDslStructuredRunner`] when `linked-ui`
@@ -535,16 +497,5 @@ pub fn default_package_search_dsl_structured_runner() -> SearchDslStructuredRunn
 pub fn default_package_search_dsl_session_runner() -> SearchDslSessionRunner {
     Arc::new(|shared_index, query, output_limit, session_id| {
         dispatch_package_dsl_job(shared_index, query, output_limit, Some(session_id.clone()))
-    })
-}
-
-/// Build a default [`SearchDslRunner`] backed by a dedicated thread-affine
-/// [`GerbilRuntime`] worker and the compiled Marlin Scheme package when
-/// `linked-ui` is not active.
-#[cfg(not(feature = "linked-ui"))]
-#[must_use]
-pub fn default_package_search_dsl_runner() -> SearchDslRunner {
-    Arc::new(|shared_index, query, output_limit| {
-        Ok(dispatch_package_dsl_job(shared_index, query, output_limit, None)?.rendered_text)
     })
 }

@@ -31,7 +31,7 @@
                  ("crates/marlin-agent-search-engine/src/edb_bridge/types.rs"
                   "crates/marlin-agent-search-engine/src/edb_bridge/runner.rs"))
                 ("marlin-agent-tooling consumer"
-                 ("crates/marlin-agent-tooling/src/search_tool.rs"
+                 ("crates/marlin-agent-tooling/src/grpc_search/service.rs"
                   "marlin-agent-tooling"))
                 ("marlin-agent-tui consumer"
                  ("crates/marlin-agent-tui/src/helm/overlay.rs"
