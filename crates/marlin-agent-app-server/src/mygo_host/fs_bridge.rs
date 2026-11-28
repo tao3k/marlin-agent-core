@@ -2,17 +2,18 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! High-performance Rust-owned filesystem projection (`fs:ls`, `fs:project-files`,
-//! `fs:read`) over native HTTP/2 gRPC (`ProjectionQueryService::QueryProjectGraph`).
+//! High-performance Rust-owned filesystem, live grep, and project discovery
+//! projection (`fs:ls`, `fs:project-files`, `fs:grep`, `fs:projects`, `fs:read`)
+//! over native HTTP/2 gRPC (`ProjectionQueryService::QueryProjectGraph`).
 //!
 //! Serves both local sidecar and remote Marlin Authority Host workspaces uniformly
-//! over typed protobuf streams (no legacy SSH/TRAMP shell scraping), backed by
-//! VCS-native (`git ls-files -z`) project indexing, TTL caching, and server-side
-//! zero-allocation Orderless filtering.
+//! over typed protobuf streams, backed by VCS-native (`git ls-files -z`) project
+//! indexing, TTL caches, pre-lowercased SIMD Orderless filtering, and native `rg`
+//! live project grep (`consult-ripgrep`).
 
 use std::{
     cmp::Ordering,
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -25,8 +26,10 @@ use crate::wire::marlin::projection::v1::{GraphRecordView, GraphVisibleSurface};
 const MAX_DIR_ENTRIES: usize = 512;
 const MAX_PROJECT_FILES: usize = 8192;
 const MAX_SERVER_FILTER_RESULTS: usize = 256;
+const MAX_GREP_HITS: usize = 200;
 const MAX_READ_BYTES: usize = 256 * 1024;
 const PROJECT_INDEX_TTL: Duration = Duration::from_secs(5);
+const KNOWN_PROJECTS_TTL: Duration = Duration::from_secs(15);
 
 const IGNORED_DIRS: &[&str] = &[
     ".git",
@@ -45,6 +48,7 @@ const IGNORED_DIRS: &[&str] = &[
 #[derive(Clone, Debug)]
 struct IndexedProjectFile {
     rel_path: String,
+    rel_lower: String,
     abs_path: String,
 }
 
@@ -54,14 +58,33 @@ struct CachedProjectIndex {
     files: Arc<Vec<IndexedProjectFile>>,
 }
 
+#[derive(Clone, Debug)]
+struct DiscoveredProject {
+    name: String,
+    path: String,
+    vcs: &'static str,
+}
+
+#[derive(Clone)]
+struct CachedProjectList {
+    built_at: Instant,
+    projects: Arc<Vec<DiscoveredProject>>,
+}
+
 static PROJECT_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedProjectIndex>>> = OnceLock::new();
+static KNOWN_PROJECTS_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedProjectList>>> = OnceLock::new();
 
 fn project_cache() -> &'static Mutex<HashMap<PathBuf, CachedProjectIndex>> {
     PROJECT_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Handles `fs:ls[@dir]`, `fs:project-files[!][@root][?q=<orderless>]`, and
-/// `fs:read@<path>` queries against the live host filesystem rooted at `default_root`.
+fn known_projects_cache() -> &'static Mutex<HashMap<PathBuf, CachedProjectList>> {
+    KNOWN_PROJECTS_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Handles `fs:ls[@dir]`, `fs:project-files[!][@root][?q=<orderless>]`,
+/// `fs:grep[@root]?q=<pattern>`, `fs:projects[@root]`, and `fs:read@<path>`
+/// queries against the live host filesystem rooted at `default_root`.
 pub fn query_fs_records(
     query: &str,
     default_root: &Path,
@@ -87,6 +110,22 @@ pub fn query_fs_records(
             force_refresh,
             filter_query.filter(|s| !s.is_empty()),
         ));
+    }
+    if let Some(rest) = q.strip_prefix("fs:grep") {
+        let (root_part, pattern) = match rest.split_once("?q=") {
+            Some((r, pat)) => (r, pat.trim()),
+            None => (rest, ""),
+        };
+        let arg = root_part.strip_prefix('@').map(str::trim).unwrap_or("");
+        return Some(grep_project_records(arg, default_root, pattern));
+    }
+    if let Some(rest) = q.strip_prefix("fs:projects") {
+        let (force_refresh, after_bang) = match rest.strip_prefix('!') {
+            Some(r) => (true, r),
+            None => (false, rest),
+        };
+        let arg = after_bang.strip_prefix('@').map(str::trim).unwrap_or("");
+        return Some(list_known_project_records(arg, default_root, force_refresh));
     }
     if let Some(path_arg) = q.strip_prefix("fs:read@") {
         return Some(read_file_record(path_arg.trim(), default_root));
@@ -134,6 +173,17 @@ fn discover_project_root(start: &Path) -> PathBuf {
             Some(p) if p != cur => cur = p,
             _ => return base,
         }
+    }
+}
+
+fn detect_vcs_kind(dir: &Path) -> Option<&'static str> {
+    let has_git = dir.join(".git").exists();
+    let has_jj = dir.join(".jj").is_dir();
+    match (has_jj, has_git) {
+        (true, true) => Some("jj+git"),
+        (true, false) => Some("jj"),
+        (false, true) => Some("git"),
+        (false, false) => None,
     }
 }
 
@@ -287,9 +337,11 @@ fn scan_project_files_git(root: &Path) -> Option<Vec<IndexedProjectFile>> {
             continue;
         }
         let rel = String::from_utf8_lossy(raw).into_owned();
+        let rel_lower = rel.to_lowercase();
         let abs = format!("{root_prefix}{rel}");
         files.push(IndexedProjectFile {
             rel_path: rel,
+            rel_lower,
             abs_path: abs,
         });
         if files.len() >= MAX_PROJECT_FILES {
@@ -329,8 +381,10 @@ fn scan_project_files_walk(root: &Path) -> Vec<IndexedProjectFile> {
                     .unwrap_or(&path)
                     .to_string_lossy()
                     .replace('\\', "/");
+                let rel_lower = rel.to_lowercase();
                 collected.push(IndexedProjectFile {
                     rel_path: rel,
+                    rel_lower,
                     abs_path: path.display().to_string(),
                 });
                 if collected.len() >= MAX_PROJECT_FILES {
@@ -370,67 +424,24 @@ fn load_or_refresh_project_index(root: &Path, force_refresh: bool) -> Arc<Vec<In
     arc
 }
 
-/// Zero-allocation ASCII case-insensitive substring search (needle must be lowercase ASCII).
-#[inline]
-fn contains_fold_ascii(haystack: &str, needle_lower: &str) -> bool {
-    let hb = haystack.as_bytes();
-    let nb = needle_lower.as_bytes();
-    let n = nb.len();
-    if n == 0 {
-        return true;
-    }
-    if hb.len() < n {
-        return false;
-    }
-    let c0 = nb[0];
-    let c0_upper = c0.to_ascii_uppercase();
-    let limit = hb.len() - n;
-    for i in 0..=limit {
-        let b = hb[i];
-        if b != c0 && b != c0_upper {
-            continue;
-        }
-        let mut j = 1;
-        while j < n && hb[i + j].to_ascii_lowercase() == nb[j] {
-            j += 1;
-        }
-        if j == n {
-            return true;
-        }
-    }
-    false
-}
-
-#[inline]
-fn starts_with_fold_ascii(haystack: &str, needle_lower: &str) -> bool {
-    let hb = haystack.as_bytes();
-    let nb = needle_lower.as_bytes();
-    if hb.len() < nb.len() {
-        return false;
-    }
-    hb[..nb.len()]
-        .iter()
-        .zip(nb.iter())
-        .all(|(&a, &b)| a.to_ascii_lowercase() == b)
-}
-
-/// Server-side Rust Orderless filter over the cached project index (supports
-/// multi-token out-of-order matching, `!neg` exclusion, and prefix-first ranking).
+/// Server-side Rust Orderless filter over the pre-lowercased project index using
+/// Rust stdlib's SIMD/Two-Way `str::contains` (supports out-of-order tokens,
+/// `!neg` exclusion, and prefix-first ranking with zero per-item allocations).
 fn filter_project_files_orderless<'a>(
     files: &'a [IndexedProjectFile],
     query: &str,
     limit: usize,
 ) -> Vec<&'a IndexedProjectFile> {
     let q_lower = query.trim().to_lowercase();
-    let tokens: Vec<(bool, &str, bool)> = q_lower
+    let tokens: Vec<(bool, &str)> = q_lower
         .split_whitespace()
         .map(|raw| {
             if let Some(neg) = raw.strip_prefix('!')
                 && !neg.is_empty()
             {
-                (true, neg, neg.is_ascii())
+                (true, neg)
             } else {
-                (false, raw, raw.is_ascii())
+                (false, raw)
             }
         })
         .collect();
@@ -442,12 +453,8 @@ fn filter_project_files_orderless<'a>(
     for f in files {
         let mut matched = true;
         let mut has_prefix = false;
-        for &(neg, tok, ascii) in &tokens {
-            let hit = if ascii {
-                contains_fold_ascii(&f.rel_path, tok)
-            } else {
-                f.rel_path.to_lowercase().contains(tok)
-            };
+        for &(neg, tok) in &tokens {
+            let hit = f.rel_lower.contains(tok);
             if neg {
                 if hit {
                     matched = false;
@@ -456,7 +463,7 @@ fn filter_project_files_orderless<'a>(
             } else if !hit {
                 matched = false;
                 break;
-            } else if ascii && starts_with_fold_ascii(&f.rel_path, tok) {
+            } else if f.rel_lower.starts_with(tok) {
                 has_prefix = true;
             }
         }
@@ -524,6 +531,271 @@ fn list_project_file_records(
         });
     }
 
+    Ok(records)
+}
+
+/// Live Doom Emacs `consult-ripgrep` (`fs:grep[@root]?q=<pattern>`) executed
+/// natively in Rust via `rg --vimgrep` (respecting `.gitignore` + smart-case),
+/// with an automatic pure-Rust fallback over the cached project index.
+fn grep_project_records(
+    raw_root: &str,
+    default_root: &Path,
+    pattern: &str,
+) -> Result<Vec<GraphRecordView>, String> {
+    let base = resolve_path(raw_root, default_root);
+    let root = discover_project_root(&base);
+
+    let mut meta_facets = HashMap::with_capacity(2);
+    meta_facets.insert("root".to_owned(), root.display().to_string());
+    meta_facets.insert("query".to_owned(), pattern.to_owned());
+
+    let mut records = vec![GraphRecordView {
+        record_id: "fs.grep_meta".to_owned(),
+        surface: GraphVisibleSurface::Workspace as i32,
+        kind: "fs.grep_meta".to_owned(),
+        title: root.display().to_string(),
+        summary: format!("consult-ripgrep: {pattern}"),
+        source_path: Some(root.display().to_string()),
+        start_line: None,
+        end_line: None,
+        facets: meta_facets,
+    }];
+
+    if pattern.is_empty() {
+        return Ok(records);
+    }
+
+    let root_prefix = {
+        let s = root.to_string_lossy();
+        format!("{}/", s.trim_end_matches('/'))
+    };
+
+    if let Some(hits) = run_ripgrep(&root, pattern) {
+        for (idx, (rel, line, col, snippet)) in hits.into_iter().take(MAX_GREP_HITS).enumerate() {
+            let abs = format!("{root_prefix}{rel}");
+            let mut facets = HashMap::with_capacity(5);
+            facets.insert("rel_path".to_owned(), rel.clone());
+            facets.insert("path".to_owned(), abs.clone());
+            facets.insert("line".to_owned(), line.to_string());
+            facets.insert("col".to_owned(), col.to_string());
+            facets.insert("snippet".to_owned(), snippet.clone());
+            records.push(GraphRecordView {
+                record_id: format!("fs.grep:{idx}:{rel}:{line}"),
+                surface: GraphVisibleSurface::Workspace as i32,
+                kind: "fs.grep_hit".to_owned(),
+                title: format!("{rel}:{line}"),
+                summary: snippet,
+                source_path: Some(abs),
+                start_line: Some(line),
+                end_line: Some(line),
+                facets,
+            });
+        }
+        return Ok(records);
+    }
+
+    // Pure-Rust fallback over cached VCS project index when `rg` is not on PATH.
+    let needle = pattern.to_lowercase();
+    let indexed = load_or_refresh_project_index(&root, false);
+    let mut hit_idx = 0usize;
+    'outer: for item in indexed.iter() {
+        let Ok(bytes) = fs::read(&item.abs_path) else {
+            continue;
+        };
+        if bytes.len() > MAX_READ_BYTES || bytes.iter().take(2048).any(|&b| b == 0) {
+            continue;
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        for (ln0, line_text) in text.lines().enumerate() {
+            if line_text.to_lowercase().contains(&needle) {
+                let line_num = (ln0 + 1) as u32;
+                let snippet = trim_snippet(line_text, 200);
+                let mut facets = HashMap::with_capacity(5);
+                facets.insert("rel_path".to_owned(), item.rel_path.clone());
+                facets.insert("path".to_owned(), item.abs_path.clone());
+                facets.insert("line".to_owned(), line_num.to_string());
+                facets.insert("col".to_owned(), "1".to_owned());
+                facets.insert("snippet".to_owned(), snippet.clone());
+                records.push(GraphRecordView {
+                    record_id: format!("fs.grep:{hit_idx}:{}:{line_num}", item.rel_path),
+                    surface: GraphVisibleSurface::Workspace as i32,
+                    kind: "fs.grep_hit".to_owned(),
+                    title: format!("{}:{line_num}", item.rel_path),
+                    summary: snippet,
+                    source_path: Some(item.abs_path.clone()),
+                    start_line: Some(line_num),
+                    end_line: Some(line_num),
+                    facets,
+                });
+                hit_idx += 1;
+                if hit_idx >= MAX_GREP_HITS {
+                    break 'outer;
+                }
+            }
+        }
+    }
+    Ok(records)
+}
+
+fn run_ripgrep(root: &Path, pattern: &str) -> Option<Vec<(String, u32, u32, String)>> {
+    let output = Command::new("rg")
+        .current_dir(root)
+        .args([
+            "--vimgrep",
+            "--no-heading",
+            "--color=never",
+            "--smart-case",
+            "--fixed-strings",
+            "--max-columns=240",
+            "--max-count=32",
+            "--",
+            pattern,
+        ])
+        .output()
+        .ok()?;
+    // rg exits 0 (matches), 1 (no matches), 2 (error).
+    if output.status.code() == Some(2) {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut hits = Vec::new();
+    for line in stdout.lines() {
+        let mut parts = line.splitn(4, ':');
+        let Some(rel) = parts.next() else { continue };
+        let Some(line_s) = parts.next() else { continue };
+        let Some(col_s) = parts.next() else { continue };
+        let Some(text) = parts.next() else { continue };
+        let Ok(line_num) = line_s.parse::<u32>() else {
+            continue;
+        };
+        let col_num = col_s.parse::<u32>().unwrap_or(1);
+        hits.push((
+            rel.replace('\\', "/"),
+            line_num,
+            col_num,
+            trim_snippet(text, 200),
+        ));
+        if hits.len() >= MAX_GREP_HITS {
+            break;
+        }
+    }
+    Some(hits)
+}
+
+fn trim_snippet(s: &str, max_chars: usize) -> String {
+    let trimmed = s.trim();
+    if trimmed.chars().count() <= max_chars {
+        trimmed.to_owned()
+    } else {
+        let mut out: String = trimmed.chars().take(max_chars).collect();
+        out.push('…');
+        out
+    }
+}
+
+/// Discovers real Git/jj repositories around `default_root` (active repo, nested
+/// `.data/*` / `packages/*` repos, and sibling repos in `parent`) for Doom Emacs
+/// `project-switch-project` (`SPC p p` / `C-c p p`).
+fn discover_known_projects(anchor: &Path, force_refresh: bool) -> Arc<Vec<DiscoveredProject>> {
+    if !force_refresh
+        && let Ok(guard) = known_projects_cache().lock()
+        && let Some(cached) = guard.get(anchor)
+        && cached.built_at.elapsed() < KNOWN_PROJECTS_TTL
+    {
+        return Arc::clone(&cached.projects);
+    }
+
+    let mut found: BTreeMap<String, DiscoveredProject> = BTreeMap::new();
+    let mut record_if_repo = |dir: &Path| {
+        let canon = canonical_or_self(dir);
+        if let Some(vcs) = detect_vcs_kind(&canon) {
+            let path_str = canon.display().to_string();
+            let name = canon
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path_str.clone());
+            found.entry(path_str.clone()).or_insert(DiscoveredProject {
+                name,
+                path: path_str,
+                vcs,
+            });
+        }
+    };
+
+    let active_root = discover_project_root(anchor);
+    record_if_repo(&active_root);
+
+    // Inspect nested companion repos (e.g. `.data/marlin-ui`, `.data/marlin-mygo`, `packages/*`).
+    for nested in [".data", "packages", "repos"] {
+        let sub = active_root.join(nested);
+        if let Ok(rd) = fs::read_dir(&sub) {
+            for entry in rd.flatten() {
+                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    record_if_repo(&entry.path());
+                }
+            }
+        }
+    }
+
+    // Inspect sibling repos in parent directory (e.g. `~/ghq/github.com/tao3k/*`).
+    if let Some(parent) = active_root.parent()
+        && let Ok(rd) = fs::read_dir(parent)
+    {
+        for entry in rd.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                record_if_repo(&entry.path());
+            }
+        }
+    }
+
+    let active_str = active_root.display().to_string();
+    let mut list: Vec<DiscoveredProject> = found.into_values().collect();
+    list.sort_by(|a, b| {
+        let a_active = a.path == active_str;
+        let b_active = b.path == active_str;
+        b_active
+            .cmp(&a_active)
+            .then_with(|| cmp_ignore_ascii_case(&a.name, &b.name))
+    });
+
+    let arc = Arc::new(list);
+    if let Ok(mut guard) = known_projects_cache().lock() {
+        guard.insert(
+            anchor.to_path_buf(),
+            CachedProjectList {
+                built_at: Instant::now(),
+                projects: Arc::clone(&arc),
+            },
+        );
+    }
+    arc
+}
+
+fn list_known_project_records(
+    raw_root: &str,
+    default_root: &Path,
+    force_refresh: bool,
+) -> Result<Vec<GraphRecordView>, String> {
+    let base = resolve_path(raw_root, default_root);
+    let projects = discover_known_projects(&base, force_refresh);
+    let mut records = Vec::with_capacity(projects.len());
+    for proj in projects.iter() {
+        let mut facets = HashMap::with_capacity(3);
+        facets.insert("name".to_owned(), proj.name.clone());
+        facets.insert("path".to_owned(), proj.path.clone());
+        facets.insert("vcs".to_owned(), proj.vcs.to_owned());
+        records.push(GraphRecordView {
+            record_id: format!("fs.project:{}", proj.path),
+            surface: GraphVisibleSurface::Workspace as i32,
+            kind: "fs.project".to_owned(),
+            title: proj.name.clone(),
+            summary: proj.vcs.to_owned(),
+            source_path: Some(proj.path.clone()),
+            start_line: None,
+            end_line: None,
+            facets,
+        });
+    }
     Ok(records)
 }
 
@@ -596,7 +868,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fs_bridge_workspace_project_index_and_orderless_perf() {
+    fn fs_bridge_workspace_project_index_grep_projects_and_orderless_perf() {
         let ws = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .and_then(Path::parent)
@@ -619,35 +891,52 @@ mod tests {
         let warm_us = t1.elapsed().as_secs_f64() * 1_000_000.0;
         assert_eq!(cold.len(), warm.len());
 
-        // 3. Server-side zero-alloc Rust Orderless filter over the full repo index.
+        // 3. Server-side SIMD Rust Orderless filter over the pre-lowercased index.
         let t2 = Instant::now();
         let mut last_hits = 0usize;
-        for _ in 0..100 {
+        for _ in 0..200 {
             let hits = filter_project_files_orderless(&warm, "ui-meow key !test", 64);
             last_hits = hits.len();
         }
-        let orderless_us = (t2.elapsed().as_secs_f64() * 1_000_000.0) / 100.0;
+        let orderless_us = (t2.elapsed().as_secs_f64() * 1_000_000.0) / 200.0;
         assert!(
             last_hits > 0,
             "expected Orderless match for `ui-meow key !test`"
         );
 
-        // 4. QueryProjectGraph syntax with `?q=` returns bounded top-K records.
-        let recs = query_fs_records("fs:project-files?q=fs_bridge", &ws)
-            .expect("handled")
-            .expect("ok");
+        // 4. Live consult-ripgrep (`fs:grep?q=...`).
+        let t3 = Instant::now();
+        let grep_recs = query_fs_records("fs:grep?q=query_fs_records", &ws)
+            .expect("grep handled")
+            .expect("grep ok");
+        let grep_ms = t3.elapsed().as_secs_f64() * 1000.0;
+        let grep_hits = grep_recs
+            .iter()
+            .filter(|r| r.kind == "fs.grep_hit")
+            .count();
+        assert!(grep_hits > 0, "expected live grep hits for query_fs_records");
+
+        // 5. Project discovery (`fs:projects`).
+        let t4 = Instant::now();
+        let proj_recs = query_fs_records("fs:projects!", &ws)
+            .expect("projects handled")
+            .expect("projects ok");
+        let projects_ms = t4.elapsed().as_secs_f64() * 1000.0;
         assert!(
-            recs.iter()
-                .any(|r| r.kind == "fs.project_file" && r.title.contains("fs_bridge.rs")),
-            "expected fs_bridge.rs in server-side Orderless response"
+            proj_recs.iter().any(|r| r.kind == "fs.project"),
+            "expected at least one discovered Git/jj project"
         );
 
         eprintln!(
-            "[fs_bridge bench] files={} cold_scan={:.2}ms warm_cache={:.1}µs rust_orderless={:.1}µs/op",
+            "[fs_bridge bench] files={} cold_scan={:.2}ms warm_cache={:.1}µs rust_orderless={:.1}µs/op grep={}hits/{:.2}ms projects={}/{:.2}ms",
             cold.len(),
             cold_ms,
             warm_us,
-            orderless_us
+            orderless_us,
+            grep_hits,
+            grep_ms,
+            proj_recs.len(),
+            projects_ms
         );
     }
 }
