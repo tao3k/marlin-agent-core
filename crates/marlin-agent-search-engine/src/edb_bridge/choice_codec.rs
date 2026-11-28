@@ -108,6 +108,53 @@ fn format_witness_tag(binding: &[String], witnesses: &[SearchDslChoiceWitness]) 
     tag
 }
 
+fn collect_free_binding_keys(worlds: &[SearchDslChoiceWorld]) -> std::collections::BTreeSet<&str> {
+    let mut values_by_key: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
+        std::collections::BTreeMap::new();
+    worlds
+        .iter()
+        .flat_map(|w| w.bindings.iter())
+        .filter(|b| b.len() == 2)
+        .for_each(|b| {
+            values_by_key
+                .entry(b[0].as_str())
+                .or_default()
+                .insert(b[1].as_str());
+        });
+    values_by_key
+        .into_iter()
+        .filter(|(_, vals)| vals.len() > 1)
+        .map(|(k, _)| k)
+        .collect()
+}
+
+pub(super) fn format_compact_witness_matrix(
+    worlds: &[SearchDslChoiceWorld],
+    max_worlds: usize,
+) -> Option<String> {
+    if worlds.len() <= 1 {
+        return None;
+    }
+    let free_keys = collect_free_binding_keys(worlds);
+    if free_keys.is_empty() {
+        return None;
+    }
+    let mut out = format!(
+        "witness_matrix (all {} SAT world(s) — free branching keys only; forced keys invariant):\n",
+        worlds.len().min(max_worlds)
+    );
+    for world in worlds.iter().take(max_worlds) {
+        let cells: Vec<String> = world
+            .bindings
+            .iter()
+            .filter(|b| b.len() == 2 && free_keys.contains(b[0].as_str()))
+            .map(|b| format!("{}={}", b[0], b[1]))
+            .collect();
+        let _ = writeln!(out, "  W#{}: {}", world.world_index, cells.join(", "));
+    }
+    Some(out)
+}
+
 fn summarize_forced_and_free_bindings(worlds: &[SearchDslChoiceWorld]) -> Option<String> {
     if worlds.is_empty() {
         return None;
@@ -343,8 +390,13 @@ pub(super) fn decode_choice_payload(
     } else {
         "SAT"
     };
-    const MAX_DISPLAY_WORLDS: usize = 4;
-    let display_truncated = choice_worlds.len() > MAX_DISPLAY_WORLDS;
+    const MAX_MATRIX_WORLDS: usize = 16;
+    let compact_matrix = format_compact_witness_matrix(&choice_worlds, MAX_MATRIX_WORLDS);
+    let display_truncated = if compact_matrix.is_some() {
+        choice_worlds.len() > MAX_MATRIX_WORLDS
+    } else {
+        choice_worlds.len() > 4
+    };
     let _ = writeln!(
         rendered_text,
         "worlds: {world_count} ({sat_label}, worlds_total_known: true, worlds_truncated: false, display_truncated: {display_truncated}, state-budget: {state_budget}, provenance: {provenance_on})"
@@ -360,27 +412,53 @@ pub(super) fn decode_choice_payload(
     }
 
     let mut rows = Vec::new();
-    let display_indices: Vec<usize> = if display_truncated {
-        vec![0, 1, 2, choice_worlds.len() - 1]
+    if let Some(matrix) = compact_matrix {
+        // Emit World #1 in full provenance form plus a delta-compressed witness matrix
+        // covering all free-branching assignments (up to 16 worlds) without repeating
+        // forced deduction lines on every world.
+        if let Some(first_world) = choice_worlds.first() {
+            append_world_rows(
+                first_world,
+                &known_paths,
+                &file_id_map,
+                ctx.output_limit,
+                &mut rendered_text,
+                &mut rows,
+            );
+        }
+        if rendered_text.len() + matrix.len() <= ctx.output_limit {
+            rendered_text.push_str(&matrix);
+        }
+        if display_truncated {
+            let omitted_worlds = choice_worlds.len().saturating_sub(MAX_MATRIX_WORLDS);
+            let _ = writeln!(
+                rendered_text,
+                "... (+{omitted_worlds} additional SAT world(s) omitted from matrix; all {world_count} worlds are exhaustively summarized in `deduction_vs_branch` above)"
+            );
+        }
     } else {
-        (0..choice_worlds.len()).collect()
-    };
-    for &idx in &display_indices {
-        append_world_rows(
-            &choice_worlds[idx],
-            &known_paths,
-            &file_id_map,
-            ctx.output_limit,
-            &mut rendered_text,
-            &mut rows,
-        );
-    }
-    if display_truncated {
-        let omitted_worlds = choice_worlds.len().saturating_sub(display_indices.len());
-        let _ = writeln!(
-            rendered_text,
-            "... (+{omitted_worlds} additional SAT world(s) omitted from display; all {world_count} worlds are exhaustively summarized in `deduction_vs_branch` above)"
-        );
+        let display_indices: Vec<usize> = if display_truncated {
+            vec![0, 1, 2, choice_worlds.len() - 1]
+        } else {
+            (0..choice_worlds.len()).collect()
+        };
+        for &idx in &display_indices {
+            append_world_rows(
+                &choice_worlds[idx],
+                &known_paths,
+                &file_id_map,
+                ctx.output_limit,
+                &mut rendered_text,
+                &mut rows,
+            );
+        }
+        if display_truncated {
+            let omitted_worlds = choice_worlds.len().saturating_sub(display_indices.len());
+            let _ = writeln!(
+                rendered_text,
+                "... (+{omitted_worlds} additional SAT world(s) omitted from display; all {world_count} worlds are exhaustively summarized in `deduction_vs_branch` above)"
+            );
+        }
     }
 
     Ok(SearchDslStructuredResult {

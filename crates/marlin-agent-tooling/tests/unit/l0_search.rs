@@ -627,4 +627,16 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
             && excluded_sample_brute.contains("hidden_test_dirs: crates/core(1)"),
         "expected excluded_files header to expose hidden test crate counts: {excluded_sample_brute}"
     );
+
+    // 28. `(workspace-map "crates/" depth: 1)` auto-expands depth past the prefix segment
+    // so callers immediately see child crates (`crates/core/`, `crates/modes/`) instead of a single bucket.
+    let ModelToolOutcome::Completed(shallow_map) =
+        run("c32", "(workspace-map \"crates/\" depth: 1)").await
+    else {
+        panic!("expected Completed for auto-expanded workspace-map depth");
+    };
+    assert!(
+        shallow_map.contains("crates/core/") && shallow_map.contains("crates/modes/"),
+        "expected workspace-map on crates/ with depth: 1 to auto-expand to child crates: {shallow_map}"
+    );
 }

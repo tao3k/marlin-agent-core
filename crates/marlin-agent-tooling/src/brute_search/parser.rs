@@ -13,7 +13,7 @@ const MAX_CONTEXT_LINES: usize = 8;
 const DEFAULT_OUTLINE_MAX_SYMBOLS: usize = 80;
 pub(crate) const MAX_OUTLINE_SYMBOLS: usize = 240;
 pub(crate) const DEFAULT_READ_LINES: usize = 120;
-const MAX_READ_LINES: usize = 200;
+pub(crate) const MAX_READ_LINES: usize = 360;
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct BruteSearchRequest {

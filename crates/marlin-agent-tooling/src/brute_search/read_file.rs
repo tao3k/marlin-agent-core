@@ -14,7 +14,7 @@ use marlin_agent_search_engine::{
 use super::outline_read::{
     find_symbol_definition_end_line, refine_coarse_entity_kind, suggest_nearby_paths,
 };
-use super::parser::{DEFAULT_READ_LINES, ReadFileRequest, parse_read_file_form};
+use super::parser::{DEFAULT_READ_LINES, MAX_READ_LINES, ReadFileRequest, parse_read_file_form};
 
 fn resolve_symbol_anchor_in_file(
     index: &WorkspaceSearchIndex,
@@ -337,7 +337,7 @@ pub(super) fn execute_read_file(
         }
     }
     if req.requested_end_clamped {
-        let _ = writeln!(out, "range_clamped: true (max 200 lines per call)");
+        let _ = writeln!(out, "range_clamped: true (max {MAX_READ_LINES} lines per call)");
     }
     if has_more {
         let next_start = actual_end.saturating_add(1);

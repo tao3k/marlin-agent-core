@@ -154,6 +154,18 @@ fn record_entity_in_bucket<'a>(
     }
 }
 
+fn effective_map_depth(req: &super::parser::WorkspaceMapRequest) -> usize {
+    let prefix_segs = req
+        .path_prefix
+        .as_deref()
+        .map_or(0, |p| p.split('/').filter(|s| !s.is_empty()).count());
+    if prefix_segs > 0 && req.depth <= prefix_segs {
+        (prefix_segs + 1).min(4)
+    } else {
+        req.depth
+    }
+}
+
 fn collect_workspace_buckets<'a>(
     snapshot: &'a marlin_agent_search_engine::WorkspaceEdbSnapshot,
     req: &super::parser::WorkspaceMapRequest,
@@ -161,13 +173,14 @@ fn collect_workspace_buckets<'a>(
     let mut buckets: BTreeMap<String, DirBucket<'a>> = BTreeMap::new();
     let mut file_to_bucket: BTreeMap<u32, String> = BTreeMap::new();
     let mut total_native_ast: BTreeSet<u32> = BTreeSet::new();
+    let eff_depth = effective_map_depth(req);
 
     snapshot
         .files
         .iter()
         .filter(|f| !is_path_excluded(&f.path, &req.exclude_path_prefixes, req.exclude_tests))
         .for_each(|file| {
-            insert_file_into_buckets(&mut buckets, &mut file_to_bucket, req.depth, file);
+            insert_file_into_buckets(&mut buckets, &mut file_to_bucket, eff_depth, file);
         });
     let total_files = file_to_bucket.len();
 

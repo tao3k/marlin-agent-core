@@ -1130,7 +1130,13 @@
                  '(("new" "a" 1) ("new" "b" 2) ("new" "c" 3) ("new" "d" 4)
                    ("parse" "a" 5) ("parse" "b" 6)
                    ("run" "a" 7))
-                 3)))
+                 3))
+             (prod-first-sym-rows
+               (select-diverse-rows-up-to
+                 '(("MockFn" "crates/a/tests/mock.rs" 1)
+                   ("TestHelper" "crates/a/tests/helper_test.rs" 2)
+                   ("RealHandler" "crates/a/src/handler.rs" 10))
+                 2)))
         (check (length (vector-ref prod-colls 3)) => 1)
         (check (vector-ref prod-colls 4) => '())
         (check (length (vector-ref neg-str-pred 3)) => 2)
@@ -1171,6 +1177,7 @@
                     #t)
                => #t)
         (check (map car direct-diverse) => '("new" "parse" "run"))
+        (check (car (car prod-first-sym-rows)) => "RealHandler")
         ;; `min-files: 3` isolates high-multiplicity hubs (`new` in 3 prod files) over 2-file duplicates!
         (check (and (pair? min3-syms) (member "new" min3-syms) (not (member "parse" min3-syms)) (not (member "run" min3-syms)) #t) => #t)
         ;; Multi-kind `(find-collisions kind: ("struct" "fn") ...)` emits 6-column typed rows with fair kind representation!

@@ -129,6 +129,45 @@
        (member (cadr row) '("prod" "test"))
        (integer? (list-ref row 4))))
 
+(def (symbol-locator-row? row)
+  (and (pair? row)
+       (= (length row) 3)
+       (string? (car row))
+       (string? (cadr row))
+       (integer? (caddr row))))
+
+(def (round-robin-diverse-by-key rows limit)
+  (let ((buckets (make-hash-table))
+        (order '()))
+    (for-each
+      (lambda (row)
+        (let* ((k (car row))
+               (prev (hash-get buckets k)))
+          (if prev
+            (hash-put! buckets k (cons row prev))
+            (begin
+              (hash-put! buckets k (list row))
+              (set! order (cons k order))))))
+      rows)
+    (let* ((rev-order (reverse order))
+           (domain-keys (filter (lambda (k) (not (boilerplate-symbol-key? k))) rev-order))
+           (boiler-keys (filter boilerplate-symbol-key? rev-order))
+           (prioritized (append domain-keys boiler-keys))
+           (queues (map (lambda (k) (reverse (hash-ref buckets k))) prioritized)))
+      (let loop ((cur queues) (next '()) (rem limit) (acc '()))
+        (cond
+          ((<= rem 0) (reverse acc))
+          ((null? cur)
+           (if (null? next)
+             (reverse acc)
+             (loop (reverse next) '() rem acc)))
+          (else
+           (let ((q (car cur)))
+             (loop (cdr cur)
+                   (if (pair? (cdr q)) (cons (cdr q) next) next)
+                   (- rem 1)
+                   (cons (car q) acc)))))))))
+
 ;;; Compact 6-column multi-kind collision pairs `(kind name p1 l1 p2 l2)`
 ;;; giving every distinct kind fair representation (so high-volume `fn`
 ;;; collisions never starve scarce `struct` collisions) while compacting
@@ -265,37 +304,16 @@
        (take-rows-up-to ordered limit)))
     ((or (not (pair? (car rows))) (< (length (car rows)) 2))
      (take-rows-up-to rows limit))
+    ((symbol-locator-row? (car rows))
+     (let* ((prod-rows (filter (lambda (r) (not (path-is-test-file? (cadr r)))) rows))
+            (test-rows (filter (lambda (r) (path-is-test-file? (cadr r))) rows))
+            (picked-prod (round-robin-diverse-by-key prod-rows limit))
+            (rem (- limit (length picked-prod))))
+       (if (or (<= rem 0) (null? test-rows))
+         picked-prod
+         (append picked-prod (round-robin-diverse-by-key test-rows rem)))))
     (else
-     (let ((buckets (make-hash-table))
-           (order '()))
-       (for-each
-         (lambda (row)
-           (let* ((k (car row))
-                  (prev (hash-get buckets k)))
-             (if prev
-               (hash-put! buckets k (cons row prev))
-               (begin
-                 (hash-put! buckets k (list row))
-                 (set! order (cons k order))))))
-         rows)
-       (let* ((rev-order (reverse order))
-              (domain-keys (filter (lambda (k) (not (boilerplate-symbol-key? k))) rev-order))
-              (boiler-keys (filter boilerplate-symbol-key? rev-order))
-              (prioritized (append domain-keys boiler-keys))
-              (queues (map (lambda (k) (reverse (hash-ref buckets k))) prioritized)))
-         (let loop ((cur queues) (next '()) (rem limit) (acc '()))
-           (cond
-             ((<= rem 0) (reverse acc))
-             ((null? cur)
-              (if (null? next)
-                (reverse acc)
-                (loop (reverse next) '() rem acc)))
-             (else
-              (let ((q (car cur)))
-                (loop (cdr cur)
-                      (if (pair? (cdr q)) (cons (cdr q) next) next)
-                      (- rem 1)
-                      (cons (car q) acc)))))))))))
+     (round-robin-diverse-by-key rows limit))))
 
 ;;; Extract literal arguments referenced by derived path and name EDB relations
 ;;; anywhere in `form` (including inside `(not (...))`):
