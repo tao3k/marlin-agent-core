@@ -17,7 +17,10 @@ use std::{
         Arc, RwLock,
         atomic::{AtomicU64, Ordering},
     },
+    time::Duration,
 };
+
+use super::bridge_framework::{BridgeCommandOutcome, PackageBridge, SwrCache};
 
 use marlin_agent_gitops::magit::{
     AitiaFormalOverlayProjection, AitiaMarlinGrpcClient, AitiaProgressiveReviewSnapshot,
@@ -32,6 +35,7 @@ use crate::wire::marlin::projection::v1::{
 };
 
 const MAX_HUNK_PREVIEW_LINES: usize = 48;
+const MAGIT_SNAPSHOT_TTL: Duration = Duration::from_secs(3);
 
 /// Thread-safe bridge hosting a workspace's `MagitEngine`, persistent RFC 0024
 /// Lambda Aitia gRPC client (`aitia.marlin.v1.AitiaSidecarGateway`), Human-AI
@@ -43,6 +47,7 @@ pub struct WorkspaceMagitBridge {
     aitia_client: AitiaMarlinGrpcClient,
     joint_audits: Arc<RwLock<Vec<MagitJointAuditRecord>>>,
     cached_snapshot: Arc<RwLock<Option<MagitSnapshot>>>,
+    snapshot_cache: SwrCache<PathBuf, MagitSnapshot>,
     last_receipt: Arc<RwLock<Option<MagitActionReceipt>>>,
     latest_review: Arc<RwLock<Option<AitiaProgressiveReviewSnapshot>>>,
 }
@@ -56,9 +61,41 @@ impl WorkspaceMagitBridge {
             aitia_client: AitiaMarlinGrpcClient::from_env(),
             joint_audits: Arc::new(RwLock::new(Vec::new())),
             cached_snapshot: Arc::new(RwLock::new(None)),
+            snapshot_cache: SwrCache::new(MAGIT_SNAPSHOT_TTL),
             last_receipt: Arc::new(RwLock::new(None)),
             latest_review: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Pre-warms the default workspace `MagitSnapshot` on a background Tokio task
+    /// via the shared `SwrCache` so the very first `*magit*` open is instant.
+    pub fn spawn_prewarm(&self) {
+        let bridge = self.clone();
+        self.snapshot_cache
+            .spawn_background(self.workspace_root.clone(), move |dir| async move {
+                bridge.refresh_snapshot_for(Some(&dir)).await
+            });
+    }
+
+    /// Returns a fast `MagitSnapshot` via the shared framework `SwrCache`:
+    /// - `!force_refresh` + cached entry -> immediate return (< 0.1ms) +
+    ///   coalesced background refresh when older than `MAGIT_SNAPSHOT_TTL`.
+    /// - `force_refresh` or cache miss -> awaits an authoritative refresh.
+    pub async fn snapshot_fast_for(
+        &self,
+        repo_override: Option<&Path>,
+        force_refresh: bool,
+    ) -> Result<MagitSnapshot, String> {
+        let target_dir = repo_override.unwrap_or(&self.workspace_root).to_path_buf();
+        let bg_bridge = self.clone();
+        self.snapshot_cache
+            .get_or_load(
+                target_dir,
+                force_refresh,
+                || self.refresh_snapshot_for(repo_override),
+                move |dir| async move { bg_bridge.refresh_snapshot_for(Some(&dir)).await },
+            )
+            .await
     }
 
     pub fn workspace_root(&self) -> &Path {
@@ -162,9 +199,15 @@ impl WorkspaceMagitBridge {
             .snapshot_with_evidence(rev, &aitia_report, &joints)
             .await
             .map_err(|e| e.to_string())?;
-        if let Ok(mut guard) = self.cached_snapshot.write() {
+        if let Ok(mut guard) = self.cached_snapshot.write()
+            && repo_override.is_none()
+        {
             *guard = Some(snap.clone());
         }
+        self.snapshot_cache.insert_keys(
+            [target_dir.to_path_buf(), engine.repo_root().to_path_buf()],
+            snap.clone(),
+        );
         Ok(snap)
     }
 
@@ -663,6 +706,82 @@ impl WorkspaceMagitBridge {
             branch: snap.branch.clone(),
             files,
         }
+    }
+}
+
+#[tonic::async_trait]
+impl PackageBridge for WorkspaceMagitBridge {
+    fn namespace(&self) -> &'static str {
+        "magit"
+    }
+
+    fn owner_id(&self) -> &'static str {
+        "marlin.magit"
+    }
+
+    fn prewarm(&self) {
+        self.spawn_prewarm();
+    }
+
+    async fn query(
+        &self,
+        verb: &str,
+        arg: Option<&str>,
+        _raw_query: &str,
+    ) -> Result<Vec<GraphRecordView>, String> {
+        let repo_override = arg.map(PathBuf::from);
+        if verb == "aitia-review" {
+            let review = if let Some(ref repo) = repo_override {
+                self.run_progressive_review_for(Some(repo.as_path()), None)
+                    .await
+                    .map_err(|err| format!("aitia review error: {err}"))?
+            } else if let Some(cached) = self.latest_progressive_review() {
+                cached
+            } else {
+                self.run_progressive_review_for(None, None)
+                    .await
+                    .map_err(|err| format!("aitia review error: {err}"))?
+            };
+            let root_str = repo_override
+                .as_deref()
+                .unwrap_or_else(|| self.workspace_root())
+                .to_string_lossy()
+                .into_owned();
+            return Ok(Self::project_progressive_review(&review, &root_str));
+        }
+
+        let force_refresh = verb == "refresh";
+        let snap = self
+            .snapshot_fast_for(repo_override.as_deref(), force_refresh)
+            .await
+            .map_err(|err| format!("magit snapshot error: {err}"))?;
+        let receipt = self.last_receipt();
+        let review = self.latest_progressive_review();
+        Ok(Self::project_snapshot_with_review(
+            &snap,
+            receipt.as_ref(),
+            review.as_ref(),
+        ))
+    }
+
+    async fn execute_command(
+        &self,
+        raw_command: &str,
+    ) -> Result<Option<BridgeCommandOutcome>, String> {
+        let Some((receipt, _snap, traj)) = self.execute_ui_command(raw_command).await? else {
+            return Ok(None);
+        };
+        Ok(Some(BridgeCommandOutcome {
+            ok: receipt.ok,
+            summary: receipt.summary,
+            owner_id: self.owner_id().to_owned(),
+            trajectory: Some(traj),
+        }))
+    }
+
+    async fn workspace_diff(&self) -> Option<WorkspaceDiffSnapshot> {
+        let snap = self.snapshot_fast_for(None, false).await.ok()?;
+        Some(Self::to_workspace_diff_snapshot(&snap))
     }
 }
 
@@ -1245,5 +1364,51 @@ mod tests {
                 .iter()
                 .any(|r| r.kind == "aitia.formal.recommendation")
         );
+    }
+
+    #[tokio::test]
+    async fn snapshot_fast_for_serves_warm_cache_submillisecond_and_honors_force_refresh() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        std::fs::create_dir_all(&repo).expect("mkdir");
+        let run_git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .current_dir(&repo)
+                .args(args)
+                .status()
+                .expect("git");
+            assert!(status.success(), "git {:?} failed", args);
+        };
+        run_git(&["init", "-b", "main"]);
+        run_git(&["config", "user.email", "test@example.com"]);
+        run_git(&["config", "user.name", "Test"]);
+        std::fs::write(repo.join("README.md"), "# fast magit\n").expect("write");
+        run_git(&["add", "."]);
+        run_git(&["commit", "-m", "initial"]);
+
+        let bridge = WorkspaceMagitBridge::new(repo.clone());
+        let first = bridge
+            .snapshot_fast_for(None, false)
+            .await
+            .expect("cold snapshot");
+        assert_eq!(first.revision, 1);
+
+        let t0 = std::time::Instant::now();
+        let warm = bridge
+            .snapshot_fast_for(None, false)
+            .await
+            .expect("warm cached snapshot");
+        let warm_elapsed = t0.elapsed();
+        assert_eq!(warm.revision, first.revision);
+        assert!(
+            warm_elapsed < Duration::from_millis(5),
+            "expected sub-5ms cached hit, got {warm_elapsed:?}"
+        );
+
+        let forced = bridge
+            .snapshot_fast_for(None, true)
+            .await
+            .expect("forced refresh");
+        assert!(forced.revision > first.revision);
     }
 }

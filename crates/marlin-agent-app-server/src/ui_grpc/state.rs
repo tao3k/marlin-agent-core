@@ -20,7 +20,7 @@ use crate::wire::marlin::{
     device::v1::{DeviceCapabilityDescriptor, DeviceInvocationResult},
     gate::v1::{GateDecisionReceipt, PendingGate},
     plugin::v1::PanelRuntimeKind,
-    projection::v1::{GraphRecordView, GraphTrajectoryEvent, QueryProjectGraphRequest},
+    projection::v1::{GraphRecordView, GraphTrajectoryEvent},
     ui::v1::{
         SlotCardinality, SlotDeclaration, UiCommand, UiCommandArguments, UiElement,
         UiElementSequence, UiKeyBinding, UiLayoutPolicy, UiRgb, UiSlotNode,
@@ -107,11 +107,6 @@ pub struct DispatchedUiCommand {
     pub generation: u64,
 }
 
-/// Optional live search handler invoked by `ProjectionQueryService::query_project_graph`
-/// when no static test fixture records are seeded on `MyGoBridgeHost`.
-pub type GraphQueryHandler =
-    dyn Fn(&QueryProjectGraphRequest) -> Option<Vec<GraphRecordView>> + Send + Sync;
-
 /// Bounded retention limits refining `dev/quint/stability/MarlinMyGoBridgeStabilityOverlay.qnt` (SM3c).
 pub(super) const MAX_BRIDGE_ARTIFACTS: usize = 64;
 pub(super) const MAX_BRIDGE_ARTIFACT_BYTES: usize = 16 * 1024 * 1024;
@@ -148,7 +143,6 @@ pub(super) struct BridgeState {
     pub(super) scheme_commands: Vec<UiCommand>,
     pub(super) scheme_keymap: Vec<UiKeyBinding>,
     pub(super) scheme_transients: Vec<UiTransient>,
-    pub(super) scheme_mode_records: Vec<GraphRecordView>,
 }
 
 impl BridgeState {

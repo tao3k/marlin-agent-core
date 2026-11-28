@@ -13,6 +13,4 @@ mod state;
 mod workbench_gate;
 
 pub use host::MyGoBridgeHost;
-pub use state::{
-    ClaimedGraphHumanDecision, DispatchedUiCommand, GraphQueryHandler, SchemeOverlayProjection,
-};
+pub use state::{ClaimedGraphHumanDecision, DispatchedUiCommand, SchemeOverlayProjection};

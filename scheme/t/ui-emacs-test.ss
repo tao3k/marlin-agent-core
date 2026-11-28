@@ -61,4 +61,26 @@
         (check (vector-ref (vector-ref proj 4) 0) => "ripgrep")
         (check (vector-ref (vector-ref proj 4) 3) => "asp-tantivy")
         (check (vector-ref (vector-ref proj 5) 0) => "imenu")
-        (check (vector-ref (vector-ref proj 5) 3) => "asp-symbol-index")))))
+        (check (vector-ref (vector-ref proj 5) 3) => "asp-symbol-index")))
+
+    (test-case "global mark ring pushes, deduplicates, and rotates cleanly"
+      (let* ((s0 ((.get UiEmacsScope make-session)))
+             (s1 ((.get UiEmacsScope push-mark) s0 "*Preview*" "a.rs" 12))
+             (s2 ((.get UiEmacsScope push-mark) s1 "*Preview*" "b.rs" 44)))
+        (let-values (((s3 m1) ((.get UiEmacsScope pop-global-mark) s2)))
+          (check (.get m1 path) => "b.rs")
+          (check (.get m1 line) => 44)
+          (let-values (((s4 m2) ((.get UiEmacsScope pop-global-mark) s3)))
+            (check (.get m2 path) => "a.rs")
+            (check (.get m2 line) => 12)))))
+
+    (test-case "depth-ordered Emacs hook pipeline respects negative/zero/positive depth"
+      (let* ((s0 ((.get UiEmacsScope make-session)))
+             (s1 ((.get UiEmacsScope add-hook) s0 'after-save-hook 'run-linter 10))
+             (s2 ((.get UiEmacsScope add-hook) s1 'after-save-hook 'format-buffer -50))
+             (s3 ((.get UiEmacsScope add-hook) s2 'after-save-hook 'update-asp-index 0))
+             (s4 ((.get UiEmacsScope remove-hook) s3 'after-save-hook 'run-linter)))
+        (check ((.get UiEmacsScope run-hooks) s3 'after-save-hook)
+               => '(format-buffer update-asp-index run-linter))
+        (check ((.get UiEmacsScope run-hooks) s4 'after-save-hook)
+               => '(format-buffer update-asp-index))))))

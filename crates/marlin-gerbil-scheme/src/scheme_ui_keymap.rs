@@ -104,7 +104,68 @@ pub fn project_scheme_ui_surface(
     if let Ok(records) = project_scheme_modes_records(runtime, scheme_package_dir) {
         surface.mode_records = records;
     }
+    if let Ok(consult_records) = project_scheme_consult_sources(runtime, scheme_package_dir) {
+        surface.mode_records.extend(consult_records);
+    }
     Ok(surface)
+}
+
+/// Call `:marlin-agent-core/ui-emacs/funcs#marlin-emacs-project-consult-sources`
+/// over the in-process Gerbil VM and decode Consult virtual sources (backed by
+/// ASP Trigram + Tantivy BM25 + AST Imenu) into typed `GraphRecordView` records.
+#[cfg(not(feature = "external-program"))]
+pub fn project_scheme_consult_sources(
+    runtime: &GerbilRuntime,
+    scheme_package_dir: &str,
+) -> Result<Vec<GraphRecordView>, String> {
+    let module = runtime
+        .intern_identifier(IdentifierKind::Symbol, ":marlin-agent-core/ui-emacs/funcs")
+        .map_err(|e| format!("intern ui-emacs module: {e}"))?;
+    let export_name = runtime
+        .intern_identifier(IdentifierKind::Symbol, "marlin-emacs-project-consult-sources")
+        .map_err(|e| format!("intern consult sources export: {e}"))?;
+    let proc_obj = runtime
+        .resolve_package_export(scheme_package_dir, &module, &export_name)
+        .map_err(|e| format!("resolve marlin-emacs-project-consult-sources: {e}"))?;
+    let dummy_input = runtime
+        .scalar_object(SchemeScalar::Boolean(false))
+        .map_err(|e| format!("scalar input: {e}"))?;
+    let raw = runtime
+        .call_rooted(&proc_obj, &dummy_input)
+        .map_err(|e| format!("call marlin-emacs-project-consult-sources: {e}"))?;
+    decode_consult_sources_vector(raw)
+}
+
+/// Decode `#(#(id label narrow-key engine priority async?) ...)` from `scheme/ui-emacs`.
+pub fn decode_consult_sources_vector(
+    raw: RootedSchemeObject<'_>,
+) -> Result<Vec<GraphRecordView>, String> {
+    let vec = decode_vector(raw, "consult-sources")?;
+    let mut records = Vec::with_capacity(vec.len());
+    for i in 0..vec.len() {
+        let entry = decode_vector(
+            vec.element(i).map_err(|e| e.to_string())?,
+            "consult-source",
+        )?;
+        if entry.len() != 6 {
+            return Err(format!("consult-source[{i}]: expected 6 elements"));
+        }
+        let id = decode_string(entry.element(0).map_err(|e| e.to_string())?, "cs.id")?;
+        let label = decode_string(entry.element(1).map_err(|e| e.to_string())?, "cs.label")?;
+        let narrow = decode_string(entry.element(2).map_err(|e| e.to_string())?, "cs.narrow")?;
+        let engine = decode_string(entry.element(3).map_err(|e| e.to_string())?, "cs.engine")?;
+        let prio = decode_fixnum(entry.element(4).map_err(|e| e.to_string())?, "cs.prio")?;
+        let is_async = decode_bool(entry.element(5).map_err(|e| e.to_string())?, "cs.async")?;
+        let mut facets = HashMap::with_capacity(6);
+        facets.insert("id".to_owned(), id.clone());
+        facets.insert("label".to_owned(), label.clone());
+        facets.insert("narrow_key".to_owned(), narrow);
+        facets.insert("engine".to_owned(), engine);
+        facets.insert("priority".to_owned(), prio.to_string());
+        facets.insert("async".to_owned(), is_async.to_string());
+        records.push(make_mode_record("ui.consult_source", &id, &label, facets));
+    }
+    Ok(records)
 }
 
 fn decode_fixnum(obj: RootedSchemeObject<'_>, field: &str) -> Result<i64, String> {

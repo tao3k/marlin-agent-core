@@ -4,12 +4,17 @@
 
 //! Production-grade Marlin MyGo Authority Host daemon module.
 
+pub mod bridge_framework;
 pub mod config;
 pub mod fs_bridge;
 pub mod magit_bridge;
 mod runner;
 
-pub use fs_bridge::query_fs_records;
+pub use bridge_framework::{
+    BridgeCommandOutcome, BridgeMetrics, BridgeMetricsSnapshot, BridgeRegistry, PackageBridge,
+    SchemeModesBridge, SwrCache,
+};
+pub use fs_bridge::{FsPackageBridge, query_fs_records};
 pub use magit_bridge::{WorkspaceMagitBridge, parse_magit_ui_command};
 pub use runner::{
     DeterministicLocalGateway, MAX_RESIDENT_SESSIONS, ResidentSessionTable, SchemeUiSurfaceBundle,

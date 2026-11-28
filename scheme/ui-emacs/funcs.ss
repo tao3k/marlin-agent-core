@@ -20,6 +20,11 @@
         marlin-emacs-jump-push
         marlin-emacs-jump-back
         marlin-emacs-jump-forward
+        marlin-emacs-push-mark
+        marlin-emacs-pop-global-mark
+        marlin-emacs-add-hook
+        marlin-emacs-remove-hook
+        marlin-emacs-run-hooks
         marlin-emacs-project-consult-sources)
 
 (def (marlin-emacs-make-session)
@@ -131,6 +136,56 @@
       (let* ((next-cur (+ cursor 1))
              (target (list-ref entries next-cur)))
         (values (.cc session jump-list: (.cc jl cursor: next-cur)) target)))))
+
+;; --- Global Mark Ring (Emacs simple.el `push-mark` / `pop-global-mark`) ---
+
+(def (marlin-emacs-push-mark session buffer-id path line)
+  (let* ((ring (.get session global-mark-ring))
+         (norm-line (if (< line 1) 1 line))
+         (deduped (filter (lambda (m)
+                            (not (and (string=? (.get m path) path)
+                                      (= (.get m line) norm-line))))
+                          ring))
+         (entry (.o buffer-id: buffer-id path: path line: norm-line))
+         (next (cons entry deduped)))
+    (.cc session global-mark-ring: (if (> (length next) 32) (take next 32) next))))
+
+(def (marlin-emacs-pop-global-mark session)
+  (let ((ring (.get session global-mark-ring)))
+    (if (null? ring)
+      (values session #f)
+      (let ((head (car ring))
+            (rest (cdr ring)))
+        (values (.cc session global-mark-ring: (append rest (list head))) head)))))
+
+;; --- Depth-Ordered Emacs Hook Pipeline (`add-hook` / `remove-hook` / `run-hooks`) ---
+
+(def (insert-hook-by-depth entry sorted)
+  (cond
+    ((null? sorted) (list entry))
+    ((< (.get entry depth) (.get (car sorted) depth))
+     (cons entry sorted))
+    (else (cons (car sorted) (insert-hook-by-depth entry (cdr sorted))))))
+
+(def (marlin-emacs-add-hook session hook-name fn-id (depth 0))
+  (let* ((existing (filter (lambda (h)
+                             (not (and (eq? (.get h hook-name) hook-name)
+                                       (eq? (.get h fn-id) fn-id))))
+                           (.get session hooks)))
+         (entry (.o hook-name: hook-name fn-id: fn-id depth: depth)))
+    (.cc session hooks: (insert-hook-by-depth entry existing))))
+
+(def (marlin-emacs-remove-hook session hook-name fn-id)
+  (.cc session
+       hooks: (filter (lambda (h)
+                        (not (and (eq? (.get h hook-name) hook-name)
+                                  (eq? (.get h fn-id) fn-id))))
+                      (.get session hooks))))
+
+(def (marlin-emacs-run-hooks session hook-name)
+  (map (lambda (h) (.get h fn-id))
+       (filter (lambda (h) (eq? (.get h hook-name) hook-name))
+               (.get session hooks))))
 
 ;; Native C-ABI FFI vector projection for Consult virtual sources (zero text serialization).
 (def (marlin-emacs-project-consult-sources _input)

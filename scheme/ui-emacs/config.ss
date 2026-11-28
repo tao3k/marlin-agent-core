@@ -23,4 +23,9 @@
     jump-push: marlin-emacs-jump-push
     jump-back: marlin-emacs-jump-back
     jump-forward: marlin-emacs-jump-forward
+    push-mark: marlin-emacs-push-mark
+    pop-global-mark: marlin-emacs-pop-global-mark
+    add-hook: marlin-emacs-add-hook
+    remove-hook: marlin-emacs-remove-hook
+    run-hooks: marlin-emacs-run-hooks
     project-consult-sources: marlin-emacs-project-consult-sources))

@@ -487,7 +487,7 @@ pub async fn run_cli_with_host_ready(
         != "1"
     {
         let helm_bridge = mygo_host_config::WorkspaceHelmSearchBridge::spawn_background(ws_root);
-        host = host.with_graph_query_handler(move |req| helm_bridge.query(req));
+        host = host.with_fallback_bridge(Arc::new(helm_bridge));
     }
 
     if env::var("MARLIN_BRIDGE_SEED_DEMO_GATE").unwrap_or_else(|_| "1".to_owned()) != "0" {

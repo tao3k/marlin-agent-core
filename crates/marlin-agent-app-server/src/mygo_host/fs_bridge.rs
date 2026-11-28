@@ -19,14 +19,51 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{Arc, Mutex, OnceLock},
-    time::{Duration, Instant, UNIX_EPOCH},
+    time::{Duration, UNIX_EPOCH},
 };
 
 use agent_semantic_search::{WorkspaceIndexConfig, WorkspaceSearchIndex, WorkspaceSearchQuery};
+use serde::{Deserialize, Serialize};
 
 use crate::wire::marlin::projection::v1::{GraphRecordView, GraphVisibleSurface};
 
+use super::bridge_framework::{PackageBridge, SwrCache};
 use super::config::{ParsedHelmQuery, default_snapshot_path};
+
+/// Unified `PackageBridge` adapter for the `fs:*` namespace (files, ASP
+/// Trigram+Tantivy grep, AST Imenu symbols, projects, and persistent TOML
+/// Emacs bookmarks).
+#[derive(Clone, Debug)]
+pub struct FsPackageBridge {
+    workspace_root: PathBuf,
+}
+
+impl FsPackageBridge {
+    pub fn new(workspace_root: PathBuf) -> Self {
+        Self { workspace_root }
+    }
+}
+
+#[tonic::async_trait]
+impl PackageBridge for FsPackageBridge {
+    fn namespace(&self) -> &'static str {
+        "fs"
+    }
+
+    fn owner_id(&self) -> &'static str {
+        "marlin.fs"
+    }
+
+    async fn query(
+        &self,
+        _verb: &str,
+        _arg: Option<&str>,
+        raw_query: &str,
+    ) -> Result<Vec<GraphRecordView>, String> {
+        query_fs_records(raw_query, &self.workspace_root)
+            .unwrap_or_else(|| Err(format!("unsupported fs query: {raw_query}")))
+    }
+}
 
 const MAX_DIR_ENTRIES: usize = 512;
 const MAX_PROJECT_FILES: usize = 8192;
@@ -58,12 +95,6 @@ struct IndexedProjectFile {
     abs_path: String,
 }
 
-#[derive(Clone)]
-struct CachedProjectIndex {
-    built_at: Instant,
-    files: Arc<Vec<IndexedProjectFile>>,
-}
-
 #[derive(Clone, Debug)]
 struct DiscoveredProject {
     name: String,
@@ -71,23 +102,19 @@ struct DiscoveredProject {
     vcs: &'static str,
 }
 
-#[derive(Clone)]
-struct CachedProjectList {
-    built_at: Instant,
-    projects: Arc<Vec<DiscoveredProject>>,
-}
-
-static PROJECT_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedProjectIndex>>> = OnceLock::new();
-static KNOWN_PROJECTS_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedProjectList>>> = OnceLock::new();
+static PROJECT_INDEX_SWR: OnceLock<SwrCache<PathBuf, Arc<Vec<IndexedProjectFile>>>> =
+    OnceLock::new();
+static KNOWN_PROJECTS_SWR: OnceLock<SwrCache<PathBuf, Arc<Vec<DiscoveredProject>>>> =
+    OnceLock::new();
 static RESIDENT_SEARCH_INDEXES: OnceLock<Mutex<HashMap<PathBuf, Arc<WorkspaceSearchIndex>>>> =
     OnceLock::new();
 
-fn project_cache() -> &'static Mutex<HashMap<PathBuf, CachedProjectIndex>> {
-    PROJECT_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+fn project_swr_cache() -> &'static SwrCache<PathBuf, Arc<Vec<IndexedProjectFile>>> {
+    PROJECT_INDEX_SWR.get_or_init(|| SwrCache::new(PROJECT_INDEX_TTL))
 }
 
-fn known_projects_cache() -> &'static Mutex<HashMap<PathBuf, CachedProjectList>> {
-    KNOWN_PROJECTS_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+fn known_projects_swr_cache() -> &'static SwrCache<PathBuf, Arc<Vec<DiscoveredProject>>> {
+    KNOWN_PROJECTS_SWR.get_or_init(|| SwrCache::new(KNOWN_PROJECTS_TTL))
 }
 
 fn resident_search_indexes() -> &'static Mutex<HashMap<PathBuf, Arc<WorkspaceSearchIndex>>> {
@@ -175,6 +202,23 @@ pub fn query_fs_records(
         };
         let arg = after_bang.strip_prefix('@').map(str::trim).unwrap_or("");
         return Some(list_known_project_records(arg, default_root, force_refresh));
+    }
+    if q == "fs:bookmarks" {
+        return Some(list_bookmark_records(&default_bookmarks_path(), default_root));
+    }
+    if let Some(spec) = q.strip_prefix("fs:bookmark-set@") {
+        return Some(set_bookmark_record(
+            &default_bookmarks_path(),
+            spec.trim(),
+            default_root,
+        ));
+    }
+    if let Some(name) = q.strip_prefix("fs:bookmark-del@") {
+        return Some(delete_bookmark_record(
+            &default_bookmarks_path(),
+            name.trim(),
+            default_root,
+        ));
     }
     if let Some(path_arg) = q.strip_prefix("fs:read@") {
         return Some(read_file_record(path_arg.trim(), default_root));
@@ -450,27 +494,17 @@ fn scan_project_files_walk(root: &Path) -> Vec<IndexedProjectFile> {
     collected
 }
 
-fn load_or_refresh_project_index(root: &Path, force_refresh: bool) -> Arc<Vec<IndexedProjectFile>> {
-    if !force_refresh
-        && let Ok(guard) = project_cache().lock()
-        && let Some(cached) = guard.get(root)
-        && cached.built_at.elapsed() < PROJECT_INDEX_TTL
-    {
-        return Arc::clone(&cached.files);
-    }
+fn scan_project_index_arc(root: &Path) -> Arc<Vec<IndexedProjectFile>> {
+    Arc::new(scan_project_files_git(root).unwrap_or_else(|| scan_project_files_walk(root)))
+}
 
-    let scanned = scan_project_files_git(root).unwrap_or_else(|| scan_project_files_walk(root));
-    let arc = Arc::new(scanned);
-    if let Ok(mut guard) = project_cache().lock() {
-        guard.insert(
-            root.to_path_buf(),
-            CachedProjectIndex {
-                built_at: Instant::now(),
-                files: Arc::clone(&arc),
-            },
-        );
-    }
-    arc
+fn load_or_refresh_project_index(root: &Path, force_refresh: bool) -> Arc<Vec<IndexedProjectFile>> {
+    project_swr_cache().get_or_load_sync(
+        root.to_path_buf(),
+        force_refresh,
+        || scan_project_index_arc(root),
+        |dir| scan_project_index_arc(&dir),
+    )
 }
 
 /// Server-side Rust Orderless filter over the pre-lowercased project index using
@@ -822,16 +856,17 @@ fn trim_snippet(s: &str, max_chars: usize) -> String {
 
 /// Discovers real Git/jj repositories around `default_root` (active repo, nested
 /// `.data/*` / `packages/*` repos, and sibling repos in `parent`) for Doom Emacs
-/// `project-switch-project` (`SPC p p` / `C-c p p`).
+/// `project-switch-project` (`SPC p p` / `C-c p p`), backed by unified `SwrCache`.
 fn discover_known_projects(anchor: &Path, force_refresh: bool) -> Arc<Vec<DiscoveredProject>> {
-    if !force_refresh
-        && let Ok(guard) = known_projects_cache().lock()
-        && let Some(cached) = guard.get(anchor)
-        && cached.built_at.elapsed() < KNOWN_PROJECTS_TTL
-    {
-        return Arc::clone(&cached.projects);
-    }
+    known_projects_swr_cache().get_or_load_sync(
+        anchor.to_path_buf(),
+        force_refresh,
+        || scan_known_projects(anchor),
+        |dir| scan_known_projects(&dir),
+    )
+}
 
+fn scan_known_projects(anchor: &Path) -> Arc<Vec<DiscoveredProject>> {
     let mut found: BTreeMap<String, DiscoveredProject> = BTreeMap::new();
     let mut record_if_repo = |dir: &Path| {
         let canon = canonical_or_self(dir);
@@ -885,17 +920,7 @@ fn discover_known_projects(anchor: &Path, force_refresh: bool) -> Arc<Vec<Discov
             .then_with(|| cmp_ignore_ascii_case(&a.name, &b.name))
     });
 
-    let arc = Arc::new(list);
-    if let Ok(mut guard) = known_projects_cache().lock() {
-        guard.insert(
-            anchor.to_path_buf(),
-            CachedProjectList {
-                built_at: Instant::now(),
-                projects: Arc::clone(&arc),
-            },
-        );
-    }
-    arc
+    Arc::new(list)
 }
 
 fn list_known_project_records(
@@ -980,6 +1005,139 @@ fn read_file_record(raw_path: &str, default_root: &Path) -> Result<Vec<GraphReco
     }])
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct BookmarkFileEnvelope {
+    #[serde(default)]
+    bookmarks: Vec<PersistedBookmark>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct PersistedBookmark {
+    name: String,
+    path: String,
+    line: u32,
+}
+
+fn default_bookmarks_path() -> PathBuf {
+    if let Ok(explicit) = std::env::var("MARLIN_EMACS_BOOKMARKS_PATH") {
+        let trimmed = explicit.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+    std::env::var_os("XDG_CACHE_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .filter(|v| !v.is_empty())
+                .map(|h| PathBuf::from(h).join(".cache"))
+        })
+        .unwrap_or_else(std::env::temp_dir)
+        .join("marlin")
+        .join("emacs-bookmarks.toml")
+}
+
+fn load_bookmarks_envelope(store_path: &Path) -> BookmarkFileEnvelope {
+    fs::read_to_string(store_path)
+        .ok()
+        .and_then(|raw| toml::from_str::<BookmarkFileEnvelope>(&raw).ok())
+        .unwrap_or_default()
+}
+
+fn write_bookmarks_envelope(
+    store_path: &Path,
+    env: &BookmarkFileEnvelope,
+) -> Result<(), String> {
+    if let Some(parent) = store_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("create bookmark dir {}: {e}", parent.display()))?;
+    }
+    let body = toml::to_string_pretty(env)
+        .map_err(|e| format!("encode bookmarks TOML: {e}"))?;
+    fs::write(store_path, body)
+        .map_err(|e| format!("write bookmarks {}: {e}", store_path.display()))
+}
+
+fn bookmarks_to_records(env: &BookmarkFileEnvelope, default_root: &Path) -> Vec<GraphRecordView> {
+    let mut records = Vec::with_capacity(env.bookmarks.len());
+    for bm in &env.bookmarks {
+        let abs = Path::new(&bm.path);
+        let rel = abs
+            .strip_prefix(default_root)
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| bm.path.clone());
+        let mut facets = HashMap::with_capacity(4);
+        facets.insert("name".to_owned(), bm.name.clone());
+        facets.insert("path".to_owned(), bm.path.clone());
+        facets.insert("rel_path".to_owned(), rel.clone());
+        facets.insert("line".to_owned(), bm.line.max(1).to_string());
+        records.push(GraphRecordView {
+            record_id: format!("fs.bookmark:{}", bm.name),
+            surface: GraphVisibleSurface::Workspace as i32,
+            kind: "fs.bookmark".to_owned(),
+            title: bm.name.clone(),
+            summary: format!("{rel}:{}", bm.line.max(1)),
+            source_path: Some(bm.path.clone()),
+            start_line: Some(bm.line.max(1)),
+            end_line: Some(bm.line.max(1)),
+            facets,
+        });
+    }
+    records
+}
+
+fn list_bookmark_records(
+    store_path: &Path,
+    default_root: &Path,
+) -> Result<Vec<GraphRecordView>, String> {
+    let env = load_bookmarks_envelope(store_path);
+    Ok(bookmarks_to_records(&env, default_root))
+}
+
+fn set_bookmark_record(
+    store_path: &Path,
+    spec: &str,
+    default_root: &Path,
+) -> Result<Vec<GraphRecordView>, String> {
+    let mut parts = spec.splitn(3, '|');
+    let name = parts.next().map(str::trim).unwrap_or("");
+    let raw_path = parts.next().map(str::trim).unwrap_or("");
+    let line = parts
+        .next()
+        .and_then(|s| s.trim().parse::<u32>().ok())
+        .unwrap_or(1)
+        .max(1);
+    if name.is_empty() || raw_path.is_empty() {
+        return Err("fs:bookmark-set expects `<name>|<path>|<line>`".to_owned());
+    }
+    let abs = resolve_path(raw_path, default_root).display().to_string();
+    let mut env = load_bookmarks_envelope(store_path);
+    env.bookmarks.retain(|b| b.name != name);
+    env.bookmarks.insert(
+        0,
+        PersistedBookmark {
+            name: name.to_owned(),
+            path: abs,
+            line,
+        },
+    );
+    env.bookmarks.truncate(200);
+    write_bookmarks_envelope(store_path, &env)?;
+    Ok(bookmarks_to_records(&env, default_root))
+}
+
+fn delete_bookmark_record(
+    store_path: &Path,
+    name: &str,
+    default_root: &Path,
+) -> Result<Vec<GraphRecordView>, String> {
+    let mut env = load_bookmarks_envelope(store_path);
+    env.bookmarks.retain(|b| b.name != name);
+    write_bookmarks_envelope(store_path, &env)?;
+    Ok(bookmarks_to_records(&env, default_root))
+}
+
 fn format_bytes(n: u64) -> String {
     if n >= 1024 * 1024 {
         format!("{:.1} MiB", n as f64 / (1024.0 * 1024.0))
@@ -992,6 +1150,8 @@ fn format_bytes(n: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use super::*;
 
     #[test]
@@ -1056,6 +1216,19 @@ mod tests {
             .expect("projects handled")
             .expect("projects ok");
         assert!(proj_recs.iter().any(|r| r.kind == "fs.project"));
+
+        // 5. Typed TOML persistent bookmarks round-trip (`set` -> `list` -> `del`).
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let bm_store = tmp.path().join("emacs-bookmarks.toml");
+        let saved = set_bookmark_record(&bm_store, "entry|crates/marlin-agent-app-server/src/lib.rs|12", &ws)
+            .expect("save bookmark");
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].title, "entry");
+        let reloaded = list_bookmark_records(&bm_store, &ws).expect("reload bookmarks");
+        assert_eq!(reloaded.len(), 1);
+        assert_eq!(reloaded[0].start_line, Some(12));
+        let after_del = delete_bookmark_record(&bm_store, "entry", &ws).expect("delete bookmark");
+        assert!(after_del.is_empty());
 
         eprintln!(
             "[fs_bridge ASP+Tantivy bench] indexed_files={} index_open={:.1}ms asp_grep={}hits/{:.2}ms asp_imenu={}syms/{:.2}ms orderless={:.1}µs projects={}",

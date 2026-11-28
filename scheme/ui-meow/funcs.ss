@@ -41,7 +41,7 @@
       (list spelling
             (or (and (equal? prefix '(SPC))
                      (assget key '((b . "Buffers") (c . "Control") (f . "Files") (g . "Magit / Git")
-                                   (h . "Help") (m . "Meta") (p . "Project") (q . "Quit")
+                                   (h . "Help") (j . "Jump") (m . "Meta") (p . "Project") (q . "Quit")
                                    (t . "Themes & Toggles") (w . "Windows") (TAB . "Workspaces"))))
                 "More bindings")
             'info))))

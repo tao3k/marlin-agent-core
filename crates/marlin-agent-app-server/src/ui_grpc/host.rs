@@ -20,7 +20,7 @@ use crate::wire::marlin::{
     gate::v1::{PendingGate, approval_gate_service_server::ApprovalGateServiceServer},
     plugin::v1::{ScopedPanelEvent, plugin_service_server::PluginServiceServer},
     projection::v1::{
-        GraphRecordView, GraphTrajectoryEvent, QueryProjectGraphRequest,
+        GraphRecordView, GraphTrajectoryEvent,
         projection_query_service_server::ProjectionQueryServiceServer,
     },
     ui::v1::{
@@ -30,7 +30,7 @@ use crate::wire::marlin::{
 };
 
 use super::state::{
-    AuthorizeFn, BridgeState, ClaimedGraphHumanDecision, DispatchedUiCommand, GraphQueryHandler,
+    AuthorizeFn, BridgeState, ClaimedGraphHumanDecision, DispatchedUiCommand,
     SchemeOverlayProjection, build_snapshot, default_profile_overlays, default_slots,
 };
 
@@ -51,8 +51,8 @@ pub struct MyGoBridgeHost {
     pub(super) atomic_executor: Option<Arc<dyn marlin_agent_runtime::AtomicEffectExecutor>>,
     pub(super) governance_gate: Option<Arc<marlin_agent_kernel::GovernanceAdmissionGate>>,
     pub(super) process_registry: Option<marlin_agent_runtime::RuntimeProcessRegistryHandle>,
-    pub(super) graph_query_handler: Option<Arc<GraphQueryHandler>>,
-    pub(super) magit_bridge: Option<Arc<crate::mygo_host::WorkspaceMagitBridge>>,
+    pub(super) bridges: crate::mygo_host::BridgeRegistry,
+    pub(super) scheme_modes: Arc<crate::mygo_host::SchemeModesBridge>,
 }
 
 
@@ -222,7 +222,6 @@ impl MyGoBridgeHost {
             scheme_commands: Vec::new(),
             scheme_keymap: Vec::new(),
             scheme_transients: Vec::new(),
-            scheme_mode_records: Vec::new(),
         };
         Ok(Self {
             authorize: Arc::new(authorize),
@@ -238,28 +237,57 @@ impl MyGoBridgeHost {
             atomic_executor: None,
             governance_gate: None,
             process_registry: None,
-            graph_query_handler: None,
-            magit_bridge: None,
+            bridges: {
+                let reg = crate::mygo_host::BridgeRegistry::new();
+                let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                reg.register(Arc::new(crate::mygo_host::FsPackageBridge::new(cwd)));
+                reg
+            },
+            scheme_modes: Arc::new(crate::mygo_host::SchemeModesBridge::default()),
         })
     }
 
-    /// Attach a live Rust search handler (e.g. `WorkspaceSearchIndex`) for
-    /// `ProjectionQueryService::query_project_graph`.
-    pub fn with_graph_query_handler<F>(mut self, handler: F) -> Self
-    where
-        F: Fn(&QueryProjectGraphRequest) -> Option<Vec<GraphRecordView>> + Send + Sync + 'static,
-    {
-        self.graph_query_handler = Some(Arc::new(handler));
+    /// Register any custom Rust or Scheme-backed `PackageBridge` module into the
+    /// unified host registry (routes `<ns>:*` queries and `<ns>.*` commands).
+    pub fn with_package_bridge(
+        self,
+        bridge: Arc<dyn crate::mygo_host::PackageBridge>,
+    ) -> Self {
+        self.bridges.register(bridge);
         self
     }
 
-    /// Attach a live Rust-owned AI-Native Magit (`jj` + Git + Aitia) bridge for
-    /// `ProjectionQueryService` (`magit:*` graph queries and live workspace diff)
-    /// and governance-gated `DispatchUiEvent(RecordCommand("magit.*"))` mutations.
-    pub fn with_magit_workspace(mut self, workspace_root: std::path::PathBuf) -> Self {
-        self.magit_bridge = Some(Arc::new(crate::mygo_host::WorkspaceMagitBridge::new(
-            workspace_root,
-        )));
+    /// Register a `PackageBridge` as both its `<ns>:*` owner and the fallback
+    /// handler for untagged free-text queries (e.g. resident ASP Helm search).
+    pub fn with_fallback_bridge(
+        self,
+        bridge: Arc<dyn crate::mygo_host::PackageBridge>,
+    ) -> Self {
+        self.bridges.register_fallback(bridge);
+        self
+    }
+
+    /// Dynamically register or replace a `PackageBridge` module on a running host.
+    pub fn register_package_bridge(&self, bridge: Arc<dyn crate::mygo_host::PackageBridge>) {
+        self.bridges.register(bridge);
+    }
+
+    /// Access the unified `BridgeRegistry` (e.g. for telemetry or package inspection).
+    pub fn bridge_registry(&self) -> &crate::mygo_host::BridgeRegistry {
+        &self.bridges
+    }
+
+    /// Attach workspace-scoped `PackageBridge` modules (`magit` + `fs`) bound to
+    /// `workspace_root`, automatically triggering background pre-warming.
+    pub fn with_magit_workspace(self, workspace_root: std::path::PathBuf) -> Self {
+        let magit = Arc::new(crate::mygo_host::WorkspaceMagitBridge::new(
+            workspace_root.clone(),
+        ));
+        self.bridges.register(magit);
+        self.bridges
+            .register(Arc::new(crate::mygo_host::FsPackageBridge::new(
+                workspace_root,
+            )));
         self
     }
 
@@ -300,10 +328,14 @@ impl MyGoBridgeHost {
         self
     }
 
-    /// Replace the live Scheme-projected Major/Minor/Polymode registry records at runtime.
+    /// Replace the live Scheme-projected Major/Minor/Polymode registry records
+    /// via the unified `SchemeModesBridge` (`modes:*`) in `BridgeRegistry`.
     pub fn set_scheme_mode_records(&self, records: Vec<GraphRecordView>) {
-        let mut st = self.state.lock().expect("bridge mutex poisoned");
-        st.scheme_mode_records = records;
+        let has_records = !records.is_empty();
+        self.scheme_modes.replace_records(records);
+        if has_records {
+            self.bridges.register(Arc::clone(&self.scheme_modes) as Arc<dyn crate::mygo_host::PackageBridge>);
+        }
     }
 
     /// Update the active model label projected into `UIWorkbenchSnapshot` and

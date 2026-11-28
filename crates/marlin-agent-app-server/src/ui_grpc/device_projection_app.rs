@@ -268,86 +268,20 @@ impl ProjectionQueryService for MyGoBridgeHost {
                 "secret visibility cannot be elevated by UI clients",
             ));
         }
-        let (seeded, mode_records) = {
+        let seeded = {
             let st = self.lock_state()?;
-            let s = if !st.graph_projection_records.is_empty() {
+            if !st.graph_projection_records.is_empty() {
                 Some(st.graph_projection_records.clone())
             } else {
                 None
-            };
-            (s, st.scheme_mode_records.clone())
+            }
         };
         let trimmed_query = req.query.trim();
-        let default_fs_root = self
-            .magit_bridge
-            .as_ref()
-            .map(|b| b.workspace_root().to_path_buf())
-            .unwrap_or_else(|| {
-                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-            });
-        let records = if trimmed_query.starts_with("modes:") && !mode_records.is_empty() {
-            mode_records
-        } else if let Some(fs_res) =
-            crate::mygo_host::query_fs_records(trimmed_query, &default_fs_root)
-        {
-            fs_res.map_err(Status::failed_precondition)?
-        } else if trimmed_query.starts_with("magit:aitia-review")
-            && let Some(bridge) = &self.magit_bridge
-        {
-            let repo_override = trimmed_query
-                .strip_prefix("magit:aitia-review@")
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(std::path::PathBuf::from);
-            let review = if let Some(ref repo) = repo_override {
-                bridge
-                    .run_progressive_review_for(Some(repo.as_path()), None)
-                    .await
-                    .map_err(|err| {
-                        Status::failed_precondition(format!("aitia review error: {err}"))
-                    })?
-            } else if let Some(cached) = bridge.latest_progressive_review() {
-                cached
-            } else {
-                bridge
-                    .run_progressive_review_for(None, None)
-                    .await
-                    .map_err(|err| {
-                        Status::failed_precondition(format!("aitia review error: {err}"))
-                    })?
-            };
-            let root_str = repo_override
-                .as_deref()
-                .unwrap_or_else(|| bridge.workspace_root())
-                .to_string_lossy()
-                .into_owned();
-            crate::mygo_host::WorkspaceMagitBridge::project_progressive_review(&review, &root_str)
-        } else if trimmed_query.starts_with("magit:")
-            && let Some(bridge) = &self.magit_bridge
-        {
-            let repo_override = trimmed_query
-                .strip_prefix("magit:snapshot@")
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(std::path::PathBuf::from);
-            let snap = bridge
-                .refresh_snapshot_for(repo_override.as_deref())
-                .await
-                .map_err(|err| {
-                    Status::failed_precondition(format!("magit snapshot error: {err}"))
-                })?;
-            let receipt = bridge.last_receipt();
-            let review = bridge.latest_progressive_review();
-            crate::mygo_host::WorkspaceMagitBridge::project_snapshot_with_review(
-                &snap,
-                receipt.as_ref(),
-                review.as_ref(),
-            )
+        let records = if let Some(bridge_res) = self.bridges.dispatch_query(trimmed_query).await {
+            bridge_res.map_err(Status::failed_precondition)?
         } else if let Some(records) = seeded {
             records
-        } else if let Some(handler) = &self.graph_query_handler
-            && let Some(live_records) = handler(&req)
-        {
+        } else if let Some(live_records) = self.bridges.dispatch_fallback_query(&req).await {
             live_records
         } else {
             vec![GraphRecordView {
@@ -378,10 +312,8 @@ impl ProjectionQueryService for MyGoBridgeHost {
         request: Request<WatchWorkspaceDiffRequest>,
     ) -> Result<Response<Self::WatchWorkspaceDiffStream>, Status> {
         self.check_auth(&request)?;
-        let snapshot = if let Some(bridge) = &self.magit_bridge
-            && let Ok(snap) = bridge.refresh_snapshot().await
-        {
-            crate::mygo_host::WorkspaceMagitBridge::to_workspace_diff_snapshot(&snap)
+        let snapshot = if let Some(diff) = self.bridges.workspace_diff().await {
+            diff
         } else {
             WorkspaceDiffSnapshot {
                 revision: 1,

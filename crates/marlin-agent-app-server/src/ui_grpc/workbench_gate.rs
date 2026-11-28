@@ -183,31 +183,30 @@ impl UiWorkbenchService for MyGoBridgeHost {
             (intent, next, dispatched_cmd)
         };
 
-        // Execute Rust-owned Magit VCS mutations synchronously under the governance
-        // gate before returning, publishing an Aitia causal trajectory receipt.
-        if let Some(ref cmd_ev) = dispatched_cmd
-            && cmd_ev.command.trim().starts_with("magit.")
-            && let Some(bridge) = &self.magit_bridge
-        {
-            match bridge.execute_ui_command(&cmd_ev.command).await {
-                Ok(Some((receipt, _snap, traj))) => {
-                    self.publish_graph_trajectory_event(traj);
-                    if !receipt.ok {
+        // Execute registered PackageBridge mutations (e.g. `magit.*`, future
+        // Scheme/Rust package actions) under the governance gate uniformly.
+        if let Some(ref cmd_ev) = dispatched_cmd {
+            match self.bridges.dispatch_command(&cmd_ev.command).await {
+                Ok(Some(outcome)) => {
+                    if let Some(traj) = outcome.trajectory {
+                        self.publish_graph_trajectory_event(traj);
+                    }
+                    if !outcome.ok {
                         return Ok(Response::new(DispatchUiEventResponse {
                             admitted: false,
                             intent: None,
                             next_workbench: Some(next),
                             denial: Some(TypedDenial {
                                 code: DenialCode::Unspecified as i32,
-                                message: receipt.summary,
-                                owner_id: Some("marlin.magit".to_owned()),
+                                message: outcome.summary,
+                                owner_id: Some(outcome.owner_id),
                                 details: HashMap::new(),
                             }),
                         }));
                     }
                 }
                 Ok(None) => {}
-                Err(err) => {
+                Err((owner_id, err)) => {
                     return Ok(Response::new(DispatchUiEventResponse {
                         admitted: false,
                         intent: None,
@@ -215,7 +214,7 @@ impl UiWorkbenchService for MyGoBridgeHost {
                         denial: Some(TypedDenial {
                             code: DenialCode::Unspecified as i32,
                             message: err,
-                            owner_id: Some("marlin.magit".to_owned()),
+                            owner_id: Some(owner_id),
                             details: HashMap::new(),
                         }),
                     }));

@@ -422,6 +422,42 @@ impl WorkspaceHelmSearchBridge {
     }
 }
 
+#[tonic::async_trait]
+impl super::bridge_framework::PackageBridge for WorkspaceHelmSearchBridge {
+    fn namespace(&self) -> &'static str {
+        "search"
+    }
+
+    fn owner_id(&self) -> &'static str {
+        "marlin.search.helm"
+    }
+
+    async fn query(
+        &self,
+        _verb: &str,
+        arg: Option<&str>,
+        raw_query: &str,
+    ) -> Result<Vec<GraphRecordView>, String> {
+        let query_text = arg
+            .or_else(|| raw_query.split_once(':').map(|(_, rest)| rest))
+            .unwrap_or(raw_query)
+            .to_owned();
+        let req = QueryProjectGraphRequest {
+            project_id: "default".to_owned(),
+            query: query_text,
+            ..Default::default()
+        };
+        Ok(WorkspaceHelmSearchBridge::query(self, &req).unwrap_or_default())
+    }
+
+    async fn fallback_query(
+        &self,
+        req: &QueryProjectGraphRequest,
+    ) -> Option<Vec<GraphRecordView>> {
+        WorkspaceHelmSearchBridge::query(self, req)
+    }
+}
+
 pub struct ParsedHelmQuery {
     pub pattern: String,
     pub languages: Vec<String>,

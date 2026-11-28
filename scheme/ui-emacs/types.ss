@@ -11,6 +11,8 @@
         KillRingContract
         JumpEntryContract
         JumpListContract
+        MarkEntryContract
+        HookEntryContract
         ConsultSourceContract
         EmacsSessionContract
         UiEmacsScopeContract)
@@ -48,6 +50,18 @@
     cursor: [IntContract]
     max-size: [IntContract]))
 
+(def MarkEntryContract
+  (Record
+    buffer-id: [String]
+    path: [String]
+    line: [IntContract]))
+
+(def HookEntryContract
+  (Record
+    hook-name: [Symbol]
+    fn-id: [Symbol]
+    depth: [IntContract]))
+
 (def ConsultSourceContract
   (Record
     id: [Symbol]
@@ -62,6 +76,8 @@
     bookmarks: [(List BookmarkEntryContract)]
     kill-ring: [KillRingContract]
     jump-list: [JumpListContract]
+    global-mark-ring: [(List MarkEntryContract)]
+    hooks: [(List HookEntryContract)]
     consult-sources: [(List ConsultSourceContract)]))
 
 (def UiEmacsScopeContract
@@ -79,5 +95,10 @@
          jump-push: [ProcContract]
          jump-back: [ProcContract]
          jump-forward: [ProcContract]
+         push-mark: [ProcContract]
+         pop-global-mark: [ProcContract]
+         add-hook: [ProcContract]
+         remove-hook: [ProcContract]
+         run-hooks: [ProcContract]
          project-consult-sources: [ProcContract])
        identity: 'marlin/ui-emacs))

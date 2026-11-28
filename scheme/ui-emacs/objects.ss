@@ -95,4 +95,6 @@
   (.o bookmarks: '()
       kill-ring: KillRing.
       jump-list: JumpList.
+      global-mark-ring: '()
+      hooks: '()
       consult-sources: DefaultConsultSources))
