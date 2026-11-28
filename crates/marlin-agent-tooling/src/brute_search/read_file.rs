@@ -77,6 +77,45 @@ struct SymbolSliceBudget {
     body_budget: usize,
 }
 
+fn discover_crate_companion_tests(index: &WorkspaceSearchIndex, path: &str) -> Vec<String> {
+    let Some((crate_root, rel_in_src)) = path.split_once("/src/") else {
+        return Vec::new();
+    };
+    let tests_prefix = format!("{crate_root}/tests/");
+    let prefilter = WorkspaceEdbPrefilter {
+        languages: &[],
+        documents: &[],
+        path_prefix: Some(tests_prefix.as_str()),
+        extension: None,
+        required_tokens: &[],
+        max_files: 32,
+        max_facts: 1,
+    };
+    let snapshot = index.project_prefiltered_edb(&prefilter);
+    if snapshot.files.is_empty() {
+        return Vec::new();
+    }
+    let stem = rel_in_src
+        .rsplit('/')
+        .next()
+        .unwrap_or(rel_in_src)
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let mut ranked: Vec<(bool, String)> = snapshot
+        .files
+        .into_iter()
+        .filter(|f| f.path.starts_with(&tests_prefix))
+        .map(|f| {
+            let matches_stem = !stem.is_empty() && f.path.to_ascii_lowercase().contains(&stem);
+            (matches_stem, f.path)
+        })
+        .collect();
+    ranked.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    ranked.into_iter().take(4).map(|(_, p)| p).collect()
+}
+
 fn append_symbol_slice(
     index: &WorkspaceSearchIndex,
     path: &str,
@@ -107,7 +146,7 @@ fn append_symbol_slice(
     let actual_end = slice.last().map_or(start, |l| l.line_number);
     let span_note = ast_end.map_or_else(String::new, |e| format!(" [ast_span: L{anchor_line}..=L{e}]"));
     let header = format!(
-        "=== symbol: {sym} @ L{anchor_line} (L{start}..=L{actual_end}){span_note} ===\n"
+        "=== symbol: {sym} @ {path}:L{anchor_line} (L{start}..=L{actual_end}){span_note} ===\n"
     );
     if body.len() + header.len() > budget.body_budget {
         return true;
@@ -162,6 +201,10 @@ fn execute_read_file_multi_symbols(
     );
     if req.wrapped_bare_form {
         let _ = writeln!(out, "repairs: wrap-read-file-parens");
+    }
+    let companion_tests = discover_crate_companion_tests(index, &req.path);
+    if !companion_tests.is_empty() {
+        let _ = writeln!(out, "crate_tests: {}", companion_tests.join(", "));
     }
 
     let slice_budget = SymbolSliceBudget {
@@ -350,6 +393,10 @@ pub(super) fn execute_read_file(
     }
     if req.wrapped_bare_form {
         let _ = writeln!(out, "repairs: wrap-read-file-parens");
+    }
+    let companion_tests = discover_crate_companion_tests(index, &req.path);
+    if !companion_tests.is_empty() {
+        let _ = writeln!(out, "crate_tests: {}", companion_tests.join(", "));
     }
 
     let body_budget = output_limit.saturating_sub(out.len() + 192);

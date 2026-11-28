@@ -1136,7 +1136,17 @@
                  '(("MockFn" "crates/a/tests/mock.rs" 1)
                    ("TestHelper" "crates/a/tests/helper_test.rs" 2)
                    ("RealHandler" "crates/a/src/handler.rs" 10))
-                 2)))
+                 2))
+             (idf-ranked-sym-rows
+               (select-diverse-rows-up-to
+                 '(("policy_a" "crates/a/src/p1.rs" 1)
+                   ("policy_b" "crates/a/src/p2.rs" 2)
+                   ("policy_c" "crates/a/src/p3.rs" 3)
+                   ("policy_d" "crates/a/src/p4.rs" 4)
+                   ("evaluate_cedar_policy" "crates/kernel/src/governance_cedar.rs" 10)
+                   ("cedar_test_only" "crates/kernel/tests/cedar_test.rs" 5))
+                 2
+                 '("cedar" "policy"))))
         (check (length (vector-ref prod-colls 3)) => 1)
         (check (vector-ref prod-colls 4) => '())
         (check (length (vector-ref neg-str-pred 3)) => 2)
@@ -1178,6 +1188,7 @@
                => #t)
         (check (map car direct-diverse) => '("new" "parse" "run"))
         (check (car (car prod-first-sym-rows)) => "RealHandler")
+        (check (car (car idf-ranked-sym-rows)) => "evaluate_cedar_policy")
         ;; `min-files: 3` isolates high-multiplicity hubs (`new` in 3 prod files) over 2-file duplicates!
         (check (and (pair? min3-syms) (member "new" min3-syms) (not (member "parse" min3-syms)) (not (member "run" min3-syms)) #t) => #t)
         ;; Multi-kind `(find-collisions kind: ("struct" "fn") ...)` emits 6-column typed rows with fair kind representation!

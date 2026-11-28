@@ -96,7 +96,10 @@
   '("new" "default" "fmt" "from" "into" "drop" "as_str" "clone" "eq" "ne"
     "cmp" "partial_cmp" "hash" "deref" "deref_mut" "as_ref" "borrow"
     "len" "is_empty" "id" "name" "value" "build" "run" "parse" "next"
-    "try_from" "try_into" "display" "to_string" "main" "init" "get" "set"))
+    "try_from" "try_into" "display" "to_string" "main" "init" "get" "set"
+    "serialize" "deserialize" "write" "read" "flush" "poll" "iter" "into_iter"
+    "clear" "push" "pop" "index" "finish" "with_capacity" "as_bytes"
+    "as_slice" "to_owned" "to_vec" "clone_from" "is_none" "is_some"))
 
 (def (boilerplate-symbol-key? k)
   (and (string? k)
@@ -281,13 +284,108 @@
                    (- rem 1)
                    (cons (car q) acc)))))))))
 
+(def (needle-matches-ident? ident-lc ident-norm needle-lc needle-norm)
+  (or (string-contains ident-lc needle-lc)
+      (and (>= (string-length needle-norm) 3)
+           (string-contains ident-norm needle-norm))))
+
+;;; Rank 3-column `(name path line)` symbol locator rows by:
+;;;   1. production paths ahead of test paths
+;;;   2. multi-needle match count + IDF specificity (rare needles crush ubiquitous stems)
+;;;   3. path+name synergy (path also contains a matched needle) + concise non-boilerplate names
+;;; while capping any single repeated symbol name to 3 slots before round-robin diversity.
+(def (rank-symbol-locator-rows rows limit needles)
+  (if (or (null? needles) (null? rows))
+    (let* ((prod-rows (filter (lambda (r) (not (path-is-test-file? (cadr r)))) rows))
+           (test-rows (filter (lambda (r) (path-is-test-file? (cadr r))) rows))
+           (picked-prod (round-robin-diverse-by-key prod-rows limit))
+           (rem (- limit (length picked-prod))))
+      (if (or (<= rem 0) (null? test-rows))
+        picked-prod
+        (append picked-prod (round-robin-diverse-by-key test-rows rem))))
+    (let* ((needle-specs
+             (map (lambda (n) (cons (string-downcase n) (normalize-ident-key n))) needles))
+           (df-table (make-hash-table))
+           (_ (for-each
+                (lambda (row)
+                  (let* ((nm (car row))
+                         (nm-lc (string-downcase nm))
+                         (nm-norm (normalize-ident-key nm)))
+                    (for-each
+                      (lambda (ns)
+                        (when (needle-matches-ident? nm-lc nm-norm (car ns) (cdr ns))
+                          (hash-put! df-table (car ns) (+ 1 (or (hash-get df-table (car ns)) 0)))))
+                      needle-specs)))
+                rows))
+           (scored
+             (map (lambda (row)
+                    (let* ((nm (car row))
+                           (path (cadr row))
+                           (nm-lc (string-downcase nm))
+                           (nm-norm (normalize-ident-key nm))
+                           (path-lc (string-downcase path))
+                           (path-norm (normalize-ident-key path))
+                           (is-prod? (not (path-is-test-file? path)))
+                           (hits 0)
+                           (idf 0)
+                           (path-synergy 0))
+                      (for-each
+                        (lambda (ns)
+                          (let ((nlc (car ns)) (nnorm (cdr ns)))
+                            (when (needle-matches-ident? nm-lc nm-norm nlc nnorm)
+                              (set! hits (+ hits 1))
+                              (let ((df (max 1 (or (hash-get df-table nlc) 1))))
+                                (set! idf (+ idf (quotient 10000 df))))
+                              (when (and (= path-synergy 0)
+                                         (needle-matches-ident? path-lc path-norm nlc nnorm))
+                                (set! path-synergy 500)))))
+                        needle-specs)
+                      (let* ((non-boiler (if (boilerplate-symbol-key? nm) 0 200))
+                             (brevity (max 0 (- 60 (string-length nm))))
+                             (score (+ idf path-synergy non-boiler brevity)))
+                        (list row is-prod? hits score))))
+                  rows))
+           (sorted
+             (list-sort
+               (lambda (a b)
+                 (let ((ap (cadr a)) (bp (cadr b))
+                       (ah (caddr a)) (bh (caddr b))
+                       (as (cadddr a)) (bs (cadddr b)))
+                   (cond
+                     ((and ap (not bp)) #t)
+                     ((and (not ap) bp) #f)
+                     ((> ah bh) #t)
+                     ((< ah bh) #f)
+                     ((> as bs) #t)
+                     ((< as bs) #f)
+                     (else (string<? (car (car a)) (car (car b)))))))
+               scored))
+           (per-name (make-hash-table)))
+      (let loop ((rest sorted) (rem limit) (acc '()) (overflow '()))
+        (cond
+          ((<= rem 0) (reverse acc))
+          ((null? rest)
+           (append (reverse acc) (take-rows-up-to (reverse overflow) rem)))
+          (else
+           (let* ((row (car (car rest)))
+                  (nm (car row))
+                  (cnt (or (hash-get per-name nm) 0)))
+             (if (< cnt 3)
+               (begin
+                 (hash-put! per-name nm (+ cnt 1))
+                 (loop (cdr rest) (- rem 1) (cons row acc) overflow))
+               (loop (cdr rest) rem acc (cons row overflow))))))))))
+
 ;;; Anti-mode-collapse Quality-Diversity / MAP-Elites niche round-robin selector:
+;;; - For 6-column typed collision pairs `(kind name p1 l1 p2 l2)`, partitions
+;;;   fairly across kinds and deduplicates quadratic pairs per kind.
 ;;; - For 5-column collision pairs `(name p1 l1 p2 l2)`, deduplicates quadratic
 ;;;   pairs into domain-prioritized spanning-tree chains with full site witnesses.
 ;;; - For 5-column `find-impact` rows `(role prod|test sym path line)`, preserves
 ;;;   ALL production rows ahead of test-only rows so test suites never starve prod.
-;;; - Otherwise partitions by `(car row)` with domain keys before boilerplate keys.
-(def (select-diverse-rows-up-to rows limit)
+;;; - For 3-column `(name path line)` symbol rows with `needles`, applies prod-first
+;;;   IDF + multi-needle + path-synergy ranking so rare domain anchors surface first.
+(def (select-diverse-rows-up-to rows limit (needles '()))
   (cond
     ((null? rows) rows)
     ((typed-collision-pair-row? (car rows))
@@ -296,6 +394,8 @@
           (or (and limit (> (length rows) limit))
               (> (length rows) 8)))
      (compact-collision-rows rows limit))
+    ((and (symbol-locator-row? (car rows)) (pair? needles))
+     (rank-symbol-locator-rows rows (or limit (length rows)) needles))
     ((or (not limit) (<= (length rows) limit)) rows)
     ((impact-scoped-row? (car rows))
      (let* ((prod-rows (filter (lambda (r) (equal? (cadr r) "prod")) rows))
@@ -305,13 +405,7 @@
     ((or (not (pair? (car rows))) (< (length (car rows)) 2))
      (take-rows-up-to rows limit))
     ((symbol-locator-row? (car rows))
-     (let* ((prod-rows (filter (lambda (r) (not (path-is-test-file? (cadr r)))) rows))
-            (test-rows (filter (lambda (r) (path-is-test-file? (cadr r))) rows))
-            (picked-prod (round-robin-diverse-by-key prod-rows limit))
-            (rem (- limit (length picked-prod))))
-       (if (or (<= rem 0) (null? test-rows))
-         picked-prod
-         (append picked-prod (round-robin-diverse-by-key test-rows rem)))))
+     (rank-symbol-locator-rows rows limit '()))
     (else
      (round-robin-diverse-by-key rows limit))))
 
@@ -507,7 +601,11 @@
     (let* ((result (gerbil-ascent-session-run session))
            (all-rows ((.ref result 'rows-of) target-rel))
            (total-count (length all-rows))
-           (shown-rows (select-diverse-rows-up-to all-rows row-limit)))
+           (rank-needles
+             (if (vector? pred-lits)
+               (append (vector-ref pred-lits 2) (vector-ref pred-lits 3))
+               '()))
+           (shown-rows (select-diverse-rows-up-to all-rows row-limit rank-needles)))
       (vector 'search-result 'ascent target-rel shown-rows repairs total-count canonical-query context-lines))))
 
 (def (evaluate-closed-ascent-over-edb form edb registry repairs)

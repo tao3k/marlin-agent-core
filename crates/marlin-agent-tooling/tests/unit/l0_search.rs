@@ -639,4 +639,20 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
         shallow_map.contains("crates/core/") && shallow_map.contains("crates/modes/"),
         "expected workspace-map on crates/ with depth: 1 to auto-expand to child crates: {shallow_map}"
     );
+
+    // 29. `(read-file "crates/<crate>/src/...")` emits `crate_tests:` companion test files
+    // and multi-symbol headers embed full repo-relative `path:Lline` anchors.
+    let ModelToolOutcome::Completed(companion_read) = run(
+        "c33",
+        "(read-file \"crates/core/src/engine.rs\" symbols: (\"SearchEngine\" \"run_engine\"))",
+    )
+    .await
+    else {
+        panic!("expected Completed for multi-symbol read-file with crate_tests");
+    };
+    assert!(
+        companion_read.contains("crate_tests: crates/core/tests/engine_test.rs")
+            && companion_read.contains("=== symbol: SearchEngine @ crates/core/src/engine.rs:L1"),
+        "expected crate_tests header and full path:line symbol anchors: {companion_read}"
+    );
 }
