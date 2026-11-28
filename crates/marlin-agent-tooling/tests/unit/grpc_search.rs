@@ -503,4 +503,222 @@ mod grpc_tests {
             seen.as_slice()
         );
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn tonic_grpc_search_gateway_emits_truncated_layer_templates_and_lru_evicts_single_session()
+    {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rust_dir = dir.path().join("crates/kernel/src");
+        let scheme_dir = dir.path().join("scheme/policy");
+        std::fs::create_dir_all(&rust_dir).unwrap();
+        std::fs::create_dir_all(&scheme_dir).unwrap();
+        std::fs::write(
+            rust_dir.join("cedar.rs"),
+            "pub fn eval_cedar_a() {}\npub fn eval_cedar_b() {}\npub fn eval_cedar_c() {}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            scheme_dir.join("governance.ss"),
+            "(def (eval-cedar-scheme-rule) #t)\n(def (eval-cedar-scheme-audit) #t)\n",
+        )
+        .unwrap();
+
+        let mut index =
+            WorkspaceSearchIndex::build_with_config(dir.path(), WorkspaceIndexConfig::default());
+        index.ingest_open_edb_facts(WorkspaceOpenEdbIngestBatch {
+            language_id: Some("polyglot".to_owned()),
+            provider_id: Some("test-polyglot".to_owned()),
+            entities: vec![
+                WorkspaceEdbEntityFact {
+                    entity_id: "e1".to_owned(),
+                    file_id: 0,
+                    language: "rust".to_owned(),
+                    kind: "function".to_owned(),
+                    language_kind: "function_item".to_owned(),
+                    name: "eval_cedar_a".to_owned(),
+                    path: "crates/kernel/src/cedar.rs".to_owned(),
+                    line: 1,
+                    source: "test-rust".to_owned(),
+                    attrs: Vec::new(),
+                },
+                WorkspaceEdbEntityFact {
+                    entity_id: "e2".to_owned(),
+                    file_id: 0,
+                    language: "rust".to_owned(),
+                    kind: "function".to_owned(),
+                    language_kind: "function_item".to_owned(),
+                    name: "eval_cedar_b".to_owned(),
+                    path: "crates/kernel/src/cedar.rs".to_owned(),
+                    line: 2,
+                    source: "test-rust".to_owned(),
+                    attrs: Vec::new(),
+                },
+                WorkspaceEdbEntityFact {
+                    entity_id: "e3".to_owned(),
+                    file_id: 0,
+                    language: "rust".to_owned(),
+                    kind: "function".to_owned(),
+                    language_kind: "function_item".to_owned(),
+                    name: "eval_cedar_c".to_owned(),
+                    path: "crates/kernel/src/cedar.rs".to_owned(),
+                    line: 3,
+                    source: "test-rust".to_owned(),
+                    attrs: Vec::new(),
+                },
+                WorkspaceEdbEntityFact {
+                    entity_id: "e4".to_owned(),
+                    file_id: 0,
+                    language: "scheme".to_owned(),
+                    kind: "function".to_owned(),
+                    language_kind: "def".to_owned(),
+                    name: "eval-cedar-scheme-rule".to_owned(),
+                    path: "scheme/policy/governance.ss".to_owned(),
+                    line: 1,
+                    source: "test-scheme".to_owned(),
+                    attrs: Vec::new(),
+                },
+                WorkspaceEdbEntityFact {
+                    entity_id: "e5".to_owned(),
+                    file_id: 0,
+                    language: "scheme".to_owned(),
+                    kind: "function".to_owned(),
+                    language_kind: "def".to_owned(),
+                    name: "eval-cedar-scheme-audit".to_owned(),
+                    path: "scheme/policy/governance.ss".to_owned(),
+                    line: 2,
+                    source: "test-scheme".to_owned(),
+                    attrs: Vec::new(),
+                },
+            ],
+            ..Default::default()
+        });
+
+        let decl = ModelToolDeclaration::search(SearchToolDeclarationRequest {
+            name: ModelToolName::new("workspace_search").unwrap(),
+            description: "gRPC unified search".to_owned(),
+            argument: "query".to_owned(),
+            timeout_seconds: 15,
+            output_limit: 16384,
+        })
+        .unwrap();
+        let (rt, _ev) =
+            TokioAgentRuntime::from_build_request(TokioAgentRuntimeBuildRequest::runtime_root(8));
+        let service = SearchGatewayService::new(
+            Arc::new(RwLock::new(index)),
+            tool_schema_entries_from_declarations(std::slice::from_ref(&decl)),
+            test_session_runner(),
+            rt.context(),
+        );
+        let server = LoopbackSearchGrpcServer::spawn(service, &rt).expect("spawn loopback gRPC");
+        let mut client = server.client();
+
+        // 1. Truncated polyglot `find-symbols` (limit: 3 out of 5) must emit concrete
+        // per-layer `(read-file "<path>" signature-only?: #t)` templates for BOTH layers.
+        let truncated_resp = client
+            .search_step(SearchStepRequest {
+                session_id: "hot-session".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(find-symbols name-contains: \"cedar\" lang: \"any\" limit: 3)".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("truncated polyglot find-symbols")
+            .into_inner();
+        assert!(
+            truncated_resp.truncated,
+            "expected truncated response: {}",
+            truncated_resp.rendered_text
+        );
+        let frontier = truncated_resp.frontier.expect("frontier");
+        assert!(
+            frontier
+                .next_dag_templates
+                .iter()
+                .any(|t| t.contains("(read-file \"crates/kernel/src/cedar.rs\" signature-only?: #t)")),
+            "expected Rust layer read-file template in {:?}",
+            frontier.next_dag_templates
+        );
+        assert!(
+            frontier
+                .next_dag_templates
+                .iter()
+                .any(|t| t.contains("(read-file \"scheme/policy/governance.ss\" signature-only?: #t)")),
+            "expected Scheme layer read-file template in {:?}",
+            frontier.next_dag_templates
+        );
+
+        // 2. Seed a cold session, then touch 31 new sessions + keep `hot-session` fresh so
+        // capacity (32) evicts ONLY `cold-session` and NEVER wipes `hot-session`.
+        let cold_t1 = client
+            .search_step(SearchStepRequest {
+                session_id: "cold-session".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(file-outline \"crates/kernel/src/cedar.rs\")".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("cold session turn 1")
+            .into_inner();
+        assert_eq!(cold_t1.frontier.expect("cold t1").step, 1);
+
+        // Refresh `hot-session` so it is newer than `cold-session`.
+        let hot_t2 = client
+            .search_step(SearchStepRequest {
+                session_id: "hot-session".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(file-outline \"crates/kernel/src/cedar.rs\")".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("hot session turn 2")
+            .into_inner();
+        let hot_f2 = hot_t2.frontier.expect("hot f2");
+        assert_eq!(hot_f2.step, 2);
+        assert!(hot_f2.compact_mode);
+
+        // Fill remaining 30 slots + 1 overflow (31 new sessions -> total 33 > MAX_ACTIVE_SESSIONS=32).
+        for idx in 0..31 {
+            client
+                .search_step(SearchStepRequest {
+                    session_id: format!("filler-{idx}"),
+                    tool_name: "workspace_search".to_owned(),
+                    query: "(file-outline \"crates/kernel/src/cedar.rs\")".to_owned(),
+                    output_limit: 16384,
+                })
+                .await
+                .expect("filler session step");
+        }
+
+        // `hot-session` MUST still be alive at step 3 with compact_mode=true!
+        let hot_t3 = client
+            .search_step(SearchStepRequest {
+                session_id: "hot-session".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(file-outline \"scheme/policy/governance.ss\")".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("hot session survives LRU eviction")
+            .into_inner();
+        let hot_f3 = hot_t3.frontier.expect("hot f3");
+        assert_eq!(hot_f3.step, 3, "hot-session must NOT have been wiped");
+        assert!(hot_f3.compact_mode);
+
+        // `cold-session` was the single LRU entry, so it re-starts cleanly at step 1.
+        let cold_reborn = client
+            .search_step(SearchStepRequest {
+                session_id: "cold-session".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(file-outline \"crates/kernel/src/cedar.rs\")".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("cold session evicted and reborn")
+            .into_inner();
+        assert_eq!(
+            cold_reborn.frontier.expect("cold reborn").step,
+            1,
+            "cold-session should have been the sole LRU-evicted entry"
+        );
+    }
 }

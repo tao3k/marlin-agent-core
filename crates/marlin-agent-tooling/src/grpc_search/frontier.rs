@@ -38,6 +38,7 @@ fn allocate_scheme_session_id(logical_id: &str) -> SearchDslSessionId {
 
 pub(super) struct SessionFrontierState {
     pub(super) scheme_session_id: SearchDslSessionId,
+    pub(super) last_used_seq: u64,
     step_count: u32,
     teaching_emitted: bool,
     evidence_epoch: u64,
@@ -50,15 +51,17 @@ pub(super) struct SessionFrontierState {
     layer_sample_symbols: BTreeMap<String, Vec<String>>,
     discovered_symbols: Vec<String>,
     seen_symbols: BTreeSet<String>,
+    read_paths: BTreeSet<String>,
     pub(super) read_ranges: HashMap<String, Vec<(usize, usize)>>,
     impact_ran: bool,
     dusa_worlds: Option<usize>,
 }
 
 impl SessionFrontierState {
-    pub(super) fn new(logical_id: &str) -> Self {
+    pub(super) fn new(logical_id: &str, last_used_seq: u64) -> Self {
         Self {
             scheme_session_id: allocate_scheme_session_id(logical_id),
+            last_used_seq,
             step_count: 0,
             teaching_emitted: false,
             evidence_epoch: 1,
@@ -71,6 +74,7 @@ impl SessionFrontierState {
             layer_sample_symbols: BTreeMap::new(),
             discovered_symbols: Vec::new(),
             seen_symbols: BTreeSet::new(),
+            read_paths: BTreeSet::new(),
             read_ranges: HashMap::new(),
             impact_ran: false,
             dusa_worlds: None,
@@ -101,8 +105,18 @@ impl SessionFrontierState {
         };
         let layer_distribution =
             summarize_broad_layer_distribution(raw_query, rendered_body, structured);
-        let next_dag_templates =
-            self.build_next_dag_templates(teaching_kit_active, &open_frontiers, raw_query);
+        let truncation_templates = build_truncated_symbol_layer_templates(
+            raw_query,
+            rendered_body,
+            structured,
+            &self.read_paths,
+        );
+        let next_dag_templates = self.build_next_dag_templates(
+            teaching_kit_active,
+            &open_frontiers,
+            &truncation_templates,
+            raw_query,
+        );
 
         let frontier = EvidenceFrontier {
             step: self.step_count,
@@ -197,6 +211,9 @@ impl SessionFrontierState {
             && (raw_query.contains("read-file") || raw_query.contains("file-outline"))
             && let Some(layer) = extract_path_layer(target_path)
         {
+            if raw_query.contains("read-file") {
+                self.read_paths.insert(target_path.to_owned());
+            }
             self.covered_layers.insert(layer.clone());
             self.layer_sample_paths
                 .entry(layer)
@@ -315,6 +332,7 @@ impl SessionFrontierState {
         &self,
         teaching_active: bool,
         open_frontiers: &[String],
+        truncation_templates: &[String],
         raw_query: &str,
     ) -> Vec<String> {
         let mut out = Vec::new();
@@ -332,7 +350,9 @@ impl SessionFrontierState {
             };
             out.push(format!("workspace_search: (find-impact {arg} limit: 120)"));
         }
-        out.extend(open_frontiers.iter().take(3).map(|frontier| {
+        out.extend(truncation_templates.iter().take(3).cloned());
+        let frontier_room = 4usize.saturating_sub(out.len());
+        out.extend(open_frontiers.iter().take(frontier_room).map(|frontier| {
             format_open_frontier_template(
                 frontier,
                 &self.layer_sample_paths,
@@ -474,6 +494,61 @@ fn summarize_broad_layer_distribution(
         .join(", ")
 }
 
+fn build_truncated_symbol_layer_templates(
+    raw_query: &str,
+    rendered_body: &str,
+    structured: Option<&SearchDslStructuredResult>,
+    read_paths: &BTreeSet<String>,
+) -> Vec<String> {
+    let Some(res) = structured else {
+        return Vec::new();
+    };
+    if !raw_query.contains("find-symbols") || res.rows.is_empty() {
+        return Vec::new();
+    }
+    let is_truncated = rendered_body
+        .lines()
+        .take(16)
+        .any(|l| l.trim() == "truncated: true");
+    if !is_truncated {
+        return Vec::new();
+    }
+    // `res.rows` is already ranked by directory-niche round-robin, so scanning
+    // in order selects the highest-signal unread representative file from
+    // distinct production layers across polyglot roots with zero extra I/O.
+    let mut seen_layers = BTreeSet::new();
+    let mut templates = Vec::new();
+    for row in &res.rows {
+        let Some(path) = row.path.as_deref() else {
+            continue;
+        };
+        let Some(layer) = extract_path_layer(path) else {
+            continue;
+        };
+        if layer.ends_with("/tests")
+            || read_paths.contains(path)
+            || !seen_layers.insert(layer)
+        {
+            continue;
+        }
+        templates.push(format!(
+            "workspace_search: (read-file \"{path}\" signature-only?: #t)"
+        ));
+        if templates.len() >= 3 {
+            break;
+        }
+    }
+    templates
+}
+
+fn is_generic_entrypoint_path(path: &str) -> bool {
+    let file_name = path.rsplit('/').next().unwrap_or(path);
+    matches!(
+        file_name,
+        "lib.rs" | "mod.rs" | "main.rs" | "funcs.ss" | "index.ts" | "index.js" | "__init__.py" | "main.go"
+    )
+}
+
 fn resolve_frontier_entry_path(frontier: &str, index: &WorkspaceSearchIndex) -> String {
     if frontier.contains('.') {
         return frontier.to_owned();
@@ -496,7 +571,7 @@ fn resolve_frontier_entry_path(frontier: &str, index: &WorkspaceSearchIndex) -> 
     if let Some(preferred) = snapshot
         .files
         .iter()
-        .find(|f| f.path.contains("search-dsl") || f.path.ends_with("lib.rs"))
+        .find(|f| is_generic_entrypoint_path(&f.path))
     {
         return preferred.path.clone();
     }

@@ -35,11 +35,35 @@
 (def *compiled-ascent-session-cache* (make-hash-table))
 (def *compiled-prefilter-cache* (make-hash-table))
 (def *active-evidence-stores* (make-hash-table))
+(def *active-evidence-session-lru* '())
 
 (def (reset-search-dsl-caches!)
   (set! *compiled-ascent-session-cache* (make-hash-table))
   (set! *compiled-prefilter-cache* (make-hash-table))
-  (set! *active-evidence-stores* (make-hash-table)))
+  (set! *active-evidence-stores* (make-hash-table))
+  (set! *active-evidence-session-lru* '()))
+
+;;; Pure functional LRU ordering update: promotes `session-id` to most-recent
+;;; and returns `(values next-order evicted-id-or-#f)` when exceeding `limit`.
+(def (lru-touch-session-order order session-id limit)
+  (let* ((without (let loop ((rest order) (acc '()))
+                    (cond
+                      ((null? rest) (reverse acc))
+                      ((equal? (car rest) session-id) (loop (cdr rest) acc))
+                      (else (loop (cdr rest) (cons (car rest) acc))))))
+         (updated (append without (list session-id))))
+    (if (> (length updated) limit)
+      (values (cdr updated) (car updated))
+      (values updated #f))))
+
+(def (store-evidence-session! session-id next-store)
+  (let-values (((next-order evicted)
+                (lru-touch-session-order
+                  *active-evidence-session-lru* session-id +max-evidence-sessions+)))
+    (when evicted
+      (hash-remove! *active-evidence-stores* evicted))
+    (set! *active-evidence-session-lru* next-order)
+    (hash-put! *active-evidence-stores* session-id next-store)))
 
 ;;; Strip noisy internal Gambit continuation stack traces for structured
 ;;; validation/repair diagnostics so LLM context receives compact, actionable
@@ -186,10 +210,7 @@
                             prev-store query edb generation
                             registry: *active-search-registry*
                             eval-fn: eval-fn)))
-              (when (and (not prev-store)
-                         (>= (hash-length *active-evidence-stores*) +max-evidence-sessions+))
-                (set! *active-evidence-stores* (make-hash-table)))
-              (hash-put! *active-evidence-stores* session-id next-store)
+              (store-evidence-session! session-id next-store)
               (deep-list->vector enriched-res))))))))
 
 (def (marlin-search-dsl-extract-facts input)

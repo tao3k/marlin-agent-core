@@ -38,6 +38,39 @@ use super::proto::{
 const DEFAULT_OUTPUT_LIMIT: usize = 65_536;
 const MAX_ACTIVE_SESSIONS: usize = 32;
 
+#[derive(Default)]
+struct SessionRegistry {
+    access_seq: u64,
+    entries: HashMap<String, SessionFrontierState>,
+}
+
+impl SessionRegistry {
+    fn get_or_insert_mut(&mut self, logical_id: &str) -> &mut SessionFrontierState {
+        self.access_seq = self.access_seq.saturating_add(1);
+        let seq = self.access_seq;
+        if !self.entries.contains_key(logical_id)
+            && self.entries.len() >= MAX_ACTIVE_SESSIONS
+            && let Some(evict_key) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, state)| state.last_used_seq)
+                .map(|(k, _)| k.clone())
+        {
+            self.entries.remove(&evict_key);
+        }
+        let state = self
+            .entries
+            .entry(logical_id.to_owned())
+            .or_insert_with(|| SessionFrontierState::new(logical_id, seq));
+        state.last_used_seq = seq;
+        state
+    }
+
+    fn remove(&mut self, logical_id: &str) -> bool {
+        self.entries.remove(logical_id).is_some()
+    }
+}
+
 /// Boxed future returned by an [`AsyncSearchDslSessionRunner`].
 pub type AsyncSearchDslSessionFuture = Pin<
     Box<dyn Future<Output = Result<SearchDslStructuredResult, SearchPlanProjectionError>> + Send>,
@@ -70,7 +103,7 @@ pub struct SearchGatewayService {
     tool_schemas: Arc<Vec<ToolSchemaEntry>>,
     dsl_backend: SearchGatewayDslBackend,
     runtime_context: RuntimeContext,
-    sessions: Arc<Mutex<HashMap<String, SessionFrontierState>>>,
+    sessions: Arc<Mutex<SessionRegistry>>,
 }
 
 impl SearchGatewayService {
@@ -88,7 +121,7 @@ impl SearchGatewayService {
             tool_schemas: Arc::new(tool_schemas),
             dsl_backend: SearchGatewayDslBackend::Blocking(dsl_session_runner),
             runtime_context,
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            sessions: Arc::new(Mutex::new(SessionRegistry::default())),
         }
     }
 
@@ -106,7 +139,7 @@ impl SearchGatewayService {
             tool_schemas: Arc::new(tool_schemas),
             dsl_backend: SearchGatewayDslBackend::Blocking(dsl_session_runner),
             runtime_context,
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            sessions: Arc::new(Mutex::new(SessionRegistry::default())),
         }
     }
 
@@ -124,7 +157,7 @@ impl SearchGatewayService {
             tool_schemas: Arc::new(tool_schemas),
             dsl_backend: SearchGatewayDslBackend::Async(async_session_runner),
             runtime_context,
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            sessions: Arc::new(Mutex::new(SessionRegistry::default())),
         }
     }
 
@@ -149,12 +182,8 @@ impl SearchGatewayService {
             .sessions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !sessions.contains_key(logical_id) && sessions.len() >= MAX_ACTIVE_SESSIONS {
-            sessions.clear();
-        }
         sessions
-            .entry(logical_id.to_owned())
-            .or_insert_with(|| SessionFrontierState::new(logical_id))
+            .get_or_insert_mut(logical_id)
             .scheme_session_id
             .clone()
     }
@@ -178,9 +207,7 @@ impl SearchGatewayService {
             .sessions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let state = sessions
-            .entry(session_id.to_owned())
-            .or_insert_with(|| SessionFrontierState::new(session_id));
+        let state = sessions.get_or_insert_mut(session_id);
         let ranges = state.read_ranges.entry(rf.path.clone()).or_default();
         let covered = ranges
             .iter()
@@ -244,7 +271,7 @@ impl SearchGateway for SearchGatewayService {
                 .sessions
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            sessions.remove(&session_id).is_some()
+            sessions.remove(&session_id)
         };
         Ok(Response::new(ResetSessionResponse {
             session_id,
@@ -358,9 +385,7 @@ impl SearchGateway for SearchGatewayService {
                 .sessions
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let state = sessions
-                .entry(session_id.clone())
-                .or_insert_with(|| SessionFrontierState::new(&session_id));
+            let state = sessions.get_or_insert_mut(&session_id);
             state.advance(tier, &query, &raw_body, structured.as_ref(), &guard)
         };
 

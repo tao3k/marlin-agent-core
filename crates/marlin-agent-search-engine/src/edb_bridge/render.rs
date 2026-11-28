@@ -164,6 +164,17 @@ fn format_ascent_row_with_context(
     block
 }
 
+fn infer_sample_path_prefix(snapshot: &WorkspaceEdbSnapshot) -> Option<String> {
+    snapshot.files.iter().find_map(|f| {
+        let mut segs = f.path.split('/').filter(|s| !s.is_empty());
+        match (segs.next(), segs.next(), segs.next()) {
+            (Some(a), Some(b), Some(_)) => Some(format!("{a}/{b}/")),
+            (Some(a), Some(_), None) => Some(format!("{a}/")),
+            _ => None,
+        }
+    })
+}
+
 fn append_ram_witness_fallback(
     rendered_text: &mut String,
     snapshot: &WorkspaceEdbSnapshot,
@@ -211,7 +222,8 @@ fn append_ram_witness_fallback(
         }
     }
 
-    let scope_arg = scope_prefix.unwrap_or("crates/");
+    let inferred_prefix = infer_sample_path_prefix(snapshot);
+    let scope_arg = scope_prefix.or(inferred_prefix.as_deref()).unwrap_or("");
     let lang_arg = prefilter
         .and_then(|pf| pf.languages.first())
         .map_or_else(String::new, |l| format!(" lang: \"{l}\""));
@@ -291,6 +303,39 @@ fn score_entities_against_stems(
         });
 }
 
+fn score_edges_against_stems(
+    edges: &[agent_semantic_search::WorkspaceEdbEdgeFact],
+    stems_lc: &[String],
+    seen_names: &mut BTreeSet<(String, String)>,
+    matched_stem_indices: &mut BTreeSet<usize>,
+    scored: &mut Vec<ScoredRecoverySymbol>,
+) {
+    edges
+        .iter()
+        .filter(|edge| edge.relation != "imports" && !edge.dst.is_empty())
+        .for_each(|edge| {
+            let dst_lc = edge.dst.to_ascii_lowercase();
+            let hits = stems_lc
+                .iter()
+                .enumerate()
+                .filter(|(_, st)| dst_lc.contains(st.as_str()))
+                .inspect(|(idx, _)| {
+                    matched_stem_indices.insert(*idx);
+                })
+                .count();
+            if hits > 0 && seen_names.insert((edge.dst.clone(), edge.path.clone())) {
+                scored.push((
+                    hits,
+                    !is_test_like_recovery_path(&edge.path),
+                    edge.dst.clone(),
+                    edge.relation.clone(),
+                    edge.path.clone(),
+                    edge.line,
+                ));
+            }
+        });
+}
+
 fn probe_recovery_symbols_from_index(
     idx: &WorkspaceSearchIndex,
     pf: &OwnedWorkspaceEdbPrefilter,
@@ -313,6 +358,13 @@ fn probe_recovery_symbols_from_index(
         let sub = idx.project_prefiltered_edb(&probe);
         score_entities_against_stems(
             &sub.entities,
+            stems_lc,
+            seen_names,
+            matched_stem_indices,
+            scored,
+        );
+        score_edges_against_stems(
+            &sub.edges,
             stems_lc,
             seen_names,
             matched_stem_indices,
@@ -341,6 +393,13 @@ fn append_nearest_symbol_recovery(
 
     score_entities_against_stems(
         &snapshot.entities,
+        &stems_lc,
+        &mut seen_names,
+        &mut matched_stem_indices,
+        &mut scored,
+    );
+    score_edges_against_stems(
+        &snapshot.edges,
         &stems_lc,
         &mut seen_names,
         &mut matched_stem_indices,
@@ -436,6 +495,7 @@ fn append_zero_hit_diagnostic(
             snapshot.files.len(),
         );
         append_ram_witness_fallback(rendered_text, snapshot, index, prefilter);
+        append_nearest_symbol_recovery(rendered_text, snapshot, index, prefilter);
         return;
     }
     let coverage_note = if native_ast_files < snapshot.files.len() {
@@ -459,6 +519,7 @@ fn append_zero_hit_diagnostic(
 }
 
 fn format_truncation_next_query_hint(
+    snapshot: &WorkspaceEdbSnapshot,
     rows: &[SearchDslStructuredRow],
     prefilter: Option<&OwnedWorkspaceEdbPrefilter>,
 ) -> String {
@@ -472,13 +533,15 @@ fn format_truncation_next_query_hint(
         .count();
     let mut hints = Vec::new();
     if test_rows > 0 {
-        hints.push("exclude-tests?: #t");
+        hints.push("exclude-tests?: #t".to_owned());
     }
     if prefilter.and_then(|pf| pf.path_prefix.as_deref()).is_none() {
-        hints.push("path-prefix: \"crates/<crate>/\"");
+        let sample_prefix = infer_sample_path_prefix(snapshot)
+            .unwrap_or_else(|| "<dir>/".to_owned());
+        hints.push(format!("path-prefix: \"{sample_prefix}\""));
     }
-    hints.push("name-all: (\"stem1\" \"stem2\")");
-    hints.push("or raise limit:");
+    hints.push("name-all: (\"stem1\" \"stem2\")".to_owned());
+    hints.push("or raise limit:".to_owned());
     hints.join(", ")
 }
 
@@ -598,7 +661,7 @@ pub(super) fn render_ascent_search_text(inputs: AscentRenderInputs<'_>) -> Strin
     rendered_text.extend(body_lines);
     if truncated {
         let omitted = total_results.saturating_sub(returned_results);
-        let hint = format_truncation_next_query_hint(&rows[..returned_results], ctx.prefilter);
+        let hint = format_truncation_next_query_hint(snapshot, &rows[..returned_results], ctx.prefilter);
         let _ = writeln!(
             rendered_text,
             "... (+{omitted} omitted; next_query: narrow via {hint})"

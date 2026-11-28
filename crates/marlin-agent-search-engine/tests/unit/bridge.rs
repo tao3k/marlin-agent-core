@@ -500,6 +500,69 @@ fn rooted_scheme_plans_and_compiled_module_project_into_asp() {
             let pending_scheme = modified_idx.live_files_needing_open_edb(&["scheme"], 32);
             assert_eq!(pending_scheme.len(), 1);
             assert_eq!(pending_scheme[0].path, "scheme/sample.ss");
+
+            // 7. Zero-hit call-graph queries recover near-miss `edge.dst` callees and
+            //    infer repo-agnostic scope prefixes (never hardcoding `crates/`).
+            let py_ws = tempfile::tempdir().expect("temp python workspace");
+            let svc_dir = py_ws.path().join("services/auth");
+            std::fs::create_dir_all(&svc_dir).unwrap();
+            std::fs::write(
+                svc_dir.join("handler.py"),
+                "def dispatch_req():\n    return execute_auth_token_structured()\n",
+            )
+            .unwrap();
+            let mut py_idx = WorkspaceSearchIndex::build_with_config(
+                py_ws.path(),
+                WorkspaceIndexConfig::default(),
+            );
+            py_idx.ingest_open_edb_facts(agent_semantic_search::WorkspaceOpenEdbIngestBatch {
+                language_id: Some("python".to_owned()),
+                provider_id: Some("test-python".to_owned()),
+                entities: vec![agent_semantic_search::WorkspaceEdbEntityFact {
+                    entity_id: "py-fn-1".to_owned(),
+                    file_id: 0,
+                    language: "python".to_owned(),
+                    kind: "function".to_owned(),
+                    language_kind: "function_definition".to_owned(),
+                    name: "dispatch_req".to_owned(),
+                    path: "services/auth/handler.py".to_owned(),
+                    line: 1,
+                    source: "test-python".to_owned(),
+                    attrs: Vec::new(),
+                }],
+                edges: vec![agent_semantic_search::WorkspaceEdbEdgeFact {
+                    src: "py-fn-1".to_owned(),
+                    relation: "calls".to_owned(),
+                    dst: "execute_auth_token_structured".to_owned(),
+                    path: "services/auth/handler.py".to_owned(),
+                    line: 2,
+                }],
+                ..Default::default()
+            });
+            let zero_hit_res = execute_package_search_dsl_structured(
+                &runtime,
+                scheme_dir_str,
+                &SearchDslExecutionRequest {
+                    index: &py_idx,
+                    query: "((answer caller path line) <-- (calls_symbol caller \"execute_auth_token\" path line))",
+                    output_limit: 4096,
+                },
+            )
+            .expect("structured 0-hit call graph query");
+            assert!(zero_hit_res.rows.is_empty(), "expected 0 exact matches");
+            assert!(
+                zero_hit_res.rendered_text.contains("nearest_symbols:")
+                    && zero_hit_res
+                        .rendered_text
+                        .contains("execute_auth_token_structured"),
+                "expected near-miss callee recovery from snapshot edges, got:\n{}",
+                zero_hit_res.rendered_text
+            );
+            assert!(
+                !zero_hit_res.rendered_text.contains("crates/"),
+                "non-Rust repo must not emit hardcoded crates/ path hints:\n{}",
+                zero_hit_res.rendered_text
+            );
         }
     }
 }
