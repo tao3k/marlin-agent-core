@@ -23,7 +23,7 @@ use crate::wire::marlin::{
     projection::v1::{GraphRecordView, GraphTrajectoryEvent, QueryProjectGraphRequest},
     ui::v1::{
         SlotCardinality, SlotDeclaration, UiCommand, UiCommandArguments, UiElement,
-        UiElementSequence, UiKeyBinding, UiKeyScope, UiLayoutPolicy, UiRgb, UiSlotNode,
+        UiElementSequence, UiKeyBinding, UiLayoutPolicy, UiRgb, UiSlotNode,
         UiSlotSource, UiSpan, UiTextNode, UiTheme, UiTone, UiTransient, UiWorkbenchSnapshot,
         ui_element,
     },
@@ -519,16 +519,7 @@ pub(super) fn build_snapshot(st: &BridgeState) -> UiWorkbenchSnapshot {
         } else {
             st.scheme_commands.clone()
         },
-        keymap: if st.scheme_keymap.is_empty() {
-            vec![UiKeyBinding {
-                scope: UiKeyScope::Normal as i32,
-                sequence: vec!["SPC".to_owned(), "w".to_owned(), "v".to_owned()],
-                action_kind: "invoke".to_owned(),
-                command_name: Some("split-vertical".to_owned()),
-            }]
-        } else {
-            st.scheme_keymap.clone()
-        },
+        keymap: st.scheme_keymap.clone(),
         transients: st.scheme_transients.clone(),
         slots: st.slots.clone(),
     }

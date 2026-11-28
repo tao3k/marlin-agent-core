@@ -278,13 +278,29 @@ impl ProjectionQueryService for MyGoBridgeHost {
             (s, st.scheme_mode_records.clone())
         };
         let trimmed_query = req.query.trim();
+        let default_fs_root = self
+            .magit_bridge
+            .as_ref()
+            .map(|b| b.workspace_root().to_path_buf())
+            .unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+            });
         let records = if trimmed_query.starts_with("modes:") && !mode_records.is_empty() {
             mode_records
+        } else if let Some(fs_res) =
+            crate::mygo_host::query_fs_records(trimmed_query, &default_fs_root)
+        {
+            fs_res.map_err(Status::failed_precondition)?
         } else if trimmed_query.starts_with("magit:")
             && let Some(bridge) = &self.magit_bridge
         {
+            let repo_override = trimmed_query
+                .strip_prefix("magit:snapshot@")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(std::path::PathBuf::from);
             let snap = bridge
-                .refresh_snapshot()
+                .refresh_snapshot_for(repo_override.as_deref())
                 .await
                 .map_err(|err| Status::failed_precondition(format!("magit snapshot error: {err}")))?;
             let receipt = bridge.last_receipt();

@@ -55,6 +55,11 @@ name = "marlin-scheme-host"
 path = "src/bin/marlin_scheme_host.rs"
 required-features = ["app-server-host"]
 
+[[bin]]
+name = "marlin-app-server"
+path = "src/bin/marlin_app_server.rs"
+required-features = ["app-server-host"]
+
 [[test]]
 name = "graph_engine_vm"
 path = "tests/graph_engine_vm.rs"

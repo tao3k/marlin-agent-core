@@ -1319,8 +1319,13 @@ fn run_scheme_host_core<'vm, O: marlin_agent_graph::GraphEngineOracle>(
                     )
                     .with_scheme_mode_records(surface.mode_records);
             }
-            if let Ok(cwd) = env::current_dir() {
-                host = host.with_magit_workspace(cwd);
+            let magit_root = env::var("MARLIN_BRIDGE_WORKSPACE_ROOT")
+                .ok()
+                .map(|s| PathBuf::from(s.trim()))
+                .filter(|p| !p.as_os_str().is_empty())
+                .or_else(|| env::current_dir().ok());
+            if let Some(root) = magit_root {
+                host = host.with_magit_workspace(root);
             }
 
             if let Some(report) = &initial_fleet_report {

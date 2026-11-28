@@ -296,10 +296,14 @@ impl MyGoBridgeHost {
     /// Attach Scheme-projected Major/Minor/Polymode registry records decoded
     /// directly from `:marlin-agent-core/ui-modes` over Gerbil C-ABI FFI.
     pub fn with_scheme_mode_records(self, records: Vec<GraphRecordView>) -> Self {
+        self.set_scheme_mode_records(records);
+        self
+    }
+
+    /// Replace the live Scheme-projected Major/Minor/Polymode registry records at runtime.
+    pub fn set_scheme_mode_records(&self, records: Vec<GraphRecordView>) {
         let mut st = self.state.lock().expect("bridge mutex poisoned");
         st.scheme_mode_records = records;
-        drop(st);
-        self
     }
 
     /// Update the active model label projected into `UIWorkbenchSnapshot` and

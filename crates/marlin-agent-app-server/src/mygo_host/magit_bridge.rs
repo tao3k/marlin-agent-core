@@ -86,13 +86,23 @@ impl WorkspaceMagitBridge {
     /// Computes a fresh authoritative `MagitSnapshot` from `jj` / Git fused with
     /// real Lambda Aitia gRPC `AuditDiffDefense` findings and Human-AI audit records.
     pub async fn refresh_snapshot(&self) -> Result<MagitSnapshot, String> {
-        let engine = MagitEngine::discover(&self.workspace_root)
+        self.refresh_snapshot_for(None).await
+    }
+
+    /// Computes a fresh authoritative `MagitSnapshot` for `repo_override` (if provided)
+    /// or the bridge's default `workspace_root`, discovering the live Git/jj worktree.
+    pub async fn refresh_snapshot_for(
+        &self,
+        repo_override: Option<&Path>,
+    ) -> Result<MagitSnapshot, String> {
+        let target_dir = repo_override.unwrap_or(&self.workspace_root);
+        let engine = MagitEngine::discover(target_dir)
             .await
             .map_err(|e| e.to_string())?;
         let rev = self.revision.fetch_add(1, Ordering::Relaxed) + 1;
         let aitia_report = self
             .aitia_client
-            .audit_diff_defense(&self.workspace_root, "HEAD")
+            .audit_diff_defense(engine.repo_root(), "HEAD")
             .await;
         let joints = self.current_joint_audits();
         let snap = engine

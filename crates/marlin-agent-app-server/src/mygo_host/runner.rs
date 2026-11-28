@@ -30,7 +30,11 @@ use crate::{
     AppServer, CompositeAtomicEffectExecutor, SessionBinding, SessionOpen, TaskActorControlPlane,
     TaskActorPersistenceHandle,
     ui_grpc::{DispatchedUiCommand, MyGoBridgeHost},
-    wire::marlin::gate::v1::{GateKind, PendingGate},
+    wire::marlin::{
+        gate::v1::{GateKind, PendingGate},
+        projection::v1::GraphRecordView,
+        ui::v1::{UiCommand, UiKeyBinding, UiTransient},
+    },
 };
 use marlin_agent_kernel::{
     ExecutionCircuitBreaker, GovernanceAdmissionGate, GovernedSubjectName, ToolBudgetUnits,
@@ -411,8 +415,34 @@ pub async fn run_ui_command_router_loop(
     }
 }
 
-/// Runs the `marlin-mygo-host` HTTP/2 gRPC authority daemon.
+/// Authoritative UI surface bundle projected from Gerbil Scheme over native C-ABI FFI.
+#[derive(Clone, Debug, Default)]
+pub struct SchemeUiSurfaceBundle {
+    pub commands: Vec<UiCommand>,
+    pub keymap: Vec<UiKeyBinding>,
+    pub transients: Vec<UiTransient>,
+    pub mode_records: Vec<GraphRecordView>,
+}
+
+/// Runs the `marlin-mygo-host` HTTP/2 gRPC authority daemon without embedded Scheme projection.
 pub async fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
+    run_cli_with_scheme_surface(None).await
+}
+
+/// Runs the HTTP/2 gRPC authority daemon with an optional native Gerbil Scheme UI surface bundle.
+pub async fn run_cli_with_scheme_surface(
+    scheme_surface: Option<SchemeUiSurfaceBundle>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_cli_with_host_ready(scheme_surface, None).await
+}
+
+/// Runs the HTTP/2 gRPC authority daemon and notifies `on_host_ready` with a cloned
+/// `MyGoBridgeHost` handle right before printing `READY`, enabling non-blocking
+/// background/main-thread Scheme C-ABI FFI surface projection with instant gRPC boot.
+pub async fn run_cli_with_host_ready(
+    scheme_surface: Option<SchemeUiSurfaceBundle>,
+    on_host_ready: Option<std::sync::mpsc::Sender<MyGoBridgeHost>>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let bind_addr = env::var("MARLIN_BRIDGE_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_owned());
     let expected_header =
         MyGoBridgeHost::resolve_bridge_auth_header(&bind_addr, env::var("MARLIN_BRIDGE_TOKEN"))?;
@@ -437,6 +467,13 @@ pub async fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
         MyGoBridgeHost::check_bearer_header(meta, bridge_header.as_deref())
     })
     .with_governance_gate(Arc::clone(&shared_governance_gate));
+
+    if let Some(surface) = scheme_surface {
+        host = host
+            .with_scheme_ui_surface(surface.commands, surface.keymap, surface.transients)
+            .with_scheme_mode_records(surface.mode_records);
+    }
+    let host_for_hook = host.clone();
 
     let ws_root = env::var("MARLIN_BRIDGE_WORKSPACE_ROOT")
         .ok()
@@ -629,6 +666,10 @@ pub async fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = TcpListener::bind(&bind_addr).await?;
     let local_addr = listener.local_addr()?;
+
+    if let Some(tx) = on_host_ready {
+        let _ = tx.send(host_for_hook);
+    }
 
     println!("READY {local_addr}");
     io::stdout().flush()?;
