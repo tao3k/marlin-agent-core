@@ -191,6 +191,8 @@
         dedicated: #f
         local-keymap: (list
                         (.o key: "RET" command: "cmd:table-select" label: "Open selected row" exit: #t)
+                        (.o key: "d" command: "cmd:ibuffer-mark-cursor" label: "Mark cursor buffer for delete" exit: #f)
+                        (.o key: "u" command: "cmd:ibuffer-unmark-cursor" label: "Unmark cursor buffer" exit: #f)
                         (.o key: "U" command: "cmd:ibuffer-unmark-all" label: "Unmark all buffers" exit: #t)
                         (.o key: "x" command: "cmd:ibuffer-kill-marked" label: "Kill marked buffers" exit: #t))
         default-minor-modes: '(meow-normal-mode read-only-mode)
