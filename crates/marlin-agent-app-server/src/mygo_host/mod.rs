@@ -12,7 +12,7 @@ mod runner;
 
 pub use bridge_framework::{
     BridgeCommandOutcome, BridgeMetrics, BridgeMetricsSnapshot, BridgeRegistry, PackageBridge,
-    SchemeModesBridge, SwrCache,
+    SchemeBridgeBackend, SchemeModesBridge, SwrCache, UnifiedSchemeBridge,
 };
 pub use fs_bridge::{FsPackageBridge, query_fs_records};
 pub use magit_bridge::{WorkspaceMagitBridge, parse_magit_ui_command};

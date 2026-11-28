@@ -149,6 +149,15 @@ impl GerbilSchemeValue {
         self.as_vector()?.get(index)
     }
 
+    /// Project this Scheme value into any Rust `DeserializeOwned` type using the
+    /// built-in `GerbilSchemeValue` serde deserializer (zero text/JSON encoding).
+    pub fn decode<T>(&self) -> Result<T, GerbilSchemeTypeDecodeError>
+    where
+        T: DeserializeOwned,
+    {
+        T::deserialize(self.deserializer())
+    }
+
     fn deserializer(&self) -> GerbilSchemeValueDeserializer<'_> {
         GerbilSchemeValueDeserializer { value: self }
     }

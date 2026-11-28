@@ -14,13 +14,15 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    fs,
     future::Future,
     hash::Hash,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex, RwLock,
         atomic::{AtomicU64, Ordering},
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 use crate::wire::marlin::projection::v1::{
@@ -251,10 +253,10 @@ where
 #[tonic::async_trait]
 pub trait PackageBridge: Send + Sync {
     /// Short lowercase namespace routing `<namespace>:*` queries and `<namespace>.*` commands.
-    fn namespace(&self) -> &'static str;
+    fn namespace(&self) -> &str;
 
     /// Governance owner identifier emitted in typed denials & receipts (e.g. `"marlin.magit"`).
-    fn owner_id(&self) -> &'static str;
+    fn owner_id(&self) -> &str;
 
     /// Optional non-blocking background pre-warm invoked when the host boots.
     fn prewarm(&self) {}
@@ -288,6 +290,164 @@ pub trait PackageBridge: Send + Sync {
     /// Optional live workspace diff projection for `WatchWorkspaceDiff`.
     async fn workspace_diff(&self) -> Option<WorkspaceDiffSnapshot> {
         None
+    }
+}
+
+/// Resident single-threaded Gerbil Scheme VM backend plugged once into
+/// `BridgeRegistry`. Every Scheme-owned package (`org`, `markdown`, `doc`, and
+/// any future Scheme module registered in `scheme/ui-bridge`) is served through
+/// this single uniform trait with zero per-package Rust bridge boilerplate.
+pub trait SchemeBridgeBackend: Send + Sync {
+    /// Lists all namespaces dynamically exported by `scheme/ui-bridge`.
+    fn namespaces(&self) -> Vec<String>;
+
+    /// Invokes `marlin-scheme-bridge-dispatch(#(namespace verb arg payload))`
+    /// over native Gerbil C-ABI FFI and returns projected `GraphRecordView` rows.
+    fn dispatch_query(
+        &self,
+        namespace: &str,
+        verb: &str,
+        arg: Option<&str>,
+        payload: &str,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Vec<GraphRecordView>, String>> + Send + 'static>,
+    >;
+}
+
+const MAX_SCHEME_BRIDGE_FILE_BYTES: u64 = 512 * 1024;
+const SCHEME_BRIDGE_CACHE_TTL: Duration = Duration::from_secs(30);
+
+/// Single generic `PackageBridge` adapter serving ANY namespace declared inside
+/// Gerbil Scheme (`scheme/ui-bridge`), backed by one shared `SwrCache` keyed by
+/// `(namespace, verb, canonical_path, file_mtime_nanos)`.
+#[derive(Clone)]
+pub struct UnifiedSchemeBridge {
+    namespace: String,
+    owner_id: String,
+    workspace_root: PathBuf,
+    backend: Arc<dyn SchemeBridgeBackend>,
+    cache: SwrCache<String, Vec<GraphRecordView>>,
+}
+
+impl UnifiedSchemeBridge {
+    pub fn new(
+        namespace: String,
+        workspace_root: PathBuf,
+        backend: Arc<dyn SchemeBridgeBackend>,
+        shared_cache: SwrCache<String, Vec<GraphRecordView>>,
+    ) -> Self {
+        let owner_id = format!("marlin.scheme.{namespace}");
+        Self {
+            namespace,
+            owner_id,
+            workspace_root,
+            backend,
+            cache: shared_cache,
+        }
+    }
+
+    fn resolve_file_payload(&self, arg: Option<&str>) -> Result<(String, String, u128), String> {
+        let Some(raw) = arg.map(str::trim).filter(|s| !s.is_empty()) else {
+            return Ok((String::new(), String::new(), 0));
+        };
+        let expanded = if let Some(rest) = raw.strip_prefix("~/") {
+            if let Ok(home) = std::env::var("HOME") {
+                PathBuf::from(home).join(rest)
+            } else {
+                PathBuf::from(raw)
+            }
+        } else {
+            let p = Path::new(raw);
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                self.workspace_root.join(p)
+            }
+        };
+        let meta = match fs::metadata(&expanded) {
+            Ok(m) if m.is_file() => m,
+            _ => return Ok((raw.to_owned(), String::new(), 0)),
+        };
+        if meta.len() > MAX_SCHEME_BRIDGE_FILE_BYTES {
+            return Err(format!(
+                "file exceeds Scheme bridge limit ({} > {} bytes): {}",
+                meta.len(),
+                MAX_SCHEME_BRIDGE_FILE_BYTES,
+                expanded.display()
+            ));
+        }
+        let mtime_nanos = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let bytes = fs::read(&expanded)
+            .map_err(|e| format!("read {}: {e}", expanded.display()))?;
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        let display_path = fs::canonicalize(&expanded)
+            .unwrap_or(expanded)
+            .to_string_lossy()
+            .into_owned();
+        Ok((display_path, text, mtime_nanos))
+    }
+}
+
+#[tonic::async_trait]
+impl PackageBridge for UnifiedSchemeBridge {
+    fn namespace(&self) -> &str {
+        &self.namespace
+    }
+
+    fn owner_id(&self) -> &str {
+        &self.owner_id
+    }
+
+    async fn query(
+        &self,
+        verb: &str,
+        arg: Option<&str>,
+        _raw_query: &str,
+    ) -> Result<Vec<GraphRecordView>, String> {
+        let (resolved_arg, payload, mtime_nanos) = self.resolve_file_payload(arg)?;
+        let cache_key = format!("{}|{}|{}|{}", self.namespace, verb, resolved_arg, mtime_nanos);
+        let ns = self.namespace.clone();
+        let verb_owned = verb.to_owned();
+        let arg_for_fg = resolved_arg.clone();
+        let payload_for_fg = payload.clone();
+        let backend_fg = Arc::clone(&self.backend);
+        let ns_bg = self.namespace.clone();
+        let verb_bg = verb.to_owned();
+        let arg_bg = resolved_arg;
+        let payload_bg = payload;
+        let backend_bg = Arc::clone(&self.backend);
+
+        self.cache
+            .get_or_load(
+                cache_key,
+                false,
+                || async move {
+                    let arg_opt = if arg_for_fg.is_empty() {
+                        None
+                    } else {
+                        Some(arg_for_fg.as_str())
+                    };
+                    backend_fg
+                        .dispatch_query(&ns, &verb_owned, arg_opt, &payload_for_fg)
+                        .await
+                },
+                move |_| async move {
+                    let arg_opt = if arg_bg.is_empty() {
+                        None
+                    } else {
+                        Some(arg_bg.as_str())
+                    };
+                    backend_bg
+                        .dispatch_query(&ns_bg, &verb_bg, arg_opt, &payload_bg)
+                        .await
+                },
+            )
+            .await
     }
 }
 
@@ -399,6 +559,27 @@ impl BridgeRegistry {
             }
         }
         None
+    }
+
+    /// Dynamically wires EVERY namespace exported by a resident Gerbil Scheme
+    /// `SchemeBridgeBackend` into this registry behind one shared `SwrCache`.
+    pub fn register_scheme_backend(
+        &self,
+        workspace_root: PathBuf,
+        backend: Arc<dyn SchemeBridgeBackend>,
+    ) -> Vec<String> {
+        let shared_cache = SwrCache::new(SCHEME_BRIDGE_CACHE_TTL);
+        let namespaces = backend.namespaces();
+        for ns in &namespaces {
+            let bridge = Arc::new(UnifiedSchemeBridge::new(
+                ns.clone(),
+                workspace_root.clone(),
+                Arc::clone(&backend),
+                shared_cache.clone(),
+            ));
+            self.register(bridge);
+        }
+        namespaces
     }
 
     /// Lists all currently registered package namespaces (sorted deterministically).

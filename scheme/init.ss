@@ -26,6 +26,7 @@
   (ui-workspaces)
   (ui-modes)
   (ui-emacs)
+  (ui-bridge)
   (ui-magit)
   (search-engine)
   (repair +ast-patch)

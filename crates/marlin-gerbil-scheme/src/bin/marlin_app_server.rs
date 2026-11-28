@@ -55,26 +55,33 @@ fn configure_gerbil_loadpath_before_threads(scheme_dir: &std::path::Path) {
 }
 
 #[cfg(not(feature = "external-program"))]
-fn project_live_scheme_surface(
+fn resolve_workspace_root() -> std::path::PathBuf {
+    std::env::var("MARLIN_BRIDGE_WORKSPACE_ROOT")
+        .ok()
+        .map(|s| std::path::PathBuf::from(s.trim()))
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")))
+}
+
+#[cfg(not(feature = "external-program"))]
+fn run_scheme_vm_plane(
     scheme_dir: &std::path::Path,
-) -> Option<marlin_agent_app_server::mygo_host::SchemeUiSurfaceBundle> {
+    host: marlin_agent_app_server::ui_grpc::MyGoBridgeHost,
+) {
     use gerbil_scheme::{GerbilRuntime, PackageResolutionProgress};
-    use std::time::Instant;
+    use std::{sync::Arc, time::Instant};
 
     if !scheme_dir.join("gerbil.pkg").is_file() {
         eprintln!(
             "marlin-app-server: scheme package root not found at {}; running without Scheme UI projection",
             scheme_dir.display()
         );
-        return None;
+        return;
     }
 
-    let scheme_dir_str = match scheme_dir.to_str() {
-        Some(s) => s,
-        None => {
-            eprintln!("marlin-app-server: scheme dir path is not valid UTF-8");
-            return None;
-        }
+    let Some(scheme_dir_str) = scheme_dir.to_str() else {
+        eprintln!("marlin-app-server: scheme dir path is not valid UTF-8");
+        return;
     };
 
     let t0 = Instant::now();
@@ -82,7 +89,7 @@ fn project_live_scheme_surface(
         Ok(rt) => rt,
         Err(err) => {
             eprintln!("marlin-app-server: failed to initialize embedded Gerbil VM: {err}");
-            return None;
+            return;
         }
     };
     let _ = runtime.set_package_resolution_progress(PackageResolutionProgress::Quiet);
@@ -98,18 +105,33 @@ fn project_live_scheme_surface(
                 surface.transients.len(),
                 surface.mode_records.len(),
             );
-            Some(marlin_agent_app_server::mygo_host::SchemeUiSurfaceBundle {
-                commands: surface.commands,
-                keymap: surface.keymap,
-                transients: surface.transients,
-                mode_records: surface.mode_records,
-            })
+            host.set_scheme_mode_records(surface.mode_records);
+            host.set_scheme_ui_surface(surface.commands, surface.keymap, surface.transients);
         }
         Err(err) => {
             eprintln!(
                 "marlin-app-server: Scheme UI keymap/mode FFI projection failed (build `just scheme-build`?): {err}"
             );
-            None
+        }
+    }
+
+    // Mount the ONE unified SchemeBridge actor onto the host BridgeRegistry,
+    // auto-exposing every Scheme package (`org`, `markdown`, `doc`, and any
+    // future module in `scheme/ui-bridge`) on the resident main OS thread.
+    let ws_root = resolve_workspace_root();
+    match marlin_gerbil_scheme::scheme_bridge_actor::SchemeBridgeActor::open(
+        &runtime,
+        scheme_dir_str,
+    ) {
+        Ok((actor, handle)) => {
+            let mounted = host.register_scheme_backend(ws_root, Arc::new(handle));
+            eprintln!(
+                "marlin-app-server: resident unified SchemeBridge online (namespaces={mounted:?})"
+            );
+            actor.run_loop();
+        }
+        Err(err) => {
+            eprintln!("marlin-app-server: unified SchemeBridge actor unavailable: {err}");
         }
     }
 }
@@ -136,21 +158,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ))
                 .map_err(|e| e.to_string());
             if res.is_ok() {
-                // Exit cleanly once graceful gRPC & Turso flush completes, even if
-                // main-thread Scheme VM warm-up is still in flight.
+                // Exit cleanly once graceful gRPC & Turso flush completes, even while
+                // the resident Gambit Scheme actor is waiting on the main OS thread.
                 std::process::exit(0);
             }
             res
         })?;
 
-    // 2. Once the HTTP/2 listener is bound and live, project authoritative Scheme keymaps,
-    //    transients, commands, and Major/Minor/Polymode records strictly on the main OS
-    //    thread and hot-broadcast them over the live WatchWorkbench gRPC stream.
-    if let Ok(host) = ready_rx.recv()
-        && let Some(surface) = project_live_scheme_surface(&scheme_dir)
-    {
-        host.set_scheme_mode_records(surface.mode_records);
-        host.set_scheme_ui_surface(surface.commands, surface.keymap, surface.transients);
+    // 2. Once the HTTP/2 listener is bound and live, boot the embedded Gerbil VM
+    //    strictly on the main OS thread: project keymaps/modes, then serve live
+    //    unified SchemeBridge requests (`org`, `markdown`, `doc`, ...) indefinitely.
+    if let Ok(host) = ready_rx.recv() {
+        run_scheme_vm_plane(&scheme_dir, host);
     }
 
     match server_thread.join() {

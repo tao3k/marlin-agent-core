@@ -272,6 +272,18 @@ impl MyGoBridgeHost {
         self.bridges.register(bridge);
     }
 
+    /// Dynamically register a resident Gerbil Scheme `SchemeBridgeBackend`,
+    /// auto-exposing every Scheme package namespace (`org`, `markdown`, `doc`,
+    /// and any future Scheme module) through `BridgeRegistry` with one shared
+    /// `SwrCache`.
+    pub fn register_scheme_backend(
+        &self,
+        workspace_root: std::path::PathBuf,
+        backend: Arc<dyn crate::mygo_host::SchemeBridgeBackend>,
+    ) -> Vec<String> {
+        self.bridges.register_scheme_backend(workspace_root, backend)
+    }
+
     /// Access the unified `BridgeRegistry` (e.g. for telemetry or package inspection).
     pub fn bridge_registry(&self) -> &crate::mygo_host::BridgeRegistry {
         &self.bridges

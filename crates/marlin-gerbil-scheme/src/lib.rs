@@ -18,6 +18,8 @@ mod graph_loop_continuation;
 mod loop_case_driver;
 mod policy_pack_projection;
 mod runtime;
+#[cfg(all(feature = "app-server-host", not(feature = "external-program")))]
+pub mod scheme_bridge_actor;
 #[cfg(feature = "app-server-host")]
 pub mod scheme_host_runtime;
 #[cfg(feature = "app-server-host")]
@@ -219,6 +221,8 @@ pub use scheme_types::{
     validate_gerbil_scheme_package_manifest, validate_gerbil_scheme_type_manifest,
     validate_gerbil_scheme_typed_value,
 };
+#[cfg(not(feature = "external-program"))]
+pub use scheme_types::project_rooted_scheme_object;
 #[cfg(not(feature = "external-program"))]
 pub use working_copy_policy::{
     GerbilWorkingCopyPolicy, GerbilWorkingCopyPolicyError, WorkingCopyProviderAvailability,
