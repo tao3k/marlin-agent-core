@@ -382,6 +382,11 @@ pub(super) fn execute_read_file(
     if req.requested_end_clamped {
         let _ = writeln!(out, "range_clamped: true (max {MAX_READ_LINES} lines per call)");
     }
+    let remaining = if has_more {
+        collect_remaining_file_symbols(index, &req.path, actual_end)
+    } else {
+        Vec::new()
+    };
     if has_more {
         let next_start = actual_end.saturating_add(1);
         let _ = writeln!(out, "next_start: {next_start}");
@@ -390,6 +395,19 @@ pub(super) fn execute_read_file(
             "next_query: (read-file \"{}\" cursor: {next_start} max-lines: {DEFAULT_READ_LINES})",
             req.path
         );
+        if !remaining.is_empty() {
+            let jump_syms: Vec<String> = remaining
+                .iter()
+                .take(4)
+                .map(|(_, _, name)| format!("\"{name}\""))
+                .collect();
+            let _ = writeln!(
+                out,
+                "next_symbol_query: (read-file \"{}\" symbols: ({}))",
+                req.path,
+                jump_syms.join(" ")
+            );
+        }
     }
     if req.wrapped_bare_form {
         let _ = writeln!(out, "repairs: wrap-read-file-parens");
@@ -419,7 +437,6 @@ pub(super) fn execute_read_file(
     out.extend(formatted_lines);
     if has_more {
         let next_start = actual_end.saturating_add(1);
-        let remaining = collect_remaining_file_symbols(index, &req.path, actual_end);
         if !remaining.is_empty() {
             let preview: Vec<String> = remaining
                 .iter()

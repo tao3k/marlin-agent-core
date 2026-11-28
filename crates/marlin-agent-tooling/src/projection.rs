@@ -170,6 +170,34 @@ pub fn catalog_from_declarations_with_search(
     Ok(catalog)
 }
 
+/// Bind every admitted Scheme declaration to host capabilities with search tools
+/// backed directly by a thin HTTP/2 `tonic` gRPC [`crate::GrpcSearchToolHandler`].
+#[cfg(feature = "grpc")]
+pub fn catalog_from_declarations_with_grpc_search(
+    declarations: impl IntoIterator<Item = ModelToolDeclaration>,
+    workspace: PathBuf,
+    client: crate::SearchGatewayClient<tonic::transport::Channel>,
+    session_id: Arc<std::sync::RwLock<marlin_agent_search_engine::SearchDslSessionId>>,
+) -> Result<ModelToolCatalog, ModelToolCatalogError> {
+    let mut catalog = ModelToolCatalog::new();
+    for declaration in declarations {
+        match declaration.capability() {
+            ModelToolCapability::Shell => {
+                catalog.register_declaration(declaration, workspace.clone())?;
+            }
+            ModelToolCapability::Search => {
+                let handler: Arc<ModelToolHandler> = Arc::new(crate::GrpcSearchToolHandler::new(
+                    declaration.clone(),
+                    client.clone(),
+                    Arc::clone(&session_id),
+                ));
+                catalog.register(declaration, handler)?;
+            }
+        }
+    }
+    Ok(catalog)
+}
+
 /// Project the same selected declaration through the linked AOT programme.
 ///
 /// # Safety

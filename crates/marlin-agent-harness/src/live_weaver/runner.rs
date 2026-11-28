@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
@@ -34,8 +34,8 @@ use marlin_agent_stream::{
     ModelStreamEvent, ModelStreamingGateway, matches_observed_anthropic_thinking,
 };
 use marlin_agent_tooling::{
-    GrpcSearchToolHandler, LoopbackSearchGrpcServer, SearchGatewayService, SharedSearchIndexSlot,
-    catalog_from_declarations_with_search, tool_schema_entries_from_declarations,
+    GrpcSearchToolHandler, LoopbackSearchGrpcServer, SearchGatewayService,
+    catalog_from_declarations_with_grpc_search, tool_schema_entries_from_declarations,
 };
 use tokio_stream::StreamExt;
 use tracing::Instrument;
@@ -295,13 +295,13 @@ impl LiveWeaverEvalSession {
             })
             .collect();
 
-        let slot = SharedSearchIndexSlot::with_sync_debounce(
-            Some(shared_index),
-            Duration::from_secs(3600),
-        );
-        let catalog =
-            catalog_from_declarations_with_search(declarations, repo_root.to_path_buf(), slot)
-                .map_err(|err| format!("failed to build ModelToolCatalog: {err:?}"))?;
+        let catalog = catalog_from_declarations_with_grpc_search(
+            declarations,
+            repo_root.to_path_buf(),
+            search_grpc_server.client(),
+            Arc::clone(&active_search_session),
+        )
+        .map_err(|err| format!("failed to build ModelToolCatalog: {err:?}"))?;
         let offer = catalog.offer();
         let offered_definitions = offer.definitions();
         let tool_options = offer.completion_options();

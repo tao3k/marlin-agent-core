@@ -1059,15 +1059,18 @@
     (materialize-evidence-chain-edb store base-edb)
     registry))
 
-;;; Detect anti-LWW epistemic conflicts directly over surviving M1 claims (O(|claims|)),
-;;; comparing distinct values within the SAME `(claim-kind, target-key)` domain.
+;;; Detect anti-LWW epistemic conflicts directly over surviving single-valued M1 claims
+;;; (e.g. `dusa-tier`, `dusa-resolution`) within the SAME `(claim-kind, target-key)` domain.
+;;; Multi-valued relational `ascent-fact` claims legitimately associate one symbol with
+;;; multiple files/call sites and are excluded from single-value uniqueness conflicts.
 (def (detect-store-m1-conflicts store)
   (let ((vals-by-key (make-hash-table))
         (conflicts '()))
     (for-each
       (lambda (pair)
         (let ((cl (cdr pair)))
-          (when (eq? (.ref cl 'tier) 'M1-verified)
+          (when (and (eq? (.ref cl 'tier) 'M1-verified)
+                     (not (eq? (.ref cl 'claim-kind) 'ascent-fact)))
             (let* ((k (string-append (symbol->string (.ref cl 'claim-kind)) "::" (.ref cl 'target-key)))
                    (v (.ref cl 'value))
                    (prev (or (hash-get vals-by-key k) '())))

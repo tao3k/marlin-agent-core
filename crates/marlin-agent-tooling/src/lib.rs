@@ -17,6 +17,8 @@ pub use grpc_search::{
     GrpcSearchToolHandler, LoopbackSearchGrpcServer, SearchGatewayClient, SearchGatewayServer,
     SearchGatewayService, tool_schema_entries_from_declarations,
 };
+#[cfg(feature = "grpc")]
+pub use projection::catalog_from_declarations_with_grpc_search;
 pub use projection::{
     ToolingProjectionError, catalog_from_declarations, catalog_from_declarations_with_search,
     decode_tooling, project_linked,

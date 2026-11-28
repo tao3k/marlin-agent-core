@@ -204,5 +204,47 @@ mod grpc_tests {
         assert_eq!(f4.step, 1);
         assert!(f4.teaching_kit_active);
         assert!(!f4.workspace_layers.is_empty());
+
+        // 6. Regression: fast `workspace-map` arriving before `find-symbols` must NOT
+        //    suppress `structural_query: (find-impact ...)` in `next_dag_templates`!
+        let _ = client
+            .search_step(SearchStepRequest {
+                session_id: "sess-grpc-race".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(workspace-map \"\" depth: 2 limit: 24)".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("workspace-map step");
+        let after_syms = client
+            .search_step(SearchStepRequest {
+                session_id: "sess-grpc-race".to_owned(),
+                tool_name: "structural_query".to_owned(),
+                query: "(find-symbols name-contains: \"SearchDsl\" lang: \"rust\" limit: 20)"
+                    .to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("find-symbols after workspace-map")
+            .into_inner();
+        let f_race = after_syms.frontier.expect("race frontier");
+        assert!(f_race.compact_mode);
+        assert!(
+            f_race
+                .next_dag_templates
+                .iter()
+                .any(|t| t.contains("find-impact") && t.contains("SearchDslExecutionRequest")),
+            "expected find-impact template even in compact_mode: {:?}",
+            f_race.next_dag_templates
+        );
+        // Priority check: Scheme cross-language `scheme/c-abi/search-dsl.ss` is resolved
+        // directly from the resident index and placed FIRST in open_frontiers!
+        assert_eq!(
+            f_race.open_frontiers.first().map(String::as_str),
+            Some("scheme/c-abi/search-dsl.ss"),
+            "expected scheme/c-abi/search-dsl.ss prioritized first: {:?}",
+            f_race.open_frontiers
+        );
+        assert_eq!(f_race.conflict_count, 0);
     }
 }
