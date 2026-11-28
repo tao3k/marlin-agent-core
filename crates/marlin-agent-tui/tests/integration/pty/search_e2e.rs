@@ -33,6 +33,12 @@ use std::{
 };
 
 fn discover_sibling_asp_gateway() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("MARLIN_ASP_GATEWAY_BIN") {
+        let candidate = PathBuf::from(explicit);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
     let marlin_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let asp_root = marlin_root.join("../agent-semantic-protocols");
     for rel in ["target/release/asp-gateway", "target/debug/asp-gateway"] {
@@ -212,8 +218,8 @@ fn workspace_search_llm_tool_call_and_helm_dusa_lab_e2e() {
             "missing Case B in schema: {desc}"
         );
         assert!(
-            desc.contains("same-module-def"),
-            "missing Scenario B built-ins: {desc}"
+            desc.contains("(solve-resolve ") && desc.contains("(find-impact "),
+            "missing unified L1/L2 macros in schema: {desc}"
         );
         write_sse_tool_call(
             &mut s1,
@@ -231,6 +237,13 @@ fn workspace_search_llm_tool_call_and_helm_dusa_lab_e2e() {
         assert!(
             out_l0.contains("app.rs"),
             "L0 output missing app.rs: {out_l0}"
+        );
+        assert!(
+            out_l0.contains("[evidence_frontier |")
+                && out_l0.contains("teaching_kit: active")
+                && out_l0.contains("dsl_tips:")
+                && out_l0.contains("workspace_layers:"),
+            "L0 Turn-1 missing gRPC Recency-Peak self-teaching frontier: {out_l0}"
         );
         eprintln!("\n[PTY LLM TURN 1 — L0 BRUTE-FORCE RECEIPT]\n{out_l0}");
         write_sse_final_answer(
@@ -261,6 +274,10 @@ fn workspace_search_llm_tool_call_and_helm_dusa_lab_e2e() {
         assert!(
             out_l1.contains("parse_payload"),
             "L1 output missing parse_payload: {out_l1}"
+        );
+        assert!(
+            out_l1.contains("compact_mode: true") && !out_l1.contains("dsl_tips:"),
+            "L1 Turn-2 expected compact_mode auto-unloading over gRPC session: {out_l1}"
         );
         eprintln!("\n[PTY LLM TURN 2 — CASE A ASCENT RECEIPT]\n{out_l1}");
         write_sse_final_answer(
@@ -300,6 +317,10 @@ fn workspace_search_llm_tool_call_and_helm_dusa_lab_e2e() {
         assert!(
             !out_l2.contains("mock_parser.rs"),
             "L2 leaked test mock: {out_l2}"
+        );
+        assert!(
+            out_l2.contains("compact_mode: true"),
+            "L2 Turn-3 expected compact_mode over gRPC session: {out_l2}"
         );
         eprintln!("\n[PTY LLM TURN 3 — CASE B.1 DUSA PROVENANCE RECEIPT]\n{out_l2}");
         write_sse_final_answer(
@@ -452,6 +473,199 @@ fn workspace_search_llm_tool_call_and_helm_dusa_lab_e2e() {
                 && rows.iter().any(|l| l.contains("workspace_search"))
                 && rows.iter().any(|l| l.contains("Arg:query"))
                 && rows.iter().any(|l| l.contains("ASP Semantic Gateway"))
+        },
+    );
+
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(10));
+    terminal.assert_restored();
+    stop.store(true, Ordering::Relaxed);
+    server.join().unwrap();
+}
+
+/// Self-contained Unix PTY end-to-end proof (zero external `asp-gateway` required):
+/// launches the real AOT-linked `marlin-tui` binary and executes 4 consecutive
+/// LLM tool turns over its loopback HTTP/2 `tonic` gRPC `SearchGatewayService` +
+/// SM11 `LinkedSearchDslMailbox`, proving:
+/// - Unified `workspace_search` schema advertisement
+/// - Turn 1 L0 brute-force + Recency-Peak `dsl_tips:` / `workspace_layers:`
+/// - Turn 2 L1 Ascent + automatic `compact_mode: true` unloading
+/// - Turn 3 L2 Dusa `(solve-placement ...)` live Scheme `evidence-chain.ss` M1 harvesting
+/// - Turn 4 L1 Ascent consuming Turn 3's M1 `verified_tier` facts across turns ("越搜越强")
+#[test]
+#[ignore = "real PTY AOT marlin-tui 4-turn HTTP/2 gRPC + M1 evidence-chain E2E"]
+fn workspace_search_grpc_gateway_progressive_evidence_chain_pty_e2e() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = tmp.path();
+    stage_polyglot_lab_workspace(ws);
+
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let _stop_on_drop = StopOnDrop(stop.clone());
+    let server_stop = stop.clone();
+
+    let server = thread::spawn(move || {
+        // Turn 1 (L0 Brute-Force + Recency-Peak Turn-1 self-teaching over HTTP/2 tonic gRPC)
+        let mut s1 = accept_until(&listener, &server_stop).expect("turn 1 req");
+        let (_, req1) = read_request(&mut s1);
+        let tools = req1["tools"].as_array().expect("tools array");
+        let search_tool = tools
+            .iter()
+            .find(|t| t["name"] == "workspace_search")
+            .expect("workspace_search tool advertised to LLM");
+        let desc = search_tool["description"].as_str().expect("description");
+        assert!(desc.contains("(brute-search ...)"), "schema: {desc}");
+        assert!(desc.contains("(ascent-fragment ...)"), "schema: {desc}");
+        assert!(desc.contains("(search-choice-program ...)"), "schema: {desc}");
+        assert!(
+            desc.contains("(solve-resolve ") && desc.contains("(find-impact "),
+            "schema: {desc}"
+        );
+        write_sse_tool_call(
+            &mut s1,
+            "resp-l0",
+            "call-l0",
+            "(brute-search \"parse_payload\" path-prefix: \"crates/\" lang: \"rust\")",
+        );
+
+        let mut s1_cont = accept_until(&listener, &server_stop).expect("turn 1 cont");
+        let (_, req1_cont) = read_request(&mut s1_cont);
+        let out_l0 = req1_cont["input"].as_array().unwrap().last().unwrap()["output"]
+            .as_str()
+            .expect("L0 output");
+        assert!(out_l0.contains("mode: brute-force"), "{out_l0}");
+        assert!(out_l0.contains("app.rs"), "{out_l0}");
+        assert!(
+            out_l0.contains("[evidence_frontier |")
+                && out_l0.contains("teaching_kit: active")
+                && out_l0.contains("dsl_tips:")
+                && out_l0.contains("workspace_layers:"),
+            "Turn 1 missing gRPC Recency-Peak self-teaching frontier: {out_l0}"
+        );
+        write_sse_final_answer(&mut s1_cont, "PTY-GRPC-T1-OK");
+
+        // Turn 2 (L1 Ascent via SM11 LinkedSearchDslMailbox + Turn-2 compact_mode auto-unloading)
+        let mut s2 = accept_until(&listener, &server_stop).expect("turn 2 req");
+        let _ = read_request(&mut s2);
+        write_sse_tool_call(
+            &mut s2,
+            "resp-l1",
+            "call-l1",
+            "(ascent-fragment ((answer path name line) <-- (file f \"rust\" path) (rust_fn _ f name line)))",
+        );
+
+        let mut s2_cont = accept_until(&listener, &server_stop).expect("turn 2 cont");
+        let (_, req2_cont) = read_request(&mut s2_cont);
+        let out_l1 = req2_cont["input"].as_array().unwrap().last().unwrap()["output"]
+            .as_str()
+            .expect("L1 output");
+        assert!(out_l1.contains("mode: ascent"), "{out_l1}");
+        assert!(out_l1.contains("local_init"), "{out_l1}");
+        assert!(out_l1.contains("parse_payload"), "{out_l1}");
+        assert!(
+            out_l1.contains("compact_mode: true") && !out_l1.contains("dsl_tips:"),
+            "Turn 2 expected compact_mode auto-unloading: {out_l1}"
+        );
+        write_sse_final_answer(&mut s2_cont, "PTY-GRPC-T2-OK");
+
+        // Turn 3 (L2 Dusa solve-placement harvesting M1 `verified_tier` in TUI's AOT Scheme VM!)
+        let mut s3 = accept_until(&listener, &server_stop).expect("turn 3 req");
+        let _ = read_request(&mut s3);
+        write_sse_tool_call(
+            &mut s3,
+            "resp-l2",
+            "call-l2",
+            "(solve-placement path-prefix: \"scheme/search-dsl/\" module-limit: auto choices: (resident provider) forbid-hot-path: provider state-budget: 64)",
+        );
+
+        let mut s3_cont = accept_until(&listener, &server_stop).expect("turn 3 cont");
+        let (_, req3_cont) = read_request(&mut s3_cont);
+        let out_l2 = req3_cont["input"].as_array().unwrap().last().unwrap()["output"]
+            .as_str()
+            .expect("L2 output");
+        assert!(out_l2.contains("mode: choice"), "{out_l2}");
+        assert!(out_l2.contains("compact_mode: true"), "{out_l2}");
+        assert!(
+            out_l2.contains("(+1)") && out_l2.contains("status: unique-deduction"),
+            "{out_l2}"
+        );
+        write_sse_final_answer(&mut s3_cont, "PTY-GRPC-T3-OK");
+
+        // Turn 4 (L1 Ascent directly consuming Turn 3's M1 `verified_tier` over the TUI session!)
+        let mut s4 = accept_until(&listener, &server_stop).expect("turn 4 req");
+        let _ = read_request(&mut s4);
+        write_sse_tool_call(
+            &mut s4,
+            "resp-m1",
+            "call-m1",
+            "(ascent-fragment ((answer m lvl) <-- (verified_tier m lvl)))",
+        );
+
+        let mut s4_cont = accept_until(&listener, &server_stop).expect("turn 4 cont");
+        let (_, req4_cont) = read_request(&mut s4_cont);
+        let out_m1 = req4_cont["input"].as_array().unwrap().last().unwrap()["output"]
+            .as_str()
+            .expect("M1 output");
+        assert!(out_m1.contains("mode: ascent"), "{out_m1}");
+        assert!(
+            out_m1.contains("funcs.ss") && out_m1.contains("resident"),
+            "Turn 4 expected M1 verified_tier facts harvested on Turn 3: {out_m1}"
+        );
+        assert!(out_m1.contains("compact_mode: true"), "{out_m1}");
+        write_sse_final_answer(&mut s4_cont, "PTY-GRPC-T4-M1-OK");
+    });
+
+    let config = ws.join(".marlin-test-config.toml");
+    fs::write(
+        &config,
+        format!(
+            "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://{address}/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n",
+        ),
+    )
+    .unwrap();
+
+    let vars = [("MARLIN_AGENT_CORE_DEV", "1".to_owned())];
+    let mut terminal = Terminal::start_in(&config, &[], &vars, 30, 128, ws);
+    terminal.wait_status("Message: Enter send");
+
+    assert!(ws.join(".data/marlin/session.db").exists());
+
+    for (prompt, step_name, call_tag, answer_marker) in [
+        ("Turn 1 L0\r", "L0 review", "[call-l0]", "PTY-GRPC-T1-OK"),
+        ("Turn 2 L1\r", "L1 review", "[call-l1]", "PTY-GRPC-T2-OK"),
+        ("Turn 3 L2\r", "L2 review", "[call-l2]", "PTY-GRPC-T3-OK"),
+        ("Turn 4 M1\r", "M1 review", "[call-m1]", "PTY-GRPC-T4-M1-OK"),
+    ] {
+        let prompt_visible = prompt.trim();
+        terminal.send(prompt.as_bytes());
+        terminal.wait_for(Duration::from_secs(20), step_name, |output| {
+            let rows = screen_lines(output);
+            rows.iter().any(|l| l.contains(prompt_visible))
+                && rows.iter().any(|l| l.contains(call_tag))
+                && rows.iter().any(|l| l.contains("Approve once"))
+        });
+        terminal.send(b"\r");
+        terminal.wait_for(Duration::from_secs(20), answer_marker, |output| {
+            let rows = screen_lines(output);
+            rows.iter().any(|l| l.contains(answer_marker))
+                && rows.iter().any(|l| l.contains("▸ Tool · workspace_search"))
+        });
+    }
+
+    terminal.enter_normal_mode();
+    terminal.send(b"\x1bx");
+    terminal.wait_text("M-x");
+    terminal.send(b"list-processes\r");
+    terminal.wait_for(
+        Duration::from_secs(10),
+        "Processes buffer lists OTel tool executions",
+        |output| {
+            let rows = screen_lines(output);
+            rows.iter().any(|l| l.contains("runtime.tool.execute"))
+                && rows.iter().any(|l| l.contains("workspace_search"))
+                && rows.iter().any(|l| l.contains("Arg:query"))
         },
     );
 

@@ -208,3 +208,7 @@ pub(super) fn open_session_gateway(
     app.tool_review = bound.tool_review_handle();
     Ok(SharedGateway::new(bound))
 }
+
+#[cfg(all(test, feature = "linked-ui"))]
+#[path = "../../tests/unit/startup_grpc_e2e.rs"]
+mod grpc_e2e_tests;
