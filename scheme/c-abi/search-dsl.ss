@@ -16,7 +16,9 @@
                  run-compiled-ascent-session
                  evaluate-search-dsl-over-edb
                  search-dsl-completions
-                 extend-search-language-registry))
+                 extend-search-language-registry)
+        (only-in :marlin-agent-core/search-dsl/evidence-chain
+                 evaluate-session-search-dsl-step))
 (export marlin-search-dsl-compile-prefilter
         marlin-search-dsl-eval-edb
         marlin-search-dsl-extract-facts
@@ -29,12 +31,15 @@
 (def *active-search-registry* SearchLanguageRegistryValue)
 (def +max-cached-sessions+ 64)
 (def +max-cached-prefilters+ 128)
+(def +max-evidence-sessions+ 16)
 (def *compiled-ascent-session-cache* (make-hash-table))
 (def *compiled-prefilter-cache* (make-hash-table))
+(def *active-evidence-stores* (make-hash-table))
 
 (def (reset-search-dsl-caches!)
   (set! *compiled-ascent-session-cache* (make-hash-table))
-  (set! *compiled-prefilter-cache* (make-hash-table)))
+  (set! *compiled-prefilter-cache* (make-hash-table))
+  (set! *active-evidence-stores* (make-hash-table)))
 
 ;;; Strip noisy internal Gambit continuation stack traces for structured
 ;;; validation/repair diagnostics so LLM context receives compact, actionable
@@ -121,38 +126,71 @@
                 (vec->rows (vector-ref edb-vec 4))
                 '()))))
 
-;;; `input` is a rooted 2-element vector `#(query-string edb-vector)` where
-;;; `edb-vector` is `#(files-vec entities-vec edges-vec attrs-vec)`.
+(def (prepare-cached-ascent-session query)
+  (or (hash-get *compiled-ascent-session-cache* query)
+      (let* ((repaired (repair-ascent-search-form query *active-search-registry*))
+             (form (vector-ref repaired 0))
+             (repairs (vector-ref repaired 1)))
+        (if (and (pair? form) (memq (car form) '(ascent ascent-fragment)))
+          (let ((compiled (compile-closed-ascent-session form *active-search-registry* repairs)))
+            (when (>= (hash-length *compiled-ascent-session-cache*) +max-cached-sessions+)
+              (set! *compiled-ascent-session-cache* (make-hash-table)))
+            (hash-put! *compiled-ascent-session-cache* query compiled)
+            compiled)
+          #f))))
+
+;;; `input` is either:
+;;;   - 2-vector `#(query-string edb-vector)` (stateless evaluation), OR
+;;;   - 4-vector `#(query-string edb-vector session-id generation-digest)`
+;;;     (session-scoped evaluation backed by `evidence-chain.ss` M1 accumulation,
+;;;      generation-gated reconciliation, and materialized `verified_*` EDB attrs).
+;;; `edb-vector` is `#(files-vec entities-vec edges-vec attrs-vec symbol-refs-vec)`.
 (def (marlin-search-dsl-eval-edb input)
   (with-catch
     (lambda (err)
       (vector 'search-error (exception->diagnostic-string err)))
     (lambda ()
-      (unless (and (vector? input) (= (vector-length input) 2))
-        (error "marlin-search-dsl-eval-edb requires #(query edb-vector)"))
+      (unless (and (vector? input) (or (= (vector-length input) 2) (= (vector-length input) 4)))
+        (error "marlin-search-dsl-eval-edb requires #(query edb-vector) or #(query edb-vector session-id generation)"))
       (let* ((query (vector-ref input 0))
              (edb-vec (vector-ref input 1))
-             (cached (hash-get *compiled-ascent-session-cache* query)))
-        (if cached
-          (let* ((active-edb (vector-ref cached 4))
-                 (edb (edb-vector->selective-alist edb-vec active-edb)))
-            (deep-list->vector (run-compiled-ascent-session cached edb)))
-          (let* ((repaired (repair-ascent-search-form query *active-search-registry*))
-                 (form (vector-ref repaired 0))
-                 (repairs (vector-ref repaired 1)))
-            (if (and (pair? form) (memq (car form) '(ascent ascent-fragment)))
-              (let ((compiled (compile-closed-ascent-session form *active-search-registry* repairs)))
-                (when (>= (hash-length *compiled-ascent-session-cache*) +max-cached-sessions+)
-                  (set! *compiled-ascent-session-cache* (make-hash-table)))
-                (hash-put! *compiled-ascent-session-cache* query compiled)
-                (let* ((active-edb (vector-ref compiled 4))
-                       (edb (edb-vector->selective-alist edb-vec active-edb)))
-                  (deep-list->vector (run-compiled-ascent-session compiled edb))))
-              (deep-list->vector
-                (evaluate-search-dsl-over-edb
-                  query
-                  (edb-vector->full-alist edb-vec)
-                  *active-search-registry*)))))))))
+             (session-id (and (= (vector-length input) 4)
+                              (string? (vector-ref input 2))
+                              (> (string-length (vector-ref input 2)) 0)
+                              (vector-ref input 2)))
+             (generation (and (= (vector-length input) 4)
+                              (string? (vector-ref input 3))
+                              (vector-ref input 3)))
+             (compiled (prepare-cached-ascent-session query)))
+        (if (not session-id)
+          (if compiled
+            (let* ((active-edb (vector-ref compiled 4))
+                   (edb (edb-vector->selective-alist edb-vec active-edb)))
+              (deep-list->vector (run-compiled-ascent-session compiled edb)))
+            (deep-list->vector
+              (evaluate-search-dsl-over-edb
+                query
+                (edb-vector->full-alist edb-vec)
+                *active-search-registry*)))
+          (let* ((prev-store (hash-get *active-evidence-stores* session-id))
+                 (edb (if compiled
+                        (let ((active-edb (vector-ref compiled 4)))
+                          (edb-vector->selective-alist
+                            edb-vec
+                            (if (memq 'file active-edb) active-edb (cons 'file active-edb))))
+                        (edb-vector->full-alist edb-vec)))
+                 (eval-fn (and compiled
+                               (lambda (amp-edb) (run-compiled-ascent-session compiled amp-edb)))))
+            (let-values (((enriched-res next-store)
+                          (evaluate-session-search-dsl-step
+                            prev-store query edb generation
+                            registry: *active-search-registry*
+                            eval-fn: eval-fn)))
+              (when (and (not prev-store)
+                         (>= (hash-length *active-evidence-stores*) +max-evidence-sessions+))
+                (set! *active-evidence-stores* (make-hash-table)))
+              (hash-put! *active-evidence-stores* session-id next-store)
+              (deep-list->vector enriched-res))))))))
 
 (def (marlin-search-dsl-extract-facts input)
   ((.get SearchDslScope extract-facts) input))

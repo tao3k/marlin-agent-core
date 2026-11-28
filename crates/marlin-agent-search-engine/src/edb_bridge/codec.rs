@@ -18,7 +18,7 @@ use super::types::{DEFAULT_MAX_EDB_FACTS, SearchDslDecodeContext};
 use super::{
     EdbHydrationMask, OwnedWorkspaceEdbPrefilter, SearchDslCompletionEntry,
     SearchDslCompletionKind, SearchDslExecutionMode, SearchDslStructuredResult,
-    SearchDslStructuredRow,
+    SearchDslStructuredRow, SearchEpistemicStatus, SearchEvidenceChainReceipt,
 };
 use crate::SearchPlanProjectionError;
 
@@ -569,6 +569,35 @@ fn decode_optional_usize(
     }
 }
 
+pub(super) fn decode_optional_evidence_receipt(
+    value: RootedSchemeObject<'_>,
+) -> Result<Option<SearchEvidenceChainReceipt>, SearchPlanProjectionError> {
+    if native(value.as_ref().kind())? == ObjectKind::Boolean
+        && matches!(
+            native(value.as_ref().scalar())?,
+            SchemeScalar::Boolean(false)
+        )
+    {
+        return Ok(None);
+    }
+    let tuple = native(value.into_collection(CollectionKind::Vector))?;
+    if tuple.len() != 9 || decode_symbol(native(tuple.element(0))?)? != "evidence-receipt" {
+        return Err(SearchPlanProjectionError::Invalid(
+            "unexpected evidence-receipt vector shape",
+        ));
+    }
+    Ok(Some(SearchEvidenceChainReceipt {
+        epoch: decode_usize(native(tuple.element(1))?)?,
+        total_m1_claims: decode_usize(native(tuple.element(2))?)?,
+        newly_harvested: decode_usize(native(tuple.element(3))?)?,
+        ambiguous_branches: decode_string_vector(native(tuple.element(4))?, MAX_TOKENS)?,
+        conflict_count: decode_usize(native(tuple.element(5))?)?,
+        covered_layers: decode_string_vector(native(tuple.element(6))?, MAX_TOKENS)?,
+        open_frontiers: decode_string_vector(native(tuple.element(7))?, MAX_TOKENS)?,
+        epistemic_status: SearchEpistemicStatus::parse(&decode_symbol(native(tuple.element(8))?)?)?,
+    }))
+}
+
 use super::render::{AscentRenderInputs, format_snapshot_header, render_ascent_search_text};
 
 fn decode_parse_artifact_result(
@@ -620,6 +649,7 @@ fn decode_parse_artifact_result(
         rows: vec![row],
         choice_worlds: Vec::new(),
         budget_exhausted: None,
+        evidence_receipt: None,
         rendered_text,
     })
 }
@@ -653,14 +683,21 @@ fn decode_ascent_search_result(
             .map(|obj| decode_optional_string(obj, MAX_TEXT_BYTES))
             .transpose()?
             .flatten();
-        return super::choice_codec::decode_choice_payload(
+        let evidence_receipt = elems
+            .next()
+            .map(decode_optional_evidence_receipt)
+            .transpose()?
+            .flatten();
+        let mut choice_res = super::choice_codec::decode_choice_payload(
             relation,
             payload_obj,
             repairs,
             canonical_query,
             snapshot,
             ctx,
-        );
+        )?;
+        choice_res.evidence_receipt = evidence_receipt;
+        return Ok(choice_res);
     }
     let total_results_override = elems
         .next()
@@ -674,6 +711,11 @@ fn decode_ascent_search_result(
     let explicit_context = elems
         .next()
         .map(decode_optional_usize)
+        .transpose()?
+        .flatten();
+    let evidence_receipt = elems
+        .next()
+        .map(decode_optional_evidence_receipt)
         .transpose()?
         .flatten();
     let payload = native(payload_obj.into_collection(CollectionKind::Vector))?;
@@ -731,6 +773,7 @@ fn decode_ascent_search_result(
         rows,
         choice_worlds: Vec::new(),
         budget_exhausted: None,
+        evidence_receipt,
         rendered_text,
     })
 }
@@ -747,7 +790,7 @@ pub(crate) fn decode_rooted_search_dsl_result_with_context(
         let msg = decode_string(native(tuple.element(1))?, MAX_TEXT_BYTES)?;
         return Err(SearchPlanProjectionError::Validation(msg.trim().to_owned()));
     }
-    if !(5..=8).contains(&tuple.len()) {
+    if !(5..=9).contains(&tuple.len()) {
         return Err(SearchPlanProjectionError::Invalid(
             "unexpected search DSL result arity",
         ));

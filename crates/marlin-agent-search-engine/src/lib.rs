@@ -80,17 +80,21 @@ pub use edb_bridge::{
     EdbHydrationMask, OwnedWorkspaceEdbPrefilter, SearchDslChoiceRuleKind, SearchDslChoiceWitness,
     SearchDslChoiceWitnessKind, SearchDslChoiceWorld, SearchDslCompletionEntry,
     SearchDslCompletionKind, SearchDslExecutionMode, SearchDslExecutionRequest,
-    SearchDslLinkedExports, SearchDslRunner, SearchDslStructuredResult, SearchDslStructuredRow,
-    SearchDslStructuredRunner, decode_edb_prefilter, decode_rooted_search_dsl_result,
-    decode_search_dsl_completions, default_marlin_scheme_dir, default_search_dsl_runner,
+    SearchDslLinkedExports, SearchDslRunner, SearchDslSessionExecutionRequest, SearchDslSessionId,
+    SearchDslSessionRunner, SearchDslStructuredResult, SearchDslStructuredRow,
+    SearchDslStructuredRunner, SearchEpistemicStatus, SearchEvidenceChainReceipt,
+    decode_edb_prefilter,
+    decode_rooted_search_dsl_result, decode_search_dsl_completions, default_marlin_scheme_dir,
+    default_search_dsl_runner, default_search_dsl_session_runner,
     default_search_dsl_structured_runner, encode_edb_snapshot, execute_linked_search_dsl,
     execute_linked_search_dsl_structured, format_rooted_search_dsl_result,
     project_linked_search_dsl_completions,
 };
 #[cfg(not(feature = "linked-ui"))]
 pub use edb_bridge::{
-    default_package_search_dsl_runner, default_package_search_dsl_structured_runner,
-    execute_package_search_dsl, execute_package_search_dsl_structured,
+    default_package_search_dsl_runner, default_package_search_dsl_session_runner,
+    default_package_search_dsl_structured_runner, execute_package_search_dsl,
+    execute_package_search_dsl_session_structured, execute_package_search_dsl_structured,
     project_package_search_dsl_completions,
 };
 pub use engine::{

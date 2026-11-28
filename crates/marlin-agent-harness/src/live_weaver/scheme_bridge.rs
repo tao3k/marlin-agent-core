@@ -19,9 +19,10 @@ use gerbil_scheme::{
 };
 use marlin_agent_runtime::ModelToolDeclaration;
 use marlin_agent_search_engine::{
-    HelmIndexPolicyProjection, SearchDslExecutionRequest, SearchDslRunner,
+    HelmIndexPolicyProjection, SearchDslExecutionRequest, SearchDslSessionExecutionRequest,
+    SearchDslSessionId, SearchDslSessionRunner, SearchDslStructuredResult,
     SearchPlanProjectionError, WorkspaceSearchIndex, default_marlin_scheme_dir,
-    execute_package_search_dsl, project_helm_index_policy,
+    execute_package_search_dsl_session_structured, project_helm_index_policy,
 };
 use marlin_agent_tooling::decode_tooling;
 
@@ -95,12 +96,13 @@ enum SchemeVmCommand {
         events: Vec<TrajectoryEvent>,
         reply: mpsc::SyncSender<Result<TemporalCausalityVerdict, String>>,
     },
-    ExecuteSearchDsl {
+    ExecuteSearchDslSession {
         scheme_dir: String,
         index: Arc<RwLock<WorkspaceSearchIndex>>,
         query: String,
         output_limit: usize,
-        reply: mpsc::SyncSender<Result<String, SearchPlanProjectionError>>,
+        session_id: SearchDslSessionId,
+        reply: mpsc::SyncSender<Result<SearchDslStructuredResult, SearchPlanProjectionError>>,
     },
 }
 
@@ -137,7 +139,7 @@ fn harness_scheme_vm_sender() -> &'static mpsc::Sender<SchemeVmCommand> {
                                 SchemeVmCommand::AnalyzeTrajectory { reply, .. } => {
                                     let _ = reply.send(Err(msg));
                                 }
-                                SchemeVmCommand::ExecuteSearchDsl { reply, .. } => {
+                                SchemeVmCommand::ExecuteSearchDslSession { reply, .. } => {
                                     let _ = reply.send(Err(SearchPlanProjectionError::Native(msg)));
                                 }
                             }
@@ -195,21 +197,25 @@ fn handle_vm_command<'a>(
             );
             let _ = reply.send(outcome);
         }
-        SchemeVmCommand::ExecuteSearchDsl {
+        SchemeVmCommand::ExecuteSearchDslSession {
             scheme_dir,
             index,
             query,
             output_limit,
+            session_id,
             reply,
         } => {
             let outcome = match index.read() {
                 Ok(guard) => {
-                    let req = SearchDslExecutionRequest {
-                        index: &guard,
-                        query: &query,
-                        output_limit,
+                    let req = SearchDslSessionExecutionRequest {
+                        execution: SearchDslExecutionRequest {
+                            index: &guard,
+                            query: &query,
+                            output_limit,
+                        },
+                        session_id: &session_id,
                     };
-                    execute_package_search_dsl(rt, &scheme_dir, &req)
+                    execute_package_search_dsl_session_structured(rt, &scheme_dir, &req)
                 }
                 Err(_) => Err(SearchPlanProjectionError::Invalid(
                     "resident search index lock poisoned",
@@ -685,19 +691,21 @@ impl HarnessSchemeBridge {
             .map_err(|_| "harness Scheme VM reply dropped".to_owned())?
     }
 
-    /// Return a `SearchDslRunner` executing L1 `:gerbil-ascent` and L2 Dusa
-    /// queries on this bridge's single thread-affine Scheme VM worker.
+    /// Return a session-aware `SearchDslSessionRunner` backing the loopback
+    /// `marlin.search.v1.SearchGateway` gRPC service on this single thread-affine
+    /// Scheme VM worker.
     #[must_use]
-    pub fn search_dsl_runner(&self) -> SearchDslRunner {
+    pub fn search_session_dsl_runner(&self) -> SearchDslSessionRunner {
         let scheme_dir = self.scheme_dir.clone();
-        Arc::new(move |index, query, output_limit| {
+        Arc::new(move |index, query, output_limit, session_id| {
             let (tx, rx) = mpsc::sync_channel(1);
             harness_scheme_vm_sender()
-                .send(SchemeVmCommand::ExecuteSearchDsl {
+                .send(SchemeVmCommand::ExecuteSearchDslSession {
                     scheme_dir: scheme_dir.clone(),
                     index,
                     query: query.to_owned(),
                     output_limit,
+                    session_id: session_id.clone(),
                     reply: tx,
                 })
                 .map_err(|_| {

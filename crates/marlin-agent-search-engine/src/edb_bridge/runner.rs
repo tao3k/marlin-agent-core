@@ -22,6 +22,7 @@ use super::codec::{
 use super::types::{OwnedWorkspaceEdbPrefilter, SearchDslDecodeContext};
 use super::{
     SearchDslCompletionEntry, SearchDslExecutionRequest, SearchDslLinkedExports, SearchDslRunner,
+    SearchDslSessionExecutionRequest, SearchDslSessionId, SearchDslSessionRunner,
     SearchDslStructuredResult, SearchDslStructuredRunner,
 };
 use crate::SearchPlanProjectionError;
@@ -86,6 +87,23 @@ fn project_snapshot_for_prefilter(
     merged.unwrap_or_else(|| index.project_prefiltered_edb(&prefilter.as_prefilter()))
 }
 
+fn build_eval_input<'a>(
+    runtime: &'a GerbilRuntime,
+    query_obj: gerbil_scheme::RootedSchemeObject<'a>,
+    edb_obj: gerbil_scheme::RootedSchemeObject<'a>,
+    snapshot: &WorkspaceEdbSnapshot,
+    session_id: Option<&SearchDslSessionId>,
+) -> Result<gerbil_scheme::RootedSchemeObject<'a>, SearchPlanProjectionError> {
+    match session_id {
+        Some(sid) => {
+            let sid_obj = make_string(runtime, sid.as_str())?;
+            let gen_obj = make_string(runtime, snapshot.generation_digest.as_str())?;
+            make_vector(runtime, &[query_obj, edb_obj, sid_obj, gen_obj])
+        }
+        None => make_vector(runtime, &[query_obj, edb_obj]),
+    }
+}
+
 /// Execute a native `:gerbil-ascent` query through AOT-linked C-ABI exports
 /// and return the full structured [`SearchDslStructuredResult`].
 ///
@@ -95,6 +113,15 @@ pub unsafe fn execute_linked_search_dsl_structured(
     runtime: &GerbilRuntime,
     exports: SearchDslLinkedExports,
     request: &SearchDslExecutionRequest<'_>,
+) -> Result<SearchDslStructuredResult, SearchPlanProjectionError> {
+    unsafe { execute_linked_search_dsl_opt_session(runtime, exports, request, None) }
+}
+
+unsafe fn execute_linked_search_dsl_opt_session(
+    runtime: &GerbilRuntime,
+    exports: SearchDslLinkedExports,
+    request: &SearchDslExecutionRequest<'_>,
+    session_id: Option<&SearchDslSessionId>,
 ) -> Result<SearchDslStructuredResult, SearchPlanProjectionError> {
     let compile_fn = native(unsafe { runtime.bind_object_export(exports.compile_prefilter) })?;
     let query_obj = make_string(runtime, request.query)?;
@@ -112,7 +139,7 @@ pub unsafe fn execute_linked_search_dsl_structured(
         owned_prefilter.hydration,
         &symbol_refs,
     )?;
-    let eval_input = make_vector(runtime, &[query_obj, edb_obj])?;
+    let eval_input = build_eval_input(runtime, query_obj, edb_obj, &snapshot, session_id)?;
 
     let eval_fn = native(unsafe { runtime.bind_object_export(exports.eval_edb) })?;
     let result_obj = native(eval_fn.call(&eval_input).into_result())?;
@@ -204,6 +231,7 @@ fn execute_with_bound_package_exports(
     compile_fn: &RootedSchemeObject<'_>,
     eval_fn: &RootedSchemeObject<'_>,
     request: &SearchDslExecutionRequest<'_>,
+    session_id: Option<&SearchDslSessionId>,
 ) -> Result<SearchDslStructuredResult, SearchPlanProjectionError> {
     let query_obj = make_string(runtime, request.query)?;
     let prefilter_obj = native(runtime.call_rooted(compile_fn, &query_obj))?;
@@ -220,7 +248,7 @@ fn execute_with_bound_package_exports(
         owned_prefilter.hydration,
         &symbol_refs,
     )?;
-    let eval_input = make_vector(runtime, &[query_obj, edb_obj])?;
+    let eval_input = build_eval_input(runtime, query_obj, edb_obj, &snapshot, session_id)?;
     let result_obj = native(runtime.call_rooted(eval_fn, &eval_input))?;
     decode_rooted_search_dsl_result_with_context(
         result_obj,
@@ -242,7 +270,25 @@ pub fn execute_package_search_dsl_structured(
     request: &SearchDslExecutionRequest<'_>,
 ) -> Result<SearchDslStructuredResult, SearchPlanProjectionError> {
     let (compile_fn, eval_fn) = resolve_package_search_dsl_exports(runtime, scheme_dir)?;
-    execute_with_bound_package_exports(runtime, &compile_fn, &eval_fn, request)
+    execute_with_bound_package_exports(runtime, &compile_fn, &eval_fn, request, None)
+}
+
+/// Execute a session-scoped `:gerbil-ascent` / Dusa query backed by live
+/// `evidence-chain.ss` M1 harvesting and Open EDB amplification.
+#[cfg(not(feature = "linked-ui"))]
+pub fn execute_package_search_dsl_session_structured(
+    runtime: &GerbilRuntime,
+    scheme_dir: &str,
+    request: &SearchDslSessionExecutionRequest<'_>,
+) -> Result<SearchDslStructuredResult, SearchPlanProjectionError> {
+    let (compile_fn, eval_fn) = resolve_package_search_dsl_exports(runtime, scheme_dir)?;
+    execute_with_bound_package_exports(
+        runtime,
+        &compile_fn,
+        &eval_fn,
+        &request.execution,
+        Some(request.session_id),
+    )
 }
 
 /// Execute a native `:gerbil-ascent` query by resolving
@@ -303,12 +349,27 @@ pub fn default_search_dsl_structured_runner() -> Option<SearchDslStructuredRunne
     }
 }
 
+/// Return the default package-backed [`SearchDslSessionRunner`] when `linked-ui`
+/// is not active, or `None` under AOT `linked-ui`.
+#[must_use]
+pub fn default_search_dsl_session_runner() -> Option<SearchDslSessionRunner> {
+    #[cfg(not(feature = "linked-ui"))]
+    {
+        Some(default_package_search_dsl_session_runner())
+    }
+    #[cfg(feature = "linked-ui")]
+    {
+        None
+    }
+}
+
 #[cfg(not(feature = "linked-ui"))]
 struct PackageDslJob {
     scheme_dir: String,
     index: Arc<RwLock<WorkspaceSearchIndex>>,
     query: String,
     output_limit: usize,
+    session_id: Option<SearchDslSessionId>,
     reply:
         std::sync::mpsc::SyncSender<Result<SearchDslStructuredResult, SearchPlanProjectionError>>,
 }
@@ -387,7 +448,7 @@ fn run_worker_dsl_job<'a>(
         query: &job.query,
         output_limit: job.output_limit,
     };
-    execute_with_bound_package_exports(rt, compile_fn, eval_fn, &req)
+    execute_with_bound_package_exports(rt, compile_fn, eval_fn, &req, job.session_id.as_ref())
 }
 
 #[cfg(not(feature = "linked-ui"))]
@@ -395,6 +456,7 @@ fn dispatch_package_dsl_job(
     shared_index: Arc<RwLock<WorkspaceSearchIndex>>,
     query: &str,
     output_limit: usize,
+    session_id: Option<SearchDslSessionId>,
 ) -> Result<SearchDslStructuredResult, SearchPlanProjectionError> {
     let scheme_dir = default_marlin_scheme_dir().ok_or(SearchPlanProjectionError::Invalid(
         "compiled Marlin scheme/ directory not found (set MARLIN_SCHEME_DIR)",
@@ -412,6 +474,7 @@ fn dispatch_package_dsl_job(
             index: shared_index,
             query: query.to_owned(),
             output_limit,
+            session_id,
             reply: reply_tx,
         })
         .map_err(|_| SearchPlanProjectionError::Invalid("search DSL worker thread stopped"))?;
@@ -426,7 +489,17 @@ fn dispatch_package_dsl_job(
 #[must_use]
 pub fn default_package_search_dsl_structured_runner() -> SearchDslStructuredRunner {
     Arc::new(|shared_index, query, output_limit| {
-        dispatch_package_dsl_job(shared_index, query, output_limit)
+        dispatch_package_dsl_job(shared_index, query, output_limit, None)
+    })
+}
+
+/// Build a default session-scoped [`SearchDslSessionRunner`] wired to live
+/// `evidence-chain.ss` M1 harvesting when `linked-ui` is not active.
+#[cfg(not(feature = "linked-ui"))]
+#[must_use]
+pub fn default_package_search_dsl_session_runner() -> SearchDslSessionRunner {
+    Arc::new(|shared_index, query, output_limit, session_id| {
+        dispatch_package_dsl_job(shared_index, query, output_limit, Some(session_id.clone()))
     })
 }
 
@@ -437,6 +510,6 @@ pub fn default_package_search_dsl_structured_runner() -> SearchDslStructuredRunn
 #[must_use]
 pub fn default_package_search_dsl_runner() -> SearchDslRunner {
     Arc::new(|shared_index, query, output_limit| {
-        Ok(dispatch_package_dsl_job(shared_index, query, output_limit)?.rendered_text)
+        Ok(dispatch_package_dsl_job(shared_index, query, output_limit, None)?.rendered_text)
     })
 }

@@ -335,4 +335,38 @@
         (check (.ref causal-ok 'admitted?) => #t)
         (check (.ref causal-ok 'tamper-replay-status) => 'invalid)
         (check (.ref causal-poison 'admitted?) => #f)
-        (check (.ref causal-poison 'forbidden-hits) => '(poison_injected))))))
+        (check (.ref causal-poison 'forbidden-hits) => '(poison_injected))))
+
+    (test-case "Live Session Step: Turn-1 Dusa harvests M1 receipt & Turn-2 Ascent consumes verified_tier with open-frontier detection"
+      (let* ((tier-query
+               "(search-choice-program
+                  (use rust)
+                  (scope path-prefix: \"crates/marlin-agent-search-engine/src/edb_bridge/\" limit: 6)
+                  (choice tier (mod level))
+                  (rule (closed (tier ?m) (resident provider)) (module-in-scope ?m))
+                  (rule (closed (tier ?m) ()) (hot-path-module ?m) (tier ?m provider))
+                  (solve tier state-budget: 64 provenance?: #t))")
+             (ascent-query
+               "(ascent-fragment
+                  ((answer mod lvl)
+                   <-- (verified_tier mod lvl)))"))
+        (let-values (((res1 store1)
+                      (evaluate-session-search-dsl-step
+                        #f tier-query +base-scenario-b-edb+ "gen-session-1")))
+          (let* ((receipt1 (vector-ref res1 6)))
+            (check (vector-ref receipt1 0) => 'evidence-receipt)
+            (check (vector-ref receipt1 1) => 1)
+            (check (vector-ref receipt1 2) => 2)
+            (check (vector-ref receipt1 3) => 2)
+            (check (vector-ref receipt1 8) => 'unique-deduction)
+            ;; Turn 2 reuses same generation (O(1) fast path) and directly joins Turn 1 M1 verified_tier!
+            (let-values (((res2 _store2)
+                          (evaluate-session-search-dsl-step
+                            store1 ascent-query +base-scenario-b-edb+ "gen-session-1")))
+              (let ((rows2 (vector-ref res2 3))
+                    (receipt2 (vector-ref res2 8)))
+                (check (length rows2) => 2)
+                (check (vector-ref receipt2 0) => 'evidence-receipt)
+                (check (>= (vector-ref receipt2 2) 2) => #t)
+                ;; `edb_bridge` reference surfaces uncovered `scheme/c-abi` cross-layer frontier!
+                (check (and (member "scheme/c-abi" (vector->list (vector-ref receipt2 7))) #t) => #t)))))))))

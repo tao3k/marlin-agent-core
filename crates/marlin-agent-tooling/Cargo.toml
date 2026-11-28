@@ -10,12 +10,29 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+grpc = [
+    "dep:prost",
+    "dep:tokio-stream",
+    "dep:tonic",
+    "dep:tonic-prost",
+    "dep:tonic-prost-build",
+]
+
 [dependencies]
 gerbil-scheme.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-agent-search-engine.workspace = true
+prost = { workspace = true, optional = true }
 tokio.workspace = true
+tokio-stream = { workspace = true, features = ["net"], optional = true }
+tonic = { workspace = true, features = ["router", "server"], optional = true }
+tonic-prost = { workspace = true, optional = true }
+
+[build-dependencies]
+tonic-prost-build = { workspace = true, optional = true }
 
 [dev-dependencies]
 asp-rust.workspace = true

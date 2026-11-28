@@ -32,14 +32,18 @@
         "./funcs.ss")
 (export compute-edb-file-fingerprints
         compute-scope-members
+        extract-evidence-path-layer
         make-search-evidence-store
         make-search-evidence-claim
         admit-search-evidence-claim
+        harvest-choice-result-evidence
+        harvest-ascent-result-evidence
         harvest-dusa-scenario-b-evidence
         SearchEvidenceTruthMaintenanceProgram
         reconcile-search-evidence-chain
         materialize-evidence-chain-edb
         evaluate-search-dsl-with-evidence
+        evaluate-session-search-dsl-step
         verify-evidence-causal-trajectory)
 
 ;; ============================================================================
@@ -190,6 +194,7 @@
 
 (def (make-search-evidence-store edb
                                  epoch: (epoch 1)
+                                 generation: (generation #f)
                                  content-overrides: (content-overrides '())
                                  watched-scopes: (watched-scopes '())
                                  frozen-cuts: (frozen-cuts '()))
@@ -198,6 +203,7 @@
     (.o bind-these: #f
         kind: 'marlin.search-evidence-store.v1
         epoch: epoch
+        generation: generation
         claims: '()
         tombstones: '()
         revoked-principals: '()
@@ -349,6 +355,133 @@
     ((number? x) (number->string x))
     (else (sexp->canonical-string x))))
 
+;;; Pure helper: project a workspace-relative path to its architectural layer
+;;; (`crates/<crate>`, `crates/<crate>/tests`, `scheme/<subpkg>`, or top dir).
+(def (string-split-slash s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (start 0) (acc '()))
+      (cond
+        ((= i len)
+         (reverse (if (> i start) (cons (substring s start i) acc) acc)))
+        ((char=? (string-ref s i) #\/)
+         (loop (+ i 1) (+ i 1)
+               (if (> i start) (cons (substring s start i) acc) acc)))
+        (else (loop (+ i 1) start acc))))))
+
+(def (extract-evidence-path-layer path)
+  (if (not (string? path))
+    #f
+    (let ((segs (string-split-slash path)))
+      (cond
+        ((null? segs) #f)
+        ((and (string=? (car segs) "crates") (>= (length segs) 3)
+              (or (string=? (caddr segs) "tests") (string=? (caddr segs) "benches")))
+         (string-append "crates/" (cadr segs) "/tests"))
+        ((and (string=? (car segs) "crates") (>= (length segs) 2))
+         (string-append "crates/" (cadr segs)))
+        ((and (string=? (car segs) "scheme") (>= (length segs) 2))
+         (string-append "scheme/" (cadr segs)))
+        (else (car segs))))))
+
+;;; Harvest invariant `[deduction]` / single-world agreements directly from an
+;;; already-evaluated Dusa `search-result` vector (avoiding double evaluation).
+;;; Multi-world `[branch]` keys are preserved explicitly in `ambiguous` (Anti-LWW).
+(def (harvest-choice-result-evidence store res edb
+                                     proposer: (proposer "dusa-oracle")
+                                     claim-prefix: (claim-prefix "dusa")
+                                     neg-domains: (neg-domains '())
+                                     strict?: (strict? #f))
+  (let* ((mode (and (vector? res) (>= (vector-length res) 4) (vector-ref res 1)))
+         (target-rel (and (vector? res) (>= (vector-length res) 4) (vector-ref res 2)))
+         (payload (and (vector? res) (>= (vector-length res) 4) (vector-ref res 3))))
+    (cond
+      ((and (eq? mode 'choice) (vector? payload) (eq? (vector-ref payload 0) 'choice-report))
+       (let* ((world-count (vector-ref payload 1))
+              (worlds (vector-ref payload 4))
+              (vals-by-key (make-hash-table))
+              (prov-by-key (make-hash-table))
+              (all-file-paths (map (lambda (f) (list-ref f 2)) (edb-rows edb 'file))))
+         (for-each
+           (lambda (w)
+             (let ((bindings (vector-ref w 2))
+                   (witnesses (vector-ref w 3)))
+               (for-each
+                 (lambda (b)
+                   (when (and (list? b) (>= (length b) 2))
+                     (let* ((k (choice-atom->string (car b)))
+                            (v (choice-atom->string (cadr b)))
+                            (prev (or (hash-get vals-by-key k) '())))
+                       (unless (member v prev)
+                         (hash-put! vals-by-key k (cons v prev))))))
+                 bindings)
+               (for-each
+                 (lambda (wt)
+                   (let ((wkind (vector-ref wt 0))
+                         (wfact (vector-ref wt 1)))
+                     (when (and (list? wfact) (>= (length wfact) 3))
+                       (let ((k (choice-atom->string (cadr wfact))))
+                         (hash-put! prov-by-key k wkind)))))
+                 witnesses)))
+           worlds)
+         (let* ((claim-kind (cond
+                              ((eq? target-rel 'tier) 'dusa-tier)
+                              ((eq? target-rel 'resolve) 'dusa-resolution)
+                              (else 'ascent-fact)))
+                (sorted-keys (sort-list (hash-keys vals-by-key) string<?)))
+           (let loop ((ks sorted-keys)
+                      (cur-store store)
+                      (harvested '())
+                      (ambiguous '()))
+             (if (null? ks)
+               (.o bind-these: #f
+                   store: cur-store
+                   world-count: world-count
+                   harvested: (reverse harvested)
+                   ambiguous: (reverse ambiguous))
+               (let* ((k (car ks))
+                      (vs (sort-list (hash-get vals-by-key k) string<?))
+                      (prov (or (hash-get prov-by-key k) 'derived)))
+                 (if (> (length vs) 1)
+                   ;; Multi-world branching ambiguity: NEVER collapse via LWW!
+                   (loop (cdr ks) cur-store harvested (cons (list k vs prov) ambiguous))
+                   (let* ((v (car vs))
+                          (cid (string-append claim-prefix ":" (symbol->string target-rel) ":" k))
+                          (dep-files
+                            (cond
+                              ((member k all-file-paths) (list k))
+                              (else
+                               (let ((matched
+                                       (filter (lambda (p)
+                                                 (or (string-prefix-of? p k)
+                                                     (string-prefix-of? p v)))
+                                               all-file-paths)))
+                                 (if (pair? matched) matched all-file-paths)))))
+                          (receipt (evidence-sha256
+                                     (list 'dusa-oracle-witness target-rel k v prov world-count dep-files)))
+                          (claim (make-search-evidence-claim
+                                   cid claim-kind k v
+                                   tier: 'M1-verified
+                                   file-deps: dep-files
+                                   content-sensitive?: #f
+                                   neg-domains: neg-domains
+                                   oracle-receipt: receipt
+                                   proposer: proposer
+                                   source-integrity: 'trusted-oracle
+                                   epoch: (.ref cur-store 'epoch)))
+                          (adm (admit-search-evidence-claim cur-store claim edb: edb)))
+                     (loop (cdr ks)
+                           (.ref adm 'store)
+                           (if (.ref adm 'admitted?) (cons cid harvested) harvested)
+                           ambiguous)))))))))
+      (strict?
+       (error "harvest-dusa-scenario-b-evidence expected SAT choice-report" payload))
+      (else
+       (.o bind-these: #f
+           store: store
+           world-count: 0
+           harvested: '()
+           ambiguous: '())))))
+
 ;;; Run a REAL Scenario B Dusa query (`resolve` disambiguation or `tier` placement)
 ;;; over `edb`, harvest every invariant `[deduction]` or single-world agreement into
 ;;; oracle-backed M1 evidence claims (preserving multi-world `[branch]` ambiguity
@@ -358,90 +491,100 @@
                                        proposer: (proposer "dusa-oracle")
                                        claim-prefix: (claim-prefix "dusa")
                                        neg-domains: (neg-domains '()))
-  (let* ((res (evaluate-search-dsl-over-edb dusa-query edb registry))
-         (mode (vector-ref res 1))
-         (target-rel (vector-ref res 2))
-         (payload (vector-ref res 3)))
-    (unless (and (eq? mode 'choice) (vector? payload) (eq? (vector-ref payload 0) 'choice-report))
-      (error "harvest-dusa-scenario-b-evidence expected SAT choice-report" payload))
-    (let* ((world-count (vector-ref payload 1))
-           (worlds (vector-ref payload 4))
-           ;; Map each binding key (car row) -> set of observed values across all worlds
-           (vals-by-key (make-hash-table))
-           (prov-by-key (make-hash-table))
-           (all-file-paths (map (lambda (f) (list-ref f 2)) (edb-rows edb 'file))))
-      (for-each
-        (lambda (w)
-          (let ((bindings (vector-ref w 2))
-                (witnesses (vector-ref w 3)))
-            (for-each
-              (lambda (b)
-                (when (and (list? b) (>= (length b) 2))
-                  (let* ((k (choice-atom->string (car b)))
-                         (v (choice-atom->string (cadr b)))
-                         (prev (or (hash-get vals-by-key k) '())))
-                    (unless (member v prev)
-                      (hash-put! vals-by-key k (cons v prev))))))
-              bindings)
-            (for-each
-              (lambda (wt)
-                (let ((wkind (vector-ref wt 0))
-                      (wfact (vector-ref wt 1)))
-                  (when (and (list? wfact) (>= (length wfact) 3))
-                    (let ((k (choice-atom->string (cadr wfact))))
-                      (hash-put! prov-by-key k wkind)))))
-              witnesses)))
-        worlds)
-      (let* ((claim-kind (cond
-                           ((eq? target-rel 'tier) 'dusa-tier)
-                           ((eq? target-rel 'resolve) 'dusa-resolution)
-                           (else 'ascent-fact)))
-             (sorted-keys (sort-list (hash-keys vals-by-key) string<?)))
-        (let loop ((ks sorted-keys)
+  (let ((res (evaluate-search-dsl-over-edb dusa-query edb registry)))
+    (harvest-choice-result-evidence
+      store res edb
+      proposer: proposer
+      claim-prefix: claim-prefix
+      neg-domains: neg-domains
+      strict?: #t)))
+
+(def (cell-looks-like-path? s known-path-tbl)
+  (and (string? s)
+       (> (string-length s) 2)
+       (or (hash-get known-path-tbl s)
+           (and (string-contains-char? s #\/)
+                (string-contains-char? s #\.)))))
+
+(def (string-contains-char? s ch)
+  (let ((len (string-length s)))
+    (let loop ((i 0))
+      (cond
+        ((>= i len) #f)
+        ((char=? (string-ref s i) ch) #t)
+        (else (loop (+ i 1)))))))
+
+(def (string-contains-sub? hay needle)
+  (let ((hlen (string-length hay))
+        (nlen (string-length needle)))
+    (cond
+      ((= nlen 0) #t)
+      ((> nlen hlen) #f)
+      (else
+       (let loop ((i 0))
+         (cond
+           ((> (+ i nlen) hlen) #f)
+           ((string=? (substring hay i (+ i nlen)) needle) #t)
+           (else (loop (+ i 1)))))))))
+
+;;; Harvest verified structural M1 facts directly from an L1 `:gerbil-ascent`
+;;; `search-result` vector (bounded to `max-claims` high-signal anchors so
+;;; multi-turn sessions accumulate crisp, deduplicated M1 evidence).
+(def (harvest-ascent-result-evidence store res edb
+                                     proposer: (proposer "ascent-oracle")
+                                     claim-prefix: (claim-prefix "ascent")
+                                     max-claims: (max-claims 24))
+  (let* ((mode (and (vector? res) (>= (vector-length res) 4) (vector-ref res 1)))
+         (target-rel (and (vector? res) (>= (vector-length res) 4) (vector-ref res 2)))
+         (rows (and (vector? res) (>= (vector-length res) 4) (vector-ref res 3))))
+    (if (not (and (eq? mode 'ascent) (list? rows) (pair? rows)))
+      (.o bind-these: #f store: store harvested: '() seen-paths: '())
+      (let ((known-paths (make-hash-table))
+            (existing-cids (make-hash-table)))
+        (for-each (lambda (f) (when (>= (length f) 3) (hash-put! known-paths (list-ref f 2) #t)))
+                  (edb-rows edb 'file))
+        (for-each (lambda (pair) (hash-put! existing-cids (car pair) #t))
+                  (.ref store 'claims))
+        (let loop ((rest rows)
                    (cur-store store)
                    (harvested '())
-                   (ambiguous '()))
-          (if (null? ks)
+                   (seen-paths '())
+                   (count 0))
+          (if (or (null? rest) (>= count max-claims))
             (.o bind-these: #f
                 store: cur-store
-                world-count: world-count
                 harvested: (reverse harvested)
-                ambiguous: (reverse ambiguous))
-            (let* ((k (car ks))
-                   (vs (sort-list (hash-get vals-by-key k) string<?))
-                   (prov (or (hash-get prov-by-key k) 'derived)))
-              (if (> (length vs) 1)
-                ;; Multi-world branching ambiguity: NEVER collapse via LWW!
-                (loop (cdr ks) cur-store harvested (cons (list k vs prov) ambiguous))
-                (let* ((v (car vs))
-                       (cid (string-append claim-prefix ":" (symbol->string target-rel) ":" k))
-                       (dep-files
-                         (cond
-                           ((member k all-file-paths) (list k))
-                           (else
-                            (let ((matched
-                                    (filter (lambda (p)
-                                              (or (string-prefix-of? p k)
-                                                  (string-prefix-of? p v)))
-                                            all-file-paths)))
-                              (if (pair? matched) matched all-file-paths)))))
-                       (receipt (evidence-sha256
-                                  (list 'dusa-oracle-witness target-rel k v prov world-count dep-files)))
-                       (claim (make-search-evidence-claim
-                                cid claim-kind k v
-                                tier: 'M1-verified
-                                file-deps: dep-files
-                                content-sensitive?: #f
-                                neg-domains: neg-domains
-                                oracle-receipt: receipt
-                                proposer: proposer
-                                source-integrity: 'trusted-oracle
-                                epoch: (.ref cur-store 'epoch)))
-                       (adm (admit-search-evidence-claim cur-store claim edb: edb)))
-                  (loop (cdr ks)
-                        (.ref adm 'store)
-                        (if (.ref adm 'admitted?) (cons cid harvested) harvested)
-                        ambiguous))))))))))
+                seen-paths: (delete-duplicates/hash seen-paths))
+            (let* ((row (car rest))
+                   (cells (if (list? row) row (list row)))
+                   (paths (filter (lambda (c) (cell-looks-like-path? c known-paths)) cells))
+                   (primary (if (pair? cells) (choice-atom->string (car cells)) ""))
+                   (first-path (and (pair? paths) (car paths))))
+              (if (or (not first-path) (= (string-length primary) 0))
+                (loop (cdr rest) cur-store harvested (append paths seen-paths) count)
+                (let* ((cid (string-append claim-prefix ":" (symbol->string target-rel) ":" primary "@" first-path))
+                       (already? (hash-get existing-cids cid)))
+                  (if already?
+                    (loop (cdr rest) cur-store harvested (append paths seen-paths) count)
+                    (let* ((tkey (string-append (symbol->string target-rel) ":" primary))
+                           (val (string-append first-path "::" (choice-atom->string target-rel)))
+                           (receipt (evidence-sha256 (list 'ascent-oracle-row target-rel primary paths)))
+                           (claim (make-search-evidence-claim
+                                    cid 'ascent-fact tkey val
+                                    tier: 'M1-verified
+                                    file-deps: (delete-duplicates/hash paths)
+                                    content-sensitive?: #f
+                                    oracle-receipt: receipt
+                                    proposer: proposer
+                                    source-integrity: 'trusted-oracle
+                                    epoch: (.ref cur-store 'epoch)))
+                           (adm (admit-search-evidence-claim cur-store claim edb: edb)))
+                      (hash-put! existing-cids cid #t)
+                      (loop (cdr rest)
+                            (.ref adm 'store)
+                            (if (.ref adm 'admitted?) (cons cid harvested) harvested)
+                            (append paths seen-paths)
+                            (+ count 1)))))))))))))
 
 ;; ============================================================================
 ;; 4. Stratified ASCENT Evidence-Chain Truth Maintenance & KV-Cache Fencing
@@ -915,6 +1058,190 @@
     query
     (materialize-evidence-chain-edb store base-edb)
     registry))
+
+;;; Detect anti-LWW epistemic conflicts directly over surviving M1 claims (O(|claims|)),
+;;; comparing distinct values within the SAME `(claim-kind, target-key)` domain.
+(def (detect-store-m1-conflicts store)
+  (let ((vals-by-key (make-hash-table))
+        (conflicts '()))
+    (for-each
+      (lambda (pair)
+        (let ((cl (cdr pair)))
+          (when (eq? (.ref cl 'tier) 'M1-verified)
+            (let* ((k (string-append (symbol->string (.ref cl 'claim-kind)) "::" (.ref cl 'target-key)))
+                   (v (.ref cl 'value))
+                   (prev (or (hash-get vals-by-key k) '())))
+              (unless (member v prev)
+                (hash-put! vals-by-key k (cons v prev)))))))
+      (.ref store 'claims))
+    (for-each
+      (lambda (k)
+        (let ((vs (sort-list (hash-get vals-by-key k) string<?)))
+          (when (> (length vs) 1)
+            (set! conflicts (cons (list k (car vs) (cadr vs)) conflicts)))))
+      (sort-list (hash-keys vals-by-key) string<?))
+    (reverse conflicts)))
+
+;;; Fast O(|claims|) materialization when generation digest is unchanged (no files edited).
+(def (materialize-live-store-attrs store base-edb conflicts)
+  (let* ((conflict-keys (map car conflicts))
+         (evidence-attrs
+           (filter-map
+             (lambda (pair)
+               (let ((cl (cdr pair)))
+                 (and (eq? (.ref cl 'tier) 'M1-verified)
+                      (let ((tkey (.ref cl 'target-key))
+                            (val (.ref cl 'value))
+                            (ckind (.ref cl 'claim-kind)))
+                        (and (not (member (string-append (symbol->string ckind) "::" tkey) conflict-keys))
+                             (let ((akey (case ckind
+                                           ((dusa-tier) "verified_tier")
+                                           ((dusa-resolution) "verified_resolution")
+                                           (else "verified_evidence"))))
+                               (list tkey akey val)))))))
+             (.ref store 'claims))))
+    (if (null? evidence-attrs)
+      base-edb
+      (cons (cons 'attr (append (edb-rows base-edb 'attr) evidence-attrs))
+            (filter (lambda (p) (not (eq? (car p) 'attr))) base-edb)))))
+
+;;; Summarize verified layers and open cross-layer frontiers from accumulated M1 claims.
+(def (compute-evidence-layers-and-frontiers store edb)
+  (let* ((claim-paths
+           (delete-duplicates/hash
+             (append-map (lambda (pair) (.ref (cdr pair) 'file-deps))
+                         (.ref store 'claims))))
+         (covered-layers
+           (sort-list
+             (delete-duplicates/hash
+               (filter-map extract-evidence-path-layer claim-paths))
+             string<?))
+         (open-frontiers '())
+         (has-layer? (lambda (l) (and (member l covered-layers) #t)))
+         (mentions-cabi?
+           (ormap (lambda (pair)
+                    (let* ((cl (cdr pair))
+                           (tk (.ref cl 'target-key))
+                           (deps (.ref cl 'file-deps)))
+                      (or (string-contains-sub? tk "SearchDsl")
+                          (string-contains-sub? tk "search_dsl")
+                          (string-contains-sub? tk "search-dsl")
+                          (string-contains-sub? tk "LinkedExports")
+                          (ormap (lambda (d) (string-contains-sub? d "edb_bridge")) deps))))
+                  (.ref store 'claims)))
+         (edb-has-scheme-cabi?
+           (ormap (lambda (f)
+                    (and (>= (length f) 3)
+                         (string-prefix-of? "scheme/c-abi/" (list-ref f 2))))
+                  (edb-rows edb 'file))))
+    (when (and mentions-cabi? (not (has-layer? "scheme/c-abi")))
+      (set! open-frontiers
+            (cons (if edb-has-scheme-cabi? "scheme/c-abi/search-dsl.ss" "scheme/c-abi")
+                  open-frontiers)))
+    (values covered-layers (reverse open-frontiers))))
+
+(def (append-evidence-receipt-to-result res receipt-vec)
+  (if (not (and (vector? res) (>= (vector-length res) 5) (eq? (vector-ref res 0) 'search-result)))
+    res
+    (let ((mode (vector-ref res 1))
+          (len (vector-length res)))
+      (cond
+        ((eq? mode 'choice)
+         (vector 'search-result 'choice
+                 (vector-ref res 2)
+                 (vector-ref res 3)
+                 (vector-ref res 4)
+                 (if (> len 5) (vector-ref res 5) #f)
+                 receipt-vec))
+        ((eq? mode 'ascent)
+         (vector 'search-result 'ascent
+                 (vector-ref res 2)
+                 (vector-ref res 3)
+                 (vector-ref res 4)
+                 (if (> len 5) (vector-ref res 5) (length (vector-ref res 3)))
+                 (if (> len 6) (vector-ref res 6) #f)
+                 (if (> len 7) (vector-ref res 7) #f)
+                 receipt-vec))
+        (else res)))))
+
+;;; Pure functional session-scoped Search DSL evaluation step wired to
+;;; `evidence-chain.ss`:
+;;;   1. Initializes or reconciles `store` against `generation` (O(1) fast path
+;;;      when unchanged; full dual-fingerprint + ATMS + DE01 reconcile on drift).
+;;;   2. Materializes live, non-conflicted M1 claims (`verified_tier`,
+;;;      `verified_resolution`, `verified_evidence`) into Open EDB `attr`.
+;;;   3. Executes `query` (via optional compiled `eval-fn` or `evaluate-search-dsl-over-edb`).
+;;;   4. Harvests new oracle-backed M1 claims from L1 Ascent or L2 Dusa results
+;;;      without collapsing multi-world `[branch]` ambiguity.
+;;;   5. Projects a rooted `#(evidence-receipt ...)` vector attached to `search-result`.
+(def (evaluate-session-search-dsl-step store query base-edb generation
+                                       registry: (registry SearchLanguageRegistryValue)
+                                       eval-fn: (eval-fn #f))
+  (let* ((same-gen? (and store
+                         (string? generation)
+                         (> (string-length generation) 0)
+                         (equal? (.ref store 'generation) generation)))
+         (reconciled-store+conflicts
+           (cond
+             ((not store)
+              (cons (make-search-evidence-store base-edb generation: generation) '()))
+             (same-gen?
+              (cons store (detect-store-m1-conflicts store)))
+             (else
+              (let ((rec (reconcile-search-evidence-chain store base-edb)))
+                (cons (.cc (.ref rec 'next-store) 'generation generation)
+                      (.ref rec 'conflicts))))))
+         (active-store (car reconciled-store+conflicts))
+         (pre-conflicts (cdr reconciled-store+conflicts))
+         (amplified-edb (materialize-live-store-attrs active-store base-edb pre-conflicts))
+         (raw-res (if eval-fn
+                    (eval-fn amplified-edb)
+                    (evaluate-search-dsl-over-edb query amplified-edb registry)))
+         (mode (and (vector? raw-res) (>= (vector-length raw-res) 2) (vector-ref raw-res 1)))
+         (harvested-info
+           (cond
+             ((eq? mode 'choice)
+              (let ((h (harvest-choice-result-evidence active-store raw-res amplified-edb)))
+                (vector (.ref h 'store)
+                        (length (.ref h 'harvested))
+                        (map car (.ref h 'ambiguous))
+                        (.ref h 'world-count))))
+             ((eq? mode 'ascent)
+              (let ((h (harvest-ascent-result-evidence active-store raw-res amplified-edb)))
+                (vector (.ref h 'store)
+                        (length (.ref h 'harvested))
+                        '()
+                        0)))
+             (else
+              (vector active-store 0 '() 0))))
+         (next-store (vector-ref harvested-info 0))
+         (new-m1 (vector-ref harvested-info 1))
+         (ambig-keys (vector-ref harvested-info 2))
+         (world-count (vector-ref harvested-info 3))
+         (post-conflicts (detect-store-m1-conflicts next-store))
+         (total-m1 (length (filter (lambda (p) (eq? (.ref (cdr p) 'tier) 'M1-verified))
+                                   (.ref next-store 'claims)))))
+    (let-values (((covered-layers open-frontiers)
+                  (compute-evidence-layers-and-frontiers next-store amplified-edb)))
+      (let* ((status
+               (cond
+                 ((pair? post-conflicts) 'epistemic-conflict)
+                 ((and (eq? mode 'choice) (= world-count 1)) 'unique-deduction)
+                 ((or (pair? ambig-keys) (and (eq? mode 'choice) (> world-count 1))) 'competing-worlds)
+                 ((and (null? open-frontiers) (> total-m1 0)) 'converged-evidence)
+                 (else 'exploring)))
+             (receipt-vec
+               (vector 'evidence-receipt
+                       (.ref next-store 'epoch)
+                       total-m1
+                       new-m1
+                       (list->vector ambig-keys)
+                       (length post-conflicts)
+                       (list->vector covered-layers)
+                       (list->vector open-frontiers)
+                       status))
+             (enriched-res (append-evidence-receipt-to-result raw-res receipt-vec)))
+        (values enriched-res next-store)))))
 
 ;;; Verify a search evidence-chain causal trajectory through Marlin's Bi-Temporal
 ;;; Causality & ASCENT Temporal Lens (returning tamper-evident receipt and replay

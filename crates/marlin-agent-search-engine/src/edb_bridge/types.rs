@@ -253,6 +253,83 @@ pub struct SearchDslChoiceWorld {
     pub witnesses: Vec<SearchDslChoiceWitness>,
 }
 
+/// Validated semantic identifier binding multi-turn L1/L2 search queries to a
+/// persistent Scheme `evidence-chain.ss` truth-maintenance session.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct SearchDslSessionId(String);
+
+impl SearchDslSessionId {
+    /// Validate and construct a non-empty session identifier (at most 128 bytes).
+    pub fn new(raw: impl Into<String>) -> Result<Self, SearchPlanProjectionError> {
+        let value = raw.into();
+        let trimmed = value.trim();
+        if trimmed.is_empty() || trimmed.len() > 128 {
+            return Err(SearchPlanProjectionError::Invalid(
+                "search DSL session id must be 1..=128 bytes",
+            ));
+        }
+        Ok(Self(trimmed.to_owned()))
+    }
+
+    /// Borrow the canonical session identifier string.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Epistemic convergence state emitted by Scheme `evidence-chain.ss`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
+pub enum SearchEpistemicStatus {
+    #[default]
+    Exploring,
+    CompetingWorlds,
+    UniqueDeduction,
+    ConvergedEvidence,
+    EpistemicConflict,
+}
+
+impl SearchEpistemicStatus {
+    /// Canonical lowercase kebab-case identifier shared with gRPC & telemetry.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Exploring => "exploring",
+            Self::CompetingWorlds => "competing-worlds",
+            Self::UniqueDeduction => "unique-deduction",
+            Self::ConvergedEvidence => "converged-evidence",
+            Self::EpistemicConflict => "epistemic-conflict",
+        }
+    }
+
+    pub(crate) fn parse(raw: &str) -> Result<Self, SearchPlanProjectionError> {
+        match raw {
+            "exploring" => Ok(Self::Exploring),
+            "competing-worlds" => Ok(Self::CompetingWorlds),
+            "unique-deduction" => Ok(Self::UniqueDeduction),
+            "converged-evidence" => Ok(Self::ConvergedEvidence),
+            "epistemic-conflict" => Ok(Self::EpistemicConflict),
+            _ => Err(SearchPlanProjectionError::Invalid(
+                "unknown search epistemic status",
+            )),
+        }
+    }
+}
+
+/// Typed evidence-chain receipt projected from Scheme `evidence-chain.ss`
+/// (`#(evidence-receipt epoch total-m1 new-m1 ambiguous conflicts covered open status)`).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SearchEvidenceChainReceipt {
+    pub epoch: usize,
+    pub total_m1_claims: usize,
+    pub newly_harvested: usize,
+    pub ambiguous_branches: Vec<String>,
+    pub conflict_count: usize,
+    pub covered_layers: Vec<String>,
+    pub open_frontiers: Vec<String>,
+    pub epistemic_status: SearchEpistemicStatus,
+}
+
 /// Complete typed result of a Scheme Search DSL execution shared by both
 /// LLM `workspace_search` tool calls and TUI Helm live S-expression evaluation.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -268,6 +345,7 @@ pub struct SearchDslStructuredResult {
     pub rows: Vec<SearchDslStructuredRow>,
     pub choice_worlds: Vec<SearchDslChoiceWorld>,
     pub budget_exhausted: Option<String>,
+    pub evidence_receipt: Option<SearchEvidenceChainReceipt>,
     pub rendered_text: String,
 }
 
@@ -302,6 +380,14 @@ pub struct SearchDslExecutionRequest<'a> {
     pub output_limit: usize,
 }
 
+/// Typed session-scoped search execution request enabling live M1 evidence
+/// harvesting and cross-turn Open EDB amplification via `evidence-chain.ss`.
+#[derive(Clone, Copy)]
+pub struct SearchDslSessionExecutionRequest<'a> {
+    pub execution: SearchDslExecutionRequest<'a>,
+    pub session_id: &'a SearchDslSessionId,
+}
+
 /// AOT-linked C-ABI exports from `scheme/c-abi/search-dsl.ss`.
 #[derive(Clone, Copy)]
 pub struct SearchDslLinkedExports {
@@ -331,6 +417,19 @@ pub type SearchDslStructuredRunner = Arc<
             Arc<RwLock<WorkspaceSearchIndex>>,
             &str,
             usize,
+        ) -> Result<SearchDslStructuredResult, SearchPlanProjectionError>
+        + Send
+        + Sync,
+>;
+
+/// Host-supplied session-aware runner executing native `:gerbil-ascent` / Dusa
+/// queries with live `evidence-chain.ss` M1 harvesting and typed receipt projection.
+pub type SearchDslSessionRunner = Arc<
+    dyn Fn(
+            Arc<RwLock<WorkspaceSearchIndex>>,
+            &str,
+            usize,
+            &SearchDslSessionId,
         ) -> Result<SearchDslStructuredResult, SearchPlanProjectionError>
         + Send
         + Sync,

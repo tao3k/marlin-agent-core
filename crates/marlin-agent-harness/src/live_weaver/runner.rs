@@ -26,14 +26,16 @@ use marlin_agent_runtime::{
     TokioAgentRuntimeBuildRequest, ToolRuntime,
 };
 use marlin_agent_search_engine::{
-    WorkspaceIndexConfig, default_workspace_edb_cache_path, default_workspace_snapshot_path,
-    hydrate_workspace_open_edb_org_and_cache, open_or_build_workspace_index_safe,
+    SearchDslSessionId, WorkspaceIndexConfig, default_workspace_edb_cache_path,
+    default_workspace_snapshot_path, hydrate_workspace_open_edb_org_and_cache,
+    open_or_build_workspace_index_safe,
 };
 use marlin_agent_stream::{
     ModelStreamEvent, ModelStreamingGateway, matches_observed_anthropic_thinking,
 };
 use marlin_agent_tooling::{
-    ResidentSearchToolHandler, SharedSearchIndexSlot, catalog_from_declarations_with_search,
+    GrpcSearchToolHandler, LoopbackSearchGrpcServer, SearchGatewayService, SharedSearchIndexSlot,
+    catalog_from_declarations_with_search, tool_schema_entries_from_declarations,
 };
 use tokio_stream::StreamExt;
 use tracing::Instrument;
@@ -209,7 +211,9 @@ pub struct LiveWeaverEvalSession {
     tool_options: ModelGatewayCompletionOptions,
     offered_definitions: Vec<ModelToolDefinition>,
     tool_capabilities: BTreeMap<String, &'static str>,
-    search_handlers: BTreeMap<String, Arc<ResidentSearchToolHandler>>,
+    search_grpc_server: LoopbackSearchGrpcServer,
+    active_search_session: Arc<RwLock<SearchDslSessionId>>,
+    search_handlers: BTreeMap<String, Arc<GrpcSearchToolHandler>>,
     runtime_owner: TokioAgentRuntime,
     indexed_files: usize,
     hydrated_files: usize,
@@ -252,42 +256,55 @@ impl LiveWeaverEvalSession {
         let hydrated_files = hydrate_receipt.restored_files + hydrate_receipt.org_files_hydrated;
 
         let shared_index = Arc::new(RwLock::new(index));
-        let slot = SharedSearchIndexSlot::with_sync_debounce(
-            Some(shared_index),
-            Duration::from_secs(3600),
-        );
-        slot.attach_dsl_runner(scheme_bridge.search_dsl_runner());
-
-        let search_handlers: BTreeMap<String, Arc<ResidentSearchToolHandler>> = declarations
+        let search_decls: Vec<ModelToolDeclaration> = declarations
             .iter()
             .filter(|decl| decl.capability() == ModelToolCapability::Search)
-            .map(|decl| {
-                let name = decl.definition().name.as_str().to_owned();
-                let handler = Arc::new(ResidentSearchToolHandler::new(
-                    repo_root.to_path_buf(),
-                    decl.clone(),
-                    slot.clone(),
-                ));
-                (name, handler)
-            })
+            .cloned()
             .collect();
-        if search_handlers.is_empty() {
+        if search_decls.is_empty() {
             return Err(
                 "Scheme ToolingCatalogValue does not declare any `search` capability tools"
                     .to_owned(),
             );
         }
 
+        let (runtime_owner, _events) = TokioAgentRuntime::from_build_request(
+            TokioAgentRuntimeBuildRequest::runtime_root(16),
+        );
+
+        let grpc_service = SearchGatewayService::new(
+            Arc::clone(&shared_index),
+            tool_schema_entries_from_declarations(&search_decls),
+            scheme_bridge.search_session_dsl_runner(),
+            runtime_owner.context(),
+        );
+        let search_grpc_server = LoopbackSearchGrpcServer::spawn(grpc_service, &runtime_owner)?;
+        let default_sid = SearchDslSessionId::new("harness-default")
+            .map_err(|e| format!("invalid default search session id: {e}"))?;
+        let active_search_session = Arc::new(RwLock::new(default_sid));
+        let search_handlers: BTreeMap<String, Arc<GrpcSearchToolHandler>> = search_decls
+            .iter()
+            .map(|decl| {
+                let name = decl.definition().name.as_str().to_owned();
+                let handler = Arc::new(GrpcSearchToolHandler::new(
+                    decl.clone(),
+                    search_grpc_server.client(),
+                    Arc::clone(&active_search_session),
+                ));
+                (name, handler)
+            })
+            .collect();
+
+        let slot = SharedSearchIndexSlot::with_sync_debounce(
+            Some(shared_index),
+            Duration::from_secs(3600),
+        );
         let catalog =
             catalog_from_declarations_with_search(declarations, repo_root.to_path_buf(), slot)
                 .map_err(|err| format!("failed to build ModelToolCatalog: {err:?}"))?;
         let offer = catalog.offer();
         let offered_definitions = offer.definitions();
         let tool_options = offer.completion_options();
-
-        let (runtime_owner, _events) = TokioAgentRuntime::from_build_request(
-            TokioAgentRuntimeBuildRequest::runtime_root(16),
-        );
 
         Ok(Self {
             scheme_bridge: scheme_bridge.clone(),
@@ -296,6 +313,8 @@ impl LiveWeaverEvalSession {
             tool_options,
             offered_definitions,
             tool_capabilities,
+            search_grpc_server,
+            active_search_session,
             search_handlers,
             runtime_owner,
             indexed_files,
@@ -357,6 +376,12 @@ impl LiveWeaverEvalSession {
         recorder: &TraceRecorder,
     ) -> Result<LiveScenarioReport, String> {
         let started = Instant::now();
+        let session_key = SearchDslSessionId::new(format!("scenario-{}", scenario.id))
+            .map_err(|e| format!("invalid scenario search session id: {e}"))?;
+        if let Ok(mut guard) = self.active_search_session.write() {
+            *guard = session_key.clone();
+        }
+        let _ = self.search_grpc_server.reset_session(&session_key).await?;
         let max_rounds = scenario.max_rounds.min(self.budget.max_rounds).max(1);
         let max_tool_calls = scenario
             .max_tool_calls

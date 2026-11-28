@@ -25,7 +25,7 @@ use std::sync::{Arc, OnceLock, RwLock, mpsc};
 
 type TestVmJob = Box<dyn FnOnce(&GerbilRuntime) + Send>;
 
-fn with_shared_test_gerbil_vm<R: Send + 'static>(
+pub(crate) fn with_shared_test_gerbil_vm<R: Send + 'static>(
     f: impl FnOnce(&GerbilRuntime) -> R + Send + 'static,
 ) -> R {
     static WORKER: OnceLock<mpsc::Sender<TestVmJob>> = OnceLock::new();

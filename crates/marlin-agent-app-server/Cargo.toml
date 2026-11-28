@@ -48,17 +48,17 @@ marlin-agent-runtime = { workspace = true, optional = true }
 marlin-agent-sessions = { workspace = true, optional = true }
 marlin-agent-storage = { workspace = true, optional = true }
 marlin-agent-stream = { workspace = true, optional = true }
-prost = { version = "=0.14.4", optional = true }
+prost = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 tokio-stream = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
-tonic = { version = "=0.14.9", default-features = false, features = ["channel", "codegen", "tls-aws-lc"], optional = true }
-tonic-prost = { version = "=0.14.9", optional = true }
+tonic = { workspace = true, features = ["tls-aws-lc"], optional = true }
+tonic-prost = { workspace = true, optional = true }
 weaver-llm = { workspace = true, optional = true }
 
 [build-dependencies]
-tonic-prost-build = { version = "=0.14.6", optional = true }
+tonic-prost-build = { workspace = true, optional = true }
 
 [dev-dependencies]
 asp-rust.workspace = true

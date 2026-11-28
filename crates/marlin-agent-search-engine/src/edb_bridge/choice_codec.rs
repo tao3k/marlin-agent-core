@@ -355,6 +355,7 @@ pub(super) fn decode_choice_payload(
             rows,
             choice_worlds: sample_worlds,
             budget_exhausted: Some(summary),
+            evidence_receipt: None,
             rendered_text,
         });
     }
@@ -473,6 +474,7 @@ pub(super) fn decode_choice_payload(
         rows,
         choice_worlds,
         budget_exhausted: None,
+        evidence_receipt: None,
         rendered_text,
     })
 }

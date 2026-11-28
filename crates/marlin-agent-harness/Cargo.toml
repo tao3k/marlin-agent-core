@@ -18,6 +18,7 @@ live-weaver = [
     "dep:marlin-agent-search-engine",
     "dep:marlin-agent-stream",
     "dep:marlin-agent-tooling",
+    "marlin-agent-tooling/grpc",
     "dep:serde_json",
     "dep:tokio",
     "dep:toml",
