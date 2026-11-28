@@ -13,7 +13,7 @@
 (def marlin-ui-max-contributions 8)
 (def marlin-ui-max-extensions 16)
 ;;; Help derives rows from the finite global and mode-scoped keymap.
-(def marlin-ui-max-content-items 64)
+(def marlin-ui-max-content-items 128)
 ;;; At most sixteen coalesced pulses, each with a bounded step of 32.
 (def marlin-ui-max-browse-steps 512)
 (def max-label-length 256)

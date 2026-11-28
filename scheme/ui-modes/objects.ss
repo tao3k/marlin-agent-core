@@ -190,7 +190,9 @@
         display-action: 'reuse-window
         dedicated: #f
         local-keymap: (list
-                        (.o key: "RET" command: "cmd:table-select" label: "Open selected row" exit: #t))
+                        (.o key: "RET" command: "cmd:table-select" label: "Open selected row" exit: #t)
+                        (.o key: "U" command: "cmd:ibuffer-unmark-all" label: "Unmark all buffers" exit: #t)
+                        (.o key: "x" command: "cmd:ibuffer-kill-marked" label: "Kill marked buffers" exit: #t))
         default-minor-modes: '(meow-normal-mode read-only-mode)
         modeline-segments: '(key-mode buffer-name major-mode row-count activity gate-badge)
         new-buffer-actions: '("cmd:switch-buffer")
