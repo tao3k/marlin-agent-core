@@ -2,16 +2,17 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Native Scheme tooling projection and reusable resident-search tool bindings
-//! connecting declared capabilities to Marlin's `ModelToolCatalog`.
+//! Native Scheme tooling projection and minimal HTTP/2 `tonic` gRPC search
+//! gateway connecting declared capabilities to Marlin's `ModelToolCatalog`.
 
 pub mod aitia_review_tool;
+#[cfg(feature = "grpc")]
 mod brute_search;
 #[cfg(feature = "grpc")]
 pub mod grpc_search;
 mod projection;
+#[cfg(feature = "grpc")]
 mod search_scheduler;
-mod search_tool;
 
 pub use aitia_review_tool::{
     AITIA_REVIEW_TOOL_NAME, AitiaGrpcRawResponse, AitiaMagitFinding, AitiaMagitOverlaySummary,
@@ -27,13 +28,10 @@ pub use grpc_search::{
 #[cfg(feature = "grpc")]
 pub use projection::catalog_from_declarations_with_grpc_search;
 pub use projection::{
-    ToolingProjectionError, catalog_from_declarations, catalog_from_declarations_with_search,
-    decode_tooling, project_linked,
+    SharedWorkspaceSearchIndex, ToolingProjectionError, decode_tooling, project_linked,
 };
+#[cfg(feature = "grpc")]
 pub use search_scheduler::{
-    AsyncSearchDslFuture, AsyncSearchDslRunner, CacheDependencyProfile, FencedCacheLookup,
-    QueryCacheKey, SearchQueryTier, SearchSchedulerMetrics,
-};
-pub use search_tool::{
-    ResidentSearchToolHandler, SharedSearchIndexSlot, SharedWorkspaceSearchIndex,
+    CacheDependencyProfile, FencedCacheLookup, QueryCacheKey, SearchQueryTier,
+    SearchSchedulerMetrics,
 };

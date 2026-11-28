@@ -9,16 +9,18 @@
 //! - Bounded `(generation_digest, query)` single-flight result cache (16 identical concurrent
 //!   agents coalesce into 1 Gerbil VM evaluation).
 
+#[cfg(test)]
 use std::collections::{HashMap, HashSet, VecDeque};
+#[cfg(test)]
 use std::future::Future;
-use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use marlin_agent_runtime::RuntimeContext;
-use marlin_agent_search_engine::{SearchPlanProjectionError, WorkspaceSearchIndex};
-use tokio::sync::{Notify, watch};
+use tokio::sync::Notify;
+#[cfg(test)]
+use tokio::sync::watch;
 
 use crate::brute_search::is_l0_search_form;
 
@@ -50,23 +52,6 @@ impl SearchQueryTier {
         Self::FastAscent
     }
 }
-
-/// Async future returned by a non-blocking [`AsyncSearchDslRunner`].
-pub type AsyncSearchDslFuture =
-    Pin<Box<dyn Future<Output = Result<String, SearchPlanProjectionError>> + Send>>;
-
-/// Non-blocking priority-aware runner dispatching L1/L2 Scheme queries onto a
-/// thread-affine Gerbil VM without blocking Tokio worker threads.
-pub type AsyncSearchDslRunner = Arc<
-    dyn Fn(
-            Arc<RwLock<WorkspaceSearchIndex>>,
-            String,
-            usize,
-            SearchQueryTier,
-        ) -> AsyncSearchDslFuture
-        + Send
-        + Sync,
->;
 
 /// Snapshot of scheduler concurrency & coalescing metrics for diagnostics and benchmarks.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -201,6 +186,7 @@ pub struct QueryCacheKey {
     pub output_limit: usize,
 }
 
+#[cfg(test)]
 type CachedOutcome = Result<String, String>;
 
 /// Dependency profile attached to a cached search/evidence entry refining
@@ -220,12 +206,19 @@ pub struct CacheDependencyProfile {
 /// Fenced lookup outcome enforcing structural epoch and poison tombstone laws.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FencedCacheLookup {
-    Hit { value: String, epoch: u64 },
+    Hit {
+        value: String,
+        epoch: u64,
+    },
     Miss,
-    RejectedStaleEpoch { cached_epoch: u64, active_epoch: u64 },
+    RejectedStaleEpoch {
+        cached_epoch: u64,
+        active_epoch: u64,
+    },
     RejectedPoisonTombstone,
 }
 
+#[cfg(test)]
 #[derive(Clone, Debug)]
 struct CacheEntryRecord {
     value: String,
@@ -233,6 +226,7 @@ struct CacheEntryRecord {
     deps: CacheDependencyProfile,
 }
 
+#[cfg(test)]
 struct CacheState {
     entries: HashMap<QueryCacheKey, CacheEntryRecord>,
     order: VecDeque<QueryCacheKey>,
@@ -245,16 +239,19 @@ struct CacheState {
 /// Bounded `(generation_digest, query)` single-flight cache with selective
 /// content vs structural invalidation, DE01 negative-scope invalidation,
 /// structural epoch fencing, and poison-immunization tombstones.
+#[cfg(test)]
 pub(crate) struct SingleFlightQueryCache {
     state: Mutex<CacheState>,
 }
 
+#[cfg(test)]
 enum LookupOutcome {
     Hit(String),
     Wait(watch::Receiver<Option<CachedOutcome>>),
     Leader(watch::Sender<Option<CachedOutcome>>),
 }
 
+#[cfg(test)]
 impl SingleFlightQueryCache {
     pub(crate) fn new(capacity: usize) -> Self {
         Self {
@@ -298,11 +295,17 @@ impl SingleFlightQueryCache {
             }
             guard.order.push_back(key.clone());
         }
-        guard.entries.insert(key, CacheEntryRecord { value, epoch, deps });
+        guard
+            .entries
+            .insert(key, CacheEntryRecord { value, epoch, deps });
         Ok(epoch)
     }
 
-    pub(crate) fn fenced_lookup(&self, key: &QueryCacheKey, expected_epoch: u64) -> FencedCacheLookup {
+    pub(crate) fn fenced_lookup(
+        &self,
+        key: &QueryCacheKey,
+        expected_epoch: u64,
+    ) -> FencedCacheLookup {
         let guard = self
             .state
             .lock()
@@ -343,7 +346,11 @@ impl SingleFlightQueryCache {
             .iter()
             .filter(|(_, rec)| {
                 rec.deps.content_sensitive
-                    && rec.deps.file_deps.iter().any(|p| changed.contains(p.as_str()))
+                    && rec
+                        .deps
+                        .file_deps
+                        .iter()
+                        .any(|p| changed.contains(p.as_str()))
             })
             .map(|(k, _)| k.clone())
             .collect();
@@ -364,7 +371,12 @@ impl SingleFlightQueryCache {
         let doomed: Vec<QueryCacheKey> = guard
             .entries
             .iter()
-            .filter(|(_, rec)| rec.deps.file_deps.iter().any(|p| changed.contains(p.as_str())))
+            .filter(|(_, rec)| {
+                rec.deps
+                    .file_deps
+                    .iter()
+                    .any(|p| changed.contains(p.as_str()))
+            })
             .map(|(k, _)| k.clone())
             .collect();
         let evicted = Self::evict_keys(&mut guard, &doomed);
@@ -445,7 +457,9 @@ impl SingleFlightQueryCache {
         }
     }
 
-    async fn await_in_flight(mut rx: watch::Receiver<Option<CachedOutcome>>) -> Option<CachedOutcome> {
+    async fn await_in_flight(
+        mut rx: watch::Receiver<Option<CachedOutcome>>,
+    ) -> Option<CachedOutcome> {
         loop {
             if let Some(res) = rx.borrow().clone() {
                 return Some(res);

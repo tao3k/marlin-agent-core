@@ -5,8 +5,9 @@
 //! Unit regressions for L0 pure-Rust RAM primitives: `exclude-path-prefix:`,
 //! zero-hit diagnostics, `(file-outline ...)`, and `(read-file ...)`.
 
+#[cfg(feature = "grpc")]
+mod l0_grpc_tests {
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 
 use marlin_agent_protocol::{ModelToolCall, ModelToolCallId, ModelToolName};
 use marlin_agent_runtime::{
@@ -14,12 +15,15 @@ use marlin_agent_runtime::{
     TokioAgentRuntimeBuildRequest, ToolRuntime,
 };
 use marlin_agent_search_engine::{
-    WorkspaceEdbEntityFact, WorkspaceIndexConfig, WorkspaceOpenEdbIngestBatch,
-    WorkspaceSearchIndex,
+    SearchDslSessionId, SearchDslSessionRunner, SearchPlanProjectionError, WorkspaceEdbEntityFact,
+    WorkspaceIndexConfig, WorkspaceOpenEdbIngestBatch, WorkspaceSearchIndex,
 };
-use marlin_agent_tooling::{ResidentSearchToolHandler, SharedSearchIndexSlot};
+use marlin_agent_tooling::{
+    GrpcSearchToolHandler, LoopbackSearchGrpcServer, SearchGatewayService,
+    tool_schema_entries_from_declarations,
+};
 
-#[tokio::test(flavor = "current_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let files: [(&str, &str); 5] = [
@@ -87,10 +91,6 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
         edges: Vec::new(),
     });
 
-    let slot = SharedSearchIndexSlot::with_sync_debounce(
-        Some(Arc::new(RwLock::new(index))),
-        Duration::from_secs(60),
-    );
     let declaration = ModelToolDeclaration::search(SearchToolDeclarationRequest {
         name: ModelToolName::new("workspace_search").expect("name"),
         description: "search".to_owned(),
@@ -99,11 +99,28 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
         output_limit: 16_384,
     })
     .expect("decl");
-    let handler = ResidentSearchToolHandler::new(tmp.path().to_path_buf(), declaration, slot);
     let (owner, _events) =
         TokioAgentRuntime::from_build_request(TokioAgentRuntimeBuildRequest::runtime_root(4));
+    let noop_dsl: SearchDslSessionRunner = Arc::new(|_, _, _, _| {
+        Err(SearchPlanProjectionError::Invalid(
+            "L0 test does not invoke Scheme DSL",
+        ))
+    });
+    let service = SearchGatewayService::new(
+        Arc::new(RwLock::new(index)),
+        tool_schema_entries_from_declarations(std::slice::from_ref(&declaration)),
+        noop_dsl,
+        owner.context(),
+    );
+    let server = LoopbackSearchGrpcServer::spawn(service, &owner).expect("spawn loopback gRPC");
+    let session_cell = Arc::new(RwLock::new(
+        SearchDslSessionId::new("l0-init").expect("session id"),
+    ));
+    let handler = GrpcSearchToolHandler::new(declaration, server.client(), Arc::clone(&session_cell));
 
     let run = |id: &str, query: &str| {
+        *session_cell.write().expect("session lock") =
+            SearchDslSessionId::new(id).expect("session id");
         let call = ModelToolCall {
             id: ModelToolCallId::new(id).expect("call id"),
             name: ModelToolName::new("workspace_search").expect("tool"),
@@ -655,4 +672,5 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
             && companion_read.contains("=== symbol: SearchEngine @ crates/core/src/engine.rs:L1"),
         "expected crate_tests header and full path:line symbol anchors: {companion_read}"
     );
+}
 }

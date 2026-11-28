@@ -15,7 +15,7 @@ use super::{
     CacheDependencyProfile, DebouncedSyncCoordinator, FencedCacheLookup, QueryCacheKey,
     SchedulerCounters, SingleFlightQueryCache,
 };
-use crate::search_tool::SharedSearchIndexSlot;
+use crate::grpc_search::SearchGatewayIndexHandle;
 
 /// Adversarial test refining `SingleFlightCancellationSafety.qnt` (`stepLeaderDropLockout`):
 /// if the leader future awaiting `ensure_synced` is cancelled/dropped mid-sync
@@ -48,7 +48,10 @@ async fn cancelled_sync_leader_does_not_permanently_deadlock_followers() {
         }),
     )
     .await;
-    assert!(leader_res.is_err(), "leader future must time out and be dropped");
+    assert!(
+        leader_res.is_err(),
+        "leader future must time out and be dropped"
+    );
 
     // Unblock the detached blocking closure so the thread finishes cleanly.
     release_gate.wait();
@@ -180,7 +183,7 @@ async fn sm15_singleflight_leader_cancel_reelects_healthy_followers() {
     );
 }
 
-/// SM15 Adversarial Challenge 2: `SharedSearchIndexSlot::get_or_open` MUST serialize
+/// SM15 Adversarial Challenge 2: `SearchGatewayIndexHandle::get_or_open` MUST serialize
 /// concurrent cold-start opens into ONE authoritative `Arc` (zero split-brain builds)
 /// AND isolate different workspace roots (zero cross-worktree contamination).
 #[test]
@@ -197,14 +200,18 @@ fn sm15_shared_slot_serializes_cold_open_and_isolates_workspace_roots() {
     let ws_b = base.join("ws-beta");
     std::fs::create_dir_all(&ws_a).expect("mkdir ws_a");
     std::fs::create_dir_all(&ws_b).expect("mkdir ws_b");
-    std::fs::write(ws_a.join("alpha.rs"), "pub fn unique_alpha_token_sm15() {}\n").expect("write a");
+    std::fs::write(
+        ws_a.join("alpha.rs"),
+        "pub fn unique_alpha_token_sm15() {}\n",
+    )
+    .expect("write a");
     std::fs::write(ws_b.join("beta.rs"), "pub fn unique_beta_token_sm15() {}\n").expect("write b");
 
-    let slot = SharedSearchIndexSlot::empty();
+    let handle = SearchGatewayIndexHandle::empty();
     let barrier = Arc::new(std::sync::Barrier::new(6));
     let mut threads = Vec::with_capacity(6);
     for _ in 0..6 {
-        let s = slot.clone();
+        let s = handle.clone();
         let ws = ws_a.clone();
         let b = Arc::clone(&barrier);
         threads.push(std::thread::spawn(move || {
@@ -224,13 +231,23 @@ fn sm15_shared_slot_serializes_cold_open_and_isolates_workspace_roots() {
     }
 
     // Switching workspace root to ws_b MUST NOT return ws_a's cached index!
-    let idx_b = slot.get_or_open(&ws_b);
+    let idx_b = handle.get_or_open(&ws_b);
     assert!(
         !Arc::ptr_eq(&handles[0], &idx_b),
         "SM15 CHALLENGE FAILED (cross-workspace contamination): ws_b received ws_a's cached index!"
     );
-    let digest_a = handles[0].read().expect("read a").generation_digest().as_str().to_owned();
-    let digest_b = idx_b.read().expect("read b").generation_digest().as_str().to_owned();
+    let digest_a = handles[0]
+        .read()
+        .expect("read a")
+        .generation_digest()
+        .as_str()
+        .to_owned();
+    let digest_b = idx_b
+        .read()
+        .expect("read b")
+        .generation_digest()
+        .as_str()
+        .to_owned();
     assert_ne!(
         digest_a, digest_b,
         "SM15 CHALLENGE FAILED: ws_b index shares ws_a's generation digest"
@@ -273,7 +290,9 @@ fn seci_selective_content_vs_structural_invalidation_and_kv_epoch_fencing() {
             "l0-hit".to_owned(),
             CacheDependencyProfile {
                 content_sensitive: true,
-                file_deps: vec!["crates/marlin-agent-search-engine/src/edb_bridge/runner.rs".to_owned()],
+                file_deps: vec![
+                    "crates/marlin-agent-search-engine/src/edb_bridge/runner.rs".to_owned(),
+                ],
                 negative_scope_prefix: None,
             },
         )
@@ -286,7 +305,9 @@ fn seci_selective_content_vs_structural_invalidation_and_kv_epoch_fencing() {
             "tier:runner=resident".to_owned(),
             CacheDependencyProfile {
                 content_sensitive: false,
-                file_deps: vec!["crates/marlin-agent-search-engine/src/edb_bridge/runner.rs".to_owned()],
+                file_deps: vec![
+                    "crates/marlin-agent-search-engine/src/edb_bridge/runner.rs".to_owned(),
+                ],
                 negative_scope_prefix: None,
             },
         )
@@ -297,7 +318,9 @@ fn seci_selective_content_vs_structural_invalidation_and_kv_epoch_fencing() {
             "tier:codec=resident".to_owned(),
             CacheDependencyProfile {
                 content_sensitive: false,
-                file_deps: vec!["crates/marlin-agent-search-engine/src/edb_bridge/codec.rs".to_owned()],
+                file_deps: vec![
+                    "crates/marlin-agent-search-engine/src/edb_bridge/codec.rs".to_owned(),
+                ],
                 negative_scope_prefix: None,
             },
         )
@@ -317,9 +340,8 @@ fn seci_selective_content_vs_structural_invalidation_and_kv_epoch_fencing() {
         .expect("insert negative scope");
 
     // 1. Comment-only edit on runner.rs -> evicts ONLY k_l0; structural epoch stays 1!
-    let evicted_comment = cache.invalidate_content_paths(&[
-        "crates/marlin-agent-search-engine/src/edb_bridge/runner.rs",
-    ]);
+    let evicted_comment = cache
+        .invalidate_content_paths(&["crates/marlin-agent-search-engine/src/edb_bridge/runner.rs"]);
     assert_eq!(evicted_comment, 1);
     assert_eq!(cache.structural_epoch(), 1);
     assert_eq!(cache.fenced_lookup(&k_l0, 1), FencedCacheLookup::Miss);
@@ -339,7 +361,10 @@ fn seci_selective_content_vs_structural_invalidation_and_kv_epoch_fencing() {
     ]);
     assert_eq!(evicted_struct, 1);
     assert_eq!(cache.structural_epoch(), 2);
-    assert_eq!(cache.fenced_lookup(&k_struct_runner, 2), FencedCacheLookup::Miss);
+    assert_eq!(
+        cache.fenced_lookup(&k_struct_runner, 2),
+        FencedCacheLookup::Miss
+    );
     assert_eq!(
         cache.fenced_lookup(&k_struct_codec, 1),
         FencedCacheLookup::RejectedStaleEpoch {
@@ -362,7 +387,10 @@ fn seci_selective_content_vs_structural_invalidation_and_kv_epoch_fencing() {
     );
     assert_eq!(evicted_neg, 1);
     assert_eq!(cache.structural_epoch(), 3);
-    assert_eq!(cache.fenced_lookup(&k_neg_scope, 3), FencedCacheLookup::Miss);
+    assert_eq!(
+        cache.fenced_lookup(&k_neg_scope, 3),
+        FencedCacheLookup::Miss
+    );
     assert_eq!(
         cache.fenced_lookup(&k_struct_codec, 3),
         FencedCacheLookup::Hit {

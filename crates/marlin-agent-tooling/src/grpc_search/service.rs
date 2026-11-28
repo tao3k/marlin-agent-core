@@ -11,23 +11,24 @@
 
 use std::collections::HashMap;
 use std::future::Future;
-use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use marlin_agent_runtime::RuntimeContext;
 use marlin_agent_search_engine::{
     SearchDslExecutionMode, SearchDslSessionId, SearchDslSessionRunner, SearchDslStructuredResult,
-    SearchPlanProjectionError, WorkspaceIndexConfig, WorkspaceSearchIndex,
+    SearchPlanProjectionError,
 };
 use tonic::{Request, Response, Status};
 
+use crate::SharedWorkspaceSearchIndex;
 use crate::brute_search::{execute_l0_search, parse_read_file_form};
 use crate::search_scheduler::SearchQueryTier;
-use crate::search_tool::SharedWorkspaceSearchIndex;
 
 use super::frontier::SessionFrontierState;
+use super::index_handle::SearchGatewayIndexHandle;
 use super::proto::search_gateway_server::SearchGateway;
 use super::proto::{
     GetToolSchemaRequest, GetToolSchemaResponse, ResetSessionRequest, ResetSessionResponse,
@@ -55,69 +56,6 @@ pub type AsyncSearchDslSessionRunner = Arc<
         + Send
         + Sync,
 >;
-
-/// Thread-safe resident index handle supporting both pre-warmed indexes and
-/// lazy background warm-up attachment for [`SearchGatewayService`].
-#[derive(Clone)]
-pub struct SearchGatewayIndexHandle {
-    workspace_root: Option<PathBuf>,
-    slot: Arc<RwLock<Option<SharedWorkspaceSearchIndex>>>,
-}
-
-impl SearchGatewayIndexHandle {
-    /// Wrap an already-built resident [`SharedWorkspaceSearchIndex`].
-    #[must_use]
-    pub fn from_index(index: SharedWorkspaceSearchIndex) -> Self {
-        Self {
-            workspace_root: None,
-            slot: Arc::new(RwLock::new(Some(index))),
-        }
-    }
-
-    /// Construct a lazily attached handle backed by `workspace_root` on demand.
-    #[must_use]
-    pub fn lazy(workspace_root: PathBuf) -> Self {
-        Self {
-            workspace_root: Some(workspace_root),
-            slot: Arc::new(RwLock::new(None)),
-        }
-    }
-
-    /// Attach or refresh the resident index once background warm-up or sync finishes.
-    pub fn attach(&self, index: SharedWorkspaceSearchIndex) {
-        let mut guard = self
-            .slot
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *guard = Some(index);
-    }
-
-    fn current(&self) -> Option<SharedWorkspaceSearchIndex> {
-        self.slot
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
-    }
-
-    fn resolve_or_build(&self) -> Result<SharedWorkspaceSearchIndex, String> {
-        if let Some(existing) = self.current() {
-            return Ok(existing);
-        }
-        let root = self
-            .workspace_root
-            .as_ref()
-            .ok_or_else(|| "resident search index not attached".to_owned())?;
-        let built = Arc::new(RwLock::new(WorkspaceSearchIndex::build_with_config(
-            root,
-            WorkspaceIndexConfig::default(),
-        )));
-        let mut guard = self
-            .slot
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        Ok(guard.get_or_insert_with(|| built).clone())
-    }
-}
 
 #[derive(Clone)]
 enum SearchGatewayDslBackend {
@@ -154,6 +92,24 @@ impl SearchGatewayService {
         }
     }
 
+    /// Construct a search gRPC service over an explicit [`SearchGatewayIndexHandle`]
+    /// and blocking [`SearchDslSessionRunner`].
+    #[must_use]
+    pub fn with_index_handle(
+        index_handle: SearchGatewayIndexHandle,
+        tool_schemas: Vec<ToolSchemaEntry>,
+        dsl_session_runner: SearchDslSessionRunner,
+        runtime_context: RuntimeContext,
+    ) -> Self {
+        Self {
+            index_handle,
+            tool_schemas: Arc::new(tool_schemas),
+            dsl_backend: SearchGatewayDslBackend::Blocking(dsl_session_runner),
+            runtime_context,
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
     /// Construct a search gRPC service over a lazily attached
     /// [`SearchGatewayIndexHandle`] and non-blocking [`AsyncSearchDslSessionRunner`].
     #[must_use]
@@ -173,12 +129,15 @@ impl SearchGatewayService {
     }
 
     async fn resolve_shared_index(&self) -> Result<SharedWorkspaceSearchIndex, Status> {
+        self.index_handle
+            .ensure_synced_async(&self.runtime_context)
+            .await;
         if let Some(existing) = self.index_handle.current() {
             return Ok(existing);
         }
         let handle = self.index_handle.clone();
         self.runtime_context
-            .spawn_blocking(move || handle.resolve_or_build())
+            .spawn_blocking(move || handle.resolve_or_open())
             .join()
             .await
             .map_err(|e| Status::internal(format!("index builder task failed: {e}")))?
@@ -314,6 +273,10 @@ impl SearchGateway for SearchGatewayService {
 
         let (raw_body, structured, tier_label, generation_digest) = match tier {
             SearchQueryTier::BruteForce => {
+                self.index_handle
+                    .counters()
+                    .l0_brute_queries
+                    .fetch_add(1, Ordering::Relaxed);
                 let (effective_query, overlap_note) =
                     self.dedup_or_advance_read_file_query(&shared_index, &session_id, &query);
                 let index = Arc::clone(&shared_index);
@@ -337,6 +300,17 @@ impl SearchGateway for SearchGatewayService {
                 (body, None, "L0-Brute".to_owned(), gen_digest)
             }
             SearchQueryTier::FastAscent | SearchQueryTier::DusaSolver => {
+                if tier == SearchQueryTier::FastAscent {
+                    self.index_handle
+                        .counters()
+                        .l1_ascent_queries
+                        .fetch_add(1, Ordering::Relaxed);
+                } else {
+                    self.index_handle
+                        .counters()
+                        .l2_dusa_queries
+                        .fetch_add(1, Ordering::Relaxed);
+                }
                 let scheme_sid = self.resolve_scheme_session_id(&session_id);
                 let index = Arc::clone(&shared_index);
                 let q = query.clone();

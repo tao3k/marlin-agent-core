@@ -4,19 +4,26 @@
 
 //! One native Scheme value projection for any declared tool capability.
 
-use std::{collections::HashSet, fmt::Display, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, fmt::Display, sync::Arc, sync::RwLock};
+#[cfg(feature = "grpc")]
+use std::path::PathBuf;
 
 use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
     RootedSchemeObject, SchemeScalar,
 };
 use marlin_agent_protocol::ModelToolName;
+#[cfg(feature = "grpc")]
 use marlin_agent_runtime::{
-    ModelToolCapability, ModelToolCatalog, ModelToolCatalogError, ModelToolDeclaration,
-    ModelToolHandler, SearchToolDeclarationRequest, ShellToolDeclarationRequest,
+    ModelToolCapability, ModelToolCatalog, ModelToolCatalogError, ModelToolHandler,
 };
+use marlin_agent_runtime::{
+    ModelToolDeclaration, SearchToolDeclarationRequest, ShellToolDeclarationRequest,
+};
+use marlin_agent_search_engine::WorkspaceSearchIndex;
 
-use crate::search_tool::{ResidentSearchToolHandler, SharedSearchIndexSlot};
+/// Shared resident workspace index handle reused across TUI Helm and gRPC search.
+pub type SharedWorkspaceSearchIndex = Arc<RwLock<WorkspaceSearchIndex>>;
 
 /// Rejection while converting selected Scheme tool values into Rust types.
 #[derive(Debug)]
@@ -133,41 +140,6 @@ fn decode_tool_entry(
         }
     }
     .map_err(ToolingProjectionError::Invalid)
-}
-
-/// Bind every admitted Scheme declaration to an existing host capability.
-/// Tool names, argument names and provider definitions require no Rust case.
-pub fn catalog_from_declarations(
-    declarations: impl IntoIterator<Item = ModelToolDeclaration>,
-    workspace: PathBuf,
-) -> Result<ModelToolCatalog, ModelToolCatalogError> {
-    catalog_from_declarations_with_search(declarations, workspace, SharedSearchIndexSlot::empty())
-}
-
-/// Bind every admitted Scheme declaration to host capabilities while sharing a
-/// single resident [`SharedSearchIndexSlot`] with the host UI (e.g. Modern Helm).
-pub fn catalog_from_declarations_with_search(
-    declarations: impl IntoIterator<Item = ModelToolDeclaration>,
-    workspace: PathBuf,
-    search_slot: SharedSearchIndexSlot,
-) -> Result<ModelToolCatalog, ModelToolCatalogError> {
-    let mut catalog = ModelToolCatalog::new();
-    for declaration in declarations {
-        match declaration.capability() {
-            ModelToolCapability::Shell => {
-                catalog.register_declaration(declaration, workspace.clone())?;
-            }
-            ModelToolCapability::Search => {
-                let handler: Arc<ModelToolHandler> = Arc::new(ResidentSearchToolHandler::new(
-                    workspace.clone(),
-                    declaration.clone(),
-                    search_slot.clone(),
-                ));
-                catalog.register(declaration, handler)?;
-            }
-        }
-    }
-    Ok(catalog)
 }
 
 /// Bind every admitted Scheme declaration to host capabilities with search tools

@@ -7,12 +7,14 @@
 
 mod client;
 mod frontier;
+mod index_handle;
 pub mod proto;
 mod service;
 
 pub use client::{
     GrpcSearchToolHandler, LoopbackSearchGrpcServer, tool_schema_entries_from_declarations,
 };
+pub use index_handle::SearchGatewayIndexHandle;
 pub use proto::search_gateway_client::SearchGatewayClient;
 pub use proto::search_gateway_server::SearchGatewayServer;
 pub use proto::{
@@ -20,6 +22,5 @@ pub use proto::{
     ResetSessionResponse, SearchStepRequest, SearchStepResponse, ToolSchemaEntry,
 };
 pub use service::{
-    AsyncSearchDslSessionFuture, AsyncSearchDslSessionRunner, SearchGatewayIndexHandle,
-    SearchGatewayService,
+    AsyncSearchDslSessionFuture, AsyncSearchDslSessionRunner, SearchGatewayService,
 };
