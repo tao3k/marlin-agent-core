@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin Context Org Seed and ASCENT Dynamic Facet Catalog
+#+language: en
+:PROPERTIES:
+:ID: marlin-context-org-contract-template-catalog
+:END:
+
+* Minimal Organic Seed Instead of Static Boilerplate Templates
+
+Marlin avoids rigid pre-baked templates (such as fixed ADR or execution-plan
+files) and avoids introducing any separate "Org Store" subsystem. Every session
+starts from **one minimal Org seed** inside the **GitOps + Artifacts + Storage**
+(=marlin-agent-gitops=, =marlin-agent-storage=, and =scheme/artifacts=)
+hierarchy and grows organically through four cooperating engines:
+
+1. **Minimal Stream Seed (=session-seed/seed.org=)**:
+   Contains only the GitOps root drawer, a minimal base =:org-contract=, and
+   standard auto-evaluated =org-babel= turns (=#+NAME:=, =#+BEGIN_SRC llm=,
+   =#+RESULTS:= with nested =#+BEGIN_THINKING ... #+END_THINKING=).
+2. **=ASCENT= Case-Driven Facet Synthesis**:
+   In-VM deductive =ASCENT= rules inspect observed =Org Elements= AST facts,
+   =GitOps= change scope, and user intent at zero LLM token cost, deriving only
+   the **triggered structural facets** required by the current case
+   (=inline-checklist=, =scheduled-todo-dag=, =invariant-section=,
+   =competing-hypotheses=, =attach-media=, =sod-reviewer=, or =gitops-split=).
+   The low-cost **Flash** model materializes those triggered facets into
+   standard Org syntax on demand.
+3. **Dual-Axis Progressive Disclosure (=L0 -> L3=) and Agent Drill-Down**:
+   =ASCENT= + =GQL= project Org context progressively by UTF-8 byte spans —
+   =L0= outline skeleton, =L1= properties + open checklists, =L2= =#+RESULTS:=
+   body with =#+BEGIN_THINKING= folded, and =L3= full thinking/evidence only on
+   active defeaters or explicit agent drill-down requests. Rules themselves stay
+   in Scheme =ASCENT= modules (or optional project-root =context.org= rule
+   declarations) and disclose only triggered obligations.
+4. **Two-Stage Org Repair Pipeline**:
+   - **Stage 1 (Deterministic Org AST Auto-Repair, ~90%, 0 Tokens)**: Normalizes
+     mechanical syntax issues in-VM (closing drawers/blocks, converting nested
+     =:THINKING:= drawers inside =:RESULTS:= to =#+BEGIN_THINKING= special
+     blocks, normalizing =- [x]= checkboxes, recomputing =[done/total]= cookies,
+     and stamping provenance properties).
+   - **Stage 2 (Diagnostic-Guided Flash Repair, ~10%)**: Sends only the failing
+     subtree slice and exact =OrgContract= / =ASCENT= diagnostic to Flash when
+     semantic intent repair is required, then re-verifies AST admission.
+
+Companion design and formal specifications:
+- RFC 40.183: [[file:../../../../docs/40-rfcs/40.183-org-elements-gql-shared-context.org][docs/40-rfcs/40.183-org-elements-gql-shared-context.org]]
+- OpenSysML v2 structure and lifecycles:
+  [[file:../../../../dev/sysml/org-babel-session.sysml][dev/sysml/org-babel-session.sysml]] (=MAR-ORG-R01..R06=, =MAR-ORG-L01..L04=)
+- Quint protocol and conservation model:
+  [[file:../../../../dev/quint/org-babel-fission.qnt][dev/quint/org-babel-fission.qnt]]
+
+* Seed File
+
+- [[file:session-seed/seed.org][session-seed/seed.org]] (=context.session.seed.v1=):
+  Minimal organic =tmp/<NNNN>.org= seed validated by =org-directory-validate=.

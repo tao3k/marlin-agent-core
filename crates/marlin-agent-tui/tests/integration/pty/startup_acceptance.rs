@@ -65,6 +65,32 @@ fn linked_fresh_copy_startup_pair(binary: &std::path::Path, profile: &str) {
         .find(|path| path.ends_with("/program/linked-program.json"))
         .expect("Cargo binary must depend on its linked programme plan")
         .replace('\u{1f}', " ");
+    let plan: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest).expect("read linked programme plan"))
+            .expect("parse linked programme plan");
+    let modules = plan["modules"].as_array().expect("linked modules");
+    assert!(
+        modules
+            .iter()
+            .any(|row| row["module"] == "marlin-agent-core/ui-tui/entry")
+    );
+    assert!(
+        modules
+            .iter()
+            .all(|row| row["module"] != "marlin-agent-core/init")
+    );
+    for deferred in [
+        "marlin-agent-core/context-system/worktree",
+        "marlin-agent-core/artifacts/funcs",
+        "tao3k/agentic-ai-lab/modules/temporal-causality/runtime/durable-journal",
+    ] {
+        assert!(
+            modules
+                .iter()
+                .any(|row| row["module"] == deferred && row["deferred"] == true),
+            "linked module must remain available for deferred activation: {deferred}"
+        );
+    }
     let binary_time = fs::metadata(binary).unwrap().modified().unwrap();
     let manifest_time = fs::metadata(&manifest).unwrap().modified().unwrap();
     assert!(
@@ -166,6 +192,7 @@ pub(super) fn exercise_pty(startup_limit: Duration, exit_limit: Duration) {
     terminal.wait_status("Transcript: scroll to browse");
     terminal.send(b"\t");
     terminal.wait_status("Message: Enter send");
+    terminal.enter_normal_mode();
     terminal.send(b"\x1bx");
     terminal.wait_mx_selected(1);
     terminal.send(b"\x1b[A");
@@ -187,13 +214,18 @@ pub(super) fn exercise_pty(startup_limit: Duration, exit_limit: Duration) {
             && rows.iter().all(|line| mx_position(line).is_none())
     });
     terminal.send(b"\x1b");
-    terminal.wait_status("Message: Enter send");
+    terminal.wait_for(Duration::from_secs(15), "Chat buffer", |output| {
+        screen_lines(output)[0].contains("▎ \u{f086} Chat")
+    });
     terminal.send(b"\x1bxsessions\r");
     terminal.wait_status("Sessions");
     terminal.send(b"\x18bmessages\r");
     terminal.wait_text("Session listing requires a persistent session configuration.");
     terminal.send(b"\x1b");
-    terminal.wait_status("Message: Enter send");
+    terminal.wait_for(Duration::from_secs(15), "Chat buffer", |output| {
+        screen_lines(output)[0].contains("▎ \u{f086} Chat")
+    });
+    terminal.send(b"i");
     assert!(
         matches!(request_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
         "command sent a model request"
@@ -202,16 +234,16 @@ pub(super) fn exercise_pty(startup_limit: Duration, exit_limit: Duration) {
         "\x1b[200~hello 中\r\nworld\r\nline-three\r\nline-four\r\nline-five\x1b[201~".as_bytes(),
     );
     terminal.wait_raw(b"line-five");
-    terminal.send(b"\t");
-    terminal.wait_status("Commands: Enter open");
-    terminal.send(b"\r");
+    terminal.enter_normal_mode();
+    terminal.send(b"\x1bx");
     terminal.wait_mx_selected(1);
     terminal.send(b"\x07");
-    terminal.wait_status("Commands: Enter open");
-    terminal.send(b"\t");
-    terminal.wait_status("Transcript: scroll to browse");
-    terminal.send(b"\t");
-    terminal.wait_status("Message: Enter send");
+    terminal.wait_for(Duration::from_secs(5), "closed M-x", |output| {
+        screen_lines(output)
+            .iter()
+            .all(|line| mx_position(line).is_none())
+    });
+    terminal.send(b"a");
     terminal.wait_for(
         Duration::from_secs(5),
         "cursor after long draft",

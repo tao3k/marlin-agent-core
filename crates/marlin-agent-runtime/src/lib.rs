@@ -4,17 +4,21 @@
 
 //! Tokio-backed runtime extension traits used by the graph-loop kernel.
 
+pub mod environment;
 pub mod observability;
 pub mod plugin;
 pub mod process;
 
 mod agent_graph;
+mod effect_pump;
 mod graph_loop;
 mod model_gateway;
 mod model_tool_catalog;
 mod model_tooling;
 mod process_executor;
+mod project_envrc;
 mod resilience;
+mod task_actor;
 mod tokio_runtime;
 
 pub use agent_graph::{
@@ -28,6 +32,12 @@ pub use agent_graph::{
     check_agent_graph_execution_readiness, project_agent_graph_planning_receipt,
     project_agent_graph_projection_request,
 };
+pub use effect_pump::{
+    AtomicEffect, AtomicEffectExecutor, AtomicEffectReceipt, CasGetEffectPayload,
+    CasHitReceiptPayload, CasPutEffectPayload, EffectErrorReceiptPayload, LlmCompleteEffectPayload,
+    LlmCompletedReceiptPayload, SandboxExitedReceiptPayload, SandboxRunEffectPayload,
+    run_atomic_effect_batch, sha256_prefixed_hex,
+};
 pub use graph_loop::{
     AgentFlowLoopStepRequest, GraphLoopRegistryRevision, GraphLoopRunCancelReceipt,
     GraphLoopRunCancelStatus, GraphLoopRunInspectReceipt, GraphLoopRunObservation,
@@ -35,6 +45,15 @@ pub use graph_loop::{
     GraphLoopRunRegistryHandle, GraphLoopRunRegistrySnapshot, GraphLoopRunStartReceipt,
     GraphLoopRunStatus, GraphLoopRunWaitReceipt, GraphLoopRunWaitStatus,
     project_agent_flow_loop_step,
+};
+pub use marlin_agent_graph::{
+    AdmittedGovernedContext, AdmittedMarlinDispatch, DetourExitKind, DetourMode, DetourNodeId,
+    DetourState, DisclosureDepth, DispatchRequestId, ExecutionReceiptStatus, FencingEpoch,
+    GovernedContextCapsule, GovernedContextRejection, GraphConvergenceNodeId,
+    GraphDispatchOperation, GraphDispatchRejection, GraphEngineOracle, GraphSubstrateTarget,
+    KvPrefixDigest, MarlinDispatchEnvelope, MarlinExecutionReceipt, ReceiptReconciliationDecision,
+    ReceiptReconciliationReason, TaskActorCursor, TaskActorId, TaskActorScopeMode, TaskActorStatus,
+    WorkbenchActiveTaskInput, WorkbenchTabEntry, WorkbenchTabKind, WorkbenchTabProjection,
 };
 pub use model_gateway::{
     ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
@@ -45,22 +64,34 @@ pub use model_gateway::{
 };
 pub use model_tool_catalog::{
     ModelToolCatalog, ModelToolCatalogError, ModelToolHandler, ModelToolOffer, ModelToolOutcome,
+    schema_digest_for_definition,
 };
 pub use model_tooling::{
-    ModelToolCapability, ModelToolDeclaration, ModelToolGovernance, ShellToolDeclarationRequest,
-    ShellToolHandler,
+    ModelToolCapability, ModelToolDeclaration, ModelToolGovernance, ShellToolHandler,
+    ToolDeclarationRequest, ToolParameterName, ToolParameterSpec, ToolParameterSpecRequest,
+    ToolParameterType,
 };
 pub use process::{
-    AsyncManagedChildProcess, ManagedChildProcessSpec, ManagedChildStdin,
-    RuntimeProcessCleanupController, RuntimeProcessCleanupSweep,
-    RuntimeProcessContainmentRequirement, RuntimeProcessExitStatus, RuntimeProcessLiveness,
-    RuntimeProcessOutput, RuntimeProcessRegistryHandle, RuntimeProcessTerminator,
+    AsyncManagedChildProcess, FileProcessLedgerStore, InMemoryProcessLedgerStore,
+    ManagedChildProcessSpec, ManagedChildStdin, ManagedChildStdout, ManagedProcessLedgerEntry,
+    ManagedProcessLedgerRecordRequest, PersistedProcessReconciliationReport,
+    ProcessGracefulShutdownDurationMs, ProcessGracefulShutdownPolicy, ProcessGroupId,
+    ProcessLedgerStore, ProcessShutdownHook, ProcessStartTimeSeconds, ProcessTerminationStage,
+    ReapSurvivedProcessRequest, RuntimeHostRunId, RuntimeProcessCleanupController,
+    RuntimeProcessCleanupSweep, RuntimeProcessContainmentRequirement, RuntimeProcessExitStatus,
+    RuntimeProcessLiveness, RuntimeProcessOutput, RuntimeProcessRegistryHandle,
+    RuntimeProcessTerminator, SurvivedProcessObservation, SurvivedProcessReapReceipt,
     SysinfoRuntimeProcessController,
 };
 pub use process_executor::ManagedProcessExecutor;
+pub use project_envrc::{EnvrcIntent, EnvrcPlan, EnvrcStatus, ProjectEnvrc, ProjectEnvrcDiscovery};
 pub use resilience::{
     RuntimeEdgeLayer, RuntimeEdgePolicy, RuntimeEdgePolicyError, RuntimeEdgePolicyReceipt,
     RuntimeEdgeService,
+};
+pub use task_actor::{
+    TaskActorRuntimeError, TaskActorRuntimeRecord, TaskActorRuntimeRegistry,
+    TaskActorRuntimeSnapshot,
 };
 pub use tokio_runtime::MAX_RUNTIME_EVENT_HEAP_BYTES;
 pub use tokio_runtime::RuntimeProcessBudget;
@@ -81,14 +112,5 @@ pub use tokio_runtime::{
     SubAgentSpawnConfig, SubAgentSpawnPolicy, SubAgentSpawnProfile, SubAgentSpawnReceipt,
     SubAgentSpawnStrategy, TokioAgentRuntime, TokioAgentRuntimeBuildRequest,
     TokioRuntimeDiagnosticsPolicy, TokioRuntimeFlavor, TokioRuntimePolicy,
-    TokioRuntimePolicyReceipt, ToolRuntime, WorkingCopyActiveBinding, WorkingCopyBaseRef,
-    WorkingCopyBranchName, WorkingCopyCommandInvocation, WorkingCopyCommandProgram,
-    WorkingCopyCommandProjection, WorkingCopyCommandReceipt, WorkingCopyCommandStatus,
-    WorkingCopyCreateRequest, WorkingCopyFanoutBenchmarkReceipt, WorkingCopyFinalizeBranchRequest,
-    WorkingCopyGitTopLevel, WorkingCopyHandle, WorkingCopyId, WorkingCopyIsolationOperationKind,
-    WorkingCopyIsolationPlan, WorkingCopyIsolationPlanStep, WorkingCopyIsolationProvider,
-    WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest, WorkingCopyIsolationStatus,
-    WorkingCopyParallelIsolationReceipt, WorkingCopyPullRequestCheckoutRequest,
-    WorkingCopyPullRequestNumber, WorkingCopyRepositoryDiscoveryPath, WorkingCopyRetentionPolicy,
-    WorkingCopyRetentionSweepReceipt, WorkingCopySubAgentFanoutItem,
+    TokioRuntimePolicyReceipt, ToolRuntime, WorkingCopySubAgentFanoutItem,
 };

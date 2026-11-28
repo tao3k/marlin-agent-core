@@ -5,11 +5,15 @@
 ;;; Exercise Marlin's publications through the selected package entry.
 
 (import (only-in :marlin-agent-core/interface LabContext)
-        (only-in :clan/poo/object .get .o)
-        (only-in :clan/poo/mop TypeError?)
+        (only-in :marlin-agent-core/scheme-package-hooks/funcs
+                 make-ui-package-hooks run-ui-package-hooks)
+        (only-in :marlin-agent-core/ui/config UiScope)
+        (only-in :tao3k/yuanxu/module-system/module-hooks ModuleHook.)
+        (only-in :clan/poo/object .call .get .o)
+        (only-in :clan/poo/type TypeError?)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
 
-(let (admit (.get marlin-agent-core.init.exports Marlin context admit-scope))
+(let (admit (.get marlin-agent-core.init.exports Marlin context-system admit-scope))
   (def (admit-turn session-id turn-index)
     (admit (.o (:: @ (.get LabContext scope-prototype)) bundle: "bundle" organization: "org" epoch: 1
                project: "project" worktree: "worktree" source-cut: "cut:0"
@@ -26,9 +30,32 @@
   (unless (with-catch TypeError? (lambda () (admit-turn #f 0) #f))
     (error "Lab's Scope type must refuse a Context turn without a session")))
 
-(let* ((select (.get marlin-agent-core.init.exports Marlin hooks select))
+(let* ((select (.get marlin-agent-core.init.exports Marlin agent-hooks select))
        (selection (select #f "init-test" (.o) (.o) "test" "local")))
   (unless (and (equal? (.get selection source) "init-test")
                (not (.get selection matched))
                (not (.get selection dynamic-hook-action)))
-    (error "Hooks must publish its decision selector through init" selection)))
+    (error "Agent Hooks must publish its decision selector through init" selection)))
+
+(let* ((request (.o directory: "." module: ':fixture/ui export: 'publication
+                    trigger: 'ui-command-execution command: "open-notes"))
+       (observed-demand #f)
+       (hooks
+         (make-ui-package-hooks
+           (.o fixture: (.o (:: @ ModuleHook.) on: '(ui-command-execution)
+                            .run: (lambda (_request _result) UiScope))
+               customize: (.o (:: @ ModuleHook.) on: '(ui-package-loaded)
+                             .run: (lambda (request publication)
+                                     (set! observed-demand (.get request trigger))
+                                     publication)))))
+       (published (.get marlin-agent-core.init.exports Marlin scheme-package-hooks)))
+  (unless (and (run-ui-package-hooks hooks request)
+               (eq? observed-demand 'ui-command-execution))
+    (error "post-load hook did not receive the publication and its demand"))
+  (unless (with-catch TypeError? (lambda () (.call published .run 'unrelated-scene request #f) #f))
+    (error "the published hook contract accepted an unrelated scene"))
+  (let (invalid (make-ui-package-hooks
+                  (.o fixture: (.o (:: @ ModuleHook.) on: '(ui-command-execution)
+                                   .run: (lambda (_request _result) 'not-a-publication)))))
+    (unless (with-catch TypeError? (lambda () (run-ui-package-hooks invalid request) #f))
+      (error "the hook contract accepted an invalid UI publication"))))

@@ -42,7 +42,7 @@ package MarlinPluginEngine {
         }
         part <'MAR-PLG-A05'> schemePackage {
             doc /* scheme/init.ss selects Context with the causal Feature, Hooks, Policy and Deck Runtime.
-                   scheme/context imports Lab's installed Scope library.
+                   scheme/context-system imports Lab's installed Scope library.
                    Lab owns Scope validation and Session semantics.
                    Context's causal Feature uses Lab's ASCENT exchange for solve and replay.
                    scheme/build.ss compiles Marlin's selected modules.

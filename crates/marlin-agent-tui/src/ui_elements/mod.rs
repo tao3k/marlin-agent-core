@@ -8,16 +8,18 @@ mod geometry;
 mod widgets;
 
 use core::terminal_text;
-pub(crate) use core::tone_color;
 pub use core::{
-    UiRenderInputs, UiSlotRenderer, render_element, render_prompt, render_template,
-    render_with_facts, render_with_regions, render_with_scroll, render_with_slots, resolve_choice,
+    UiRenderInputs, UiSlotRenderer, render_element, render_overlay_element, render_prompt,
+    render_template, render_with_facts, render_with_regions, render_with_scroll, render_with_slots,
+    resolve_choice,
 };
+pub(crate) use core::{fits_area, fits_width, inline_text, tone_color};
 pub use geometry::{
-    Extent, HitRegion, RegionExtents, hit_test, hit_test_scroll, layout_regions,
+    Extent, HitRegion, RegionExtents, hit_test, hit_test_command, hit_test_scroll, layout_regions,
     layout_regions_with_facts, layout_regions_with_scroll, region_extent, resolve_size,
 };
+pub(crate) use widgets::{InputInsets, input_insets};
 pub use widgets::{
-    UiContentSlot, UiListData, UiListHit, UiListRow, UiListState, input_border, render_content,
-    render_input, render_list,
+    UiContentSlot, UiInputMark, UiInputValue, UiListData, UiListHit, UiListRow, UiListState,
+    render_content, render_input, render_list,
 };

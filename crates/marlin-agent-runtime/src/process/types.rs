@@ -10,9 +10,10 @@ use std::{
 };
 
 use marlin_agent_protocol::SubAgentSpawnProfile;
+use serde::{Deserialize, Serialize};
 
 /// Runtime-visible process kind.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RuntimeProcessKind {
     Tool,
     SubAgent,
@@ -22,7 +23,7 @@ pub enum RuntimeProcessKind {
 }
 
 /// Runtime-visible process lifecycle state.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RuntimeProcessStatus {
     Running,
     Finished,
@@ -32,7 +33,8 @@ pub enum RuntimeProcessStatus {
 }
 
 /// Millisecond timestamp observed by the runtime process registry.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct RuntimeProcessObservationTimestampMs(u64);
 
 impl RuntimeProcessObservationTimestampMs {
@@ -52,7 +54,8 @@ impl From<u64> for RuntimeProcessObservationTimestampMs {
 }
 
 /// Runtime-owned handle used to correlate a process across events and cleanup.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct RuntimeProcessHandle(String);
 
 impl RuntimeProcessHandle {
@@ -263,7 +266,8 @@ impl RuntimeProcessObservation {
 }
 
 /// Typed command category carried by a runtime process observation.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct RuntimeCommandKind(String);
 
 impl RuntimeCommandKind {
@@ -299,7 +303,7 @@ impl From<String> for RuntimeCommandKind {
 }
 
 /// Command-level metadata carried by a runtime process observation.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeCommandObservation {
     pub command_kind: RuntimeCommandKind,
     pub argv: Vec<String>,

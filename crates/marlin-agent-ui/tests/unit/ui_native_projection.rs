@@ -219,6 +219,9 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
                                                 .unwrap(),
                                             symbol(runtime, "title"),
                                             symbol(runtime, "focused"),
+                                            runtime
+                                                .scalar_object(SchemeScalar::Boolean(false))
+                                                .unwrap(),
                                         ],
                                     ),
                                 ],
@@ -299,6 +302,20 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
                         ],
                     )
                 }),
+            ),
+            vector(
+                runtime,
+                &[
+                    vector(
+                        runtime,
+                        &[
+                            symbol(runtime, "template"),
+                            vector(runtime, &[symbol(runtime, "none"), vector(runtime, &[])]),
+                        ],
+                    ),
+                    runtime.scalar_object(SchemeScalar::Fixnum(731)).unwrap(),
+                    runtime.scalar_object(SchemeScalar::Boolean(true)).unwrap(),
+                ],
             ),
         ],
     )

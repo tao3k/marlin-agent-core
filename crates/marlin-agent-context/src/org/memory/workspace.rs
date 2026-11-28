@@ -16,11 +16,11 @@ use marlin_agent_protocol::{
 };
 use marlin_context_org_model::{OrgNode, OrgNodeId, OrgSourceSpan};
 use marlin_gerbil_ir::ReleaseTopologySpec;
-use marlin_workspace_query::{QueryMatch, WorkspaceQuery, WorkspaceQueryResult};
-use marlin_workspace_status::{
+use marlin_workspace::query::{QueryMatch, WorkspaceQuery, WorkspaceQueryResult};
+use marlin_workspace::status::{
     ReleaseGateReceipt, ReleaseStatus, WorkspaceStatusReport, WorkspaceTarget,
 };
-use marlin_workspace_view::{
+use marlin_workspace::view::{
     RenderedContractFacts, RenderedViewNode, RenderedWorkspaceView, WorkspaceField,
     WorkspaceViewSpec,
 };

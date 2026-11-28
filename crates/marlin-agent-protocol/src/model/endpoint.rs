@@ -87,6 +87,19 @@ impl ModelEndpoint {
                 model: self.model.clone(),
             });
         }
+        if has_unsafe_endpoint_chars(provider) {
+            return Err(ModelEndpointContractError::InvalidCharacter { field: "provider" });
+        }
+        if has_unsafe_endpoint_chars(model) {
+            return Err(ModelEndpointContractError::InvalidCharacter { field: "model" });
+        }
+        if self
+            .alias
+            .as_ref()
+            .is_some_and(|alias| has_unsafe_endpoint_chars(alias.as_str()))
+        {
+            return Err(ModelEndpointContractError::InvalidCharacter { field: "alias" });
+        }
 
         Ok(())
     }
@@ -133,6 +146,9 @@ impl ModelEndpoint {
 pub enum ModelEndpointContractError {
     EmptyProvider,
     EmptyModel,
+    InvalidCharacter {
+        field: &'static str,
+    },
     ProviderContainsModelSeparator {
         provider: ModelProviderId,
     },
@@ -157,7 +173,7 @@ pub enum ModelEndpointContractError {
 impl ModelEndpointContractError {
     pub(crate) fn heap_capacity(&self) -> usize {
         match self {
-            Self::EmptyProvider | Self::EmptyModel => 0,
+            Self::EmptyProvider | Self::EmptyModel | Self::InvalidCharacter { .. } => 0,
             Self::ProviderContainsModelSeparator { provider }
             | Self::ProviderLooksLikeModel { provider } => provider.heap_capacity(),
             Self::ModelContainsProviderSeparator { model }
@@ -175,6 +191,10 @@ impl Display for ModelEndpointContractError {
         match self {
             Self::EmptyProvider => formatter.write_str("model route provider must not be empty"),
             Self::EmptyModel => formatter.write_str("model route model must not be empty"),
+            Self::InvalidCharacter { field } => write!(
+                formatter,
+                "model route `{field}` contains disallowed control, whitespace, traversal, or URL delimiter characters"
+            ),
             Self::ProviderContainsModelSeparator { provider } => write!(
                 formatter,
                 "model route provider `{provider}` must be a provider id, not a provider/model selector"
@@ -206,3 +226,11 @@ impl Display for ModelEndpointContractError {
 }
 
 impl Error for ModelEndpointContractError {}
+
+fn has_unsafe_endpoint_chars(value: &str) -> bool {
+    value != value.trim()
+        || value.contains("..")
+        || value.chars().any(|ch| {
+            ch.is_control() || ch.is_whitespace() || matches!(ch, '?' | '#' | '@' | '\\')
+        })
+}

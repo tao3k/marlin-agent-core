@@ -4,20 +4,71 @@
 
 //! Resolve a local development Scheme package before the terminal runtime starts.
 
+#[cfg(any(test, all(unix, not(feature = "linked-ui"))))]
+fn is_non_symlink_dir(path: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_dir())
+}
+
+#[cfg(any(test, all(unix, not(feature = "linked-ui"))))]
+fn is_non_symlink_file(path: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file())
+}
+
+#[cfg(any(test, all(unix, not(feature = "linked-ui"))))]
+fn has_marlin_scheme_package(prefix: &std::path::Path) -> bool {
+    is_non_symlink_dir(prefix)
+        && is_non_symlink_dir(&prefix.join("lib"))
+        && is_non_symlink_dir(&prefix.join("lib/marlin-agent-core"))
+        && is_non_symlink_file(&prefix.join("lib/marlin-agent-core/init.ssi"))
+}
+
+#[cfg(any(test, all(unix, not(feature = "linked-ui"))))]
+pub(crate) fn resolve_local_scheme_prefix(
+    current_gerbil_path: Option<&std::path::Path>,
+    cwd: &std::path::Path,
+    exe: Option<&std::path::Path>,
+) -> Option<std::path::PathBuf> {
+    if current_gerbil_path.is_some_and(has_marlin_scheme_package) {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    // Always prioritize the compiled binary's own repository prefix ahead of untrusted CWD (SM39).
+    if let Some(repo_root) = exe
+        .and_then(|path| path.parent())
+        .and_then(|profile_dir| profile_dir.parent())
+        .and_then(|target_dir| target_dir.parent())
+    {
+        candidates.push(repo_root.join("scheme"));
+    }
+    let from_cwd = cwd.join("scheme");
+    if !candidates.contains(&from_cwd) {
+        candidates.push(from_cwd);
+    }
+    for package in candidates {
+        let prefix = package.join(".gerbil");
+        if is_non_symlink_dir(&package)
+            && is_non_symlink_file(&package.join("gerbil.pkg"))
+            && has_marlin_scheme_package(&prefix)
+            && current_gerbil_path != Some(prefix.as_path())
+        {
+            return Some(prefix);
+        }
+    }
+    None
+}
+
 #[cfg(all(unix, not(feature = "linked-ui")))]
 fn use_local_scheme_package() -> std::io::Result<()> {
-    use std::{env, os::unix::process::CommandExt, process::Command};
+    use std::{env, os::unix::process::CommandExt, path::PathBuf, process::Command};
 
-    if env::var_os("GERBIL_PATH").is_some() {
+    let current_gerbil_path = env::var_os("GERBIL_PATH").map(PathBuf::from);
+    let cwd = env::current_dir()?;
+    let exe = env::current_exe().ok();
+    let Some(prefix) =
+        resolve_local_scheme_prefix(current_gerbil_path.as_deref(), &cwd, exe.as_deref())
+    else {
         return Ok(());
-    }
-    let package = env::current_dir()?.join("scheme");
-    let prefix = package.join(".gerbil");
-    if !package.join("gerbil.pkg").is_file()
-        || !prefix.join("lib/marlin-agent-core/init.ssi").is_file()
-    {
-        return Ok(());
-    }
+    };
     // Replace the process before any VM or asynchronous runtime starts. This
     // gives Gerbil its normal package environment without mutating the host
     // process environment or introducing a second module loader.
@@ -36,3 +87,7 @@ pub fn launch() {
     }
     crate::run_cli();
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/bootstrap.rs"]
+mod tests;

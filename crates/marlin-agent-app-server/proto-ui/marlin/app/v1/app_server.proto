@@ -1,0 +1,311 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+syntax = "proto3";
+
+package marlin.app.v1;
+
+import "marlin/common/v1/common.proto";
+
+// Core Session and Turn service aligned with marlin-agent-core's
+// crates/marlin-agent-app-server/proto/marlin/app/v1/app_server.proto.
+// Fields 1..4 on SessionTurnEvent remain wire-identical; fields 5..6 promote
+// tool calls and human gates to first-class durable turn projections.
+service AppServer {
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
+  // A request carries the transcript for a single stateless text turn.
+  rpc StreamTurn(StreamTurnRequest) returns (stream TurnEvent);
+  rpc StartSessionTurn(StartSessionTurnRequest) returns (StartSessionTurnResponse);
+  rpc WatchSessionTurn(WatchSessionTurnRequest) returns (stream SessionTurnEvent);
+  rpc CancelSessionTurn(CancelSessionTurnRequest) returns (CancelSessionTurnResponse);
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+  rpc GetSessionSummary(GetSessionSummaryRequest) returns (GetSessionSummaryResponse);
+  rpc GetSessionTurnStatus(GetSessionTurnStatusRequest) returns (GetSessionTurnStatusResponse);
+  rpc GetSessionTurnCancellation(GetSessionTurnCancellationRequest) returns (GetSessionTurnCancellationResponse);
+}
+
+message OpenSessionRequest {
+  string session_id = 1;
+  SessionOpenMode mode = 2;
+}
+
+enum SessionOpenMode {
+  SESSION_OPEN_MODE_UNSPECIFIED = 0;
+  SESSION_OPEN_MODE_CREATE = 1;
+  SESSION_OPEN_MODE_EXISTING = 2;
+}
+
+message OpenSessionResponse {
+  string session_id = 1;
+}
+
+message GetSessionSummaryRequest {
+  string session_id = 1;
+}
+
+message GetSessionSummaryResponse {
+  SessionTurnRef latest_turn = 1;
+  optional string latest_event_id = 2;
+  SessionRecoveryState recovery_state = 3;
+}
+
+enum SessionRecoveryState {
+  SESSION_RECOVERY_STATE_UNSPECIFIED = 0;
+  SESSION_RECOVERY_STATE_EMPTY = 1;
+  SESSION_RECOVERY_STATE_ACTIVE = 2;
+  SESSION_RECOVERY_STATE_FINISHED = 3;
+  SESSION_RECOVERY_STATE_UNRESOLVED = 4;
+  SESSION_RECOVERY_STATE_TOOL_CONTINUATION_PENDING = 5;
+}
+
+message GetSessionTurnStatusRequest {
+  SessionTurnRef turn = 1;
+}
+
+message GetSessionTurnStatusResponse {
+  SessionTurnRef turn = 1;
+  SessionRecoveryState recovery_state = 2;
+  string latest_event_id = 3;
+  optional SessionTurnOutcome outcome = 4;
+}
+
+message GetCapabilitiesRequest {}
+
+message GetCapabilitiesResponse {
+  uint32 max_request_bytes = 1;
+  uint32 max_messages = 2;
+  uint32 max_output_text_bytes = 3;
+  optional string session_id = 4;
+  // Additive capability metadata advertised by newer Marlin hosts.
+  marlin.common.v1.TargetKind host_target_kind = 5;
+  repeated string supported_services = 6;
+}
+
+message StreamTurnRequest {
+  repeated ConversationMessage messages = 1;
+}
+
+enum MessageRole {
+  MESSAGE_ROLE_UNSPECIFIED = 0;
+  MESSAGE_ROLE_USER = 1;
+  MESSAGE_ROLE_ASSISTANT = 2;
+}
+
+message ConversationMessage {
+  MessageRole role = 1;
+  string text = 2;
+}
+
+message TurnEvent {
+  oneof event {
+    TurnStarted started = 1;
+    TextDelta text_delta = 2;
+    TurnCompleted completed = 3;
+  }
+}
+
+message TurnStarted {}
+
+message TextDelta {
+  uint64 sequence = 1;
+  string text = 2;
+}
+
+message TurnCompleted {
+  uint64 text_chunks = 1;
+  uint64 text_bytes = 2;
+}
+
+message StartSessionTurnRequest {
+  string session_id = 1;
+  string user_text = 2;
+  uint64 after_turn = 3;
+  string submission_id = 4;
+  // Optional content-addressed attachments ingested via DeviceBridgeService.
+  repeated marlin.common.v1.ArtifactRef attachments = 5;
+}
+
+message SessionTurnRef {
+  string session_id = 1;
+  uint64 ordinal = 2;
+}
+
+message StartSessionTurnResponse {
+  SessionTurnRef turn = 1;
+}
+
+message WatchSessionTurnRequest {
+  SessionTurnRef turn = 1;
+  optional string after_event_id = 2;
+}
+
+message SessionTurnEvent {
+  string event_id = 1;
+  oneof event {
+    TurnStarted started = 2;
+    TextCheckpoint text_checkpoint = 3;
+    SessionTurnOutcome outcome = 4;
+    ToolCallEvent tool_call = 5;
+    HumanGateEvent human_gate = 6;
+  }
+}
+
+message TextCheckpoint {
+  string text = 1;
+}
+
+enum SessionTurnOutcome {
+  SESSION_TURN_OUTCOME_UNSPECIFIED = 0;
+  SESSION_TURN_OUTCOME_COMPLETED = 1;
+  SESSION_TURN_OUTCOME_REJECTED_BEFORE_DISPATCH = 2;
+  SESSION_TURN_OUTCOME_REMOTE_UNCERTAIN = 3;
+}
+
+enum ToolCallPhase {
+  TOOL_CALL_PHASE_UNSPECIFIED = 0;
+  TOOL_CALL_PHASE_REQUESTED = 1;
+  TOOL_CALL_PHASE_AWAITING_APPROVAL = 2;
+  TOOL_CALL_PHASE_RUNNING = 3;
+  TOOL_CALL_PHASE_SUCCEEDED = 4;
+  TOOL_CALL_PHASE_DENIED = 5;
+  TOOL_CALL_PHASE_FAILED = 6;
+  TOOL_CALL_PHASE_UNCERTAIN = 7;
+}
+
+// Durable projection of a provider or runtime tool call within a turn.
+message ToolCallEvent {
+  string call_id = 1;
+  string tool_name = 2;
+  ToolCallPhase phase = 3;
+  ToolCard card = 4;
+  optional string gate_id = 5;
+  optional marlin.common.v1.ReceiptRef receipt = 6;
+  optional marlin.common.v1.TypedDenial denial = 7;
+}
+
+// Durable projection of a suspended approval or graph human gate.
+message HumanGateEvent {
+  string gate_id = 1;
+  optional string call_id = 2;
+  string prompt = 3;
+  bool resolved = 4;
+  optional marlin.common.v1.ReceiptRef receipt = 5;
+}
+
+enum ToolCardKind {
+  TOOL_CARD_KIND_UNSPECIFIED = 0;
+  TOOL_CARD_KIND_TERMINAL = 1;
+  TOOL_CARD_KIND_DIFF = 2;
+  TOOL_CARD_KIND_SEARCH = 3;
+  TOOL_CARD_KIND_READ = 4;
+  TOOL_CARD_KIND_WEB = 5;
+  TOOL_CARD_KIND_DEVICE = 6;
+  TOOL_CARD_KIND_GENERIC = 7;
+}
+
+// Provider-neutral presentation vocabulary consumed by TUI, MyGo native UI,
+// and keyed Marketplace SlotRenderers ("tool-card.<kind>").
+message ToolCard {
+  ToolCardKind kind = 1;
+  string title = 2;
+  string summary = 3;
+  oneof payload {
+    TerminalCard terminal = 10;
+    DiffCard diff = 11;
+    SearchCard search = 12;
+    ReadCard read = 13;
+    WebCard web = 14;
+    DeviceCard device = 15;
+    GenericCard generic = 16;
+  }
+}
+
+message TerminalCard {
+  string command = 1;
+  optional string working_dir = 2;
+  optional int32 exit_code = 3;
+  string output_preview = 4;
+  optional marlin.common.v1.ArtifactRef full_output = 5;
+}
+
+message DiffCard {
+  string path = 1;
+  uint32 added_lines = 2;
+  uint32 removed_lines = 3;
+  string unified_preview = 4;
+  optional marlin.common.v1.ArtifactRef full_diff = 5;
+}
+
+message SearchCard {
+  string query = 1;
+  uint32 match_count = 2;
+  repeated string sample_paths = 3;
+}
+
+message ReadCard {
+  string path = 1;
+  uint32 start_line = 2;
+  uint32 end_line = 3;
+  string excerpt = 4;
+}
+
+message WebCard {
+  string url = 1;
+  optional uint32 status_code = 2;
+  string excerpt = 3;
+}
+
+message DeviceCard {
+  marlin.common.v1.TargetKind target_kind = 1;
+  string capability_id = 2;
+  string description = 3;
+  repeated marlin.common.v1.ArtifactRef artifacts = 4;
+}
+
+message GenericCard {
+  bytes args_json = 1;
+  bytes result_json = 2;
+}
+
+message CancelSessionTurnRequest {
+  SessionTurnRef turn = 1;
+}
+
+message RuntimeShutdownReceipt {
+  bool completed = 1;
+  bool cancellation_requested = 2;
+  bool tracker_closed = 3;
+  uint64 tracked_tasks_at_shutdown = 4;
+  uint64 remaining_tasks = 5;
+  optional uint64 timeout_ms = 6;
+  RuntimeRetirementStatus status = 7;
+}
+
+enum RuntimeRetirementStatus {
+  RUNTIME_RETIREMENT_STATUS_UNSPECIFIED = 0;
+  RUNTIME_RETIREMENT_STATUS_COMPLETED = 1;
+  RUNTIME_RETIREMENT_STATUS_TIMED_OUT = 2;
+  RUNTIME_RETIREMENT_STATUS_CLEANUP_UNCONFIRMED = 3;
+}
+
+message CancelSessionTurnResponse {
+  SessionTurnRef turn = 1;
+  RuntimeShutdownReceipt runtime = 2;
+  SessionTurnOutcome outcome = 3;
+}
+
+message GetSessionTurnCancellationRequest {
+  SessionTurnRef turn = 1;
+}
+
+message GetSessionTurnCancellationResponse {
+  SessionTurnRef turn = 1;
+  oneof evidence {
+    RuntimeShutdownReceipt recorded = 2;
+    CancellationEvidenceUnavailable unavailable = 3;
+  }
+  SessionTurnOutcome outcome = 4;
+}
+
+message CancellationEvidenceUnavailable {}

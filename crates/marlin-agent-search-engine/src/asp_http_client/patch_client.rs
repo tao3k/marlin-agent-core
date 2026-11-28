@@ -1,0 +1,328 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+//! Closed-loop HTTP AST patch client (`POST /v1/ast/patch`):
+//! connects Marlin's `:gerbil-ascent` Search DSL `entity_locator` output directly
+//! to ASP's native-compiler lossless span splice + Frontier 2 `ast-verify`
+//! calibration + immediate Open EDB refresh.
+
+use std::fs;
+use std::io::Read as _;
+use std::path::{Component, Path, PathBuf};
+
+use agent_semantic_search::{
+    WorkspaceFileDelta, WorkspaceOpenEdbIngestBatch, WorkspaceSearchIndex,
+};
+use serde::{Deserialize, Serialize};
+
+use crate::SearchPlanProjectionError;
+
+use super::domain_types::{AspForwardingEndpoint, AspLanguageId, AspProviderId};
+use super::transport::http_loopback_request;
+
+const MAX_AST_PATCH_SOURCE_BYTES: usize = 8 * 1024 * 1024;
+
+fn confine_workspace_patch_path(
+    workspace_root: &Path,
+    rel_path: &str,
+) -> Result<PathBuf, SearchPlanProjectionError> {
+    if rel_path.trim().is_empty()
+        || rel_path.chars().any(char::is_control)
+        || rel_path.contains('\\')
+    {
+        return Err(SearchPlanProjectionError::Invalid(
+            "AST patch path must be a non-empty relative path without control characters",
+        ));
+    }
+    let rel = Path::new(rel_path);
+    if rel.is_absolute() {
+        return Err(SearchPlanProjectionError::Invalid(
+            "AST patch path must be relative to workspace_root",
+        ));
+    }
+    let canonical_root = fs::canonicalize(workspace_root).map_err(|e| {
+        SearchPlanProjectionError::Native(format!("canonicalize workspace root: {e}"))
+    })?;
+    let mut current = canonical_root.clone();
+    let mut saw_normal = false;
+    for comp in rel.components() {
+        match comp {
+            Component::Normal(part) => {
+                saw_normal = true;
+                current.push(part);
+                if let Ok(meta) = fs::symlink_metadata(&current)
+                    && meta.file_type().is_symlink()
+                {
+                    return Err(SearchPlanProjectionError::Invalid(
+                        "AST patch path must not traverse or target a symlink",
+                    ));
+                }
+            }
+            Component::CurDir | Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(SearchPlanProjectionError::Invalid(
+                    "AST patch path must not contain traversal or root components",
+                ));
+            }
+        }
+    }
+    if !saw_normal || !current.starts_with(&canonical_root) {
+        return Err(SearchPlanProjectionError::Invalid(
+            "AST patch path escapes workspace_root",
+        ));
+    }
+    Ok(current)
+}
+
+fn read_bounded_non_symlink(
+    path: &Path,
+    max_bytes: usize,
+) -> Result<String, SearchPlanProjectionError> {
+    let meta = fs::symlink_metadata(path)
+        .map_err(|e| SearchPlanProjectionError::Native(format!("stat {}: {e}", path.display())))?;
+    if meta.file_type().is_symlink() || !meta.file_type().is_file() {
+        return Err(SearchPlanProjectionError::Invalid(
+            "AST patch target must be a regular non-symlink file",
+        ));
+    }
+    if meta.len() > max_bytes as u64 {
+        return Err(SearchPlanProjectionError::Invalid(
+            "AST patch source file exceeds maximum byte cap",
+        ));
+    }
+    let file = fs::File::open(path)
+        .map_err(|e| SearchPlanProjectionError::Native(format!("read {}: {e}", path.display())))?;
+    let mut bytes = Vec::new();
+    let cap = (max_bytes as u64).saturating_add(1);
+    file.take(cap)
+        .read_to_end(&mut bytes)
+        .map_err(|e| SearchPlanProjectionError::Native(format!("read {}: {e}", path.display())))?;
+    if bytes.len() > max_bytes {
+        return Err(SearchPlanProjectionError::Invalid(
+            "AST patch source file exceeds maximum byte cap",
+        ));
+    }
+    String::from_utf8(bytes).map_err(|e| {
+        SearchPlanProjectionError::Native(format!("decode UTF-8 {}: {e}", path.display()))
+    })
+}
+
+/// Typed structural AST edit operation forwarded to ASP `POST /v1/ast/patch`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum AspHttpAstPatchOp {
+    ReplaceItem { target: String, snippet: String },
+    AppendToBlock { target: String, snippet: String },
+    InsertBeforeNode { target: String, snippet: String },
+    InsertAfterNode { target: String, snippet: String },
+    RemoveNode { target: String },
+    InsertImport { import_statement: String },
+}
+
+/// Request submitting a locator-anchored structural edit through ASP's gateway.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AspHttpAstPatchRequest<'a> {
+    pub workspace_root: &'a Path,
+    pub path: &'a str,
+    pub language_override: Option<&'a AspLanguageId>,
+    pub expected_preimage_hash: Option<&'a str>,
+    pub operation: AspHttpAstPatchOp,
+    pub dry_run: bool,
+    pub auto_calibrate: bool,
+}
+
+/// Outcome status returned by ASP `POST /v1/ast/patch`.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AspHttpAstPatchStatus {
+    Verified,
+    Applied,
+    CalibratedAndApplied,
+    RejectedFailClosed,
+}
+
+/// Receipt returned after executing a closed-loop AST patch through ASP HTTP.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AspHttpAstPatchReceipt {
+    pub status: AspHttpAstPatchStatus,
+    pub path: String,
+    pub language_id: AspLanguageId,
+    pub provider_id: AspProviderId,
+    pub preimage_hash: String,
+    #[serde(default)]
+    pub postimage_hash: Option<String>,
+    #[serde(default)]
+    pub patched_source_utf8: Option<String>,
+    #[serde(default)]
+    pub unified_diff: Option<String>,
+    pub reparse_verified: bool,
+    #[serde(default)]
+    pub open_edb_batch: Option<WorkspaceOpenEdbIngestBatch>,
+    #[serde(skip)]
+    pub synced_entities: usize,
+    #[serde(skip)]
+    pub synced_edges: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WireAstPatchRequest<'a> {
+    path: &'a str,
+    source_utf8: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language_override: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected_preimage_hash: Option<&'a str>,
+    operation: &'a AspHttpAstPatchOp,
+    dry_run: bool,
+    auto_calibrate: bool,
+}
+
+fn atomic_write_file(target: &Path, bytes: &[u8]) -> Result<(), SearchPlanProjectionError> {
+    use std::io::Write as _;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static PATCH_TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    let parent = target.parent().unwrap_or_else(|| Path::new("."));
+    if fs::symlink_metadata(parent).is_ok_and(|m| m.file_type().is_symlink())
+        || fs::symlink_metadata(target).is_ok_and(|m| m.file_type().is_symlink())
+    {
+        return Err(SearchPlanProjectionError::Invalid(
+            "atomic AST patch refuses symlink target or parent directory",
+        ));
+    }
+    let file_name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("ast-patch");
+    let seq = PATCH_TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp = parent.join(format!(
+        ".{file_name}.{}.{seq}.marlin-ast-tmp",
+        std::process::id()
+    ));
+    let write_res = (|| -> std::io::Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    if let Err(e) = write_res {
+        let _ = fs::remove_file(&tmp);
+        return Err(SearchPlanProjectionError::Native(format!(
+            "write temp patch: {e}"
+        )));
+    }
+    fs::rename(&tmp, target).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        SearchPlanProjectionError::Native(format!("commit atomic patch: {e}"))
+    })?;
+    if let Ok(dir) = fs::File::open(parent) {
+        let _ = dir.sync_all();
+    }
+    Ok(())
+}
+
+fn normalize_batch_language(
+    batch: &mut WorkspaceOpenEdbIngestBatch,
+    aliases: &std::collections::BTreeMap<String, String>,
+) {
+    for ent in &mut batch.entities {
+        if let Some(canonical) = aliases.get(ent.language.as_str()) {
+            ent.language.clone_from(canonical);
+        }
+    }
+    if let Some(lang) = batch.language_id.as_deref()
+        && let Some(canonical) = aliases.get(lang)
+    {
+        batch.language_id = Some(canonical.clone());
+    }
+}
+
+fn commit_and_sync_patched_file(
+    endpoint: &AspForwardingEndpoint,
+    abs_path: &Path,
+    rel_path: &str,
+    index: &mut WorkspaceSearchIndex,
+    receipt: &mut AspHttpAstPatchReceipt,
+) -> Result<(), SearchPlanProjectionError> {
+    let Some(patched) = receipt.patched_source_utf8.as_deref() else {
+        return Ok(());
+    };
+    if patched.len() > MAX_AST_PATCH_SOURCE_BYTES {
+        return Err(SearchPlanProjectionError::Invalid(
+            "patched AST source exceeds maximum byte cap",
+        ));
+    }
+    atomic_write_file(abs_path, patched.as_bytes())?;
+    let _ = index.apply_file_delta(WorkspaceFileDelta {
+        upserts: vec![(rel_path.to_owned(), patched.as_bytes().to_vec())],
+        deletes: Vec::new(),
+    });
+    let Some(mut batch) = receipt.open_edb_batch.clone() else {
+        return Ok(());
+    };
+    let catalog = super::transport::fetch_asp_provider_catalog(endpoint)?;
+    let aliases = super::sync::provider_language_aliases(&catalog);
+    normalize_batch_language(&mut batch, &aliases);
+    let ingest = index.ingest_open_edb_facts(batch);
+    receipt.synced_entities = ingest.ingested_entities;
+    receipt.synced_edges = ingest.ingested_edges;
+    Ok(())
+}
+
+/// Execute a closed-loop lossless AST patch over ASP `POST /v1/ast/patch`,
+/// atomically commit the verified file when `!dry_run`, and synchronously
+/// refresh Marlin's live [`WorkspaceSearchIndex`] + Open EDB entities & edges.
+pub fn apply_ast_patch_via_asp_http(
+    endpoint: &AspForwardingEndpoint,
+    index: &mut WorkspaceSearchIndex,
+    request: &AspHttpAstPatchRequest<'_>,
+) -> Result<AspHttpAstPatchReceipt, SearchPlanProjectionError> {
+    let abs_path = confine_workspace_patch_path(request.workspace_root, request.path)?;
+    let source_utf8 = read_bounded_non_symlink(&abs_path, MAX_AST_PATCH_SOURCE_BYTES)?;
+    let wire = WireAstPatchRequest {
+        path: request.path,
+        source_utf8,
+        language_override: request.language_override.map(AspLanguageId::as_str),
+        expected_preimage_hash: request.expected_preimage_hash,
+        operation: &request.operation,
+        dry_run: request.dry_run,
+        auto_calibrate: request.auto_calibrate,
+    };
+    let encoded = serde_json::to_vec(&wire)
+        .map_err(|e| SearchPlanProjectionError::Native(format!("encode ast-patch request: {e}")))?;
+    let (status, resp_body) =
+        http_loopback_request(endpoint, "POST", "/v1/ast/patch", Some(&encoded))?;
+    if status != 200 {
+        return Err(SearchPlanProjectionError::Native(format!(
+            "ASP POST /v1/ast/patch returned HTTP {status}: {}",
+            String::from_utf8_lossy(&resp_body)
+        )));
+    }
+    let mut receipt: AspHttpAstPatchReceipt = serde_json::from_slice(&resp_body).map_err(|e| {
+        SearchPlanProjectionError::Native(format!("decode ast-patch response: {e}"))
+    })?;
+
+    let should_commit = !request.dry_run
+        && matches!(
+            receipt.status,
+            AspHttpAstPatchStatus::Applied | AspHttpAstPatchStatus::CalibratedAndApplied
+        );
+    if should_commit {
+        let verified_commit_path =
+            confine_workspace_patch_path(request.workspace_root, request.path)?;
+        commit_and_sync_patched_file(
+            endpoint,
+            &verified_commit_path,
+            request.path,
+            index,
+            &mut receipt,
+        )?;
+    }
+    Ok(receipt)
+}

@@ -63,6 +63,18 @@ impl LoopProgramToolProcessSideEffectReceipt {
             diagnostic: Some(format!("loop_program.tool_process.spawn_failed:{error}")),
         }
     }
+
+    pub(crate) fn blocked(
+        projection: LoopProgramToolProcessProjectionReceipt,
+        diagnostic: String,
+    ) -> Self {
+        Self {
+            projection,
+            status: LoopProgramToolProcessSideEffectStatus::Failed,
+            spawn_receipt: None,
+            diagnostic: Some(diagnostic),
+        }
+    }
 }
 
 /// Resolves a typed tool projection into an explicit runtime process request.

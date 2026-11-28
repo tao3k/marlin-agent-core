@@ -12,8 +12,24 @@ by the Ratatui mapper.
 * Interface and contracts
 
 =interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
-and scope assembly. UiElementsScope and its node, size and template constructors.
+and scope assembly. =objects.ss= names the published operation slots.
+=funcs.ss= implements the node, size and template constructors.
 Consumers access selected exports through =marlin-agent-core.init.exports=.
+
+The first argument to =ui-panel= is a semantic border tone or =#f=.
+A borderless panel places its optional title on the first row and gives
+the body the remaining area.
+
+=ui-input= accepts an optional trailing view as =#(cells template)=.
+It reserves space beside the editable text and right-aligns the template
+on the cursor row. The reservation shrinks in narrow allocations.
+
+=ui-binding-present= creates a condition for =ui-choice= and =ui-size-choice=.
+It checks for nonempty frame text under the same identity a template uses.
+The terminal supplies =key-echo= for pending key sequences and =notice= for
+recent messages. Scheme chooses where, whether, and how to show either value.
+The shared test window accepts a fifth frame field, a vector of =#(id text)=
+bindings, so a Scheme package can test layout and painting with its own data.
 
 * Build and verification
 

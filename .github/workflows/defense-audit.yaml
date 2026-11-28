@@ -1,0 +1,117 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+name: Defense Audit & Formal Threat Overlays
+
+on:
+  pull_request:
+  push:
+    branches: [main, sync/agentic-ai-lab-rust]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  g2-defense-audit:
+    name: G2 AI Anti-Defensive Audit (Rust + Scheme)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Checkout standalone zero-dep agent-defense-audit CLI
+        uses: actions/checkout@v6
+        with:
+          repository: hardenedlinux/deterministic-engineering
+          ref: docs/quint-threat-library
+          path: .ci/de
+          sparse-checkout: |
+            packages/agent-defense-audit
+      - uses: oven-sh/setup-bun@v2
+      - name: Audit all production Rust and Gerbil Scheme files (zero G2 findings)
+        run: |
+          bun .ci/de/packages/agent-defense-audit/src/agent-defense-audit.ts \
+            --dir crates scheme \
+            --lang=rust,scheme \
+            --exclude-tests
+
+  stability-adv-l4-audit:
+    name: SM2-SM36 Software Aging & ADV-L4 Confinement Audit (Rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Checkout standalone agent-stability-audit CLI
+        uses: actions/checkout@v6
+        with:
+          repository: hardenedlinux/deterministic-engineering
+          ref: docs/quint-threat-library
+          path: .ci/de
+          sparse-checkout: |
+            languages-engineering/ts/stability/aging-contrast
+      - uses: oven-sh/setup-bun@v2
+      - name: Audit all production Rust files (zero SM2-SM36 findings)
+        run: |
+          bun .ci/de/languages-engineering/ts/stability/aging-contrast/agent-stability-audit.ts \
+            --dir crates \
+            --lang=rust \
+            --exclude-tests
+
+  quint-threat-overlays:
+    name: Quint 19-Overlay Formal Threat Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Checkout Quint models & module resolver
+        uses: actions/checkout@v6
+        with:
+          repository: hardenedlinux/deterministic-engineering
+          ref: docs/quint-threat-library
+          path: .ci/de
+          sparse-checkout: |
+            packages/quint-models
+            packages/quint-modules-resolver
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: oven-sh/setup-bun@v2
+      - name: Install Quint CLI
+        run: npm install -g @informalsystems/quint@0.33.0
+      - name: Typecheck all dev/quint/threat/*.qnt overlays
+        run: |
+          set -euo pipefail
+          RESOLVER="$PWD/.ci/de/packages/quint-modules-resolver/src/cli.ts"
+          TMP_Q="$(mktemp -d)"
+          trap 'rm -rf "$TMP_Q"' EXIT
+          mkdir -p "$TMP_Q/node_modules/@deterministic-engineering"
+          ln -s "$PWD/.ci/de/packages/quint-models" \
+            "$TMP_Q/node_modules/@deterministic-engineering/quint-models"
+          cp -R dev/quint/threat "$TMP_Q/threat"
+          cd "$TMP_Q"
+          count=0
+          for q in threat/*.qnt; do
+            bun "$RESOLVER" typecheck "$q"
+            count=$((count + 1))
+          done
+          echo "ALL_${count}_THREAT_OVERLAYS_TYPECHECK_OK"
+
+  kernel-11-pillars-adv-l4:
+    name: Kernel 11-Pillar (B9+B12..B21) & ADV-L4 Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: kernel-11-pillars-adv-l4
+      - name: Run marlin-agent-kernel unit tests & ADV-L4 integration suite
+        run: |
+          cargo test --locked -p marlin-agent-kernel --lib
+          cargo test --locked -p marlin-agent-kernel --test defense_pillars_adv_l4

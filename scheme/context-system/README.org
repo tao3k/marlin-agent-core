@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / Context System
+#+language: en
+
+* Responsibility
+
+Adapts Lab Context, Org source, Org Elements -> ISO GQL queries, ASCENT
+progressive disclosure (`L0..L3` + dynamic Flash facets), two-stage AST/Flash
+Org repair, declarative C4 POO + FunFlow CAS DAG + Durable orchestration
+(=orchestrator.ss=), and causal evidence to Marlin's Context System.
+
+* Interface and contracts
+
+=interface.ss= declares the Module. =types.ss= and =config.ss= admit its
+scope. Deck and the Context ABI access the same selected scope through
+=marlin-agent-core.init.exports.Marlin.context-system=.
+
+* Build and verification
+
+[[file:../init.ss][init.ss]] selects this module. Its Build role, if present,
+contributes to the package's =std-make-spec=. See the
+[[file:../README.org][Scheme package README]] for the shared build and test commands.

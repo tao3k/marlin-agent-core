@@ -6,7 +6,7 @@
 
 use crate::org::memory::format::todo_state;
 use marlin_context_org_model::{CheckboxState, LinkKind, OrgNode};
-use marlin_workspace_view::{WorkspaceField, WorkspaceViewSpec};
+use marlin_workspace::view::{WorkspaceField, WorkspaceViewSpec};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 pub(super) fn render_node_lines(node: &OrgNode, view: &WorkspaceViewSpec) -> Vec<String> {

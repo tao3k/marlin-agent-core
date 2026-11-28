@@ -47,11 +47,12 @@ environment, hook, kernel, protocol, or harness behavior.
 Place new behavior in the focused crates that own the boundary:
 
 - ~marlin-agent-protocol~: shared protocol data and trace/event contracts;
-- ~marlin-agent-runtime~: runtime traits, context, streams, and observability;
+- ~marlin-agent-runtime~: runtime traits, context, streams, observability,
+  process environment, and direnv;
 - ~marlin-agent-kernel~: graph-loop execution and node adapters;
 - ~marlin-agent-hooks~: hook registration and dispatch;
-- ~marlin-agent-environment~: custom home, config layers, and sub-agent
-  environment resolution;
+- ~marlin-agent-gitops~: repository operations and working-copy providers;
+- ~marlin-workspace~: workspace query, status, and view contracts;
 - ~marlin-agent-harness~: agent-system scenario, evidence, release visibility,
   and performance harnessing.
 

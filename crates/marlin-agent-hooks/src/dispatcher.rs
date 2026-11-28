@@ -38,6 +38,12 @@ pub type RegisteredHookActionProvider = dyn HookActionProvider + Send + Sync + '
 pub type RegisteredHookRegistrationCatalog =
     dyn HookRegistrationCatalog<HookRegistration> + Send + Sync + 'static;
 
+/// Maximum concurrent asynchronous hook tasks permitted per dispatch.
+const MAX_CONCURRENT_ASYNC_HOOKS: usize = 16;
+
+/// Maximum dynamic policy actions accepted from an extension provider per dispatch.
+const MAX_DYNAMIC_POLICY_ACTIONS: usize = 64;
+
 /// Runtime task boundary for hook dispatch execution.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct HookDispatchTaskOwner;
@@ -49,8 +55,18 @@ impl HookDispatchTaskOwner {
         invocation: HookInvocation,
         context: RuntimeContext,
         span: tracing::Span,
+        concurrency_limiter: Arc<tokio::sync::Semaphore>,
     ) -> tokio::task::JoinHandle<HookRunSummary> {
-        tokio::spawn(async move { handler.run_hook(invocation, context).await }.instrument(span))
+        tokio::spawn(
+            async move {
+                let _permit = concurrency_limiter
+                    .acquire_owned()
+                    .await
+                    .expect("hook dispatch semaphore stays open while tasks are in flight");
+                handler.run_hook(invocation, context).await
+            }
+            .instrument(span),
+        )
     }
 }
 
@@ -243,10 +259,11 @@ impl HookRegistration {
         &self,
         context: RuntimeContext,
         invocation: HookInvocation,
+        concurrency_limiter: Arc<tokio::sync::Semaphore>,
     ) -> tokio::task::JoinHandle<HookRunSummary> {
         let handler = self.handler.clone();
         let span = hook_run_span(self);
-        HookDispatchTaskOwner::spawn(handler, invocation, context, span)
+        HookDispatchTaskOwner::spawn(handler, invocation, context, span, concurrency_limiter)
     }
 }
 
@@ -266,8 +283,10 @@ impl HookRegistry {
         }
     }
 
-    /// Registers one hook handler.
+    /// Registers one hook handler, upserting any prior registration with the same identifier.
     pub fn register(&mut self, registration: HookRegistration) {
+        self.registrations
+            .retain(|existing| existing.id != registration.id);
         self.registrations.push(registration);
         self.sort();
         self.rebuild_event_index();
@@ -279,10 +298,19 @@ impl HookRegistry {
         registration: HookRegistration,
         configuration_version: Option<HookConfigurationVersion>,
     ) -> HookRegistryUpdateReceipt {
+        let already_registered = self
+            .registrations
+            .iter()
+            .any(|existing| existing.id == registration.id);
+        let registration_count = if already_registered {
+            self.registrations.len()
+        } else {
+            self.registrations.len() + 1
+        };
         let receipt = hook_registry_update_receipt(
             &registration,
             HookRegistryUpdateKind::Registered,
-            self.registrations.len() + 1,
+            registration_count,
             configuration_version,
         );
         self.register(registration);
@@ -807,10 +835,12 @@ impl HookDispatcher {
         let (mut registrations, mut selection) = self.registry.matching(&invocation);
         let mut policy = self.policy.evaluate(&invocation, &registrations);
         if let Some(provider) = &self.action_provider {
-            policy.actions = provider.propose_actions(HookActionContext {
+            let mut proposed = provider.propose_actions(HookActionContext {
                 invocation: &invocation,
                 policy_receipt: &policy,
             });
+            proposed.truncate(MAX_DYNAMIC_POLICY_ACTIONS);
+            policy.actions = proposed;
         }
         let mut applied_actions = Vec::new();
         if policy.actions.iter().any(|action| {
@@ -883,6 +913,34 @@ impl HookDispatchReport {
     }
 }
 
+struct AbortOnDropHandle<T>(Option<tokio::task::JoinHandle<T>>);
+
+impl<T> AbortOnDropHandle<T> {
+    fn new(handle: tokio::task::JoinHandle<T>) -> Self {
+        Self(Some(handle))
+    }
+
+    async fn join(mut self) -> Result<T, tokio::task::JoinError> {
+        let result = self
+            .0
+            .as_mut()
+            .expect("abort-on-drop hook handle awaited once")
+            .await;
+        // Disarm only after the task resolves; if `join` is cancelled mid-await,
+        // `self.0` stays `Some(handle)` so `Drop` aborts the in-flight task.
+        self.0 = None;
+        result
+    }
+}
+
+impl<T> Drop for AbortOnDropHandle<T> {
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
+}
+
 async fn run_permitted_hook_registrations(
     context: RuntimeContext,
     invocation: HookInvocation,
@@ -890,6 +948,7 @@ async fn run_permitted_hook_registrations(
 ) -> Vec<HookRunSummary> {
     let mut runs = Vec::new();
     let mut async_runs = Vec::new();
+    let concurrency_limiter = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_ASYNC_HOOKS));
 
     for registration in registrations {
         match registration.execution_mode {
@@ -903,14 +962,18 @@ async fn run_permitted_hook_registrations(
                 runs.push(apply_registration_metadata(&registration, summary));
             }
             HookExecutionMode::Async => {
-                let task = registration.run(context.child_context(), invocation.clone());
+                let task = AbortOnDropHandle::new(registration.run(
+                    context.child_context(),
+                    invocation.clone(),
+                    Arc::clone(&concurrency_limiter),
+                ));
                 async_runs.push((registration, task));
             }
         }
     }
 
     for (registration, task) in async_runs {
-        let summary = match task.await {
+        let summary = match task.join().await {
             Ok(summary) => summary,
             Err(error) => {
                 tracing::warn!(

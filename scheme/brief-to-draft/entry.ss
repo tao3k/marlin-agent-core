@@ -4,27 +4,24 @@
 
 ;;; Rooted typed values use the shared Gerbil Scheme Rust ABI.
 (import (only-in :marlin-agent-core/c-abi/roots marlin-rooted-call)
-        (only-in :marlin-agent-core/brief-to-draft/objects BriefToDraftOperations)
-        (only-in :clan/poo/object .get)
-        (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
-(export main marlin-brief-to-draft-settings)
+        (only-in :tao3k/yuanxu/prelude yuanxu-build-autoloads)
+        (for-template :marlin-agent-core/context-system/types)
+        (for-syntax :gerbil/expander
+          (only-in "./build.ss" Build)))
+(export main)
+
+(yuanxu-build-autoloads Build workflow)
 
 (def (main . _) (void))
-
-(def (marlin-brief-to-draft-settings input)
-  ((.get marlin-agent-core.init.exports Marlin brief-to-draft validate-settings) input))
 
 (begin-foreign
   (c-define (validate-settings root) (int64) int64
     "marlin_brief_to_draft_validate_settings" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root
-      marlin-agent-core/brief-to-draft/entry#marlin-brief-to-draft-settings)))
-
-(def (marlin-brief-to-draft-propose input)
-  ((.get marlin-agent-core.init.exports Marlin brief-to-draft propose) input))
+      marlin-agent-core/brief-to-draft/entry#validate-settings)))
 
 (begin-foreign
   (c-define (propose root) (int64) int64
     "marlin_brief_to_draft_propose" "extern"
     (marlin-agent-core/c-abi/roots#marlin-rooted-call root
-      marlin-agent-core/brief-to-draft/entry#marlin-brief-to-draft-propose)))
+      marlin-agent-core/brief-to-draft/entry#propose)))

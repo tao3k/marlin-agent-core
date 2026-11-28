@@ -48,3 +48,11 @@ sha2.workspace = true
 name = "context_profile"
 harness = false
 required-features = ["mailbox-benchmark"]
+
+[[test]]
+name = "actor_runtime_test"
+path = "tests/integration/actor_runtime_test.rs"
+
+[[test]]
+name = "context_text_budget_test"
+path = "tests/integration/context_text_budget_test.rs"

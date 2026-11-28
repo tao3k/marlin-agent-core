@@ -6,6 +6,8 @@
 mod operations;
 #[path = "turso_schema.rs"]
 mod schema;
+#[path = "turso_session_store.rs"]
+mod session_store;
 #[path = "turso_storage.rs"]
 mod storage;
 
@@ -39,12 +41,47 @@ pub struct TursoSyncRemoteUrl(String);
 impl TursoSyncRemoteUrl {
     pub fn new(value: impl Into<String>) -> StorageResult<Self> {
         let value = value.into();
-        if !(value.starts_with("libsql://")
-            || value.starts_with("https://")
-            || value.starts_with("http://"))
-        {
+        if value.is_empty() || value.bytes().any(|byte| byte <= 0x20 || byte == 0x7f) {
             return Err(StorageError::InvalidSyncConfiguration {
-                reason: "remote URL must use libsql, https, or http",
+                reason: "remote URL must not contain whitespace or control characters",
+            });
+        }
+        let (scheme, rest) = if let Some(rest) = value.strip_prefix("libsql://") {
+            ("libsql", rest)
+        } else if let Some(rest) = value.strip_prefix("https://") {
+            ("https", rest)
+        } else if let Some(rest) = value.strip_prefix("http://") {
+            ("http", rest)
+        } else {
+            return Err(StorageError::InvalidSyncConfiguration {
+                reason: "remote URL must use libsql, https, or loopback http",
+            });
+        };
+        let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        let authority = &rest[..authority_end];
+        if authority.is_empty() || authority.contains('@') {
+            return Err(StorageError::InvalidSyncConfiguration {
+                reason: "remote URL must have a non-empty host without embedded userinfo",
+            });
+        }
+        let host = if authority.starts_with('[') {
+            let Some(close_idx) = authority.find(']') else {
+                return Err(StorageError::InvalidSyncConfiguration {
+                    reason: "remote URL has malformed IPv6 host",
+                });
+            };
+            &authority[..=close_idx]
+        } else {
+            authority.split(':').next().unwrap_or("")
+        };
+        if host.is_empty() {
+            return Err(StorageError::InvalidSyncConfiguration {
+                reason: "remote URL host must not be empty",
+            });
+        }
+        if scheme == "http" && !is_loopback_sync_host(host) {
+            return Err(StorageError::InvalidSyncConfiguration {
+                reason: "cleartext http:// remote URL is permitted only for loopback hosts",
             });
         }
         Ok(Self(value))
@@ -53,6 +90,12 @@ impl TursoSyncRemoteUrl {
     fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+#[cfg(feature = "turso-sync")]
+fn is_loopback_sync_host(host: &str) -> bool {
+    let lower = host.to_ascii_lowercase();
+    lower == "localhost" || lower == "127.0.0.1" || lower == "[::1]"
 }
 
 #[cfg(feature = "turso-sync")]
@@ -345,29 +388,43 @@ impl TursoDatabaseAuthority {
 
 #[derive(Clone)]
 struct TursoConnectionPool {
-    sender: tokio::sync::mpsc::UnboundedSender<turso::Connection>,
-    receiver:
-        std::sync::Arc<tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<turso::Connection>>>,
+    database: TursoDatabaseAuthority,
+    sender: tokio::sync::mpsc::Sender<turso::Connection>,
+    receiver: std::sync::Arc<tokio::sync::Mutex<tokio::sync::mpsc::Receiver<turso::Connection>>>,
 }
 
 struct TursoConnectionLease {
     connection: Option<turso::Connection>,
-    sender: tokio::sync::mpsc::UnboundedSender<turso::Connection>,
+    database: TursoDatabaseAuthority,
+    sender: tokio::sync::mpsc::Sender<turso::Connection>,
+    tx_active: bool,
+}
+
+impl TursoConnectionLease {
+    pub(crate) fn mark_transaction_active(&mut self) {
+        self.tx_active = true;
+    }
+
+    pub(crate) fn mark_transaction_clean(&mut self) {
+        self.tx_active = false;
+    }
 }
 
 impl TursoConnectionPool {
     async fn new(database: &TursoDatabaseAuthority, lane_count: usize) -> StorageResult<Self> {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        for _ in 0..lane_count {
+        let lanes = lane_count.max(1);
+        let (sender, receiver) = tokio::sync::mpsc::channel(lanes);
+        for _ in 0..lanes {
             let connection = database.connect().await?;
             connection
                 .busy_timeout(Duration::from_millis(100))
                 .map_err(map_turso_error)?;
-            sender.send(connection).map_err(|_| StorageError::Backend {
+            sender.try_send(connection).map_err(|_| StorageError::Backend {
                 message: "failed to initialize Turso connection pool".to_string(),
             })?;
         }
         Ok(Self {
+            database: database.clone(),
             sender,
             receiver: std::sync::Arc::new(tokio::sync::Mutex::new(receiver)),
         })
@@ -385,7 +442,9 @@ impl TursoConnectionPool {
                 })?;
         Ok(TursoConnectionLease {
             connection: Some(connection),
+            database: self.database.clone(),
             sender: self.sender.clone(),
+            tx_active: false,
         })
     }
 }
@@ -403,7 +462,23 @@ impl std::ops::Deref for TursoConnectionLease {
 impl Drop for TursoConnectionLease {
     fn drop(&mut self) {
         if let Some(connection) = self.connection.take() {
-            let _ = self.sender.send(connection);
+            if !self.tx_active {
+                let _ = self.sender.try_send(connection);
+                return;
+            }
+            // Cancelled mid-transaction: never return a poisoned in-transaction
+            // connection to the pool (SM19). Drop it and replenish the lane cleanly.
+            drop(connection);
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                let database = self.database.clone();
+                let sender = self.sender.clone();
+                handle.spawn(async move {
+                    if let Ok(fresh) = database.connect().await {
+                        let _ = fresh.busy_timeout(Duration::from_millis(100));
+                        let _ = sender.send(fresh).await;
+                    }
+                });
+            }
         }
     }
 }
@@ -659,6 +734,33 @@ async fn insert_visibility_receipt(
     Ok(())
 }
 
+async fn insert_visibility_receipt_idempotent(
+    connection: &turso::Connection,
+    receipt: VisibilityReceipt,
+) -> StorageResult<()> {
+    execute_retrying(
+        connection,
+        "INSERT OR IGNORE INTO visibility_receipts (
+            project_id,
+            receipt_id,
+            receipt_kind,
+            body,
+            created_at_unix_ms
+        ) VALUES (?1, ?2, ?3, ?4, ?5)",
+        || {
+            vec![
+                text_value(receipt.project_id.clone()),
+                turso::Value::Text(receipt.receipt_id.clone()),
+                turso::Value::Text(receipt.receipt_kind.clone()),
+                turso::Value::Blob(receipt.body.clone()),
+                turso::Value::Integer(receipt.created_at_unix_ms),
+            ]
+        },
+    )
+    .await?;
+    Ok(())
+}
+
 async fn drain_rows(connection: &turso::Connection, sql: &str) -> StorageResult<()> {
     let mut rows = connection.query(sql, ()).await.map_err(map_turso_error)?;
     while rows.next().await.map_err(map_turso_error)?.is_some() {}
@@ -716,4 +818,65 @@ fn blob_at(row: &turso::Row, index: usize) -> StorageResult<Vec<u8>> {
         .ok_or_else(|| StorageError::Backend {
             message: format!("expected blob column at index {index}"),
         })
+}
+
+#[cfg(test)]
+mod sm19_pool_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn sm19_dirty_tx_lease_drop_discards_poisoned_conn_and_replenishes_clean_lane() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("sm19-pool-hygiene.db");
+        let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
+            path: db_path,
+            optimization_profile: TursoOptimizationProfile::AsyncIoOnlyCompatibility,
+            batch_transaction_mode: TursoBatchTransactionMode::Immediate,
+        })
+        .await
+        .expect("open local turso storage");
+
+        // Single-lane pool ensures the next acquire() would deterministically hit
+        // the poisoned connection if Drop returned an in-transaction connection.
+        let pool = TursoConnectionPool::new(&storage._database, 1)
+            .await
+            .expect("create 1-lane pool");
+
+        {
+            let mut dirty_lease = pool.acquire().await.expect("acquire first lease");
+            dirty_lease
+                .execute("BEGIN IMMEDIATE", ())
+                .await
+                .expect("start transaction");
+            dirty_lease.mark_transaction_active();
+            // Simulate caller cancellation mid-transaction: Drop without COMMIT/ROLLBACK.
+        }
+
+        // Next acquire must receive a replenished clean connection (not deadlock and
+        // not fail with "cannot start a transaction within a transaction").
+        let mut clean_lease = tokio::time::timeout(Duration::from_secs(5), pool.acquire())
+            .await
+            .expect("replenished lane must arrive without deadlock")
+            .expect("acquire replenished lease");
+        clean_lease
+            .execute("BEGIN IMMEDIATE", ())
+            .await
+            .expect("fresh connection must start clean transaction without poisoning");
+        clean_lease.mark_transaction_active();
+        clean_lease
+            .execute("COMMIT", ())
+            .await
+            .expect("commit clean transaction");
+        clean_lease.mark_transaction_clean();
+        drop(clean_lease);
+
+        // Verify clean return still reuses the lane immediately without blocking.
+        let reused = tokio::time::timeout(Duration::from_secs(2), pool.acquire())
+            .await
+            .expect("clean return must immediately make lane available")
+            .expect("acquire reused lease");
+        drain_rows(&reused, "SELECT 1")
+            .await
+            .expect("reused clean connection serves queries");
+    }
 }

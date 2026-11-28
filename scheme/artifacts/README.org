@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin / GitOps Artifacts & Declarative Organization Catalog
+#+language: en
+
+The =artifacts= module declaratively governs Marlin's **Organization Architecture**
+and **GitOps Artifacts** catalog in POO, projecting committed journal entries
+into Org-Contract-validated Org documents and directory trees inside the
+existing **GitOps + Artifacts + Storage** backbone (with no standalone Org Store
+concept).
+
+* Declarative Organization and GitOps Artifact Topology
+
+[[file:objects.ss][objects.ss]] defines extensible POO prototypes (=ArtifactPrototypes=) and the
+default catalog (=DefaultArtifactCatalog=):
+
+- **Organization Role Tree** (=DefaultArtifactOrganization=): declares =roles=
+  (=coordinator=, =architect=, =author=, =verifier=, =operator= with explicit
+  capabilities and =review-eligible?= flags) and =agents= (=lead -> architect ->
+  worker=, =verifier=, =host-operator= with parent links and allowed domains),
+  enforcing Separation of Duties (=producer != reviewer=) on review-gated kinds.
+- **GitOps Logical Directory Tree** (=DefaultArtifactDomains= &
+  =DefaultArtifactCollections=): organizes =Project -> Domain/Worktree ->
+  Collection -> ArtifactKind= across =shared/topology=, =shared/evidence=,
+  =worktrees/work=, =worktrees/patches=, and =verification/receipts=.
+- **Bidirectional Org-Contract Projection** ([[file:funcs.ss][funcs.ss]]): =project-context-org=
+  renders =context.org= with =scheme :org-contract= assertions, the organization
+  role/agent tree, and collection-grouped artifact headlines; =inspect-context-org=
+  parses =context.org= back through Lab's Orgize element graph, verifying
+  parent-child collection placement, role/agent definitions, SoD invariants, and
+  artifact digests. =materialize-artifact-directory!= writes the full multi-file
+  GitOps artifact directory and validates it with Orgize's =org-directory-validate=.
+
+* Workspace Host Integration
+
+Artifacts have a content digest and producer evidence anchored to the worktree
+and its Git commit. The worktree's branch name can change independently of a
+committed record.
+
+Linked worktrees resolve the same canonical Git common directory. In ordinary
+mode, set the approved absolute checkout in =[git_context].repository= and
+explicitly enroll it with =marlin-tui <config.toml> --enroll-context=. The command
+prints the owner directory under =~/marlin-ai/repos/=. Supply =--remote <name>=
+to select a source remote. Linked worktrees share the enrolled owner, while
+separate clones of the same remote receive separate owners.
+
+In an authorized development environment, =MARLIN_AGENT_CORE_DEV=1= selects
+=.data/marlin/= in the primary worktree. A bare repository with an attached
+worktree uses =marlin/= in the common Git directory. Each storage directory
+owns =context.db=, =context.org=, =data/= (=org-attach=), and =artifacts/=.
+
+The Rust =WorkspaceArtifacts= adapter writes and verifies artifact bytes and
+calls =artifacts-exchange= through its C ABI export. The Lab durable journal
+commits each reference, and Scheme projects and verifies the governed GitOps
+context document before returning the ordered digest vector.

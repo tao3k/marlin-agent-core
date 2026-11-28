@@ -1,0 +1,90 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+syntax = "proto3";
+
+package marlin.search.v1;
+
+// Single authoritative read-only search & progressive evidence-chain gRPC service.
+// Client (marlin-agent-tooling / harness / external agents) and server align on
+// this single .proto — zero hand-rolled framing, zero duplicated frontier state.
+service SearchGateway {
+  // Fetch the minimal read-only tool declarations owned by the search server.
+  rpc GetToolSchema(GetToolSchemaRequest) returns (GetToolSchemaResponse);
+
+  // Execute one L0 (RAM), L1 (:gerbil-ascent), or L2 (Dusa) search step inside a
+  // stateful progressive evidence-chain session (`evidence-chain.ss`).
+  rpc SearchStep(SearchStepRequest) returns (SearchStepResponse);
+
+  // Clear a session's accumulated M1 evidence and re-arm Turn-1 self-teaching.
+  rpc ResetSession(ResetSessionRequest) returns (ResetSessionResponse);
+}
+
+message GetToolSchemaRequest {}
+
+message ToolParameterEntry {
+  string name = 1;
+  string param_type = 2;
+  string description = 3;
+  bool required = 4;
+  repeated string allowed_values = 5;
+}
+
+message ToolSchemaEntry {
+  string name = 1;
+  string description = 2;
+  string argument_name = 3;
+  uint32 timeout_seconds = 4;
+  uint32 output_limit = 5;
+  bool read_only = 6;
+  repeated ToolParameterEntry parameters = 7;
+}
+
+message GetToolSchemaResponse {
+  repeated ToolSchemaEntry tools = 1;
+}
+
+message SearchStepRequest {
+  string session_id = 1;
+  string tool_name = 2;
+  string query = 3;
+  uint32 output_limit = 4;
+}
+
+message EvidenceFrontier {
+  uint32 step = 1;
+  bool teaching_kit_active = 2;
+  bool compact_mode = 3;
+  uint64 epoch = 4;
+  uint32 total_m1_claims = 5;
+  uint32 newly_harvested = 6;
+  uint32 conflict_count = 7;
+  string epistemic_status = 8;
+  string workspace_layers = 9;
+  repeated string covered_layers = 10;
+  repeated string open_frontiers = 11;
+  repeated string ambiguous_branches = 12;
+  repeated string next_dag_templates = 13;
+}
+
+message SearchStepResponse {
+  string session_id = 1;
+  string tier = 2;
+  string generation_digest = 3;
+  uint64 elapsed_micros = 4;
+  uint32 total_results = 5;
+  uint32 returned_results = 6;
+  bool truncated = 7;
+  string rendered_text = 8;
+  EvidenceFrontier frontier = 9;
+}
+
+message ResetSessionRequest {
+  string session_id = 1;
+}
+
+message ResetSessionResponse {
+  string session_id = 1;
+  bool cleared = 2;
+}

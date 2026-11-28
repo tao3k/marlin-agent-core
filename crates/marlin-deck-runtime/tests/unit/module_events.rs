@@ -2,8 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use super::super::{DeckModuleInstanceId, DeckTimerId, DeckTimerReceipt};
-use super::*;
+use super::{Controls, DeckModuleInstanceId, DeckTimerId, DeckTimerReceipt, TimerSlot};
 use std::num::NonZeroU64;
 fn module(id: u64) -> DeckModuleInstanceId {
     DeckModuleInstanceId(NonZeroU64::new(id).unwrap())
@@ -46,4 +45,15 @@ fn timer_events_preserve_exact_module_and_message_ownership() {
     assert_eq!(result.try_recv().unwrap().unwrap(), valid);
     assert!(controls.timers.is_empty());
     assert!(controls.validate_timers(&[valid]).is_err());
+}
+
+#[test]
+fn sm36_controls_enforce_bounded_module_and_timer_capacity_ceilings() {
+    let controls = Controls::with_limits(2, 3);
+    assert_eq!(controls.max_active_modules, 2);
+    assert_eq!(controls.max_active_timers, 3);
+    assert_eq!(controls.modules.len(), 1);
+    let clamped = Controls::with_limits(0, 0);
+    assert_eq!(clamped.max_active_modules, 1);
+    assert_eq!(clamped.max_active_timers, 1);
 }

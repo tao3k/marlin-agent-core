@@ -353,7 +353,11 @@ impl IntentCaseArtifactManifest {
 
     #[must_use]
     pub fn with_artifact(mut self, artifact: IntentCaseArtifactRef) -> Self {
+        const MAX_INTENT_CASE_MANIFEST_ARTIFACTS: usize = 64;
         self.record_expected_artifact_kind(artifact.kind);
+        if self.artifacts.len() >= MAX_INTENT_CASE_MANIFEST_ARTIFACTS {
+            return self;
+        }
         self.artifacts.push(artifact);
         self
     }

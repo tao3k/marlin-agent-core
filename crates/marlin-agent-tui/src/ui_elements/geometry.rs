@@ -11,12 +11,35 @@ use ratatui::{
 };
 use std::cell::RefCell;
 
+/// Compute the same title and body rectangles for painting and hit testing.
+pub(super) fn panel_areas(area: Rect, bordered: bool, titled: bool) -> (Rect, Rect) {
+    if bordered {
+        let title = Rect::new(
+            area.x.saturating_add(1),
+            area.y,
+            area.width.saturating_sub(2),
+            1,
+        );
+        return (title, Block::default().borders(Borders::ALL).inner(area));
+    }
+    let title_height = u16::from(titled && area.height > 0);
+    let title = Rect::new(area.x, area.y, area.width, title_height);
+    let body = Rect::new(
+        area.x,
+        area.y.saturating_add(title_height),
+        area.width,
+        area.height.saturating_sub(title_height),
+    );
+    (title, body)
+}
+
 /// Geometry emitted by the same traversal that paints a declarative tree.
 #[derive(Debug)]
 pub struct HitRegion {
     pub id: UiComponentId,
     pub area: Rect,
     scroll_target: Option<HitScrollTarget>,
+    command: bool,
 }
 
 #[derive(Debug)]
@@ -38,6 +61,14 @@ impl HitRegion {
             id: id.clone(),
             area,
             scroll_target,
+            command: false,
+        }
+    }
+
+    pub(super) fn command(id: &UiComponentId, area: Rect) -> Self {
+        Self {
+            command: true,
+            ..Self::new(id, area, None)
         }
     }
 
@@ -449,8 +480,13 @@ fn layout_regions_inner(
         UiElement::Sized { child, .. } => {
             layout_regions_inner(child, area, extent, regions, facts, offset, skip);
         }
-        UiElement::Panel { child, .. } => {
-            let inner = Block::default().borders(Borders::ALL).inner(area);
+        UiElement::Panel {
+            border_tone,
+            title,
+            child,
+            ..
+        } => {
+            let (_, inner) = panel_areas(area, border_tone.is_some(), title.is_some());
             layout_regions_inner(child, inner, extent, regions, facts, offset, skip);
         }
         UiElement::Rows(children) | UiElement::Columns(children) => {
@@ -478,6 +514,13 @@ pub fn hit_test(regions: &[HitRegion], x: u16, y: u16) -> Option<&HitRegion> {
             && y >= region.area.y
             && y < region.area.bottom()
     })
+}
+
+/// Resolve a command only from its visible painted cells.
+pub fn hit_test_command(regions: &[HitRegion], x: u16, y: u16) -> Option<&UiComponentId> {
+    hit_test(regions, x, y)
+        .filter(|region| region.command)
+        .map(|region| &region.id)
 }
 
 /// Find the innermost scrollable ancestor at a terminal cell.

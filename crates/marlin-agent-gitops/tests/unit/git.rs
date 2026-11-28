@@ -9,6 +9,42 @@ use marlin_agent_gitops::{
 };
 
 #[tokio::test]
+async fn linked_worktrees_share_context_owner_and_keep_their_own_commit() {
+    let workspace = tempfile::tempdir().unwrap();
+    let primary = workspace.path().join("primary");
+    let derived = workspace.path().join("derived");
+    let git = |directory: &std::path::Path, args: &[&str]| {
+        let output = Command::new("git")
+            .current_dir(directory)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{:?}", output.stderr);
+    };
+    std::fs::create_dir(&primary).unwrap();
+    git(&primary, &["init", "-q"]);
+    git(&primary, &["config", "user.name", "Fixture"]);
+    git(&primary, &["config", "user.email", "fixture@example.test"]);
+    git(&primary, &["config", "commit.gpgsign", "false"]);
+    git(&primary, &["commit", "-qm", "initial", "--allow-empty"]);
+    git(
+        &primary,
+        &["worktree", "add", "--detach", derived.to_str().unwrap()],
+    );
+    let initial = GitOperations::context(&primary).await.unwrap();
+    let fork = GitOperations::context(&derived).await.unwrap();
+    assert_eq!(initial.common_directory(), fork.common_directory());
+    assert_eq!(initial.primary_worktree(), fork.primary_worktree());
+    assert_ne!(initial.worktree(), fork.worktree());
+    assert_eq!(initial.commit(), fork.commit());
+
+    git(&derived, &["commit", "-qm", "derived", "--allow-empty"]);
+    let changed = GitOperations::context(&derived).await.unwrap();
+    assert_eq!(initial.common_directory(), changed.common_directory());
+    assert_ne!(initial.commit(), changed.commit());
+}
+
+#[tokio::test]
 async fn git_operations_resolve_repository_root_from_nested_path() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let name = if cfg!(unix) {

@@ -3,11 +3,11 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use marlin_context_org_model::{CheckboxState, LinkKind, OrgNode, OrgNodeId, TodoState};
-use marlin_workspace_status::{
+use marlin_workspace::status::{
     ChecklistStatus, ContractStatus, DecisionTrace, EvidenceStatus, GoalState, GoalStatus,
     MetricTrace, ReleaseStatus, SddStatus, WorkspaceStatusReport, WorkspaceTarget,
 };
-use marlin_workspace_view::RenderedContractFacts;
+use marlin_workspace::view::RenderedContractFacts;
 use std::collections::BTreeMap;
 
 pub(super) fn target_node<'a>(

@@ -3,32 +3,66 @@
 
 ;;; A catalog can be extended through POO composition; the projection shape
 ;;; remains stable for any host that implements the declared capability.
-(import (only-in :clan/poo/object .def .get .mix seal-object!))
-(export ToolingCatalogValue project-tooling)
+(import (only-in :clan/poo/object .def .get .mix .o seal-object!)
+        (only-in "../search-dsl/objects.ss" WorkspaceSearchToolSpecValue))
+(export ToolParam.
+        ToolDeclaration.
+        ToolingCatalog.
+        BashToolDeclaration
+        WorkspaceSearchToolDeclaration
+        ToolingCatalogValue)
+
+;;; Declarative typed parameter prototype projected as pure Scheme values
+;;; across C-ABI (zero JSON strings in Scheme).
+(.def ToolParam.
+  name: 'input
+  type: 'string
+  description: ""
+  required?: #t
+  enum: #f)
+
+(def BashCommandParam
+  (seal-object!
+    (.mix (.o name: 'command
+              type: 'string
+              description: "Shell command to execute in the workspace."
+              required?: #t)
+          ToolParam.)))
+
+(def SearchQueryParam
+  (seal-object!
+    (.mix (.o name: 'query
+              type: 'string
+              description: "Search DSL S-expression query."
+              required?: #t)
+          ToolParam.)))
 
 (.def ToolDeclaration.
   name: 'bash
-  description: "Run a Bash command in the workspace after approval."
+  description: "Run a Bash command in the workspace after approval (builds, tests, git, or file edits). Do NOT use bash for codebase search, rg/grep, find, or directory/file listing — ALWAYS use workspace_search first."
   capability: 'shell
   governance: 'ask
-  argument: 'command
+  parameters: (list BashCommandParam)
   timeout-seconds: 30
   output-bytes: 65536)
+
 (def BashToolDeclaration (seal-object! ToolDeclaration.))
+
+(def WorkspaceSearchToolDeclaration
+  (seal-object!
+    (.mix (.o name: 'workspace_search
+              description: (.get WorkspaceSearchToolSpecValue summary)
+              capability: 'search
+              governance: 'ask
+              parameters: (list SearchQueryParam)
+              timeout-seconds: 15
+              output-bytes: 65536)
+          ToolDeclaration.)))
+
 (.def ToolingCatalog. declarations: '())
 (.def BashTools.
   (declarations => append (list BashToolDeclaration)))
+(.def SearchTools.
+  (declarations => append (list WorkspaceSearchToolDeclaration)))
 (def ToolingCatalogValue
-  (seal-object! (.mix BashTools. ToolingCatalog.)))
-
-(def (project-tool declaration)
-  (vector (.get declaration name)
-          (.get declaration description)
-          (.get declaration capability)
-          (.get declaration governance)
-          (.get declaration argument)
-          (.get declaration timeout-seconds)
-          (.get declaration output-bytes)))
-
-(def (project-tooling catalog)
-  (list->vector (map project-tool (.get catalog declarations))))
+  (seal-object! (.mix SearchTools. BashTools. ToolingCatalog.)))

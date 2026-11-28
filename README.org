@@ -96,8 +96,9 @@ This is why Marlin is not a duplicate product agent. It targets the layer that p
 - =crates/marlin-agent-core=: facade crate and =marlin= debug CLI surface.
 - =crates/marlin-agent-protocol=: shared protocol, trace, and receipt types.
 - =crates/marlin-agent-kernel=: graph-loop machines, execution drivers, and runtime handoff plumbing.
-- =crates/marlin-agent-runtime=: runtime context, process, stream, and observability boundaries.
-- =crates/marlin-agent-environment=: agent environment and project import support.
+- =crates/marlin-agent-runtime=: runtime context, process environment, direnv, stream, and observability boundaries.
+- =crates/marlin-agent-gitops=: repository operations and working-copy providers.
+- =crates/marlin-workspace=: workspace query, status, and view contracts.
 - =crates/marlin-agent-harness=: agent-system scenario, evidence, and release visibility harnessing.
 - [[file:scheme/README.org][scheme/]] owns the Scheme package and Yuanxu policy modules.
 - =crates/marlin-gerbil-scheme= owns Rust's typed Scheme C ABI projections.

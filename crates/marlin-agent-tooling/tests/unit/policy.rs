@@ -2,4 +2,4 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-marlin_rust_project_harness_policy::marlin_rust_dev_gate!();
+asp_rust::asp_rust_cargo_test_gate!(mode = deny);

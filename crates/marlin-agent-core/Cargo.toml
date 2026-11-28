@@ -11,15 +11,24 @@ authors.workspace = true
 repository.workspace = true
 
 [features]
-brief-to-draft-vm-test = ["dep:gerbil-scheme-aot-build", "dep:gerbil-scheme-sys"]
+brief-to-draft-vm-test = ["dep:gerbil-scheme-sys", "marlin-gerbil-scheme/external-program"]
+linked-scheme-host = [
+    "dep:gerbil-scheme-sys",
+    "dep:marlin-agent-app-server",
+    "marlin-agent-app-server/turso-host",
+    "marlin-gerbil-scheme/external-program",
+    "marlin-gerbil-scheme/app-server-host",
+]
 app-server = ["dep:marlin-agent-app-server", "marlin-agent-app-server/grpc"]
 actor-runtime = ["dep:marlin-deck-runtime", "marlin-deck-runtime/actor-runtime"]
+search-engine = ["dep:marlin-agent-search-engine"]
+search-engine-turso = ["search-engine", "marlin-agent-search-engine/turso"]
 
 [dependencies]
 gerbil-scheme-sys = { workspace = true, optional = true }
 marlin-agent-app-server = { workspace = true, optional = true }
+marlin-agent-search-engine = { workspace = true, optional = true }
 marlin-gerbil-scheme.workspace = true
-marlin-agent-environment.workspace = true
 marlin-agent-graph.workspace = true
 marlin-agent-harness.workspace = true
 marlin-agent-hooks.workspace = true
@@ -30,7 +39,7 @@ marlin-deck-runtime = { workspace = true, optional = true }
 marlin-agent-runtime.workspace = true
 marlin-agent-sessions.workspace = true
 marlin-gerbil-ir.workspace = true
-marlin-workspace-status.workspace = true
+marlin-workspace.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -39,7 +48,6 @@ toml.workspace = true
 
 [build-dependencies]
 marlin-gerbil-aot-link.workspace = true
-gerbil-scheme-aot-build = { workspace = true, optional = true }
 
 [dev-dependencies]
 gerbil-scheme.workspace = true
@@ -56,3 +64,13 @@ path = "tests/integration/brief_to_draft_offline.rs"
 name = "brief_to_draft_vm"
 path = "tests/integration/brief_to_draft_vm.rs"
 required-features = ["brief-to-draft-vm-test"]
+
+[[bin]]
+name = "marlin-scheme-host-aot"
+path = "src/bin/marlin_scheme_host_aot.rs"
+required-features = ["linked-scheme-host"]
+
+[[test]]
+name = "scheme_host_aot_process"
+path = "tests/integration/scheme_host_aot_process.rs"
+required-features = ["linked-scheme-host"]

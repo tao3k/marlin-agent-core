@@ -4,7 +4,6 @@
 
 ;;; Read-only snapshots of Gerbil's existing compiler ownership graph.
 ;;; No Module lookup, promise force, source admission or retained compiler mutation.
-package: marlin-benchmark
 (import (only-in :gerbil/expander
   __module-registry expander-context? expander-context-table
   phi-context? phi-context-super phi-context-up phi-context-down

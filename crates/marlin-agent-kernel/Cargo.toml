@@ -26,3 +26,23 @@ tempfile.workspace = true
 [[bench]]
 name = "loop_program_execution_shape"
 harness = false
+
+[[test]]
+name = "durable_governance_mbt"
+path = "tests/integration/durable_governance_mbt.rs"
+
+[[test]]
+name = "execution_breaker_mbt"
+path = "tests/integration/execution_breaker_mbt.rs"
+
+[[test]]
+name = "governance_admission_mbt"
+path = "tests/integration/governance_admission_mbt.rs"
+
+[[test]]
+name = "governance_plane_mbt"
+path = "tests/integration/governance_plane_mbt.rs"
+
+[[test]]
+name = "defense_pillars_adv_l4"
+path = "tests/integration/defense_pillars_adv_l4.rs"

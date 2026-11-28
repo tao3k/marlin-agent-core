@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Scheme Package Hooks
+#+language: en
+
+Yuanxu Module Hooks orders named callbacks by depth and declaration order.
+Marlin declares which events dispatch them. The dispatch contract checks
+the UI demand, the configured module and export, and the publication result.
+
+Opening =M-x= reads a command declaration. Executing a declared command
+dispatches =ui-command-execution=. A bound key invokes the same command via
+=ui-key-command=. Only those execution events ask Gerbil for the package
+publication. An action in the package can use Yuanxu's =yuanxu-autoload= with
+its function =contract:= to defer loading that action independently.
+
+=ui-package-loaded= runs after a hook has resolved the publication. Its
+handlers receive that publication, its command and the original =trigger=.
+They can compose the publication before the terminal admits it.
+
+=SchemePackageHooks.= is the POO declaration. Compose its named slots and
+pass the result to =make-ui-package-hooks= to produce a checked dispatch plan.
+Lower depths run first. A handler's =.when= predicate can further narrow
+its =on= events.

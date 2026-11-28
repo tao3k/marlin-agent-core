@@ -156,7 +156,7 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
 }
 
 fn decode_keymap(value: RootedSchemeObject<'_>) -> Result<Vec<UiKeyBinding>, UiProjectionError> {
-    let entries = vector(value, 0, 64)?;
+    let entries = vector(value, 0, 128)?;
     let mut names = IdentifierBuffer::default();
     let mut result = Vec::with_capacity(entries.len());
     for index in 0..entries.len() {
@@ -167,50 +167,36 @@ fn decode_keymap(value: RootedSchemeObject<'_>) -> Result<Vec<UiKeyBinding>, UiP
             "normal" => UiKeyScope::Mode(UiKeyMode::Normal),
             _ => return Err(UiProjectionError::Invalid("invalid UI key scope")),
         };
-        let keys = vector(entry.element(1)?, 1, 3)?;
+        let keys = vector(entry.element(1)?, 1, 4)?;
         let mut sequence = Vec::with_capacity(keys.len());
         for position in 0..keys.len() {
             sequence.push(UiKeyToken::new(
                 identifier(keys.element(position)?, &mut names)?.as_str(),
             )?);
         }
-        let kind = identifier(entry.element(2)?, &mut names)?;
-        let command = match kind.as_str() {
-            "open-commands" => UiKeyCommand::OpenCommands,
-            "cancel" => UiKeyCommand::Cancel,
-            "normal-mode" => UiKeyCommand::Mode {
-                mode: UiKeyMode::Normal,
-                cancel: true,
-            },
-            "insert-mode" => UiKeyCommand::Mode {
-                mode: UiKeyMode::Insert,
-                cancel: false,
-            },
-            "append-insert" => UiKeyCommand::Edit(crate::model::UiEditorAction::AppendInsert),
-            "previous-line" => UiKeyCommand::Edit(crate::model::UiEditorAction::PreviousLine),
-            "next-line" => UiKeyCommand::Edit(crate::model::UiEditorAction::NextLine),
-            "next-word" => UiKeyCommand::Edit(crate::model::UiEditorAction::NextWord),
-            "previous-word" => UiKeyCommand::Edit(crate::model::UiEditorAction::PreviousWord),
-            "delete-line" => UiKeyCommand::Edit(crate::model::UiEditorAction::DeleteLine),
-            "undo" => UiKeyCommand::Edit(crate::model::UiEditorAction::Undo),
-            "history-search" => UiKeyCommand::Edit(crate::model::UiEditorAction::HistorySearch),
-            "previous-prompt" => UiKeyCommand::Edit(crate::model::UiEditorAction::PreviousPrompt),
-            "next-prompt" => UiKeyCommand::Edit(crate::model::UiEditorAction::NextPrompt),
-            "insert-newline" => UiKeyCommand::Edit(crate::model::UiEditorAction::InsertNewline),
-            "backward-char" => UiKeyCommand::Edit(crate::model::UiEditorAction::BackwardChar),
-            "forward-char" => UiKeyCommand::Edit(crate::model::UiEditorAction::ForwardChar),
-            "delete-char" => UiKeyCommand::Edit(crate::model::UiEditorAction::DeleteChar),
-            "line-start" => UiKeyCommand::Edit(crate::model::UiEditorAction::LineStart),
-            "line-end" => UiKeyCommand::Edit(crate::model::UiEditorAction::LineEnd),
-            name => UiKeyCommand::Invoke(UiCommandName::new(name)?),
-        };
+        let command = decode_key_command(entry.element(2)?, &mut names)?;
         result.push(UiKeyBinding {
             scope,
             sequence,
             command,
         });
     }
+    let continuations: HashSet<_> = result
+        .iter()
+        .filter(|binding| !matches!(binding.command, UiKeyCommand::PrefixHint { .. }))
+        .flat_map(|binding| {
+            (1..binding.sequence.len())
+                .map(move |length| (binding.scope, &binding.sequence[..length]))
+        })
+        .collect();
     for (index, binding) in result.iter().enumerate() {
+        let prefix = binding.sequence.as_slice();
+        if matches!(binding.command, UiKeyCommand::PrefixHint { .. })
+            && !continuations.contains(&(binding.scope, prefix))
+            && !continuations.contains(&(UiKeyScope::Global, prefix))
+        {
+            return Err(UiProjectionError::Invalid("key hint has no continuation"));
+        }
         for other in &result[index + 1..] {
             let overlap = binding.scope == UiKeyScope::Global
                 || other.scope == UiKeyScope::Global
@@ -218,12 +204,174 @@ fn decode_keymap(value: RootedSchemeObject<'_>) -> Result<Vec<UiKeyBinding>, UiP
             if overlap
                 && (binding.sequence.starts_with(&other.sequence)
                     || other.sequence.starts_with(&binding.sequence))
+                && (binding.sequence == other.sequence
+                    || (!matches!(binding.command, UiKeyCommand::PrefixHint { .. })
+                        && !matches!(other.command, UiKeyCommand::PrefixHint { .. })))
             {
                 return Err(UiProjectionError::Invalid("ambiguous UI key prefix"));
             }
         }
     }
     Ok(result)
+}
+
+fn is_passive_hint(element: &crate::UiElement) -> bool {
+    use crate::UiElement;
+    match element {
+        UiElement::Text(_) => true,
+        UiElement::Rows(children) | UiElement::Columns(children) => {
+            children.iter().all(is_passive_hint)
+        }
+        UiElement::Sized { child, .. } => is_passive_hint(child),
+        UiElement::Choice { cases, fallback } => {
+            cases.iter().all(|(_, child)| is_passive_hint(child)) && is_passive_hint(fallback)
+        }
+        _ => false,
+    }
+}
+
+fn decode_key_command(
+    value: RootedSchemeObject<'_>,
+    names: &mut IdentifierBuffer,
+) -> Result<UiKeyCommand, UiProjectionError> {
+    use crate::model::UiEditorAction;
+
+    if value.as_ref().kind()? != ObjectKind::Symbol {
+        let action = vector(value, 2, 4)?;
+        let name = identifier(action.element(0)?, names)?;
+        if name.as_str() == "prefix-hint" && (2..=3).contains(&action.len()) {
+            let hint = crate::decode_element(action.element(1)?)?;
+            if !is_passive_hint(&hint) || hint.intrinsic_rows() > 8 {
+                return Err(UiProjectionError::Invalid("invalid key prefix hint"));
+            }
+            let milliseconds = if action.len() == 3 {
+                match action.element(2)?.as_ref().scalar()? {
+                    SchemeScalar::Fixnum(value) if (0..=5000).contains(&value) => value as u64,
+                    _ => return Err(UiProjectionError::Invalid("invalid key prefix hint delay")),
+                }
+            } else {
+                0
+            };
+            return Ok(UiKeyCommand::PrefixHint {
+                view: Box::new(hint),
+                delay: std::time::Duration::from_millis(milliseconds),
+            });
+        }
+        if name.as_str() == "read-selection-character" && action.len() == 3 {
+            let inclusive = match identifier(action.element(1)?, names)?.as_str() {
+                "through" => true,
+                "before" => false,
+                _ => {
+                    return Err(UiProjectionError::Invalid(
+                        "invalid character selection extent",
+                    ));
+                }
+            };
+            let backward = match identifier(action.element(2)?, names)?.as_str() {
+                "forward" => false,
+                "backward" => true,
+                _ => {
+                    return Err(UiProjectionError::Invalid(
+                        "invalid character selection direction",
+                    ));
+                }
+            };
+            return Ok(UiKeyCommand::ReadCharacter(crate::UiCharacterSelection {
+                inclusive,
+                backward,
+            }));
+        }
+        if action.len() != 4 {
+            return Err(UiProjectionError::Invalid(
+                "invalid parameterized key action",
+            ));
+        }
+        if name.as_str() == "expand-selection" {
+            let steps = match action.element(1)?.as_ref().scalar()? {
+                SchemeScalar::Fixnum(steps) => {
+                    u8::try_from(steps).ok().and_then(std::num::NonZeroU8::new)
+                }
+                _ => None,
+            }
+            .ok_or(UiProjectionError::Invalid(
+                "invalid selection expansion count",
+            ))?;
+            let at_rest_start = match action.element(3)?.as_ref().scalar()? {
+                SchemeScalar::Boolean(value) => value,
+                _ => {
+                    return Err(UiProjectionError::Invalid(
+                        "invalid selection expansion fallback",
+                    ));
+                }
+            };
+            return Ok(UiKeyCommand::Edit(UiEditorAction::ExpandSelection {
+                steps,
+                tone: crate::element::decode_tone(action.element(2)?, names)?,
+                at_rest_start,
+            }));
+        }
+        if name.as_str() != "select-delimited" {
+            return Err(UiProjectionError::Invalid(
+                "invalid parameterized editor action",
+            ));
+        }
+        let inclusive = match identifier(action.element(1)?, names)?.as_str() {
+            "inner" => false,
+            "bounds" => true,
+            _ => return Err(UiProjectionError::Invalid("invalid selection extent")),
+        };
+        let delimiter = |index| match action.element(index)?.as_ref().scalar()? {
+            SchemeScalar::Char(value) if value.is_ascii_graphic() && value != '\\' => Ok(value),
+            _ => Err(UiProjectionError::Invalid("invalid selection delimiter")),
+        };
+        return Ok(UiKeyCommand::Edit(UiEditorAction::SelectDelimited {
+            open: delimiter(2)?,
+            close: delimiter(3)?,
+            inclusive,
+        }));
+    }
+    let kind = identifier(value, names)?;
+    Ok(match kind.as_str() {
+        "open-commands" => UiKeyCommand::OpenCommands,
+        "cancel" => UiKeyCommand::Cancel,
+        "normal-mode" => UiKeyCommand::Mode(UiKeyMode::Normal),
+        "insert-mode" => UiKeyCommand::Mode(UiKeyMode::Insert),
+        "append-insert" => UiKeyCommand::Edit(UiEditorAction::AppendInsert),
+        "open-line-above" => UiKeyCommand::Edit(UiEditorAction::OpenLine { below: false }),
+        "open-line-below" => UiKeyCommand::Edit(UiEditorAction::OpenLine { below: true }),
+        "previous-line" => UiKeyCommand::Edit(UiEditorAction::PreviousLine),
+        "next-line" => UiKeyCommand::Edit(UiEditorAction::NextLine),
+        "next-word" => UiKeyCommand::Edit(UiEditorAction::NextWord),
+        "previous-word" => UiKeyCommand::Edit(UiEditorAction::PreviousWord),
+        "delete-line" => UiKeyCommand::Edit(UiEditorAction::DeleteLine),
+        "undo" => UiKeyCommand::Edit(UiEditorAction::Undo),
+        "history-search" => UiKeyCommand::Edit(UiEditorAction::HistorySearch),
+        "previous-prompt" => UiKeyCommand::Edit(UiEditorAction::PreviousPrompt),
+        "next-prompt" => UiKeyCommand::Edit(UiEditorAction::NextPrompt),
+        "insert-newline" => UiKeyCommand::Edit(UiEditorAction::InsertNewline),
+        "backward-char" => UiKeyCommand::Edit(UiEditorAction::BackwardChar),
+        "forward-char" => UiKeyCommand::Edit(UiEditorAction::ForwardChar),
+        "delete-char" => UiKeyCommand::Edit(UiEditorAction::DeleteChar),
+        "line-start" => UiKeyCommand::Edit(UiEditorAction::LineStart),
+        "line-end" => UiKeyCommand::Edit(UiEditorAction::LineEnd),
+        "select-word" => UiKeyCommand::Edit(UiEditorAction::SelectWord),
+        "select-previous-word" => UiKeyCommand::Edit(UiEditorAction::SelectPreviousWord),
+        "select-next-word" => UiKeyCommand::Edit(UiEditorAction::SelectNextWord),
+        "select-line" => UiKeyCommand::Edit(UiEditorAction::SelectLine),
+        "extend-left" => UiKeyCommand::Edit(UiEditorAction::ExtendLeft),
+        "extend-right" => UiKeyCommand::Edit(UiEditorAction::ExtendRight),
+        "extend-up" => UiKeyCommand::Edit(UiEditorAction::ExtendUp),
+        "extend-down" => UiKeyCommand::Edit(UiEditorAction::ExtendDown),
+        "reverse-selection" => UiKeyCommand::Edit(UiEditorAction::ReverseSelection),
+        "previous-selection" => UiKeyCommand::Edit(UiEditorAction::PreviousSelection),
+        "clear-selection" => UiKeyCommand::Edit(UiEditorAction::ClearSelection),
+        "delete-backward" => UiKeyCommand::Edit(UiEditorAction::DeleteBackward),
+        "cut-selection" => UiKeyCommand::Edit(UiEditorAction::CutSelection),
+        "change-selection" => UiKeyCommand::Edit(UiEditorAction::ChangeSelection),
+        "copy-selection" => UiKeyCommand::Edit(UiEditorAction::CopySelection),
+        "paste-selection" => UiKeyCommand::Edit(UiEditorAction::PasteSelection),
+        name => UiKeyCommand::Invoke(UiCommandName::new(name)?),
+    })
 }
 
 fn decode_transients(value: RootedSchemeObject<'_>) -> Result<Vec<UiTransient>, UiProjectionError> {
@@ -348,7 +496,7 @@ fn decode_frame_state(value: RootedSchemeObject<'_>) -> Result<UiFrame, UiProjec
 }
 
 fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProjectionError> {
-    let layout_values = vector(value, 7, 7)?;
+    let layout_values = vector(value, 8, 8)?;
     let field = |index, lower, upper| -> Result<u16, UiProjectionError> {
         match layout_values.element(index)?.as_ref().scalar()? {
             SchemeScalar::Fixnum(value) if (lower..=upper).contains(&value) => Ok(value as u16),
@@ -378,6 +526,7 @@ fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProj
         max_command_rows: field(3, 1, MAX_COMMANDS as isize)?,
         frame_tree,
         regions: decode_frame_regions(layout_values.element(6)?)?,
+        echo: decode_echo_policy(layout_values.element(7)?)?,
         transcript_policy: super::model::UiTranscriptPolicy {
             default_collapsed,
             user_prefix: label(1, false)?,
@@ -387,6 +536,29 @@ fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProj
         },
     };
     Ok(layout)
+}
+
+fn decode_echo_policy(
+    value: RootedSchemeObject<'_>,
+) -> Result<crate::UiEchoPolicy, UiProjectionError> {
+    let fields = vector(value, 3, 3)?;
+    let view = crate::decode_element(fields.element(0)?)?;
+    if !crate::element::inline_template(&view) {
+        return Err(UiProjectionError::Invalid("invalid echo area template"));
+    }
+    let timeout = match fields.element(1)?.as_ref().scalar()? {
+        SchemeScalar::Fixnum(value) if (100..=30_000).contains(&value) => value as u64,
+        _ => return Err(UiProjectionError::Invalid("invalid echo area timeout")),
+    };
+    let clear_on_input = match fields.element(2)?.as_ref().scalar()? {
+        SchemeScalar::Boolean(value) => value,
+        _ => return Err(UiProjectionError::Invalid("invalid echo area clear rule")),
+    };
+    Ok(crate::UiEchoPolicy {
+        view,
+        timeout: std::time::Duration::from_millis(timeout),
+        clear_on_input,
+    })
 }
 
 fn decode_frame_regions(
@@ -399,12 +571,10 @@ fn decode_frame_regions(
     for index in 0..bindings.len() {
         let binding = vector(bindings.element(index)?, 2, 2)?;
         let name = identifier(binding.element(0)?, &mut names)?;
-        let role = UiFrameRole::ALL
-            .iter()
-            .position(|role| role.as_str() == name.as_str())
+        let role = UiFrameRole::from_name(name.as_str())
             .ok_or(UiProjectionError::Invalid("unknown frame role"))?;
         let id = identifier(binding.element(1)?, &mut names)?;
-        if ids[role].replace(id).is_some() {
+        if ids[role as usize].replace(id).is_some() {
             return Err(UiProjectionError::Invalid("duplicate frame role"));
         }
     }
@@ -567,8 +737,12 @@ fn decode_commands(payload: RootedSchemeObject<'_>) -> Result<UiRegion, UiProjec
             "select-buffer" => UiCommandCapability::SelectBuffer,
             "enter-transient" => UiCommandCapability::EnterTransient,
             "kill-process" => UiCommandCapability::KillProcess,
+            "envrc" => UiCommandCapability::Envrc,
             "toggle-thinking" => UiCommandCapability::ToggleThinking,
             "clear" => UiCommandCapability::Clear,
+            "helm" => UiCommandCapability::Helm,
+            "scheme-action" => UiCommandCapability::SchemeAction,
+            "deferred" => UiCommandCapability::Deferred,
             _ => return Err(UiProjectionError::Invalid("unknown command capability")),
         };
         let value = match row.element(4)?.as_ref().kind()? {

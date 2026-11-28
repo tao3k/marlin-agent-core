@@ -4,9 +4,24 @@
 
 //! Terminal input normalization, including explicit bracketed paste boundaries.
 
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 
 use termion::event::{Event, Key, MouseButton, MouseEvent};
+
+/// Retries `EINTR` transparently so handled Unix signals (such as `SIGWINCH`)
+/// cannot terminate or split escape-sequence reads in `termion`.
+pub(crate) struct RetryInterruptedRead<R>(pub(crate) R);
+
+impl<R: Read> Read for RetryInterruptedRead<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        loop {
+            match self.0.read(buf) {
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                other => return other,
+            }
+        }
+    }
+}
 
 const PASTE_START: &[u8] = b"\x1b[200~";
 const PASTE_END: &[u8] = b"\x1b[201~";

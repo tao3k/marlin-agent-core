@@ -54,6 +54,11 @@ extension path. The Darwin binary currently links system and package manager
 libraries such as OpenSSL, zlib, SQLite and iconv; distribute those alongside
 it where the target machine does not provide them. The build requires a paired
 Gerbil/Gambit compiler and pkg-config metadata for these libraries.
+
+After building, =just tui-stage-release ./dist/bin= stages the linked
+executable. On macOS, =ditto= applies filesystem compression on supported
+volumes. This preserves the executable bytes and its existing code signature.
+
 Tab and Shift-Tab move focus forward and backward through the Scheme workbench.
 An admitted Scheme extension may supply up to 16 =text= or =field= items, each
 with strings of at most 256 characters. Focusing one displays its content in

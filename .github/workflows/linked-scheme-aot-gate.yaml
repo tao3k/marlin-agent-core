@@ -82,6 +82,20 @@ jobs:
           fi
           clang --version
 
+      - name: Ensure Protobuf compiler is available
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          if ! command -v protoc >/dev/null; then
+            if [[ "$RUNNER_OS" == macOS ]]; then
+              brew install protobuf
+            else
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends protobuf-compiler
+            fi
+          fi
+          protoc --version
+
       - name: Install Worktrunk for the worktree acceptance
         if: (runner.os == 'Linux' && runner.arch == 'X64') || (runner.os == 'macOS' && runner.arch == 'ARM64')
         id: worktrunk
@@ -116,7 +130,13 @@ jobs:
         if: ${{ !cancelled() && steps.compiler.outcome == 'success' }}
         id: linked-build
         run: |
-          cargo test --locked -p marlin-deck-runtime --features actor-runtime --no-run
+          receipt="$RUNNER_TEMP/deck-test-build.jsonl"
+          cargo test --locked -p marlin-deck-runtime --features actor-runtime --no-run \
+            --message-format=json > "$receipt" || {
+              result=$?
+              jq -r 'select(.reason == "compiler-message") | .message.rendered // empty' "$receipt" >&2
+              exit "$result"
+            }
           cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector --no-run
 
       - name: Run linked-selector tests
@@ -126,28 +146,16 @@ jobs:
           cargo test --locked -p marlin-deck-runtime --features actor-runtime
           cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector
 
-      - name: Inspect the compiled INIT and Deck link input
-        if: ${{ !cancelled() && steps.linked-build.outcome != 'skipped' && steps.compiler.outcome == 'success' }}
+      - name: Verify the Deck's deferred Scheme scopes
+        if: ${{ !cancelled() && steps.linked-build.outcome == 'success' }}
         shell: bash
         run: |
-          describe_init() {
-            local file=$1
-            [[ -f "$file" ]] || return 0
-            shasum -a 256 "$file"
-            if grep -qE 'expand-yuanxu-program-declaration|module-program-namespace' "$file"; then
-              printf 'Compiled Module publication present in %s\n' "$file"
-            else
-              printf 'Compiled Module publication marker missing in %s\n' "$file"
-            fi
-          }
-          describe_init "$GERBIL_PATH/lib/.yuanxu-source/marlin-agent-core/init.ss"
-          describe_init "$GERBIL_PATH/lib/static/marlin-agent-core__init.scm"
-          shopt -s nullglob
-          for manifest in target/debug/build/marlin-deck-runtime-*/out/stage/program.json; do
-            while IFS= read -r source; do
-              describe_init "$source"
-            done < <(jq -r '.modules[] | select(.module == "marlin-agent-core/init") | .scm' "$manifest")
-          done
+          program_out=$(jq -ers '[.[] | select(.reason == "build-script-executed" and
+            (.package_id | test("/marlin-deck-runtime#|#marlin-deck-runtime@"))) | .out_dir] |
+            if length == 1 then .[0] else error("expected one Deck build receipt") end' "$RUNNER_TEMP/deck-test-build.jsonl")
+          jq -e 'any(.modules[]; .module == "marlin-agent-core/deck-runtime/config" and .deferred == true) and
+            any(.modules[]; .module == "marlin-agent-core/context-system/config" and .deferred == true) and
+            all(.modules[]; .module != "marlin-agent-core/init")' "$program_out/program/linked-program.json"
 
       - name: Link the Interface-selected Brief-to-Draft program
         if: ${{ !cancelled() && steps.compiler.outcome == 'success' }}
@@ -159,9 +167,9 @@ jobs:
           program_out=$(jq -ers '[.[] | select(.reason == "build-script-executed" and
             (.package_id | test("/marlin-agent-core#|#marlin-agent-core@"))) | .out_dir] |
             if length == 1 then .[0] else error("expected one Brief-to-Draft build receipt") end' <<< "$receipt")
-          jq -e 'any(.modules[]; .module == "marlin-agent-core/context/types" and .deferred == true) and
+          jq -e 'any(.modules[]; .module == "marlin-agent-core/context-system/types" and .deferred == true) and
             any(.modules[]; .module == "marlin-agent-core/brief-to-draft/config" and .deferred == true)' \
-            "$program_out/program/program.json"
+            "$program_out/program/linked-program.json"
 
       - name: Verify Brief-to-Draft activation and offline replay
         if: ${{ !cancelled() && steps.brief-stage.outcome == 'success' }}
@@ -174,6 +182,31 @@ jobs:
             | if length == 1 then .[0] else error("expected one offline verifier") end' "$RUNNER_TEMP/brief-offline-build.jsonl")
           MARLIN_BRIEF_OFFLINE_TEST="$verifier" cargo test --locked -p marlin-agent-core \
             --features brief-to-draft-vm-test --test brief_to_draft_vm
+
+      - name: Verify Linked-AOT marlin-scheme-host-aot and marlin-scheme-ctl E2E
+        if: ${{ !cancelled() && steps.compiler.outcome == 'success' }}
+        shell: bash
+        run: |
+          cargo test --locked -p marlin-gerbil-aot-link
+          PROTOC=/nonexistent cargo test --locked -p marlin-gerbil-scheme --test unit_test dependency_boundary::
+          cargo test --locked -p marlin-gerbil-scheme --features app-server-host --lib scheme_host_runtime::tests
+          cargo test --locked -p marlin-agent-app-server --features ui-grpc --test unit_test scheme_host_client::
+          cargo test --locked -p marlin-agent-app-server --features ui-grpc --bin marlin-scheme-ctl
+          cargo build --locked -p marlin-agent-app-server --features ui-grpc --bin marlin-scheme-ctl
+          MARLIN_SCHEME_CTL_BIN="$PWD/target/debug/marlin-scheme-ctl" \
+            cargo test --locked -p marlin-agent-core --features linked-scheme-host \
+              --test scheme_host_aot_process -- --test-threads=1 --nocapture
+
+      - name: Verify Governance Authority Plane (Kernel Cedar/MGV1/MGF1 + Live Gambit VM + Linked-AOT)
+        if: ${{ !cancelled() && steps.compiler.outcome == 'success' }}
+        shell: bash
+        run: |
+          cargo test --locked -p marlin-agent-kernel --lib governance_cedar
+          cargo test --locked -p marlin-agent-kernel --lib governance_admission
+          cargo test --locked -p marlin-agent-kernel --test unit_test loop_program_side_effects
+          cargo test --locked -p marlin-gerbil-scheme --features app-server-host --lib governance_host
+          cargo test --locked -p marlin-gerbil-scheme --test governance_policy_vm
+          cargo build --locked -p marlin-agent-core --features linked-scheme-host --bin marlin-scheme-host-aot
 
       - name: Compile linked selector benchmarks
         if: ${{ !cancelled() && steps.linked-tests.outcome == 'success' }}

@@ -25,6 +25,7 @@ pub struct ManagedProcessExecutor {
     context: RuntimeContext,
     kind: RuntimeProcessKind,
     operation: RuntimeOperationId,
+    apply_project_envrc: bool,
     health: Option<(
         HostHeartbeat,
         ProcessHealthPolicy,
@@ -41,8 +42,14 @@ impl ManagedProcessExecutor {
             context,
             kind,
             operation,
+            apply_project_envrc: false,
             health: None,
         }
+    }
+
+    pub(crate) fn with_project_envrc(mut self) -> Self {
+        self.apply_project_envrc = true;
+        self
     }
 
     /// Attach an advisory health policy to each process admitted by this executor.
@@ -74,6 +81,40 @@ impl BoundedProcessExecutor for ManagedProcessExecutor {
             if request.environment == ProcessEnvironmentPolicy::Clean {
                 command.env_clear();
                 command.env("PATH", ProcessEnvironmentPolicy::CLEAN_PATH);
+            }
+            if self.apply_project_envrc
+                && let Some(envrc) = timeout_at(deadline, self.context.project_envrc())
+                    .await
+                    .map_err(|_| ProcessExecutionError::TimedOut)?
+                    .map_err(ProcessExecutionError::Io)?
+            {
+                let changes = timeout_at(
+                    deadline,
+                    envrc.changes_for(
+                        &request.working_directory,
+                        &self.context.cancellation_token(),
+                    ),
+                )
+                .await
+                .map_err(|_| ProcessExecutionError::TimedOut)?
+                .map_err(|status| {
+                    ProcessExecutionError::Io(std::io::Error::other(format!(
+                        "worktree ENVRC is {}",
+                        status.label()
+                    )))
+                })?;
+                if let Some(changes) = changes {
+                    for (name, value) in changes.iter() {
+                        match value {
+                            Some(value) => {
+                                command.env(name, value);
+                            }
+                            None => {
+                                command.env_remove(name);
+                            }
+                        }
+                    }
+                }
             }
             command
                 .args(request.arguments)

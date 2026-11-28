@@ -6,14 +6,27 @@
 
 * Responsibility
 
-Defines declarative command groups, key bindings and their presentation. Groups are
-accessible through M-x.
+Defines declarative command groups, their keys and their presentation. M-x
+lists each group. A group may also declare a Normal-mode entry key in its
+=defui-hydra= form. For example, =SPC b g= opens the Buffers group directly.
 
 * Interface and contracts
 
-=interface.ss= declares the Module. =types.ss= and =config.ss= own its contracts
-and scope assembly. UiHydraScope and its configuration and rules.
-Consumers access selected exports through =marlin-agent-core.init.exports=.
+=interface.ss= declares the Module, and =config.ss= publishes its checked
+catalog. =syntax.ss= defines =defui-hydra= and lowers declarations to calls in
+=funcs.ss=. The functions validate heads and project the hint, keymap and
+commands carried by the prototype in =objects.ss=.
+Consumers access the selected =UiHydraScope= through
+=marlin-agent-core.init.exports=.
+
+The group hint opens in the minibuffer below the modeline. A group with
+=hint: #f= supplies its own layout in the docstring. Otherwise, labels on
+its heads fill a table. For example, =(q #f "Quit" column: "Actions")=
+starts the Actions column. Subsequent heads inherit that column until they
+declare another. Column headings, keys, and labels take their colors from
+the selected theme. Columns tile the available width, with smaller margins
+in narrow terminals. A blue head exits after running. A red head leaves
+the group open.
 
 * Build and verification
 

@@ -3,8 +3,21 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 //! An activated Module owns its Actor and timer lifetimes inside the shared VM.
-use super::*;
-use std::num::NonZeroU64;
+use std::{
+    num::NonZeroU64,
+    sync::{Arc, Mutex, atomic::Ordering},
+    time::Duration,
+};
+
+use marlin_agent_context::ContextAdmissionRequest;
+use tokio::sync::{mpsc, oneshot, watch};
+use tokio_util::sync::CancellationToken;
+
+use super::{
+    DeckMailboxMetrics, DeckRuntime, DeckRuntimeRejection, Outcome, OwnerMessage,
+    config::MAX_TIMER_DELAY_US,
+};
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct DeckModuleInstanceId(pub(super) NonZeroU64);
 impl DeckModuleInstanceId {
@@ -75,7 +88,7 @@ impl DeckContextModule {
         let microseconds = delay.as_nanos().div_ceil(1000);
         let delay_us = u64::try_from(microseconds)
             .ok()
-            .filter(|delay| *delay > 0)
+            .filter(|delay| *delay > 0 && *delay <= MAX_TIMER_DELAY_US)
             .ok_or(DeckRuntimeRejection::TimerDelay)?;
         let (reply, result) = oneshot::channel();
         self.runtime.offer(

@@ -12,12 +12,14 @@ pub struct UiKeyToken(String);
 
 impl UiKeyToken {
     pub fn new(value: &str) -> Result<Self, UiProjectionError> {
-        if value.is_empty()
-            || value.len() > 16
-            || !value
+        let literal = value.strip_prefix("M-").unwrap_or(value).as_bytes();
+        let printable_key = literal.len() == 1 && literal[0].is_ascii_graphic();
+        let named_key = !value.is_empty()
+            && value.len() <= 16
+            && value
                 .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-        {
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-');
+        if !printable_key && !named_key {
             return Err(UiProjectionError::Invalid("invalid UI key token"));
         }
         Ok(Self(value.to_owned()))
@@ -34,12 +36,21 @@ pub enum UiKeyCommand {
     OpenCommands,
     Cancel,
     Edit(UiEditorAction),
+    ReadCharacter(UiCharacterSelection),
+    PrefixHint {
+        view: Box<crate::UiElement>,
+        delay: std::time::Duration,
+    },
     Invoke(UiCommandName),
     /// Switch an editor mode; `cancel` preserves the active Escape action.
-    Mode {
-        mode: UiKeyMode,
-        cancel: bool,
-    },
+    Mode(UiKeyMode),
+}
+
+/// A character-driven selection requested by the Scheme keymap.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UiCharacterSelection {
+    pub inclusive: bool,
+    pub backward: bool,
 }
 
 /// The native editor's input interpretation mode.
@@ -118,12 +129,45 @@ pub enum UiEditorAction {
     PreviousLine,
     NextLine,
     AppendInsert,
+    OpenLine {
+        below: bool,
+    },
     NextWord,
     PreviousWord,
     DeleteLine,
     Undo,
     LineStart,
     LineEnd,
+    SelectWord,
+    SelectPreviousWord,
+    SelectNextWord,
+    SelectLine,
+    SelectCharacter {
+        target: char,
+        selection: UiCharacterSelection,
+    },
+    SelectDelimited {
+        open: char,
+        close: char,
+        inclusive: bool,
+    },
+    PreviousSelection,
+    ExpandSelection {
+        steps: std::num::NonZeroU8,
+        tone: crate::UiTone,
+        at_rest_start: bool,
+    },
+    ExtendLeft,
+    ExtendRight,
+    ExtendUp,
+    ExtendDown,
+    ReverseSelection,
+    ClearSelection,
+    DeleteBackward,
+    CutSelection,
+    ChangeSelection,
+    CopySelection,
+    PasteSelection,
 }
 
 /// One Scheme-declared shortcut and the admitted host command it invokes.

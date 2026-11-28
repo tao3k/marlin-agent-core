@@ -55,6 +55,13 @@ use crate::{
 pub(crate) type WatchStream = Pin<Box<dyn Stream<Item = Result<SessionTurnEvent, Status>> + Send>>;
 const ADMISSION_PAGE_BODY_BUDGET: NonZeroU32 = NonZeroU32::new(8 * 1024 * 1024).unwrap();
 
+/// Select whether the transport opens a new Session or resolves an existing binding.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionOpen {
+    Create,
+    Existing,
+}
+
 /// One authorized project/Session binding. All service clones share its owner.
 #[derive(Clone)]
 pub struct SessionBinding<S> {

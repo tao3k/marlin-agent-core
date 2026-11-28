@@ -32,6 +32,8 @@ mod intent_case_artifact_runtime_repair;
 mod intent_case_artifact_side_effect_summary;
 mod intent_case_artifact_test_receipts;
 mod intent_case_observed_span;
+#[cfg(feature = "live-weaver")]
+pub mod live_weaver;
 mod release_visibility;
 mod runtime;
 mod trace;

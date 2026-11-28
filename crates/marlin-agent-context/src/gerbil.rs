@@ -9,7 +9,9 @@ use gerbil_scheme::{
     RootedSchemeObject,
 };
 
-use super::{CONTEXT_BATCH_MAX_ROWS, ContextScopeBatch, ContextScopeDigest, SCOPE_DIGEST_BYTES};
+use super::{
+    CONTEXT_BATCH_MAX_ROWS, ContextScopeBatch, ContextScopeDigest, scope::SCOPE_DIGEST_BYTES,
+};
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum ContextBridgeError {
@@ -49,7 +51,7 @@ impl<'vm> ContextAdmissionBridge<'vm> {
     ) -> Result<Vec<ContextScopeDigest>, ContextBridgeError> {
         let input = project_scope_batch(self.runtime, batch)?;
         let output = self.export.call(&input).into_result()?;
-        project_scope_digests(output, batch.rows.len())
+        project_scope_digests(output, batch.rows().len())
     }
 }
 
@@ -58,18 +60,18 @@ pub fn project_scope_batch<'vm>(
     runtime: &'vm GerbilRuntime,
     batch: &ContextScopeBatch<'_>,
 ) -> Result<RootedSchemeObject<'vm>, ContextBridgeError> {
-    let shared = text_vector(runtime, batch.key.text())?;
-    let numbers: Vec<u64> = std::iter::once(batch.key.epoch.0)
+    let shared = text_vector(runtime, batch.key().text())?;
+    let numbers: Vec<u64> = std::iter::once(batch.key().epoch.0)
         .chain(
             batch
-                .rows
+                .rows()
                 .iter()
                 .map(|row| row.session_turn.as_ref().map_or(0, |t| t.turn.0)),
         )
         .collect();
     let numbers = runtime.numeric_vector(&numbers)?;
     let rows: Vec<_> = batch
-        .rows
+        .rows()
         .iter()
         .map(|row| text_vector(runtime, row.text()))
         .collect::<Result<_, _>>()?;

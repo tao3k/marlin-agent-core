@@ -28,19 +28,22 @@ path = "tests/integration/launch.rs"
 
 [[bench]]
 name = "ui_mapping"
+path = "benches/ui_mapping/main.rs"
 harness = false
 required-features = ["linked-ui"]
 
 [features]
 default = ["linked-ui"]
-linked-ui = ["dep:gerbil-scheme-sys", "dep:gerbil-scheme-aot-build", "dep:marlin-agent-tooling", "gerbil-scheme/external-program", "marlin-agent-ui/linked-ui"]
+linked-ui = ["dep:gerbil-scheme-sys", "dep:gerbil-scheme-aot-build", "dep:marlin-agent-context", "dep:marlin-agent-tooling", "gerbil-scheme/external-program", "marlin-agent-ui/linked-ui", "marlin-agent-search-engine/linked-ui"]
 
 [dependencies]
 async-stream = "0.3.6"
+marlin-agent-context = { workspace = true, features = ["artifacts-abi"], optional = true }
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
+marlin-agent-search-engine.workspace = true
 marlin-agent-telemetry.workspace = true
-marlin-agent-tooling = { workspace = true, optional = true }
+marlin-agent-tooling = { workspace = true, features = ["grpc"], optional = true }
 marlin-agent-sessions.workspace = true
 marlin-agent-storage = { workspace = true, features = ["turso"] }
 marlin-agent-stream = { path = "../marlin-agent-stream" }
@@ -69,7 +72,7 @@ gerbil-scheme-aot-build = { workspace = true, optional = true }
 
 [dev-dependencies]
 # The shared ASP Rust gate is mounted by tests/unit/policy.rs.
-marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
+asp-rust.workspace = true
 proptest.workspace = true
 criterion.workspace = true
 ratatui = { version = "=0.30.2", default-features = false, features = ["unstable-rendered-line-info"] }

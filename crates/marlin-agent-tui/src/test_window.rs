@@ -4,13 +4,15 @@
 //! Scheme-authored window scenarios executed by the production frame mapper.
 
 use gerbil_scheme::{
-    CollectionKind, GerbilRuntime, IdentifierKind, RootedSchemeObject, SchemeScalar,
+    CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
+    RootedSchemeObject, SchemeScalar,
 };
-use marlin_agent_ui::{UiProjectionError, decode_workbench};
+use marlin_agent_ui::{UiComponentId, UiProjectionError, decode_workbench};
 use ratatui::{Terminal, backend::TestBackend};
 
 /// A scenario receives `#(rows hit-regions cursor-position pointer-hits)`, initially void.
-/// It returns `#f` on success or `#(width height workbench pointer-probes)`.
+/// It returns `#f` on success or `#(width height workbench pointer-probes [bindings])`.
+/// Bindings supply one frame of named text inputs as a vector of `#(id text)`.
 /// Scheme owns assertions and state transitions; this driver only maps frames.
 /// The frame and step bounds also apply to failing package scenarios.
 pub fn run(
@@ -27,7 +29,7 @@ pub fn run(
             return Ok(step);
         }
         let request = request.into_collection(CollectionKind::Vector)?;
-        if request.len() != 4 {
+        if !(4..=5).contains(&request.len()) {
             return Err(UiProjectionError::Invalid("invalid test window request"));
         }
         let dimension = |index| -> Result<u16, UiProjectionError> {
@@ -44,11 +46,17 @@ pub fn run(
         if probes.len() > 16 {
             return Err(UiProjectionError::Invalid("too many pointer probes"));
         }
+        let bindings = if request.len() == 5 {
+            frame_bindings(request.element(4)?)?
+        } else {
+            Vec::new()
+        };
         app.sync_window(&view).map_err(UiProjectionError::Invalid)?;
-        let geometry = crate::render::frame_snapshot(
+        let geometry = crate::render::frame_snapshot_with_bindings(
             &app,
             &view,
             ratatui::layout::Rect::new(0, 0, width, height),
+            bindings,
         );
         let mut terminal = Terminal::new(TestBackend::new(width, height))
             .map_err(|_| UiProjectionError::Invalid("test window creation failed"))?;
@@ -90,7 +98,7 @@ pub fn run(
                 region.area.y,
                 region.area.width,
                 region.area.height,
-                region.scroll_step().unwrap_or(0),
+                region.scroll_step().map_or(0, |step| step),
             ] {
                 fields.push(runtime.scalar_object(SchemeScalar::Fixnum(value as isize))?);
             }
@@ -147,6 +155,48 @@ pub fn run(
     Err(UiProjectionError::Invalid(
         "test window step limit exceeded",
     ))
+}
+
+fn frame_bindings(
+    input: RootedSchemeObject<'_>,
+) -> Result<Vec<(UiComponentId, String)>, UiProjectionError> {
+    let input = input.into_collection(CollectionKind::Vector)?;
+    if input.len() > 16 {
+        return Err(UiProjectionError::Invalid("too many frame bindings"));
+    }
+    let mut bindings = Vec::with_capacity(input.len());
+    let mut names = IdentifierBuffer::default();
+    for index in 0..input.len() {
+        let entry = input
+            .element(index)?
+            .into_collection(CollectionKind::Vector)?;
+        if entry.len() != 2 {
+            return Err(UiProjectionError::Invalid("invalid frame binding"));
+        }
+        let key = entry.element(0)?;
+        if key.as_ref().kind()? != ObjectKind::Symbol {
+            return Err(UiProjectionError::Invalid("expected frame binding symbol"));
+        }
+        key.as_ref().copy_identifier_names(&mut names)?;
+        let Some((IdentifierKind::Symbol, name)) = names.get(0) else {
+            return Err(UiProjectionError::Invalid("invalid frame binding symbol"));
+        };
+        let name = UiComponentId::new(name)?;
+        if bindings.iter().any(|(existing, _)| existing == &name) {
+            return Err(UiProjectionError::Invalid("duplicate frame binding"));
+        }
+        let text = entry.element(1)?.into_string()?;
+        if text.len().into_result()? > 256 {
+            return Err(UiProjectionError::Invalid(
+                "frame binding text exceeds limit",
+            ));
+        }
+        bindings.push((
+            name,
+            crate::app::safe_text(&text.to_string().into_result()?),
+        ));
+    }
+    Ok(bindings)
 }
 
 fn values<'a>(

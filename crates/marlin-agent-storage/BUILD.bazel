@@ -20,7 +20,6 @@ _INTEGRATION_BASE_DEPS = crate_deps([
 _INTEGRATION_TURSO_DEPS = _INTEGRATION_BASE_DEPS + crate_deps([
     "tokio",
 ]) + [
-    "//crates/marlin-agent-sessions:marlin_agent_sessions",
     "//crates/marlin-agent-context:marlin_agent_context",
 ]
 

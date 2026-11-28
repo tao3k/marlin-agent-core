@@ -4,14 +4,13 @@
 
 ;;; Names, descriptions, argument grammar and capability bindings have one
 ;;; selected Scheme owner. The native host admits the capabilities and effects.
-(import (only-in :clan/poo/object .def .o .get .ref .mix seal-object!)
+(import (only-in :clan/poo/object .o .get .ref)
         (only-in :std/list/list duplicates)
-        (only-in "../ui-elements/objects.ss" ui-template ui-choice ui-list ui-size-binding
+        (only-in "../ui-elements/funcs.ss" ui-template ui-choice ui-list ui-size-binding
                  ui-size-cells ui-size-add ui-size-subtract ui-size-min ui-size-max ui-size-choice)
-        (only-in "./bounds.ss" marlin-ui-bounded-list? marlin-ui-max-browse-steps)
-        (only-in "./buffers.ss" marlin-ui-buffer-command-entries
-                 marlin-ui-buffer-alias-command-entries))
-(export marlin-ui-command-catalog marlin-ui-command-entries
+        (only-in "./bounds.ss" marlin-ui-bounded-list? marlin-ui-command-name?
+                 marlin-ui-max-browse-steps))
+(export marlin-ui-command-entries
         marlin-ui-candidate-templates marlin-ui-list-offset
         marlin-ui-command-history? marlin-ui-record-command-history
         marlin-ui-command-entries? marlin-ui-command-candidates
@@ -42,35 +41,6 @@
     (ui-template 'none (list '(literal accent #f "   ")
                              (list 'column 'normal #f 'name candidate-name-width)
                              '(literal normal #f "  ") '(binding muted #f description))))))
-
-(.def UiCommandCatalog.
-  entries: (append (marlin-ui-buffer-alias-command-entries)
-                   '(("models" "List configured models" none models #f)
-                     ("model" "Select a model alias" required model #f))))
-;;; Journal recovery remains a storage operation, not a Context source.
-(.def JournalCommands.
-  (entries => append '(("sessions" "Browse journal IDs; next for another page" optional sessions #f)
-                       ("session" "Recover a quoted journal ID" required session #f)
-                       ("inspect" "Read a quoted journal ID" required inspect #f))))
-(.def WorkspaceCommands.
-  (entries => append '(("status" "Show workspace status" none workspace "status")
-                       ("diff" "Show unstaged or staged changes" optional workspace "diff")
-                       ("context-budget" "Show request budget" none context-budget #f)
-                       ("runtime" "Show runtime policy" none runtime #f)
-                       ("list-processes" "List managed Runtime processes"
-                        none select-buffer "processes")
-                       ("kill-process" "Stop a managed process by generation"
-                        required kill-process #f)
-                       ("switch-themes" "Theme: " none open-menu "theme-")
-                       ("switch-buffer" "Switch to: " none open-menu "buffer-"))
-                     (marlin-ui-buffer-command-entries)
-                     '(("toggle-thinking" "Expand or fold thinking (N from newest)"
-                        optional toggle-thinking #f)
-                       ("clear" "Clear displayed transcript" none clear #f))))
-;;; The inherited slot computes one ordered catalog when the selected module
-;;; reads it. No additional loader or imperative append registry is needed.
-(def marlin-ui-command-catalog
-  (seal-object! (.mix WorkspaceCommands. JournalCommands. UiCommandCatalog.)))
 
 ;;; Preserve the anchor and its tail while copying the prefix only once.
 (def (insert-before-command entries anchor additions)
@@ -111,15 +81,17 @@
 (def (command-entry? entry)
   (and (marlin-ui-bounded-list? entry 5)
        (= (length entry) 5)
-       (string? (car entry)) (<= 1 (string-length (car entry)) 32)
+       (marlin-ui-command-name? (car entry))
        (string? (cadr entry)) (<= (string-length (cadr entry)) 256)
        (memq (caddr entry) '(none required optional))
        (memq (cadddr entry)
              '(models model sessions session inspect history workspace context-budget
                runtime open-menu select-profile select-buffer enter-transient
-               kill-process toggle-thinking clear))
+               kill-process envrc toggle-thinking clear helm scheme-action deferred))
        (let (value (car (cddddr entry)))
-         (or (not value) (and (string? value) (<= 1 (string-length value) 32))))))
+         (if (eq? (cadddr entry) 'deferred)
+           (not value)
+           (or (not value) (and (string? value) (<= 1 (string-length value) 32)))))))
 
 ;;; Admission is bounded before map/filter can traverse a supplied catalog.
 (def (marlin-ui-command-entries? entries)
@@ -201,9 +173,19 @@
                          index))))
           (hash-put! ranks name rank)
           (loop (cdr rest) (+ index 1)))))
-    (let* ((names (filter-map (lambda (entry)
+    (let* ((namespace
+             (foldl
+               (lambda (entry current)
+                 (let (prefix (list-ref entry 4))
+                   (if (and (eq? (cadddr entry) 'open-menu)
+                            prefix (string-prefix? prefix query)
+                            (or (not current) (> (string-length prefix) (string-length current))))
+                     prefix current)))
+               #f entries))
+           (names (filter-map (lambda (entry)
                                 (let (name (car entry))
-                                  (and (command-subsequence? query name) name)))
+                                  (and (or (not namespace) (string-prefix? namespace name))
+                                       (command-subsequence? query name) name)))
                               entries))
            (ordered
              (list-sort

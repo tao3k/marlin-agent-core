@@ -144,16 +144,13 @@ fn gerbil_working_copy_policy_projects_typed_list_remove_and_pr_requests() {
 }
 
 #[test]
-#[cfg(unix)]
+#[cfg(all(unix, not(feature = "external-program")))]
 #[ignore = "requires the selected Gerbil package, Git and Worktrunk"]
 fn scheme_selects_the_provider_for_a_real_git_worktree() {
     use gerbil_scheme::GerbilRuntime;
-    use marlin_agent_environment::{
-        ProcessWorkingCopyCommandRunner, WorkingCopyIsolationDriver,
-        WorkingCopyProviderExecutableStatus,
-    };
     use marlin_agent_gitops::working_copy::{
-        WorkingCopyCommandProgram, WorkingCopyIsolationStatus,
+        ProcessWorkingCopyCommandRunner, WorkingCopyCommandProgram, WorkingCopyIsolationDriver,
+        WorkingCopyIsolationStatus, WorkingCopyProviderExecutableStatus,
     };
     use marlin_gerbil_scheme::{GerbilWorkingCopyPolicy, WorkingCopyProviderAvailability};
     use std::{os::unix::fs::PermissionsExt, path::Path, process::Command};

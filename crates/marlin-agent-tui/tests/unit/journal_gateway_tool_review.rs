@@ -13,8 +13,9 @@ use marlin_agent_protocol::{
     assistant_gateway_message,
 };
 use marlin_agent_runtime::{
-    ModelToolCatalog, ModelToolDeclaration, ModelToolOffer, ModelToolOutcome, RuntimeContext,
-    RuntimeFuture, ShellToolDeclarationRequest, TokioAgentRuntime, ToolRuntime,
+    ModelToolCapability, ModelToolCatalog, ModelToolDeclaration, ModelToolOffer, ModelToolOutcome,
+    RuntimeContext, RuntimeFuture, TokioAgentRuntime, ToolDeclarationRequest, ToolParameterName,
+    ToolParameterSpec, ToolRuntime,
 };
 use marlin_agent_sessions::{
     ConversationJournal, ConversationToolReviewDecision, ConversationToolReviewRequest,
@@ -33,10 +34,14 @@ fn tool_request() -> ModelGatewayRequest {
     })
 }
 fn tool_declaration() -> ModelToolDeclaration {
-    ModelToolDeclaration::shell(ShellToolDeclarationRequest {
+    ModelToolDeclaration::from_request(ToolDeclarationRequest {
         name: ModelToolName::new("read_marker").unwrap(),
         description: "Read a marker".into(),
-        argument: "command".into(),
+        capability: ModelToolCapability::Shell,
+        parameters: vec![
+            ToolParameterSpec::required_string(ToolParameterName::new("command").unwrap(), "")
+                .unwrap(),
+        ],
         timeout_seconds: 5,
         output_limit: 1024,
     })

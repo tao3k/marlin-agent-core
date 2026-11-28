@@ -4,13 +4,22 @@
 
 //! Runtime executor that replays `LoopProgram` projections into owned side effects.
 
-use std::{fs, sync::Arc};
+use std::{
+    fs::{self, File, OpenOptions},
+    io::{self, Write},
+    path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 use marlin_agent_runtime::{RuntimeContext, observability};
 use tracing::Instrument;
 
 use crate::{
-    LoopProgramExecutionReceipt, LoopProgramRuntimeHandoffExecutionReceipt,
+    DerivationId, ExecutionCircuitBreaker, GovernanceAdmissionGate, GovernedSubjectName,
+    LoopProgramExecutionReceipt, LoopProgramRuntimeHandoffExecutionReceipt, ToolIfcContext,
     spawn_loop_program_tool_process,
 };
 
@@ -23,12 +32,22 @@ use super::{
     StaticLoopProgramToolProcessResolver, read_existing_digest, stable_bytes_digest,
 };
 
+#[derive(Clone)]
+struct GovernanceSideEffectBinding {
+    gate: Arc<GovernanceAdmissionGate>,
+    actor: GovernedSubjectName,
+    derivation_id: Option<DerivationId>,
+}
+
 /// Async side-effect executor for handoff projections that require runtime ownership.
 #[derive(Clone)]
 pub struct LoopProgramRuntimeSideEffectExecutor {
     tool_process_resolver: Arc<dyn LoopProgramToolProcessResolver>,
     file_write_resolver: Arc<dyn LoopProgramFileWriteResolver>,
     file_sandbox: LoopProgramFileSandbox,
+    execution_breaker: Option<Arc<ExecutionCircuitBreaker>>,
+    governance_gate: Option<GovernanceSideEffectBinding>,
+    ifc_context: ToolIfcContext,
     started_at_ms: u64,
     observed_at_ms: u64,
 }
@@ -42,9 +61,43 @@ impl LoopProgramRuntimeSideEffectExecutor {
             tool_process_resolver: Arc::new(tool_process_resolver),
             file_write_resolver: Arc::new(StaticLoopProgramFileWriteResolver::default()),
             file_sandbox: LoopProgramFileSandbox::deny_all(),
+            execution_breaker: None,
+            governance_gate: None,
+            ifc_context: ToolIfcContext::clean_trusted(),
             started_at_ms: 0,
             observed_at_ms: 0,
         }
+    }
+
+    pub fn with_execution_breaker(
+        mut self,
+        execution_breaker: Arc<ExecutionCircuitBreaker>,
+    ) -> Self {
+        self.execution_breaker = Some(execution_breaker);
+        self
+    }
+
+    /// Attaches a live Scheme-synchronized `GovernanceAdmissionGate` so every
+    /// OS process spawn and disk file write enforces ASCENT transitive fencing, Bi-Temporal
+    /// Truth Maintenance causal retraction, synthesized Cedar `forbid` rules, and the
+    /// underlying `ExecutionCircuitBreaker`.
+    pub fn with_governance_gate(
+        mut self,
+        gate: Arc<GovernanceAdmissionGate>,
+        actor: GovernedSubjectName,
+        derivation_id: Option<DerivationId>,
+    ) -> Self {
+        self.governance_gate = Some(GovernanceSideEffectBinding {
+            gate,
+            actor,
+            derivation_id,
+        });
+        self
+    }
+
+    pub fn with_ifc_context(mut self, ifc_context: ToolIfcContext) -> Self {
+        self.ifc_context = ifc_context;
+        self
     }
 
     pub fn with_file_write_resolver<R>(mut self, file_write_resolver: R) -> Self
@@ -87,28 +140,108 @@ impl LoopProgramRuntimeSideEffectExecutor {
             }
 
             if let Some(request) = tool_process_request {
-                let request = request
-                    .with_started_at_ms(self.started_at_ms)
-                    .with_observed_at_ms(self.observed_at_ms);
-                match spawn_loop_program_tool_process(context, request)
-                    .instrument(observability::runtime_tool_span())
-                    .await
-                {
-                    Ok(receipt) => {
-                        tool_processes
-                            .push(LoopProgramToolProcessSideEffectReceipt::completed(receipt));
-                    }
-                    Err(error) => {
-                        tool_processes.push(LoopProgramToolProcessSideEffectReceipt::failed(
-                            projection.clone(),
-                            error,
-                        ));
+                let blocked_diag = if let Some(binding) = &self.governance_gate {
+                    let tool_name = GovernedSubjectName::new(format!(
+                        "tool_process:{}",
+                        projection.command.command_kind
+                    ))
+                    .unwrap_or_else(|_| GovernedSubjectName::new("tool_process").unwrap());
+                    let resource_name =
+                        GovernedSubjectName::new(projection.command.command_kind.as_str())
+                            .unwrap_or_else(|_| GovernedSubjectName::new("workspace").unwrap());
+                    binding
+                        .gate
+                        .authorize_side_effect_on_resource(
+                            binding.derivation_id.as_ref(),
+                            &binding.actor,
+                            &tool_name,
+                            &resource_name,
+                            &self.ifc_context,
+                        )
+                        .err()
+                        .map(|rejection| {
+                            format!("loop_program.tool_process.governance_blocked:{rejection}")
+                        })
+                } else if let Some(breaker) = &self.execution_breaker {
+                    breaker
+                        .authorize_side_effect(
+                            format!("tool_process:{}", projection.command.command_kind),
+                            &self.ifc_context,
+                        )
+                        .err()
+                        .map(|rejection| {
+                            format!("loop_program.tool_process.breaker_blocked:{rejection}")
+                        })
+                } else {
+                    None
+                };
+
+                if let Some(diag) = blocked_diag {
+                    tool_processes.push(LoopProgramToolProcessSideEffectReceipt::blocked(
+                        projection.clone(),
+                        diag,
+                    ));
+                } else {
+                    let request = request
+                        .with_started_at_ms(self.started_at_ms)
+                        .with_observed_at_ms(self.observed_at_ms);
+                    match spawn_loop_program_tool_process(context, request)
+                        .instrument(observability::runtime_tool_span())
+                        .await
+                    {
+                        Ok(receipt) => {
+                            tool_processes
+                                .push(LoopProgramToolProcessSideEffectReceipt::completed(receipt));
+                        }
+                        Err(error) => {
+                            tool_processes.push(LoopProgramToolProcessSideEffectReceipt::failed(
+                                projection.clone(),
+                                error,
+                            ));
+                        }
                     }
                 }
             }
 
             if let Some(request) = file_write_request {
-                file_writes.push(self.execute_file_write(request));
+                let blocked_diag = if let Some(binding) = &self.governance_gate {
+                    let rel_display = request.relative_path.display().to_string();
+                    let tool_name = GovernedSubjectName::new(format!("file_write:{rel_display}"))
+                        .unwrap_or_else(|_| GovernedSubjectName::new("file_write").unwrap());
+                    let resource_name = GovernedSubjectName::new(rel_display)
+                        .unwrap_or_else(|_| GovernedSubjectName::new("workspace").unwrap());
+                    binding
+                        .gate
+                        .authorize_side_effect_on_resource(
+                            binding.derivation_id.as_ref(),
+                            &binding.actor,
+                            &tool_name,
+                            &resource_name,
+                            &self.ifc_context,
+                        )
+                        .err()
+                        .map(|rejection| {
+                            format!("loop_program.file_write.governance_blocked:{rejection}")
+                        })
+                } else if let Some(breaker) = &self.execution_breaker {
+                    breaker
+                        .authorize_side_effect(
+                            format!("file_write:{}", request.relative_path.display()),
+                            &self.ifc_context,
+                        )
+                        .err()
+                        .map(|rejection| {
+                            format!("loop_program.file_write.breaker_blocked:{rejection}")
+                        })
+                } else {
+                    None
+                };
+
+                if let Some(diag) = blocked_diag {
+                    file_writes.push(LoopProgramFileWriteSideEffectReceipt::denied(request, diag));
+                } else {
+                    file_writes.push(self.execute_file_write(request));
+                }
             }
         }
 
@@ -172,7 +305,11 @@ impl LoopProgramRuntimeSideEffectExecutor {
             return LoopProgramFileWriteSideEffectReceipt::failed(request, error);
         }
 
-        if let Err(error) = fs::write(&path, request.contents.as_ref()) {
+        if let Err(diagnostic) = self.file_sandbox.resolve(&request.relative_path) {
+            return LoopProgramFileWriteSideEffectReceipt::denied(request, diagnostic);
+        }
+
+        if let Err(error) = write_file_atomically(&path, request.contents.as_ref()) {
             return LoopProgramFileWriteSideEffectReceipt::failed(request, error);
         }
 
@@ -201,4 +338,38 @@ fn has_projected_runtime_side_effects(
     execution.agent_flow_receipt.is_some()
         || !execution.tool_process_projections.is_empty()
         || !execution.memory_projections.is_empty()
+}
+
+fn write_file_atomically(path: &Path, contents: &[u8]) -> io::Result<()> {
+    static NEXT_TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".to_owned());
+    let seq = NEXT_TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp_path = parent.join(format!(
+        ".{file_name}.tmp.{}.{seq}",
+        std::process::id()
+    ));
+
+    let write_res = (|| -> io::Result<()> {
+        let mut tmp_file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)?;
+        tmp_file.write_all(contents)?;
+        tmp_file.sync_all()?;
+        drop(tmp_file);
+        fs::rename(&tmp_path, path)?;
+        if let Ok(dir) = File::open(parent) {
+            let _ = dir.sync_all();
+        }
+        Ok(())
+    })();
+
+    if write_res.is_err() {
+        let _ = fs::remove_file(&tmp_path);
+    }
+    write_res
 }

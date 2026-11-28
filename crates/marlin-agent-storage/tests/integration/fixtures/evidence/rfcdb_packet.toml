@@ -36,7 +36,7 @@ receipt = "tests/integration/fixtures/db_pressure/scenarios/storage_pressure.tom
 [[packet.gates]]
 phase = "P1"
 kind = "session-storage"
-receipt = "tests/integration/session_storage_gate.rs"
+receipt = "../marlin-agent-sessions/tests/integration/session_storage_gate.rs"
 
 [[packet.gates]]
 phase = "P2"

@@ -4,32 +4,37 @@
 
 //! Typed bridge from Scheme workspace policy into working-copy requests.
 
+#[cfg(not(feature = "external-program"))]
 use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, ObjectKind,
     RootedSchemeObject, SchemeScalar,
 };
+#[cfg(not(feature = "external-program"))]
+use marlin_agent_gitops::working_copy::WorkingCopyIsolationOperationKind;
 use marlin_agent_gitops::working_copy::{
-    WorkingCopyBaseRef, WorkingCopyCreateRequest, WorkingCopyHandle,
-    WorkingCopyIsolationOperationKind, WorkingCopyIsolationProvider, WorkingCopyIsolationRequest,
-    WorkingCopyListOptions, WorkingCopyListRequest, WorkingCopyPullRequestCheckoutRequest,
-    WorkingCopyPullRequestNumber, WorkingCopyRemovalMode, WorkingCopyRemoveRequest,
-    WorkingCopyRepositoryDiscoveryPath, WorkingCopySwitchMode, WorkingCopySwitchRequest,
-    WorkspaceProjectGitHubRepository, WorkspaceProjectId,
+    WorkingCopyBaseRef, WorkingCopyCreateRequest, WorkingCopyHandle, WorkingCopyIsolationProvider,
+    WorkingCopyIsolationRequest, WorkingCopyListOptions, WorkingCopyListRequest,
+    WorkingCopyPullRequestCheckoutRequest, WorkingCopyPullRequestNumber, WorkingCopyRemovalMode,
+    WorkingCopyRemoveRequest, WorkingCopyRepositoryDiscoveryPath, WorkingCopySwitchMode,
+    WorkingCopySwitchRequest, WorkspaceProjectGitHubRepository, WorkspaceProjectId,
 };
 
 /// Select a provider on the existing Gerbil owner, then keep the Rust request typed.
+#[cfg(not(feature = "external-program"))]
 pub struct GerbilWorkingCopyPolicy<'runtime> {
     runtime: &'runtime GerbilRuntime,
     select: RootedSchemeObject<'runtime>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(not(feature = "external-program"))]
 pub struct WorkingCopyProviderAvailability {
     pub git_worktree: bool,
     pub worktrunk: bool,
 }
 
 #[derive(Debug)]
+#[cfg(not(feature = "external-program"))]
 pub enum GerbilWorkingCopyPolicyError {
     PackagePath,
     Bridge(gerbil_scheme::NativeError),
@@ -37,12 +42,14 @@ pub enum GerbilWorkingCopyPolicyError {
     InvalidProvider,
 }
 
+#[cfg(not(feature = "external-program"))]
 impl From<gerbil_scheme::NativeError> for GerbilWorkingCopyPolicyError {
     fn from(error: gerbil_scheme::NativeError) -> Self {
         Self::Bridge(error)
     }
 }
 
+#[cfg(not(feature = "external-program"))]
 impl std::fmt::Display for GerbilWorkingCopyPolicyError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -58,19 +65,19 @@ impl std::fmt::Display for GerbilWorkingCopyPolicyError {
     }
 }
 
+#[cfg(not(feature = "external-program"))]
 impl std::error::Error for GerbilWorkingCopyPolicyError {}
 
+#[cfg(not(feature = "external-program"))]
 impl<'runtime> GerbilWorkingCopyPolicy<'runtime> {
-    /// Resolve the Yuanxu-published selector once on the Scheme VM owner.
+    /// Resolve the bridge to the GitOps policy selected by the Marlin package.
     pub fn load(runtime: &'runtime GerbilRuntime) -> Result<Self, GerbilWorkingCopyPolicyError> {
         let directory = crate::gerbil_package_root();
         let directory = directory
             .to_str()
             .ok_or(GerbilWorkingCopyPolicyError::PackagePath)?;
-        let module = runtime.intern_identifier(
-            IdentifierKind::Symbol,
-            ":marlin-agent-core/working-copy/bridge",
-        )?;
+        let module = runtime
+            .intern_identifier(IdentifierKind::Symbol, ":marlin-agent-core/gitops/bridge")?;
         let name =
             runtime.intern_identifier(IdentifierKind::Symbol, "select-working-copy-provider")?;
         let select = runtime.resolve_package_export(directory, &module, &name)?;
@@ -89,40 +96,39 @@ impl<'runtime> GerbilWorkingCopyPolicy<'runtime> {
         available: WorkingCopyProviderAvailability,
         preferred: WorkingCopyIsolationProvider,
     ) -> Result<Option<WorkingCopyIsolationRequest>, GerbilWorkingCopyPolicyError> {
-        let (tag, kind) = match &operation {
+        let kind = match &operation {
             GerbilWorkingCopyPolicyOperation::Create { .. } => {
-                ("create", WorkingCopyIsolationOperationKind::Create)
+                WorkingCopyIsolationOperationKind::Create
             }
             GerbilWorkingCopyPolicyOperation::Switch { .. } => {
-                ("switch", WorkingCopyIsolationOperationKind::Switch)
+                WorkingCopyIsolationOperationKind::Switch
             }
             GerbilWorkingCopyPolicyOperation::List { .. } => {
-                ("list", WorkingCopyIsolationOperationKind::List)
+                WorkingCopyIsolationOperationKind::List
             }
             GerbilWorkingCopyPolicyOperation::Remove { .. } => {
-                ("remove", WorkingCopyIsolationOperationKind::Remove)
+                WorkingCopyIsolationOperationKind::Remove
             }
-            GerbilWorkingCopyPolicyOperation::PullRequestCheckout { .. } => (
-                "pull-request-checkout",
-                WorkingCopyIsolationOperationKind::PullRequestCheckout,
-            ),
+            GerbilWorkingCopyPolicyOperation::PullRequestCheckout { .. } => {
+                WorkingCopyIsolationOperationKind::PullRequestCheckout
+            }
         };
-        let operation_tag = self
-            .runtime
-            .intern_identifier(IdentifierKind::Symbol, tag)?;
+        let git_available =
+            available.git_worktree && WorkingCopyIsolationProvider::GitWorktree.supports(&kind);
+        let worktrunk_available =
+            available.worktrunk && WorkingCopyIsolationProvider::Worktrunk.supports(&kind);
         let git = self
             .runtime
-            .scalar_object(SchemeScalar::Boolean(available.git_worktree))?;
+            .scalar_object(SchemeScalar::Boolean(git_available))?;
         let worktrunk = self
             .runtime
-            .scalar_object(SchemeScalar::Boolean(available.worktrunk))?;
+            .scalar_object(SchemeScalar::Boolean(worktrunk_available))?;
         let preference = self.runtime.scalar_object(SchemeScalar::Boolean(
             preferred == WorkingCopyIsolationProvider::Worktrunk,
         ))?;
-        let request = self.runtime.collection_from_objects(
-            CollectionKind::Vector,
-            &[&operation_tag, &git, &worktrunk, &preference],
-        )?;
+        let request = self
+            .runtime
+            .collection_from_objects(CollectionKind::Vector, &[&git, &worktrunk, &preference])?;
         let value = self
             .runtime
             .call_rooted(&self.select, &request.into_object())
@@ -143,15 +149,15 @@ impl<'runtime> GerbilWorkingCopyPolicy<'runtime> {
         let mut names = IdentifierBuffer::default();
         value.copy_identifier_names(&mut names)?;
         let provider = match names.get(0) {
-            Some((IdentifierKind::Symbol, "git-worktree")) if available.git_worktree => {
+            Some((IdentifierKind::Symbol, "git-worktree")) if git_available => {
                 WorkingCopyIsolationProvider::GitWorktree
             }
-            Some((IdentifierKind::Symbol, "worktrunk")) if available.worktrunk => {
+            Some((IdentifierKind::Symbol, "worktrunk")) if worktrunk_available => {
                 WorkingCopyIsolationProvider::Worktrunk
             }
             _ => return Err(GerbilWorkingCopyPolicyError::InvalidProvider),
         };
-        if names.len() != 1 || !provider.supports(&kind) {
+        if names.len() != 1 {
             return Err(GerbilWorkingCopyPolicyError::InvalidProvider);
         }
         Ok(Some(

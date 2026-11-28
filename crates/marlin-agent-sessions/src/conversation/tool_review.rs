@@ -11,8 +11,8 @@ use marlin_agent_storage::{SessionEventRecord, SessionEventStore, SessionId};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ConversationJournal, ConversationJournalError, ConversationPendingToolRequest,
-    ConversationTurnId, write_with_authority,
+    journal::{ConversationJournal, write_with_authority},
+    turn::{ConversationJournalError, ConversationPendingToolRequest, ConversationTurnId},
 };
 
 pub(super) const REVIEW_KIND: &str = "marlin.conversation.tool.review.v1";

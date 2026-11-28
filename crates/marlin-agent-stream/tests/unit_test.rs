@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-#[path = "unit/runtime_repair_loop.rs"]
-mod runtime_repair_loop;
 #[path = "unit/stream.rs"]
 mod stream;
+#[path = "unit/stream_budget_stability.rs"]
+mod stream_budget_stability;

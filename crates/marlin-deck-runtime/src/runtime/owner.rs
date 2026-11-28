@@ -4,11 +4,15 @@
 
 //! One OS thread owns the VM; Tokio workers never enter Scheme.
 
+#[cfg(test)]
+use super::config::{DEFAULT_MAX_ACTIVE_MODULES, DEFAULT_MAX_ACTIVE_TIMERS};
+use super::config::MAX_TIMER_DELAY_US;
 use super::vm::{Completion, DeckVm, MessageId};
 use super::{
-    DeckMailboxMetrics, DeckRuntimeConfig, DeckRuntimeMetrics, DeckRuntimeRejection,
-    DeckRuntimeShutdownReceipt, DeckRuntimeStartupError, DeckRuntimeStopReason, Job, Outcome,
-    OwnerMessage, SchemeVmError,
+    DeckMailboxMetrics, DeckModuleInstanceId, DeckRuntimeConfig, DeckRuntimeMetrics,
+    DeckRuntimeRejection, DeckRuntimeShutdownReceipt, DeckRuntimeStartupError,
+    DeckRuntimeStopReason, DeckTimerId, DeckTimerReceipt, Job, Outcome, OwnerMessage,
+    SchemeVmError,
 };
 use crate::DeckRuntimeMetadata;
 use gerbil_scheme::{GerbilRuntime, LinkedGerbilProgram};
@@ -34,7 +38,10 @@ pub(super) fn run(
     let mut observed_processors = 0;
     let mut pending = VecDeque::new();
     let mut active = HashMap::new();
-    let mut control = Controls::new();
+    let mut control = Controls::with_limits(
+        usize::from(config.max_active_modules.get()),
+        usize::from(config.max_active_timers.get()),
+    );
     #[cfg(feature = "context-profiling")]
     let mut trace = Vec::new();
     #[cfg(feature = "context-profiling")]
@@ -207,9 +214,10 @@ pub(super) fn run(
                 &mut metrics,
             );
         }
-        let retirement = vm.close();
-        let context_service_closed = retirement.is_ok();
-        let mailbox = retirement.unwrap_or_default();
+        let (context_service_closed, mailbox) = match vm.close() {
+            Ok(mailbox) => (true, mailbox),
+            Err(_) => (false, Default::default()),
+        };
         drop(vm);
         drop(runtime);
         Some(DeckRuntimeShutdownReceipt {
@@ -260,22 +268,30 @@ pub(super) fn run(
 }
 
 struct TimerSlot {
-    module: super::DeckModuleInstanceId,
-    reply: tokio::sync::oneshot::Sender<Result<super::DeckTimerReceipt, DeckRuntimeRejection>>,
+    module: DeckModuleInstanceId,
+    reply: tokio::sync::oneshot::Sender<Result<DeckTimerReceipt, DeckRuntimeRejection>>,
 }
 struct Controls {
     next_module: u64,
     next_timer: u64,
-    modules: HashSet<super::DeckModuleInstanceId>,
-    timers: HashMap<super::DeckTimerId, TimerSlot>,
+    max_active_modules: usize,
+    max_active_timers: usize,
+    modules: HashSet<DeckModuleInstanceId>,
+    timers: HashMap<DeckTimerId, TimerSlot>,
     retiring: Vec<Arc<super::ModuleState>>,
 }
 impl Controls {
+    #[cfg(test)]
     fn new() -> Self {
+        Self::with_limits(DEFAULT_MAX_ACTIVE_MODULES, DEFAULT_MAX_ACTIVE_TIMERS)
+    }
+    fn with_limits(max_active_modules: usize, max_active_timers: usize) -> Self {
         Self {
             next_module: 2,
             next_timer: 1,
-            modules: HashSet::from([super::DeckModuleInstanceId(std::num::NonZeroU64::MIN)]),
+            max_active_modules: max_active_modules.max(1),
+            max_active_timers: max_active_timers.max(1),
+            modules: HashSet::from([DeckModuleInstanceId(std::num::NonZeroU64::MIN)]),
             timers: HashMap::new(),
             retiring: Vec::new(),
         }
@@ -324,10 +340,7 @@ impl Controls {
         }
         Ok(())
     }
-    fn validate_timers(
-        &self,
-        receipts: &[super::DeckTimerReceipt],
-    ) -> Result<(), DeckRuntimeRejection> {
+    fn validate_timers(&self, receipts: &[DeckTimerReceipt]) -> Result<(), DeckRuntimeRejection> {
         let unique: HashSet<_> = receipts.iter().map(|receipt| receipt.timer).collect();
         if unique.len() != receipts.len()
             || receipts.iter().any(|receipt| {
@@ -340,7 +353,7 @@ impl Controls {
         }
         Ok(())
     }
-    fn publish_timers(&mut self, receipts: Vec<super::DeckTimerReceipt>) {
+    fn publish_timers(&mut self, receipts: Vec<DeckTimerReceipt>) {
         for receipt in receipts {
             let slot = self
                 .timers
@@ -372,7 +385,11 @@ fn receive(
             if reply.is_closed() {
                 return Ok(());
             }
-            let id = super::DeckModuleInstanceId(
+            if control.modules.len() >= control.max_active_modules {
+                let _ = reply.send(Err(DeckRuntimeRejection::Backpressure));
+                return Ok(());
+            }
+            let id = DeckModuleInstanceId(
                 std::num::NonZeroU64::new(control.next_module)
                     .ok_or(DeckRuntimeRejection::InvalidProjection)?,
             );
@@ -404,7 +421,15 @@ fn receive(
                 let _ = reply.send(Err(DeckRuntimeRejection::ModuleRetired));
                 return Ok(());
             }
-            let timer = super::DeckTimerId(
+            if delay_us == 0 || delay_us > MAX_TIMER_DELAY_US {
+                let _ = reply.send(Err(DeckRuntimeRejection::TimerDelay));
+                return Ok(());
+            }
+            if control.timers.len() >= control.max_active_timers {
+                let _ = reply.send(Err(DeckRuntimeRejection::Backpressure));
+                return Ok(());
+            }
+            let timer = DeckTimerId(
                 std::num::NonZeroU64::new(control.next_timer)
                     .ok_or(DeckRuntimeRejection::InvalidProjection)?,
             );

@@ -4,8 +4,12 @@
 
 //! Scheme command descriptors and finite human-review menu values.
 
-use super::{UiCommandName, UiProjectionError};
+use super::UiProjectionError;
 use marlin_agent_protocol::HumanDecision;
+
+/// A displayable command name; this value does not authorize a handler.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UiCommandName(String);
 
 impl UiCommandName {
     /// Check a partial command without scanning past the admitted name limit.
@@ -125,6 +129,13 @@ pub enum UiCommandCapability {
     SelectBuffer,
     EnterTransient,
     KillProcess,
+    Envrc,
     ToggleThinking,
     Clear,
+    Helm,
+    /// A pure Scheme-owned UI action routed back through `UiEvent::SchemeAction`
+    /// without adding bespoke Rust command variants or custom renderers.
+    SchemeAction,
+    /// A Scheme catalog entry awaiting publication admission.
+    Deferred,
 }

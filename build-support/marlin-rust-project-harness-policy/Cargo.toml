@@ -10,5 +10,9 @@ version = "0.1.0"
 authors = ["marlin contributors"]
 repository = "https://github.com/tao3k/marlin-agent-core"
 
-[dependencies]
+[dev-dependencies]
 asp-rust.workspace = true
+
+[[test]]
+name = "workspace_policy"
+path = "tests/integration/workspace_policy.rs"

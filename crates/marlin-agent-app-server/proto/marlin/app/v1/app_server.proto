@@ -17,6 +17,14 @@ service AppServer {
   rpc GetSessionSummary(GetSessionSummaryRequest) returns (GetSessionSummaryResponse);
   rpc GetSessionTurnStatus(GetSessionTurnStatusRequest) returns (GetSessionTurnStatusResponse);
   rpc GetSessionTurnCancellation(GetSessionTurnCancellationRequest) returns (GetSessionTurnCancellationResponse);
+
+  // Session-free GraphEngine TaskActor control plane (MAR-GRAPH-R01..R06).
+  rpc RegisterTaskActor(RegisterTaskActorRequest) returns (TaskActorCursorResponse);
+  rpc DispatchTaskActor(DispatchTaskActorRequest) returns (DispatchTaskActorResponse);
+  rpc ReconcileTaskReceipt(ReconcileTaskReceiptRequest) returns (ReconcileTaskReceiptResponse);
+  rpc BindGovernedContext(BindGovernedContextRequest) returns (BindGovernedContextResponse);
+  rpc GetWorkbenchTabs(GetWorkbenchTabsRequest) returns (WorkbenchTabsResponse);
+  rpc WatchWorkbenchTabs(WatchWorkbenchTabsRequest) returns (stream WorkbenchTabsResponse);
 }
 
 // The host owns Session admission and Runtime allocation. Reopen must resolve
@@ -206,3 +214,155 @@ message GetSessionTurnCancellationResponse {
 }
 
 message CancellationEvidenceUnavailable {}
+
+// Session-free TaskActor & GovernedContext control-plane wire types.
+
+enum TaskActorScopeModeProto {
+  TASK_ACTOR_SCOPE_MODE_PROTO_UNSPECIFIED = 0;
+  TASK_ACTOR_SCOPE_MODE_PROTO_PROJECT = 1;
+  TASK_ACTOR_SCOPE_MODE_PROTO_DETACHED = 2;
+}
+
+enum TaskActorStatusProto {
+  TASK_ACTOR_STATUS_PROTO_UNSPECIFIED = 0;
+  TASK_ACTOR_STATUS_PROTO_OPEN_FOCUS = 1;
+  TASK_ACTOR_STATUS_PROTO_RUNNING = 2;
+  TASK_ACTOR_STATUS_PROTO_WAITING_STEERING = 3;
+  TASK_ACTOR_STATUS_PROTO_SETTLED = 4;
+  TASK_ACTOR_STATUS_PROTO_FAILED = 5;
+  TASK_ACTOR_STATUS_PROTO_ABORTED = 6;
+}
+
+enum GraphDispatchOperationProto {
+  GRAPH_DISPATCH_OPERATION_PROTO_UNSPECIFIED = 0;
+  GRAPH_DISPATCH_OPERATION_PROTO_EXECUTE_FRONTIER = 1;
+  GRAPH_DISPATCH_OPERATION_PROTO_APPLY_STEERING = 2;
+  GRAPH_DISPATCH_OPERATION_PROTO_CONVERGE_APEX = 3;
+  GRAPH_DISPATCH_OPERATION_PROTO_COMMIT_SETTLEMENT = 4;
+}
+
+enum GraphSubstrateTargetProto {
+  GRAPH_SUBSTRATE_TARGET_PROTO_UNSPECIFIED = 0;
+  GRAPH_SUBSTRATE_TARGET_PROTO_PURE_MEMORY = 1;
+  GRAPH_SUBSTRATE_TARGET_PROTO_SQLITE_TURSO = 2;
+}
+
+enum ExecutionReceiptStatusProto {
+  EXECUTION_RECEIPT_STATUS_PROTO_UNSPECIFIED = 0;
+  EXECUTION_RECEIPT_STATUS_PROTO_OK = 1;
+  EXECUTION_RECEIPT_STATUS_PROTO_SETTLED = 2;
+  EXECUTION_RECEIPT_STATUS_PROTO_FAILED = 3;
+  EXECUTION_RECEIPT_STATUS_PROTO_REJECTED = 4;
+}
+
+enum DisclosureDepthProto {
+  DISCLOSURE_DEPTH_PROTO_UNSPECIFIED = 0;
+  DISCLOSURE_DEPTH_PROTO_L0 = 1;
+  DISCLOSURE_DEPTH_PROTO_L1 = 2;
+  DISCLOSURE_DEPTH_PROTO_L2 = 3;
+  DISCLOSURE_DEPTH_PROTO_L3 = 4;
+}
+
+enum DetourModeProto {
+  DETOUR_MODE_PROTO_UNSPECIFIED = 0;
+  DETOUR_MODE_PROTO_MAINLINE = 1;
+  DETOUR_MODE_PROTO_BLOCKER_ACTIVE = 2;
+  DETOUR_MODE_PROTO_SIDE_QUEST_ACTIVE = 3;
+}
+
+enum WorkbenchTabKindProto {
+  WORKBENCH_TAB_KIND_PROTO_UNSPECIFIED = 0;
+  WORKBENCH_TAB_KIND_PROTO_PINNED_INDEX = 1;
+  WORKBENCH_TAB_KIND_PROTO_ACTIVE_TASK = 2;
+  WORKBENCH_TAB_KIND_PROTO_READ_ONLY_PEEK = 3;
+}
+
+message TaskActorCursorProto {
+  string task_id = 1;
+  uint64 fencing_epoch = 2;
+  TaskActorStatusProto status = 3;
+  TaskActorScopeModeProto scope_mode = 4;
+  uint32 pending_steering_branches = 5;
+}
+
+message RegisterTaskActorRequest {
+  string task_id = 1;
+  string title = 2;
+  TaskActorScopeModeProto scope_mode = 3;
+}
+
+message TaskActorCursorResponse {
+  TaskActorCursorProto cursor = 1;
+}
+
+message DispatchTaskActorRequest {
+  string request_id = 1;
+  string task_id = 2;
+  uint64 fencing_epoch = 3;
+  GraphDispatchOperationProto operation = 4;
+  GraphSubstrateTargetProto substrate_target = 5;
+  TaskActorScopeModeProto scope_mode = 6;
+  optional string join_node_id = 7;
+}
+
+message DispatchTaskActorResponse {
+  string request_id = 1;
+  string task_id = 2;
+  uint64 fencing_epoch = 3;
+  GraphDispatchOperationProto operation = 4;
+  GraphSubstrateTargetProto substrate_target = 5;
+}
+
+message ReconcileTaskReceiptRequest {
+  string request_id = 1;
+  string task_id = 2;
+  uint64 fencing_epoch = 3;
+  ExecutionReceiptStatusProto status = 4;
+}
+
+message ReconcileTaskReceiptResponse {
+  bool accepted = 1;
+  string reason = 2;
+  uint64 next_epoch = 3;
+  TaskActorStatusProto next_status = 4;
+}
+
+message BindGovernedContextRequest {
+  string task_id = 1;
+  uint64 context_cut = 2;
+  string kv_prefix_digest = 3;
+  DisclosureDepthProto disclosure_depth = 4;
+  bool has_active_defeater = 5;
+  uint32 quarantined_memory_count = 6;
+  bool sandbox_admitted = 7;
+  bool cedar_handoff_valid = 8;
+  DetourModeProto detour_mode = 9;
+  bool auto_archive_enabled = 10;
+}
+
+message BindGovernedContextResponse {
+  string task_id = 1;
+  uint64 context_cut = 2;
+  DisclosureDepthProto disclosure_depth = 3;
+  string kv_prefix_digest = 4;
+  DetourModeProto detour_mode = 5;
+  bool auto_archive_enabled = 6;
+}
+
+message GetWorkbenchTabsRequest {}
+
+message WatchWorkbenchTabsRequest {}
+
+message WorkbenchTabEntryProto {
+  WorkbenchTabKindProto kind = 1;
+  string id = 2;
+  string title = 3;
+  string status_label = 4;
+  bool focused = 5;
+  uint64 fencing_epoch = 6;
+}
+
+message WorkbenchTabsResponse {
+  optional string focused_task_id = 1;
+  repeated WorkbenchTabEntryProto tabs = 2;
+}

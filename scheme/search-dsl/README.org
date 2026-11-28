@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+TITLE: Marlin Unified Search DSL (=scheme/search-dsl=)
+#+AUTHOR: tao3k team and Contributors
+
+* Ownership Boundary
+
+=scheme/search-dsl= exposes Marlin's unified, zero-regex, zero-=eval=, AOT-safe
+3-tier Search DSL built directly on upstream Gerbil libraries and paired with
+the independent modular =scheme/repair= (=+ast-patch=) Yuanxu module:
+
+1. *=:gerbil-ascent= L1 Structural Query Engine*:
+   - Real upstream =(ascent ...)= / =(ascent-fragment ...)= closed lowering
+     (=ascent-closed-dsl-parts=, zero =eval-syntax=, 100% AOT =linked-ui= safe),
+     composed directly with compiled POO language fragments over ASP's
+     =semantic-open-edb.v1= =(lang, kind, language_kind)= protocol.
+   - Built-in relational path predicates (=is_test_path=, =prod_path=,
+     =path_has_prefix=, =path_contains=) usable both positively and inside
+     =(not (...))=.
+   - Declarative one-shot forms lowered by =scheme/repair/desugar.ss=:
+     =(find-impact ...)=, =(find-collisions ...)=, =(find-callers ...)=,
+     =(find-impls ...)=, =(find-symbols ...)= — all supporting
+     =exclude-tests?: #t=, =exclude-path-prefix:=, and anti-mode-collapse
+     niche-diverse truncation (=select-diverse-rows-up-to=).
+2. *Dusa POPL 2025 L2 Finite-Choice Constraint Solver*:
+   - Lean-verified =(search-choice-program ...)= / =(relational-choice-program ...)=
+     and declarative =(solve-placement ...)= / =(solve-resolve ...)= with static
+     closed-forbid deduction propagation, balanced bounded frontier slicing,
+     and =[deduction]= vs =[branch]= provenance witnesses.
+   - Bi-temporal evidence-chain truth maintenance (=evidence-chain.ss=)
+     distinguishing comment-only edits from AST structural drift, DE01 negative-
+     domain revalidation, KV-cache epoch fencing, and ATMS poison retraction.
+3. *Independent Modular =scheme/repair= (=+ast-patch=)*:
+   - Owns lexical balancing (=reader.ss=), POO-registry similarity diagnostics
+     (=diagnostics.ss=), L1/L2 desugaring (=desugar.ss=), Ascent/Dusa repair
+     (=ascent.ss=, =ascent-validate.ss=, =choice.ss=), and the opt-in =+ast-patch=
+     feature (=ast-patch.ss=) projecting =entity_locator= / =ast-style= findings
+     into validated ASP =POST /v1/ast/patch= requests.
+4. *Zero-Regex Native Open EDB Fact Extractor (=extract.ss=) & =:gerbil-parser= (=grammar.ss=)*:
+   - Native Scheme/SysML/Quint AST extraction and typed structured selectors.
+
+* Human-Oriented vs AI-Native Search Countermodels (SysML v2 =MAR-SRCH-CM01..CM05=)
+
+Engines built for human visual browsing fail predictably in AI-native autonomous
+loops. Marlin models five explicit countermodels in =dev/sysml/search-engine.sysml=
+backed by Quint refutations in =deterministic-engineering-qnt=:
+
+| Countermodel | Human-Oriented Pattern | Why It Fails AI-Native Loops | Verified Quint Refutation | Sound Entry Point |
+|--------------+------------------------+------------------------------+---------------------------+-------------------|
+| =CM01= | Flat top-K frequency/path pagination | Truncated LLM window mode-collapses onto 1 dominant symbol (e.g. 40 =new()= rows) | =search-diversity-exploration::stepModeCollapse= | =workspace_search= (=select-diverse-rows-up-to=) |
+| =CM02= | Serial =ls=/=find=/=rg=/=cat= shell probing | Wastes 7+ full-context turns and loops on zero-hit dead ends | =search-diversity-exploration::stepDeadEndLoop= | Parallel fan-out + one-shot =(find-impact ...)= |
+| =CM03= | Monolithic tool manual + ungrounded mental synthesis | Small models collapse to L0 grep or promote hallucinated claims without receipts | =search-diversity-exploration::stepUngroundedPromotion= | Focused 3-tier tools + =scheme/repair= diagnostics |
+| =CM04= | Textual RAG / manual IDE Go-To-Definition | Cannot prove global forbidden constraints; naive branching explodes state budget | =search-diversity-exploration::stepFrontierExplosion= | =workspace_search= (Dusa + balanced bounded frontier) |
+| =CM05= | Unfenced static cache & cross-turn context reuse | Reuses stale structural evidence after AST drift, ignores DE01, serves contaminated KV | =search-evidence-chain-integrity::{stepStale*,stepKv*,stepPoisoned*,stepZombie*}= | Bi-temporal =evidence-chain.ss= + ATMS retraction |

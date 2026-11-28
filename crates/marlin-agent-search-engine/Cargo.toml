@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+[package]
+license.workspace = true
+name = "marlin-agent-search-engine"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+turso = ["marlin-agent-storage/turso"]
+linked-ui = ["gerbil-scheme/external-program"]
+
+[dependencies]
+agent-semantic-search.workspace = true
+agent-semantic-search-playbook.workspace = true
+agent-semantic-topology.workspace = true
+futures-executor.workspace = true
+gerbil-scheme.workspace = true
+marlin-agent-storage.workspace = true
+marlin-context-org-model.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+asp-rust.workspace = true
+criterion.workspace = true
+marlin-agent-runtime.workspace = true
+proptest.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[[test]]
+name = "unit_test"
+path = "tests/unit_test.rs"
+
+[[test]]
+name = "turso_persistence"
+path = "tests/integration/turso_persistence.rs"
+required-features = ["turso"]
+
+[[test]]
+name = "asp_http_e2e"
+path = "tests/integration/asp_http_e2e.rs"
+
+[[bench]]
+name = "search_engine_bridge"
+path = "benches/search_engine_bridge.rs"
+harness = false

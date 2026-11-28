@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
+// Legacy LoopProgram unit tests remain under deprecation retirement (SM25).
+#![allow(deprecated)]
+
 #[path = "unit/kernel/mod.rs"]
 mod kernel;
 

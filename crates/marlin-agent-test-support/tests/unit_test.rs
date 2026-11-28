@@ -14,6 +14,8 @@ mod project_runtime_read_model;
 mod replay;
 #[path = "unit/runtime_environment.rs"]
 mod runtime_environment;
+#[path = "unit/runtime_fixtures.rs"]
+mod runtime_fixtures;
 #[path = "unit/stability.rs"]
 mod stability;
 #[path = "unit/stream.rs"]

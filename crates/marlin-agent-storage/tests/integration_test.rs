@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-#[path = "integration/conversation_journal_gate.rs"]
-mod conversation_journal_gate;
 #[path = "integration/db_crash_reopen_gate.rs"]
 mod db_crash_reopen_gate;
 #[path = "integration/db_pressure_gate.rs"]
@@ -26,8 +24,6 @@ mod rfcdb_asp_report_gate;
 mod scenario_performance_contract_gate;
 #[path = "integration/schema_development_baseline_gate.rs"]
 mod schema_development_baseline_gate;
-#[path = "integration/session_storage_gate.rs"]
-mod session_storage_gate;
 #[path = "integration/storage_keyset_pagination_gate.rs"]
 mod storage_keyset_pagination_gate;
 #[path = "integration/turso_070_fundamental_scenarios.rs"]

@@ -1,0 +1,589 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+TITLE: 40.183 RFC: Shared Org-as-Context, Declarative POO/Durable Orchestration, and Task-as-Tab Lifecycle
+#+LANGUAGE: en
+#+PROPERTY: STATUS Active
+#+FILETAGS: :marlin:rfc:context:org:gql:ascent:durable:gitops:tui:
+
+* 40.183 RFC: Shared Org-as-Context, Declarative POO/Durable Orchestration, and Task-as-Tab Lifecycle
+:PROPERTIES:
+:ID: rfc-40-183-org-elements-gql-shared-context
+:CUSTOM_ID: rfc-org-elements-gql-shared-context
+:KIND: rfc
+:STATUS: Active
+:END:
+
+Companion artifacts:
+- OpenSysML v2 architecture model: [[file:../../dev/sysml/org-babel-session.sysml][dev/sysml/org-babel-session.sysml]] (=MAR-ORG-P01..P11=, =MAR-ORG-L01..L05=, =MAR-ORG-R01..R10=)
+- Quint conservation and fission protocol: [[file:../../dev/quint/org-babel-fission.qnt][dev/quint/org-babel-fission.qnt]]
+- Marlin minimal Org seed catalog: [[file:../../scheme/context-system/org-contract/templates/README.org][scheme/context-system/org-contract/templates/README.org]]
+- Related RFCs: [[file:40.10-org-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]] · [[file:40.30-org-contract-template-protocol.org][40.30 Org Contract Template Protocol]] · [[file:40.180-emacs-scheme-tui.org][40.180 Emacs Scheme TUI]] · [[file:40.181-context-org-ownership.org][40.181 Context-owned Org Architecture]] · [[file:40.182-gitops-context-discovery.org][40.182 GitOps Context Discovery]]
+
+** 1. Motivation and Four-Engine Synergy
+
+Traditional multi-agent systems rely on hardcoded static templates (such as
+fixed =PLAN.md= or boilerplate ADR files) and isolated per-agent context
+buffers. Static templates force every task — whether a 10-line bug fix, a
+multi-hypothesis security inquiry, or a cross-crate protocol change — into rigid
+pre-allocated shapes, while isolated agent buffers force =K= sub-agents to
+re-read =N= repository tokens (=O(K * N)= token blowup).
+
+Marlin replaces static boilerplate and full-file prompt stuffing with a
+four-engine architecture inside the existing **GitOps + Artifacts + Storage**
+backbone (with no parallel =OrgStore= concept):
+
+1. **=Orgize= (=Org Elements= AST)**: Parses 100% standard Org-mode syntax
+   (=org-babel=, =org-attach=, =TODO=/=SCHEDULED:=/checklists) with exact UTF-8
+   byte spans =[byteStart, byteEnd)=, enabling zero-copy progressive folding and
+   deterministic AST canonicalization.
+2. **ISO =GQL= (=YuanxuGraph= + =GraphSyntax*=)**: Compiles composable
+   =(org-elements ...)= S-expression selectors directly into governed ISO =GQL=
+   graph queries across GitOps files without blind search.
+3. **=ASCENT= Deductive Rule Engine (=gerbil-ascent=)**: Evaluates structural,
+   intent, and causal facts **in-VM at zero LLM token cost** to drive:
+   - **Dynamic Case-Specific Org Facet Synthesis** (guiding the low-cost Flash
+     model to grow only the Org structure needed by the current case rather than
+     shipping static boilerplate templates); and
+   - **Dual-Axis Progressive Disclosure (=L0 -> L3=)** for both Org content and
+     triggered rules, paired with explicit agent drill-down requests.
+4. **Two-Stage Org Repair + =OrgContract= Admission**:
+   - **Stage 1 (~90%, 0 LLM Tokens)**: Deterministic Org AST canonicalizer
+     repairs standard mechanical syntax and structural omissions in-VM.
+   - **Stage 2 (~10%, Bounded Flash Pass)**: Sends only the offending subtree
+     slice and exact =OrgContract= / =ASCENT= diagnostic to Flash when semantic
+     intent resolution is required.
+
+** 2. Three-Layer Library-to-Production Ownership
+:PROPERTIES:
+:CUSTOM_ID: three-layer-ownership
+:END:
+
+| Layer | Owner | Responsibility | Explicit Non-Responsibility |
+|-------+-------+----------------+-----------------------------|
+| **Layer 1: Pure Context, FunFlow & Durable Library** | =tao3k/orgize= + =tao3k/agentic-ai-lab= (=modules/ai-agentic-context=, =modules/funflow=, =modules/durable=, =modules/governance=, =modules/query=, =gerbil-ascent=) | Native Scheme Org parser; =Org Elements -> YuanxuGraph= projection and ISO =GQL= compiler; in-VM =ASCENT= progressive disclosure (=L0..L3=), facet deduction, and orchestration predicates; Stage 1 AST auto-repair and Stage 2 Flash repair request builder; =gerbil-poo= **C4 linearization** prototypes (=Repo= -> =Worktree= -> =Task= -> =SubTask=/=Extension=) and MOP =.defgeneric= protocols; Tweag-inspired =FunFlow= static DAG / CAS caching / finalizer engine (unified under =agentic-ai-lab/modules/funflow=); Governance scope isolation (=RestrictionEnvelope=, =TrustLattice=, =AuthorizedEffectToken=); generic =Durable= orchestrator (=durable-journal=, =policy-clock=, =agenda=, crash recovery). | No Marlin TUI widgets, no Rust Tokio I/O, no live LLM network calls, no product-specific file layout or hardcoded UX policies. |
+| **Layer 2: Declarative Production Control Plane** | =marlin-agent-core/scheme= (=interface.ss=, =context-system/=, =artifacts/=, =deck-runtime/=, declarative orchestrator & workbench projection) | Imports Layer 1 strictly via =scheme/interface.ss= (=LabContext=, =LabDurable=, =LabDurableJournal=, =LabGitOps=, =Funflow=); exposes a Doom-Emacs-style **Declarative Interface Plane** (hygienic macros, C4 POO multi-prototype derivation & =super= extensions, =+feature= flags); binds GitOps Repos, Worktrees, Plan-A =index.org= + =ArtifactCatalog= Task Org files, objectified =OrchestratorStrategy.=, =Durable= scheduling/auto-archive, and pure =WorkbenchTabProjection= (pinned =Index= + dynamic =Active Task Tabs=). | Never scatters deep =:tao3k/agentic-ai-lab/...= imports across product modules; never uses runtime =eval=; never buries policy logic inside imperative UI mutations. |
+| **Layer 3: Native Runtime & Rich Document TUI** | =marlin-agent-context=, =marlin-agent-gitops=, =marlin-agent-storage=, =marlin-agent-ui=, =marlin-agent-tui= | Rust single-VM boundary, Git worktree/owner custody, =TursoContextIndex= locator persistence, attachment blob I/O, and upper-window live rendering of Org/Markdown streams and purely projected =Index= + =Task Tabs= (only after Layer 1 & Layer 2 declarative orchestration stabilizes). | Never links a second Rust Org parser; never owns task lifecycle/archive state machines in Rust or volatile TUI memory. |
+
+** 3. Standard Org-mode Stream, Multimodal Attachments, and Organic Seed
+:PROPERTIES:
+:CUSTOM_ID: standard-org-syntax
+:END:
+
+Every session begins from a minimal organic seed ([[file:../../scheme/context-system/org-contract/templates/session-seed/seed.org][session-seed/seed.org]]) inside =tmp/<NNNN>.org=:
+- **Auto-Evaluated =org-babel= Turns**: User prompts append named
+  =#+NAME: <turn-id>= + =#+BEGIN_SRC llm :model ... :thinking ... :results drawer replace=
+  blocks and stream directly into =#+RESULTS: <turn-id>= =:RESULTS: ... :END:=.
+- **=#+BEGIN_THINKING ... #+END_THINKING= inside =:RESULTS:=**: Because Org-mode
+  drawers cannot nest another =:END:= drawer inside =:RESULTS:=, reasoning traces
+  use a standard Org special block (=#+BEGIN_THINKING= ... =#+END_THINKING=),
+  parsed by =orgize= as an =OrgSpecialBlock= child of the =RESULTS= =OrgDrawer=.
+- **Native =org-attach= Media**: Multimodal inputs and outputs use standard
+  =:ATTACH:= tags, =:ID:= / =:DIR:= properties, and =[[attachment:<filename>]]=
+  links stored under the enrolled GitOps owner.
+- **Optional Project-Level Rule Overrides in =context.org=**: Advanced projects
+  may include a declarative =:org-progressive-rules= block in =context.org= to
+  adjust default disclosure thresholds (such as scratch split line watermarks or
+  mandatory reviewer facets) under strict schema validation, while core rule
+  execution stays in Scheme =ASCENT=.
+
+** 4. Native =Org Elements= to ISO =GQL= Mapping
+:PROPERTIES:
+:CUSTOM_ID: org-elements-gql-mapping
+:END:
+
+Active =OrgSource= cuts project six native Org Element node labels into
+=YuanxuGraph=:
+- =OrgSource= (=org-data=), =OrgHeadline= (=headline= / =inlinetask= with
+  =todoKeyword=, =todoType=, =priority=, =scheduledEpoch=, =deadlineEpoch=,
+  =cookieValue=, =attachDir=, =byteStart=, =byteEnd=), =OrgListItem= (=item= with
+  =checkbox=, =checkboxState=, =itemText=), =OrgSrcBlock= (=src-block= +
+  affiliated =NAME= / =RESULTS=), =OrgDrawer= (=drawer= / =special-block=), and
+  =OrgLink= (=link= with =protocol=, =targetPath=, =imageLink=).
+- Typed relations: =HAS_HEADLINE=, =PARENT_OF=, =DEPENDS_ON=, =EVOLVED_FROM=,
+  =HAS_ITEM=, =HAS_SRC_BLOCK=, =PRODUCES_RESULTS=, =HAS_DRAWER=,
+  =CONTAINS_DRAWER=, =HAS_LINK=, and =LINKS_TO_HEADLINE=.
+- Both =Orgize= =OrgElementQuery= values and relational =(org-elements ...)=
+  S-expressions compile into =AgenticAILabQuery.= programs, pushing primary
+  exact predicates into =GraphSyntaxEquals.= (=WHERE=) and retaining compound
+  =all-of= / =any-of= / =property-contains= DNF clauses in an explicit
+  =residual-groups= plan receipt.
+
+** 5. =ASCENT= Case-Driven Facet Synthesis and Progressive Disclosure (=L0..L3=)
+:PROPERTIES:
+:CUSTOM_ID: ascent-progressive-disclosure
+:END:
+
+*** 5.1 Dynamic Case-Driven Org Facet Synthesis (Replacing Static Templates)
+
+Instead of pre-allocating static ADR or execution-plan files, =ASCENT= rules
+evaluate case facts (=cross-module?=, =has-competing-hypotheses?=,
+=has-attachments?=, =task-count=, =line-count=, =has-active-defeater?=) in-VM
+and derive minimal **Facet Obligations**:
+
+| Derived Facet ID | Trigger Condition in =ASCENT= | Standard Org Structure Synthesized by Flash |
+|------------------+-------------------------------+---------------------------------------------|
+| =inline-checklist= | Bounded single-component task with actionable steps | =TODO= heading + =[0/N]= cookie + =- [ ]= items inside current file |
+| =scheduled-todo-dag= | Multi-step or multi-agent work requiring ordering | Prioritized =TODO [#A/#B]= subtrees + =SCHEDULED:= / =DEADLINE:= + =:DEPENDS_ON:= |
+| =invariant-section= | Cross-module, protocol, or public ABI impact | Dedicated invariant/architecture section with =:CUSTOM_ID:= referenced via =:DEPENDS_ON:= |
+| =competing-hypotheses= | Debugging or security investigation with >= 2 live causes | Hypothesis subtrees + non-droppable defeater properties + discriminator checks |
+| =attach-media= | User or tool supplies/requests visual or binary artifacts | =:ATTACH:= tag + =:ID:= scope + =[[attachment:...]]= links |
+| =sod-reviewer= | Governed mutation or security-sensitive component | Distinct =:AGENT_ID:= and =:REVIEWER_AGENT_ID:= properties + =:org-contract= assertion |
+| =gitops-split= | =lineCount >= watermark= or completed =DONE= cluster | Zero-compaction fission into GitOps collection file with =:CONTEXT_ORIGIN_*:= lineage |
+
+Only the compact instructions for **currently triggered facets** are disclosed
+to the Flash model, saving thousands of system-prompt tokens on every turn.
+
+*** 5.2 Four-Level Progressive Reading (=L0 -> L3=) and Agent Drill-Down
+
+| Level | Disclosed Org AST Slice | =ASCENT= Derivation Rule |
+|-------+-------------------------+--------------------------|
+| **=L0= Skeleton** | Headline stars, =TODO=/=DONE=, priority, title, =[done/total]= cookie, =:TAGS:=, and =:ID:= only; all drawers, checklists, =#+BEGIN_THINKING=, and bodies folded | Default global map for unrelated or settled =DONE= sections without defeaters |
+| **=L1= Contract & Checklist** | =L0= + =:PROPERTIES:= + =SCHEDULED:/DEADLINE:= + unchecked =- [ ]= items | Ready =TODO= candidates and 1-hop =DEPENDS_ON= task neighbors |
+| **=L2= Synthesis Body** | =L1= + =#+RESULTS:= conclusion body and =[[attachment:...]]= links (**=#+BEGIN_THINKING= stays folded**) | Active task target and settled =DEPENDS_ON= invariant/architecture sections |
+| **=L3= Full Evidence & Thinking** | Complete raw subtree including =#+BEGIN_THINKING= traces, =#+BEGIN_SRC= prompts, and failure logs | Triggered **only** when =ASCENT= detects an active defeater, failed assertion/test, or an explicit **Agent Drill-Down Request** (=(expand-org-element <id> L2|L3)=) |
+
+** 6. Three-Tier Model Division of Labor and Two-Stage Org Repair
+:PROPERTIES:
+:CUSTOM_ID: two-stage-repair
+:END:
+
+1. **Three-Tier Model Collaboration**:
+   - **Tier 1 Architect (High-tier Reasoning)**: Synthesizes core invariants,
+     root-cause reasoning, and multi-step =TODO= DAGs once inside =#+RESULTS:=.
+   - **Tier 2 Builder (Mid-tier Coding)**: Reads =L2= slices of its ready =TODO=
+     and =:DEPENDS_ON:= anchors (+ =L0= project map, with on-demand drill-down),
+     executes code/tests, updates checklists, and marks =DONE=.
+   - **Tier 3 Curator (Low-tier Flash)**: Materializes =ASCENT=-triggered Org
+     facets, populates deterministic =:PROPERTIES:=, executes =gitops-split=,
+     and handles Stage 2 semantic Org repairs.
+2. **Two-Stage Org Repair Pipeline**:
+   - **Stage 1 — Deterministic Org AST Auto-Repair (~90%, 0 Tokens)**:
+     Before invoking any model for syntax repair, pure Scheme AST normalization
+     fixes mechanical defects in-place:
+     1. Converts accidental nested =:THINKING: ... :END:= drawers inside
+        =:RESULTS:= into valid =#+BEGIN_THINKING ... #+END_THINKING= special blocks;
+     2. Closes unclosed =:PROPERTIES:=, =:RESULTS:=, =#+BEGIN_SRC=, or
+        =#+BEGIN_THINKING= blocks at section/EOF boundaries;
+     3. Normalizes malformed headline spacing, tag colons (=:ATTACH= -> =:ATTACH:=),
+        and checkbox tokens (=-[x]= / =- [x]= -> =- [X]=);
+     4. Recomputes stale =[done/total]= and =[pct%]= statistics cookies from
+        actual child =OrgListItem= states;
+     5. Synthesizes missing deterministic root/origin properties
+        (=:GITOPS_PROJECT:=, =:CONTEXT_ORIGIN_*:=).
+   - **Stage 2 — Diagnostic-Guided Flash Semantic Repair (~10%)**:
+     If =OrgContract= or =ASCENT= still reports a semantic violation after
+     Stage 1 (such as a missing required =:DEPENDS_ON:= target or unresolved
+     contract assertion), the engine packages **only** the failing subtree slice
+     and structured diagnostic receipt into a bounded Flash repair request, then
+     re-runs Stage 1 + =OrgContract= admission (failing closed if still invalid).
+
+** 7. Declarative Interface Plane: C4 POO Linearization, FunFlow CAS DAG, Governance Scope Isolation, and Task-as-Tab Lifecycle
+:PROPERTIES:
+:CUSTOM_ID: declarative-durable-orchestrator
+:END:
+
+*** 7.1 Eliminating Production Multi-Agent Failure Modes by Construction
+
+Complex real-world coding-agent deployments (evidenced across production issue
+trackers in =anthropics/claude-code= — e.g., =#32099=, =#23821=, =#16209=,
+=#33651=, =#29751= — and =openai/codex= — e.g., =#23095=, =#33144=, =#38478=,
+=#16358=, =#32035=, =#42693=, =#45102=, =#45401= — as well as 2026 governed
+multi-agent memory literature such as *Governed Shared Memory*
+(=arXiv:2606.24535=), *Governed Memory* (=arXiv:2603.17787=), and *Experience
+Orchestrator* (=arXiv:2608.11207=)) consistently fail along four structural
+fault lines when agents are built on flat chat buffers and lossy compaction:
+
+1. **Compaction data loss & cross-provider replay failure**: Lossy =/compact=
+   drops subagent results or breaks rollout replay across model providers.
+   Marlin eliminates lossy compaction via shared Org-as-Context, zero-token
+   =L0..L3= progressive folding, and content-addressed =FunFlow= /
+   =durable-journal= checkpoints.
+2. **Worktree drift & unguarded scope leakage**: Naming a Git worktree inside
+   a text prompt does not enforce workspace isolation. Marlin encodes worktree
+   custody, write spans, and visibility inside C4-derived POO Task objects
+   gated by =Governance= (=ContextScope=, 6-tuple =RestrictionEnvelope= meet,
+   and one-shot =AuthorizedEffectToken=).
+3. **Ghost status, thread collision & UI/backend split-brain**: Volatile UI
+   panels drift out of sync with background workers on restart or parallel
+   dispatch. Marlin makes Plan-A =index.org= + =durable-journal= the single
+   authoritative truth and computes TUI tabs as a pure functional projection.
+4. **Fleet-memory contamination**: Unauthorized leakage, stale propagation,
+   contradiction persistence, and provenance collapse are prevented by
+   generation-bound =source-cut= checks, 5-level =TrustLattice= non-self-review
+   promotion, non-droppable defeater cores, and =:CONTEXT_ORIGIN_*:= lineage.
+
+*** 7.2 Doom-Emacs-Style Declarative Interface Architecture
+
+Following Doom Emacs's strict separation between stable engine mechanisms and
+thin declarative configuration (aligned with =scheme/init.ss= =(module +flag)=
+selection), **declarativity is the core contract of the Interface layer**:
+
+1. **Core Engine Plane (Pure Lab + Yuanxu Feature System)**:
+   - =modules/durable= Core (=modules/durable/work.ss= + =work/{contracts,entities,scheduler,detour-engine,claims-engine}.ss=)
+     is a **100% pure, domain-agnostic Durable Work Engine** with **zero
+     =orgize= and zero =ai-agentic-context= imports** — operating solely over
+     typed POO =WorkSnapshot=, =ClaimTable=, =FunFlow= Three-State Effect DAGs,
+     =ASCENT= 4-predicate scheduling, fail-closed CLOS detour exit reconcilers,
+     and fenced =durable-journal= WAL receipts.
+   - **Two-Tier Configurable Interface & Ownership Direction (Yuanxu Design 165)**:
+     - **Target ownership**: =modules/durable= remains 100% pure with zero Org
+       features (=features: '()=); the thin =Org <-> Durable= bridge belongs
+       exclusively under =ai-agentic-context/features/durable= (Context owns
+       Org, never =(durable +org)=).
+     - **Pure POO Convergent Triad (zero synthetic DSLs, zero magic keywords)**:
+       - =Tags= (*WHO/WHAT*): inert classification labels on modules/features
+         for discovery and =by-tag= targeting (never carry config values);
+       - =Profiles= (*HOW*, **always plural**): the single reusable POO
+         configuration mixin unit (=:profiles (P1. P2. ...)= globally,
+         =profiles: (L1. L2. ...)= per module, or derived);
+       - =Native POO Dotted Paths & .o Dispatch Tables= (*WHEN*): zero
+         synthetic =when-slot= / =case= boilerplate — cross-module bridging is
+         a single dotted path (=enabled?: durable.enabled?=), and conditional
+         Profile derivation is a plain POO =.o= dispatch table keyed by typed
+         Interface slot paths (=profiles: (.o env.mode: (.o ci-hermetic: ...)
+         durable.detour-state: (.o blocker-active: ...))=), directly extensible
+         via POO path assignment (=profiles.env.mode.staging: ...=) and
+         validated statically against =ObjectContract= + =slot-observation=,
+         with CLOS =.defmethod= reserved for multi-axis crossings.
+     - **Tier 1 (=yuanxu!= in =init.ss=)**: Ultra-restrained system-wide
+       assembly surface owning only explicit module closure, plural Global
+       =:profiles=, and per-module =+feat= / =-feat= / plural =profiles:=.
+     - **Tier 2 (per-module =interface.ss=)**: Autonomous =tags:=, typed state
+       slots & contracts, native POO =enabled?: durable.enabled?= auto-bridging,
+       and =profiles: (.o ...)= dispatch tables — composed via native POO C4
+       precedence bands (=CoreDefaults < ImpliedBridge < ExplicitFeature <
+       DerivedProfiles < GlobalProfiles < ModuleProfiles < GovernanceFloor=)
+       and contract-owned combiners (=exclusive= / =refine= / =union= / =meet=)
+       with zero Nix-style magic priority integers.
+   - Org-mode structural I/O obeys the strict three-layer parser/language boundary:
+     - **Layer 0 (=tao3k/gerbil-parser/graph-support/edit=)**: Language-neutral
+       UTF-8 byte-span structural edit algebra (=SpanEdit=,
+       =apply-span-edits/verified=) enforcing disjointness and fail-closed
+       re-parse verification.
+     - **Layer 1 (=tao3k/orgize= — =org-elements= + =org-edit=)**: Owns Org
+       typed structural projection (including =property:*= query fields,
+       headline =level=, checklist statistics, and drawer/planning/item spans),
+       the canonical Org syntax emitter (=emit.ss=), and parser-span-driven
+       structural edit primitives + hygienic =(org-edit ...)= DSL.
+     - **Layer 2 (=tao3k/agentic-ai-lab= — Context =+durable= & =ai-agentic-context=)**:
+       Maps domain schemas onto =org-elements= reads and =(org-edit ...)= writes
+       with zero manual =string-split=, =string-find-substr=, or =:END:= slicing.
+   - Context integration attaches strictly as a Yuanxu **Feature** on both
+     sides: Lab =(ai-agentic-context +memory +durable)=
+     (=modules/ai-agentic-context/features/durable=) and Marlin
+     =(context-system +causal +durable)= in =scheme/init.ss=
+     (=EnableDurableOrchestration= + =ContextDurableContract=). Engine
+     internals never hardcode repository paths, Org parsing, or TUI presentation.
+2. **POO-Constrained Macro Governance & Orthogonal Dispatch (=45-40-10=)**:
+   - While inspired by Doom Emacs's declarative lifecycle ergonomics, Marlin
+     and Lab **strictly reject Doom-style macro proliferation** (arbitrary AST
+     rewriting, hidden global mutable registries, and imperative =!= config
+     macros). Following Yuanxu's POO-constrained macro governance
+     (=45-40-10-poo-constrained-gerbil-macro-governance.org= and
+     =02-poo-dispatch-and-extension.org=), abstractions follow a closed
+     four-tier ladder:
+     1. **Pure functions** own deterministic algorithms (=funflow-dag-build=,
+        =funflow-resume-plan=, =funflow-replan-epoch=, =task-reanchor-mainline=,
+        =restriction-meet=, =project-workbench-tabs=).
+     2. **Value-first =gerbil-poo= prototypes, POOF constant slots
+        =(slot := expr)=, runtime lexical slot references, ==>= / ==>.+=
+        refinements, and single-axis MOP =.defgeneric=** own entity modeling
+        and inheritance (=WorkspaceTopology.=, =RepoNode.=, =WorktreeNode.=,
+        =TaskNode.=, =DetourNode.=, =OrchestratorStrategy.=) — removing ad-hoc
+        business =define-*!= wrapper macros.
+     3. **CLOS multi-methods (=.defgeneric= + =.defmethod= + atomic
+        =.defmethod-bundle=, fail-closed base)** own genuine multi-axis
+        crossings: =(admit-node-effect node effect-class governance-envelope)=
+        and =(reconcile-detour-exit detour exit-state mainline-anchor)=.
+     4. **Declarative =define-type= / =ObjectContract=** owns boundary
+        admission with call-site source diagnostics; macros remain closed to
+        RFC-reviewed phase primitives (=yuanxu!=, =:yuanxu/syntax/path-slots=).
+3. **Thin User / Repository Config Plane**: Both value-first Scheme repository
+   declarations and inert Org configuration blocks (=:org-progressive-rules=
+   and epoch =OrgOverlay(g)= properties) parse and validate onto the **exact
+   same POO =ObjectContract= policy contracts**, inherited uniformly via C4
+   linearization with zero runtime =eval=.
+
+*** 7.3 =gerbil-poo= C4 Linearization (=Workspace -> Repo -> Worktree -> Task -> Detour/SubTask -> OrgOverlay(g)=)
+
+Rather than copying configuration or re-parsing Org files per actor, every
+multi-repo workspace topology, repository, worktree, task, detour/sub-task, and
+orchestration strategy is a first-class **POO prototype object** composed via
+**=gerbil-poo='s C4 linearization algorithm** with runtime lexical slot
+references, Override, and ==>= / ==>.+= Extension:
+
+- **=WorkspaceTopology.= (Multi-Repo DAG Root)**: Composes multiple =RepoNode.=
+  instances with explicit Pin dependency edges (e.g., =gebril-yuanxu ->
+  agentic-ai-lab (core submodule) -> marlin-agent-core (gerbil.pkg pin)=),
+  a =PreFlightRemoteDriftProbe= (=PureCAS=) to detect remote head drift before
+  push waves, and mandatory 3-party SoD =DeclassificationCert= for any
+  cross-repository context transfer.
+- **=A= (=RepoNode.= — Repository Prototype)**: One Git repository forms the
+  repository root =A=, owning the shared parsed =OrgElementGraph= reference,
+  authoritative =index.org=, =topology.org=, =ArtifactCatalog=,
+  organization/SoD roles, default =DurableTaskPolicy.=, and default
+  =OrchestratorStrategy.=.
+- **=B= (=WorktreeNode.= = =(:: @ [WorktreeNode. A])=)**: Derives from =A=,
+  inheriting the shared context graph and defaults while overriding only
+  =worktree=, =branch=, =source-cut=, sandbox/envrc bindings, and worktree
+  write grants.
+- **=C= (=TaskNode.= = =(:: @ [TaskNode. B])=)**: Every managed task is a POO
+  object projected symmetrically from its Plan-A Org document. It inherits
+  =A='s shared context object and =B='s worktree bounds with zero copy, adding
+  its =task-id=, =ContextScope=, 6-tuple =RestrictionEnvelope=,
+  =context-selectors=, and child =FunFlow= DAG specification.
+- **=D= (=SubTaskNode.= / =DetourNode.= = =(:: @ [DetourNode. C Mixin...])=)**:
+  Sub-tasks and scoped detours derive from =C= under C4 linearization. Their
+  effective =RestrictionEnvelope= is **monotonically narrowed** via
+  lower-semilattice =restriction-meet= — a descendant or detour can never
+  escalate privileges beyond its parent =Task Scope=.
+- **Bidirectional Lens — Dynamic Top Mixin =OrgOverlay(g)=**:
+  - Whitelisted =:PROPERTIES:= and =:DEPENDS_ON:= edits inside Task Org at
+    Epoch =g= validate through =OrgOverlayContract= (never =eval=) and compose
+    as the top C4 mixin:
+    =EffectiveTask(g) = C4(OrgOverlay(g) > SubTask/Detour > Task > Worktree > Repo)=.
+  - POO runtime lexical slot references propagate hot overrides (=retry-budget=,
+    =max-parallel=, =model-tier=) to inner pipelines without restart while
+    =RestrictionEnvelope= remains monotonically non-escalating (=restriction-meet=).
+
+*** 7.4 Tweag-Inspired =FunFlow= DAG: Three-State Effect Algebra, CAS Resumability, and Premise Invalidation
+
+Inspired by Tweag's Haskell =FunFlow= (Arrow static inspectability,
+content-addressed store caching, and crash resumability) and owned directly by
+=tao3k/agentic-ai-lab/modules/funflow/= (=durable-dag.ss=, =dependency-graph=,
+=scc=, =job-graph=, =after-start= finalizers, =flow-compose=, =strategy=),
+complex tasks execute as **isomorphic Org AST <-> FunFlow POO DAGs** with a
+**Three-State Effect Algebra** dispatched via CLOS =(admit-node-effect ...)=:
+
+1. **Three-State Effect Classification**:
+   - **=PureCAS.= (Deterministic)**: =orgize= parse, =ASCENT= solve, =GQL=
+     query, =sysml -strict=, =cargo test=, Nix build. Pure input-fingerprint
+     CAS hit skips execution at 0 cost; crash replay is trivially idempotent.
+   - **=VerifiedEpistemic.= (Stochastic Generation + Deterministic Verifier)**:
+     LLM code synthesis, Flash facet generation, Stage-2 Org repair. Uses
+     **Semantic CAS**: once output binds to live =source-cut= and carries a
+     passing Verifier Receipt or non-self-endorsing =EndorsementReceipt=
+     (=proposer != endorser=), subsequent epochs skip redundant LLM calls
+     until a bound premise drifts or a defeater arrives.
+   - **=FencedEffect.= (Irreversible External Side-Effect)**: =git push=, PR
+     mutation, deployment, destructive cleanup, or atomic Auto-Archive. Never
+     silently replayed on crash recovery; requires one-shot
+     =AuthorizedEffectToken= + unique =idempotency-key=, =after-start=
+     compensation finalizer, =admit-security-branch= asymmetric gate
+     (=claims-exhaustive?: #t=), and =needs_reconciliation= probing on restart.
+2. **Arrow-Style Static Pre-Execution Analysis (0 LLM Tokens)**:
+   - Before spending any model token, =FunFlow= runs Tarjan =scc= cycle
+     detection, verifies =:DEPENDS_ON:= closure and finalizer admissibility,
+     and validates every node's =ContextScope=, =RestrictionEnvelope= meet,
+     and =UseGrant= statically (failing closed on violation).
+3. **Content-Addressed Caching & Epistemic Premise Invalidation**:
+   - Every DAG node carries a deterministic content fingerprint
+     =sha256(source-cut, input-org-slice-digest, node-contract-digest, policy-digest, premise-digests)=
+     recorded in =durable-journal= and =ArtifactCatalog=.
+   - When a concurrent peer or detour advances =source-cut= or invalidates a
+     bound premise, zero-token =ASCENT= =assumption_invalidated(NodeId, PremiseId)=
+     marks only nodes whose =premise-digests= drifted as =stale-premise=,
+     preserving unaffected CAS nodes across =funflow-replan-epoch (g -> g+1)=.
+4. **Parallel Frontier Waves with Disjoint Org Leases**:
+   - All =indegree == 0= =TODO= nodes form a ready frontier wave; nodes whose
+     Org =:ID:= byte spans are disjoint (admitted by =funs-subtree-mediation=
+     and Rust =OrgGovernanceLedger=) dispatch concurrently without mutual
+     interruption.
+5. **Epoch-Bounded Dynamic Replanning**:
+   - Within generation =g=, the =FunFlow= DAG is 100% statically verified.
+   - When an agent discovers an unforeseen blocker and writes a new sub-heading
+     into the shared Org document (advancing to generation =g+1=), =ASCENT= and
+     =FunFlow= re-project and re-verify the DAG in milliseconds: unchanged
+     completed nodes remain satisfied from CAS/journal while only affected
+     downstream waves re-sequence.
+
+*** 7.5 Objectified =OrchestratorStrategy.=, Plan-A =index.org=, and Atomic Auto-Archive
+
+Orchestration policies themselves are C4-derivable POO prototypes exposed at
+the Declarative Interface plane:
+- =OrchestratorStrategy.= (base MOP hooks for frontier selection, admission,
+  recovery, and archive guards) -> =ParallelFrontierStrategy.= ->
+  =TieredModelStrategy.= (routing nodes via =ASCENT= facets and =L0..L3=
+  slices) -> =DurableGovernedStrategy.= (wrapping node transitions in Lab's
+  =Durable= =durable-journal=, =policy-clock=, =agenda=, and
+  =AuthorizedEffectToken=).
+
+Storage and task indexing follow **Plan A** (no hardcoded flat =tasks/= folder):
+- **=index.org= (Compact Authoritative Index)**: Stores every task's Org
+  lifecycle metadata (=TODO=/=IN_PROGRESS=/=BLOCKED=/=REVIEW=/=DONE=,
+  =SCHEDULED:=, =DEADLINE:=, =CLOSED:=, =[done/total]=, =:ARCHIVE:=,
+  =:WORKTREE:=, and =[[id:...]]= / =[[file:...]]= links) with zero verbose
+  bodies or thinking traces.
+- **Independent Task Org Documents**: Owned declaratively via
+  =ArtifactCatalog=, preventing multi-agent file contention and verified
+  against =durable-journal= digests on restart.
+- **Organic Scratch Promotion**: Default =scratch-promotion: 'on-plan= keeps
+  trivial one-shot questions out of persistent tabs until promoted by the user
+  or =ASCENT=.
+- **Four Zero-Token =ASCENT= Orchestration Predicates** (evaluated over Org
+  AST + =FunFlow= closure + =durable-journal=):
+  - =ready_to_schedule(task_id, node_id, model_tier)=
+  - =needs_recovery(task_id, attempt_id)=
+  - =ready_to_auto_archive(task_id)=: Top-level Scope Root is =DONE=, **every**
+    reachable =FunFlow= DAG node and child TODO is =DONE=, **every** checklist
+    item is =[X]=, no finalizer or review gate is pending, and
+    =durable-journal= confirms **zero in-flight attempts or uncommitted side
+    effects**.
+  - =tab_visible(task_id)=: Task is non-archived (active) OR present in
+    transient =ui-peek-set=.
+- **Atomic Auto-Archive Transaction**: When =ready_to_auto_archive(task_id)=
+  holds, the single-owner Durable Orchestrator atomically: (1) writes
+  =CLOSED: [timestamp]= and =:ARCHIVE:= to the Task Org via parser-verified
+  update; (2) synchronizes =index.org=; (3) commits an idempotent archive
+  receipt to =durable-journal=; and (4) publishes a new immutable
+  =WorkbenchTabProjection=.
+
+*** 7.6 Task-as-Tab Workbench Projection and MOP =.defgeneric= Protocol Surface
+
+TUI tabs are a **pure functional projection** of
+=(OrchestratorSnapshot, UiPeekSet)= — TUI memory never owns task lifecycle or
+archive state:
+- **Left Pinned Group (=Index=)**: Permanently visible, non-closable tab over
+  =index.org= (filterable by worktree, status, schedule, or Active/Archived).
+- **Right Dynamic Group (=Active Task Tabs=)**: One Centaur Tab per active
+  Org Task (replacing legacy session-centric =Chat / Messages / Sessions=).
+- **Auto-Hide & On-Demand Recall**: Background archived tabs disappear
+  immediately; focused archived tabs obey the overridable
+  =focused-tab-archive= POO policy slot (default ='on-blur=, configurable to
+  ='immediate=). Selecting an archived task from =Index= / =Switch Tasks=
+  mounts it in read-only peek mode (=reopen: 'peek-until-edit=); submitting a
+  new prompt or reverting status to =TODO= issues a durable =reopen-task=
+  command removing =:ARCHIVE:= and re-enrolling the task in orchestration.
+
+Extensible MOP =.defgeneric= protocols published at the Interface plane:
+- =(node-effective-rules node)= — C4-linearized policy + inert Org overrides.
+- =(task-artifact-path task)= — Plan-A Task Org & =index.org= resolution via
+  =ArtifactCatalog=.
+- =(task-funflow-dag task org-ast)= — static =FunFlow= DAG + CAS fingerprint
+  projection with =scc= and =Governance= scope pre-check.
+- =(task-orchestration-plan task org-ast journal-state)= — derives
+  =ready_to_schedule=, =needs_recovery=, =ready_to_auto_archive=, =L0..L3=
+  disclosure, and model tier.
+- =(task-archive-transition task org-source index-source)= — pure functional
+  atomic archive transition.
+- =(project-workbench-tabs repo-or-wt journal-state peek-set)= — pure pinned
+  =Index= + dynamic =Active Task Tabs= projection.
+
+*** 7.7 Scoped Detours, 0-Token Org-Elements Re-Anchoring, and Four Exit States
+
+Complex engineering tasks routinely require mid-flight detours (side-quests,
+blockers, dependency refactors). Rather than polluting an open-loop chat log
+and suffering Goal Drift, every detour executes **strictly inside the parent
+=Task Scope=** as a C4-derived =DetourNode.= subtree in the shared Task Org:
+
+- **Structured Detour Anchoring**: Each detour carries =:ROLE: detour=,
+  =:DETOUR_KIND: blocker | side-quest=, and =:RETURN_ANCHOR: <mainline-id>=.
+  A =blocker= detour adds a =:DEPENDS_ON:= edge into Epoch =g -> g+1=; a
+  =side-quest= runs concurrently on a disjoint byte span. Progressive
+  disclosure keeps the active detour at =L2/L3= while keeping the mainline
+  Goal spine and =:RETURN_ANCHOR:= pinned at =L0/L1= (~50–100 tokens).
+- **Zero-Token Org-Elements Re-Anchoring (=task-reanchor-mainline=)**: As soon
+  as a detour's checklist hits =[N/N]= or transitions to =DONE= / =PARKED= /
+  =CANCELLED=, =orgize= + ISO =GQL= + =ASCENT= deterministically inspects all
+  Org Elements at **0 LLM tokens** to emit =MainlineAlignmentSnapshot=
+  (=mainline_progress=, =unblocked_mainline=, =unsatisfied_invariants=,
+  =scope_drift_alert=, =return_focus=). Auto-Archive is strictly blocked while
+  any =blocker= detour or mainline invariant remains open.
+- **Four Fail-Closed CLOS Exit Reconcilers (=(reconcile-detour-exit detour exit-state anchor)=)**:
+  1. **=CompletedExit.=**: Passes =admit-consolidation= (verifying
+     =outcome-receipt-digest= + =defeat-conditions=), promotes receipts and
+     counterexamples to =:RETURN_ANCHOR:=, folds the detour to =L0=, and
+     unblocks mainline nodes.
+  2. **=ParkedExit.=**: Snapshots partial dirty worktree edits into GitOps
+     =custody= (=crates/marlin-agent-gitops/src/retention/custody.rs=) +
+     =org-attach= (=:CUSTODY_OID:=), restores a clean worktree at =source-cut=,
+     leaves non-blocking mainlines unencumbered, and supports one-step
+     =Reopen=.
+  3. **=CancelledExit.=**: Discards dirty code edits while **mandatorily
+     preserving =defeat-conditions=** into the mainline Non-Droppable
+     Counterexample Core so no future actor repeats the dead end.
+  4. **=PromotedToTaskExit.=**: When =ASCENT= detects =detour_depth >
+     max_detour_depth= or cross-scope permission requirements,
+     =fission-subtree= atomically promotes the detour into an independent
+     top-level Task Tab in =index.org=, leaving a single cross-task
+     =:DEPENDS_ON:= reference on the mainline anchor.
+
+*** 7.8 Zero-SubAgent Concurrent Shared Context & Per-=:ID:= Ownership (Extend, Never Overwrite)
+
+Mainstream "SubAgent" architectures fail on complex tasks because spawning an
+isolated child chat forces $O(K \cdot N)$ context re-reading, destroys shared
+state visibility, and creates uncoordinated overwrites. Marlin and Lab
+**eliminate the isolated SubAgent model**: sequential or concurrent, Humans
+and multiple peer Agents operate symmetrically over **one live Shared Org
+Context** in which **both information and task execution state reside**:
+
+1. **Per-=:ID:= Governance Ownership in =:PROPERTIES:=**:
+   - Every working table, task, or subtree =:ID:= declares its live ownership
+     directly in Org =:PROPERTIES:= (=:OWNER_ACTOR:=, =:CLAIM_STATE:=
+     (=unclaimed= | =claimed-active= | =handed-off= | =parked-custody= |
+     =completed=), =:CLAIM_LEASE_EPOCH:=, =:CLAIM_SCOPE_DIGEST:=,
+     =:CLAIM_WORKTREE:=), fenced by =durable-journal= and Rust
+     =OrgGovernanceLedger=.
+2. **Ambient Cross-Actor Perception (Zero Re-Read, Zero Duplicate Work)**:
+   - Because state lives in Shared Context rather than private chat threads,
+     the instant Agent =A= (or a Human) writes =:OWNER_ACTOR: agent:a= and
+     =:CLAIM_STATE: claimed-active= on =:ID: X=, every concurrent peer Agent
+     =B, C= and Human immediately perceives that claim at =L0/L1= via
+     zero-token Org Elements.
+3. **Extend-Never-Overwrite Invariant (=single_active_owner= & =extend_not_overwrite=)**:
+   - When =:ID: X= is =claimed-active= by actor =A=, any peer actor =B != A=
+     (whether Agent or Human) **MUST NOT overwrite** =:ID: X=.
+   - Instead, =B= contributes by **extending on top of =:ID: X=** through a
+     fresh disjoint child/steering subtree =:ID: Y= (=:ROLE: extension |
+     human-steering | detour=, =:EXTENDS_ID: X=, disjoint byte span rebased
+     cleanly by =funs-subtree-mediation= + =funs-delta= + Rust
+     =OrgGovernanceLedger=), which =A= perceives automatically at its next
+     epoch boundary without losing CAS or crashing in-flight work.
+   - Explicit takeover requires a fenced **Handover** incrementing
+     =:CLAIM_LEASE_EPOCH:= (invalidating =A='s stale write token) and
+     preserving =A='s partial work in GitOps =custody=.
+
+** 8. Qualification Plan
+:PROPERTIES:
+:CUSTOM_ID: qualification-plan
+:END:
+
+1. **Formal Specification & Proof Chain Gate**:
+   - =dev/sysml/org-babel-session.sysml= passes =sysml -strict -validate -self-check=
+     with zero errors and zero warnings (=MAR-ORG-P01..P13=, =MAR-ORG-L01..L07=,
+     =MAR-ORG-R01..R14=).
+   - Lab Formal Proof Chain Slice 49
+     (=49-scoped-detour-funflow-concurrent-shared-context.{org,sysml,lean,qnt}=)
+     passes OpenSysML v2 strict validation, Lean 4 =lake build= +
+     =ContextGovernanceAxioms.lean= (zero =sorry=, standard axioms only), and
+     Quint =typecheck= / =test= / =run= (including negative-control
+     counterexamples for non-owner overwrite, unexhaustive =FencedEffect=, and
+     premature archive with open blocker detour).
+   - =dev/quint/org-babel-fission.qnt= passes =quint typecheck=, =quint test=,
+     =quint run=, and negative-control mutation falsification.
+2. **Seed Contract Gate**:
+   - Minimal seeds in =agentic-ai-lab/modules/ai-agentic-context/org-contract/templates/seed/=
+     and =marlin-agent-core/scheme/context-system/org-contract/templates/session-seed/=
+     pass =orgize= =org-directory-validate= with zero diagnostics.
+3. **Layer 1 Library Gate (=agentic-ai-lab= + =yuanxu/funflow=)**:
+   - Focused Gerbil test suites verifying =Org Elements -> YuanxuGraph=,
+     =Org Elements -> ISO GQL=, =ASCENT= dynamic facet deduction and =L0..L3=
+     progressive disclosure + drill-down, Stage 1 deterministic Org AST
+     auto-repair (~90% cases) + Stage 2 Flash repair request generation,
+     parser-verified =org-babel= / checklist / fission updates, =gerbil-poo=
+     C4 linearization (=Repo= -> =Worktree= -> =Task= -> =SubTask=/=Extension=)
+     + MOP generics, =FunFlow= static DAG / CAS skip / epoch replanning /
+     finalizers, Governance scope isolation, and generic =Durable= orchestrator
+     scheduling, crash replay, and atomic Auto-Archive.
+4. **Layer 2 Production Gate (=marlin-agent-core/scheme=)**:
+   - =just scheme-build=, =just scheme-package-gate=, and Rust
+     =artifacts_workspace= / =org_scheme_vm= integration tests verifying
+     =LabContext= + =LabDurable= + =Funflow= integration strictly through
+     =scheme/interface.ss=, Doom-Emacs-style declarative macro/POO bindings,
+     objectified =OrchestratorStrategy.=, Plan-A =index.org= +
+     =ArtifactCatalog= ownership (zero =OrgStore= concept), atomic
+     Auto-Archive, and pure =WorkbenchTabProjection= (pinned =Index= + dynamic
+     =Active Task Tabs= + peek/reopen) **before** Layer 3 TUI visual rendering
+     begins.

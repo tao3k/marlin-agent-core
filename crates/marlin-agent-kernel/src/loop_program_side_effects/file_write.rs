@@ -66,6 +66,13 @@ impl LoopProgramFileSandbox {
                 normalized.display()
             ));
         }
+        if self.root.as_os_str().is_empty() {
+            return Err(format!(
+                "loop_program.file_write.sandbox_denied:{}",
+                normalized.display()
+            ));
+        }
+        verify_confined_no_symlinks(&self.root, &normalized)?;
         Ok((self.root.join(&normalized), normalized))
     }
 }
@@ -270,4 +277,72 @@ fn normalize_relative_path(path: &Path) -> Result<PathBuf, String> {
         return Err("loop_program.file_write.empty_path_denied".to_owned());
     }
     Ok(normalized)
+}
+
+fn verify_confined_no_symlinks(root: &Path, normalized: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(root) {
+        Ok(root_meta) => {
+            if root_meta.file_type().is_symlink() {
+                return Err(format!(
+                    "loop_program.file_write.symlink_escape_denied:{}",
+                    normalized.display()
+                ));
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(());
+        }
+        Err(error) => {
+            return Err(format!(
+                "loop_program.file_write.symlink_escape_denied:{}:{error}",
+                normalized.display()
+            ));
+        }
+    }
+
+    let canonical_root = fs::canonicalize(root).map_err(|error| {
+        format!(
+            "loop_program.file_write.symlink_escape_denied:{}:{error}",
+            normalized.display()
+        )
+    })?;
+
+    let mut cursor = canonical_root.clone();
+    for component in normalized.components() {
+        if let Component::Normal(part) = component {
+            cursor.push(part);
+            match fs::symlink_metadata(&cursor) {
+                Ok(meta) => {
+                    if meta.file_type().is_symlink() {
+                        return Err(format!(
+                            "loop_program.file_write.symlink_escape_denied:{}",
+                            normalized.display()
+                        ));
+                    }
+                    let resolved = fs::canonicalize(&cursor).map_err(|error| {
+                        format!(
+                            "loop_program.file_write.symlink_escape_denied:{}:{error}",
+                            normalized.display()
+                        )
+                    })?;
+                    if !resolved.starts_with(&canonical_root) {
+                        return Err(format!(
+                            "loop_program.file_write.symlink_escape_denied:{}",
+                            normalized.display()
+                        ));
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    break;
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "loop_program.file_write.symlink_escape_denied:{}:{error}",
+                        normalized.display()
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }

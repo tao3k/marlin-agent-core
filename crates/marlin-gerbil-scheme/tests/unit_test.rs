@@ -25,3 +25,7 @@ mod scheme_types;
 
 #[path = "unit/scheme_package.rs"]
 mod scheme_package;
+
+#[cfg(feature = "app-server-host")]
+#[path = "unit/sm30_stepup_host_confinement.rs"]
+mod sm30_stepup_host_confinement;

@@ -1,0 +1,162 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin Functional Scheme Style
+#+language: en
+
+* Declaration, composition, and execution
+
+| Responsibility | Mechanism |
+|----------------+-----------|
+| Declare a form and bind the caller's names | Hygienic =defrules= or =defsyntax= |
+| Inherit defaults and compose a publication | POO =.def=, =.o=, =.mix= and slot refinements |
+| Construct and validate a Class instance before publishing it | POO =.new/checked= |
+| Validate, transform, and project values | Ordinary Scheme functions with explicit inputs and results |
+| Run a process, enter a VM boundary, or send a message | An explicit operation owned by the subsystem that performs the effect |
+
+Core's Ops Script demonstrates the whole path. A derived Script supplies
+configuration. =prepare-command= reads it and returns argv. =run= and the
+receiver convenience slot =.run= share the same execution path.
+
+#+begin_src scheme
+(.def (Build @ (.get Ops prototypes Script))
+  command: '("gxi" "-:max-heap=2G,debug=q" "build.ss")
+  directory: (.get Fixture root)
+  timeout: 60
+  check-status: #f)
+
+(def argv (.call Ops prepare-command Build '("spec")))
+;; Invoke the effect when a result is needed.
+(def result (.call Ops run Build '("spec")))
+#+end_src
+
+Use =defrules= for structural sugar that expands into value constructors or
+calls. Use =syntax-case= when expansion must inspect bindings or establish a
+private name, as in Yuanxu's Build binding. Keep expansion hygienic and pass
+ordinary values to the code that validates and projects them.
+
+** Checked Class construction and direct Script inheritance
+
+Use =.new/checked= from =:clan/poo/mop= when the caller has a Class
+descriptor and needs a checked instance immediately. The constructor
+validates the instance, calls the Class's =.instantiate= hook when
+present, and validates the hook's result before returning it. POO's
+class-validation test uses an existing Class fixture and checks that the
+returned callable honors its contract.
+
+#+begin_src scheme
+(def initialized (.new/checked class-validation.service.InitializedRecord))
+(check-equal? ((.get initialized run) 2) 5)
+(check-exception ((.get initialized audit) #f) TypeError?)
+#+end_src
+
+[[https://github.com/tao3k/gerbil-poo/blob/d7d438e53a5becf5c17bf781dc166ae54e8409ee/t/contracts/object-contract/class-validation.scm#L58-L60][POO class-validation test]]
+
+Use =.def= with =ProcessScript.= when declaring a Script with inherited
+defaults and local overrides. Import the prototype directly from
+=:tao3k/yuanxu/ops/objects= when that module owns the Script declaration.
+Yuanxu's compiled-module fixture declares the command and its execution
+settings, then explicitly calls =.run=. Ops checks the Script when preparing
+it for execution.
+
+#+begin_src scheme
+(.def (ConsumerBuild @ ProcessScript.)
+  command: '("gerbil" "-:max-heap=2G,debug=q" "build")
+  directory: root
+  environment: (.o GERBIL_PATH: state GERBIL_LOADPATH: inherited)
+  timeout: 60 idle-timeout: 60 check-status: #f)
+(def prepared (.call ConsumerBuild .run))
+#+end_src
+
+[[https://github.com/tao3k/gebril-yuanxu/blob/689db1886e8efdb04accd3c15dc2dc6140e14eeb/t/module-testing-compiled-test.ss#L28-L33][Yuanxu compiled-module fixture]]
+
+** Lexical constant slots vs receiver-computed slots
+
+Gerbil-POO distinguishes constant lexical capture (corresponding to POOF's
+=$slot=) from receiver/inheritance computations (corresponding to POOF's
+=$slot-compute= and =$slot-gen=). [[https://github.com/metareflection/poof/blob/59cecf050c8f2fab480175278c439410f3151cd6/poof-code-only.rkt#L21-L48][POOF slot constructors]]
+
+- *Same-name lexical capture*: write =slot-name= (or =(slot-name)=) when a
+  surrounding lexical variable already carries the exact slot name. Do not
+  invent artificial =-value= / =-input= suffixes merely to avoid =CyclicSlot=
+  shadowing.
+- *Explicit constant capture*: write =(slot-name := expression)= when
+  evaluating an expression once in the surrounding lexical scope before
+  receiver slot bindings are installed. The captured value never allocates a
+  per-read =self= closure and remains available to descendants through ordinary
+  inheritance.
+- *Receiver and inherited computation*: reserve =slot-name: expr=,
+  =(slot-name expr)=, =(slot-name => fn ...)=, and =(slot-name =>.+ proto)= for
+  slots that genuinely depend on final =self= or the inherited =super= thunk.
+
+#+begin_src scheme
+;; Capture boundary values once in lexical scope; no `-value` renaming needed.
+(.o (:: @ ClosClass.)
+    (identity := (string-copy identity-value))
+    (generation := generation-value)
+    complete?)
+#+end_src
+
+* File roles
+
+| File | Responsibility |
+|------+----------------|
+| =interface.ss= | Declare the Yuanxu Module, its Feature refinements and published roles. |
+| =types.ss= | Specify contracts and their boundaries. |
+| =objects.ss= | Define POO prototypes, catalogs, and operation objects. A small factory can assemble a publication from explicit dependencies. |
+| =funcs.ss= | Implement value-level operations for a module. Use a domain name such as =projection.ss= or =dispatch.ss= when it identifies a distinct responsibility. |
+| =syntax.ss= | Own a module's declaration macros when the syntax has a separate consumer. |
+| =config.ss= | Select declarations, compose operations, and validate the scope published by the interface. |
+| =build.ss= | Declare owner-relative targets or program link options when the Module has build-specific work. |
+
+Yuanxu requires =types.ss=, =objects.ss=, and =interface.ss= for selected
+Modules. Use the other files when their responsibilities are present.
+Import through the published
+interface for Module capabilities. Keep internal imports explicit when a file
+uses only a few names. Prefer Gerbil =:std= and SRFI functions for standard
+list, string, and collection operations. Use an explicit domain function when
+it makes validation, bounds, order, or effects easier to read.
+Local mutation is appropriate for building an owned vector or index. Publish
+the result through the same value-level interface.
+
+* Inheritance and dispatch
+
+Override an inherited value in the same slot. For example, an empty Build
+specification replaces the inherited additional targets. The selected Module
+roles and their Gerbil imports still supply the base closure.
+
+#+begin_src scheme
+(.def Parent
+  defbuild-script: (.o spec: '("optional-tool")))
+
+(.def (Build @ Parent)
+  defbuild-script: (.o spec: '()))
+#+end_src
+
+Use a slot-backed generic when downstream prototypes need distinct
+implementations of a shared operation. Core's Graph applies each operation
+using its =.apply= slot. Callers use the ordinary function shape.
+
+#+begin_src scheme
+(.defgeneric (yuanxu-graph-operation-apply operation node)
+  slot: .apply)
+
+(yuanxu-graph-operation-apply operation node)
+#+end_src
+
+Use CLOS methods when multiple arguments jointly select the behavior.
+Keep the work of a method in an ordinary function when it can be expressed
+as a value transformation. Marlin's hook condition evaluator and UI event
+protocol show this boundary. The Core Ops Script uses its shared execution
+path for ordinary Script values.
+[[file:agent-hooks/conditions.ss][Hook condition dispatch]] ·
+[[file:ui/dispatch.ss][UI event protocol]]
+
+* Verify at the owning boundary
+
+Test declarations, value transformations, presentation, and effects with the
+relevant Scheme module. Use the Scheme UI test window to exercise a rendered
+scenario. Test C ABI admission and terminal I/O using their existing host
+gates. Keep values typed across the Scheme and Rust boundary.
+[[file:README.org::*Build and test][Build and test]]

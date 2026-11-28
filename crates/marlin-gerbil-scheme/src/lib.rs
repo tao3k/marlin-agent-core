@@ -7,16 +7,30 @@
 mod agent_policy_routing;
 mod agent_policy_routing_abi;
 mod aot_runtime;
+mod atomic_effect_abi;
 mod brief_to_draft;
 mod deck_runtime_policy;
+#[cfg(feature = "app-server-host")]
+pub mod governance_host;
+mod governance_policy_abi;
+mod graph_engine;
 mod graph_loop_continuation;
 mod loop_case_driver;
 mod policy_pack_projection;
 mod runtime;
+#[cfg(all(feature = "app-server-host", not(feature = "external-program")))]
+pub mod scheme_bridge_actor;
+#[cfg(feature = "app-server-host")]
+pub mod scheme_host_runtime;
+#[cfg(feature = "app-server-host")]
+pub mod scheme_ui_keymap;
 #[doc(hidden)]
 pub mod scheme_type_fixtures;
 mod scheme_types;
 mod working_copy_policy;
+
+#[cfg(feature = "external-program")]
+pub use gerbil_scheme::{GerbilRuntime, LinkedGerbilProgram};
 
 pub use agent_policy_routing::{
     GERBIL_AGENT_POLICY_ROUTING_ABI_PROJECTION_ABI_ID,
@@ -57,6 +71,18 @@ pub use aot_runtime::{
     GerbilAotStatus, GerbilAotSymbol, GerbilAotSymbolAuditMethod, GerbilCCompiler,
     GerbilLinkLibrary, GerbilSymbolAuditor,
 };
+pub use atomic_effect_abi::{
+    AtomicEffectAbiError, FleetAuditCapsuleProjection, MARLIN_GRAPH_ENGINE_ATOMIC_FLEET_ABI_ID,
+    MARLIN_GRAPH_ENGINE_ATOMIC_FLEET_ABI_VERSION,
+    MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_AUDIT_CAPSULE_SYMBOL,
+    MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_DISPATCH_SYMBOL,
+    MARLIN_GRAPH_ENGINE_FLEET_CONTROLLER_OPEN_SYMBOL, MARLIN_GRAPH_ENGINE_STEP_DRIVER_SYMBOL,
+    MARLIN_GRAPH_ENGINE_STEP_FLEET_SYMBOL, SchemeAtomicEffect, SchemeAtomicReceipt,
+    SchemeFleetDispatchStep, SchemeFleetLinkedDriver, SchemeFleetLinkedExports,
+    SchemeFleetQuiescentSummary, SchemeFleetSessionDriver, decode_fleet_audit_capsule_vector,
+    decode_scheme_atomic_effect_vector, encode_scheme_atomic_receipt_vector,
+    marlin_graph_engine_atomic_fleet_abi_contract, marlin_graph_engine_atomic_fleet_readiness_plan,
+};
 pub use brief_to_draft::{
     BriefNode, BriefProposal, BriefSettings, BriefSettingsDenial, BriefTemplate,
     GerbilBriefPlanner, GerbilBriefSettings, GerbilBriefSettingsError,
@@ -81,6 +107,28 @@ pub use deck_runtime_policy::{
     gerbil_deck_runtime_poo_policy_projection_request,
     gerbil_deck_runtime_poo_policy_projection_type_manifest,
     gerbil_deck_runtime_resolved_loop_policy_pack_projection_request,
+};
+pub use governance_policy_abi::{
+    GovernanceDerivationSpec, GovernancePolicyAbiError, GovernancePolicyVectorProjection,
+    GovernancePolicyVectorRequest, MARLIN_GOVERNANCE_ADMISSION_SCHEMA_VERSION,
+    MARLIN_GOVERNANCE_PROJECT_SYMBOL, decode_governance_policy_vector,
+    encode_governance_policy_request,
+};
+pub use graph_engine::{
+    GraphEngineDispatchProjection, GraphEngineGovernedContextProjection, GraphEngineLinkedBridge,
+    GraphEngineLinkedExports, GraphEngineOracleHandle, GraphEngineOracleServer,
+    GraphEngineProjectionError, GraphEngineRootedOracle, GraphEngineWorkbenchTaskRow,
+    MARLIN_GRAPH_ENGINE_ABI_ID, MARLIN_GRAPH_ENGINE_ABI_VERSION,
+    MARLIN_GRAPH_ENGINE_DISPATCH_SYMBOL, MARLIN_GRAPH_ENGINE_GOVERNED_CONTEXT_SYMBOL,
+    MARLIN_GRAPH_ENGINE_RECONCILE_SYMBOL, MARLIN_GRAPH_ENGINE_WORKBENCH_TABS_SYMBOL,
+    decode_graph_engine_dispatch_vector, decode_graph_engine_governed_context_vector,
+    decode_graph_engine_reconcile_vector, decode_graph_engine_workbench_tabs_vector,
+    encode_graph_engine_dispatch_request, encode_graph_engine_governed_context_request,
+    encode_graph_engine_reconcile_request, encode_graph_engine_workbench_tabs_request,
+    graph_engine_oracle_channel, invoke_linked_graph_engine_dispatch,
+    invoke_linked_graph_engine_governed_context, invoke_linked_graph_engine_reconcile,
+    invoke_linked_graph_engine_workbench_tabs, marlin_graph_engine_abi_contract,
+    marlin_graph_engine_readiness_plan,
 };
 pub use graph_loop_continuation::{
     GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_ID,
@@ -173,7 +221,10 @@ pub use scheme_types::{
     validate_gerbil_scheme_package_manifest, validate_gerbil_scheme_type_manifest,
     validate_gerbil_scheme_typed_value,
 };
+#[cfg(not(feature = "external-program"))]
+pub use scheme_types::project_rooted_scheme_object;
+#[cfg(not(feature = "external-program"))]
 pub use working_copy_policy::{
-    GerbilWorkingCopyPolicy, GerbilWorkingCopyPolicyError, GerbilWorkingCopyPolicyOperation,
-    GerbilWorkingCopyPolicySelection, WorkingCopyProviderAvailability,
+    GerbilWorkingCopyPolicy, GerbilWorkingCopyPolicyError, WorkingCopyProviderAvailability,
 };
+pub use working_copy_policy::{GerbilWorkingCopyPolicyOperation, GerbilWorkingCopyPolicySelection};

@@ -4,14 +4,15 @@
 
 //! Tokio runtime handle and spawn helpers.
 
-use std::{collections::VecDeque, future::Future, sync::Arc, time::Duration};
+use marlin_agent_gitops::working_copy::WorkingCopyIsolationReceipt;
+use std::{future::Future, sync::Arc, time::Duration};
 
 use crate::observability;
 use marlin_agent_protocol::ProcessMemorySampler;
 use tokio::sync::{oneshot, watch};
-use tokio::task::{JoinError, JoinSet};
 use tracing::Instrument;
 
+use super::context_visibility_from_sub_agent_policy;
 use super::{
     AgentSessionContext, CancellationToken, ContextVisibility, HookRuntime, ProviderRuntime,
     RuntimeContext, RuntimeEnvironment, RuntimeEventSink, RuntimeEventStream,
@@ -19,14 +20,10 @@ use super::{
     RuntimeTaskOutcome, RuntimeTaskShutdownReceipt, RuntimeTaskShutdownRequest, RuntimeTaskTracker,
     RuntimeTaskTrackerPolicy, SessionId, SessionIsolationReceipt, SessionKind,
     SessionRuntimeSnapshot, SubAgentRuntime, SubAgentSpawnConfig, SubAgentSpawnReceipt,
-    TokioRuntimePolicy, TokioRuntimePolicyReceipt, ToolRuntime, WorkingCopyIsolationReceipt,
-    WorkingCopySubAgentFanoutItem,
+    TokioRuntimePolicy, TokioRuntimePolicyReceipt, ToolRuntime,
 };
-use crate::tokio_runtime::context::context_visibility_from_sub_agent_policy;
-use crate::tokio_runtime::receipt::{
-    RuntimeFanoutOutput, RuntimeFanoutReceipt, RuntimeFanoutResult, RuntimeFanoutTaskReceipt,
-};
-use marlin_agent_sessions::RuntimeFanoutJoinPolicy;
+#[path = "fanout.rs"]
+mod fanout;
 
 /// Tokio-backed runtime handle shared by providers, tools, and sub-agents.
 #[derive(Clone, Debug)]
@@ -34,6 +31,7 @@ pub struct TokioAgentRuntime {
     cancellation: CancellationToken,
     events: RuntimeEventSink,
     environment: RuntimeEnvironment,
+    project_envrc: Option<crate::ProjectEnvrcDiscovery>,
     execution: Option<RuntimeExecutionIdentity>,
     session: AgentSessionContext,
     graph_loop_runs: crate::GraphLoopRunRegistryHandle,
@@ -75,8 +73,11 @@ pub struct TokioAgentRuntimeBuildRequest {
     event_buffer: usize,
     process_limit: Option<std::num::NonZeroUsize>,
     process_budget: Option<(RuntimeProcessBudget, Arc<dyn ProcessMemorySampler>)>,
+    host_run_id: Option<crate::process::RuntimeHostRunId>,
+    process_ledger: Option<Arc<dyn crate::process::ProcessLedgerStore>>,
     cancellation: CancellationToken,
     environment: RuntimeEnvironment,
+    project_envrc: Option<crate::ProjectEnvrcDiscovery>,
     session: AgentSessionContext,
     runtime_snapshot: SessionRuntimeSnapshot,
 }
@@ -92,11 +93,36 @@ impl TokioAgentRuntimeBuildRequest {
             event_buffer,
             process_limit: None,
             process_budget: None,
+            host_run_id: None,
+            process_ledger: None,
             cancellation: CancellationToken::new(),
             environment: RuntimeEnvironment::default(),
+            project_envrc: None,
             session,
             runtime_snapshot,
         }
+    }
+
+    /// Attach a custom persistent ledger store for durable process tracking and
+    /// post-restart orphan reconciliation.
+    pub fn with_process_ledger(
+        mut self,
+        ledger: Arc<dyn crate::process::ProcessLedgerStore>,
+    ) -> Self {
+        self.process_ledger = Some(ledger);
+        self
+    }
+
+    /// Persist managed processes to a crash-safe JSON ledger file at `path`.
+    pub fn with_process_ledger_path(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.process_ledger = Some(Arc::new(crate::process::FileProcessLedgerStore::new(path)));
+        self
+    }
+
+    /// Pin an explicit host boot run identifier for this runtime instance.
+    pub fn with_host_run_id(mut self, host_run_id: crate::process::RuntimeHostRunId) -> Self {
+        self.host_run_id = Some(host_run_id);
+        self
     }
 
     /// Limits managed child admissions shared across all child contexts.
@@ -115,6 +141,15 @@ impl TokioAgentRuntimeBuildRequest {
     ) -> Self {
         self.process_limit = Some(budget.concurrent);
         self.process_budget = Some((budget, sampler));
+        self
+    }
+
+    pub fn with_project_envrc(self, binding: crate::ProjectEnvrc) -> Self {
+        self.with_project_envrc_discovery(crate::ProjectEnvrcDiscovery::resolved(binding))
+    }
+
+    pub fn with_project_envrc_discovery(mut self, discovery: crate::ProjectEnvrcDiscovery) -> Self {
+        self.project_envrc = Some(discovery);
         self
     }
 
@@ -198,15 +233,25 @@ impl TokioAgentRuntime {
         request: TokioAgentRuntimeBuildRequest,
     ) -> (Self, RuntimeEventStream) {
         let (events, stream) = RuntimeEventSink::channel(request.event_buffer);
+        let host_run_id = request
+            .host_run_id
+            .unwrap_or_else(crate::process::RuntimeHostRunId::generate);
+        let process_registry = match request.process_ledger {
+            Some(ledger) => {
+                crate::process::RuntimeProcessRegistryHandle::with_ledger(host_run_id, ledger)
+            }
+            None => crate::process::RuntimeProcessRegistryHandle::new(),
+        };
         (
             Self {
                 cancellation: request.cancellation,
                 events,
                 environment: request.environment,
+                project_envrc: request.project_envrc,
                 execution: None,
                 session: request.session,
                 graph_loop_runs: crate::GraphLoopRunRegistryHandle::new(),
-                process_registry: crate::process::RuntimeProcessRegistryHandle::new(),
+                process_registry,
                 process_quota: request
                     .process_limit
                     .map(|limit| Arc::new(tokio::sync::Semaphore::new(limit.get()))),
@@ -218,11 +263,37 @@ impl TokioAgentRuntime {
         )
     }
 
+    /// Unique identifier for this Marlin host runtime boot.
+    pub fn host_run_id(&self) -> &crate::process::RuntimeHostRunId {
+        self.process_registry.host_run_id()
+    }
+
+    /// Reconcile any non-terminal processes left in the persistent ledger from
+    /// previous host runs against live OS state.
+    pub fn reconcile_persisted_processes(
+        &self,
+    ) -> std::io::Result<crate::process::PersistedProcessReconciliationReport> {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+            .unwrap_or_default();
+        self.process_registry.reconcile_persisted_processes(now_ms)
+    }
+
+    pub fn project_envrc(&self) -> Option<crate::ProjectEnvrc> {
+        self.project_envrc.as_ref()?.binding()
+    }
+
+    pub fn project_envrc_status(&self) -> Option<crate::EnvrcStatus> {
+        self.project_envrc.as_ref()?.status()
+    }
+
     pub fn context(&self) -> RuntimeContext {
         RuntimeContext {
             cancellation: self.cancellation.clone(),
             events: self.events.clone(),
             environment: self.environment.clone(),
+            project_envrc: self.project_envrc.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
             active_working_copy: None,
@@ -288,6 +359,7 @@ impl TokioAgentRuntime {
             cancellation: self.cancellation.child_token(),
             events: self.events.clone(),
             environment: self.environment.clone(),
+            project_envrc: self.project_envrc.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
             graph_loop_runs: self.graph_loop_runs.clone(),
@@ -309,6 +381,7 @@ impl TokioAgentRuntime {
                 cancellation: self.cancellation.child_token(),
                 events,
                 environment: self.environment.clone(),
+                project_envrc: self.project_envrc.clone(),
                 execution: self.execution.clone(),
                 session: self.session.clone(),
                 graph_loop_runs: self.graph_loop_runs.clone(),
@@ -334,6 +407,7 @@ impl TokioAgentRuntime {
             cancellation: self.cancellation.child_token(),
             events: self.events.clone(),
             environment,
+            project_envrc: self.project_envrc.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
             graph_loop_runs: self.graph_loop_runs.clone(),
@@ -365,6 +439,7 @@ impl TokioAgentRuntime {
                 cancellation: self.cancellation.child_token(),
                 events: self.events.clone(),
                 environment: self.environment.clone(),
+                project_envrc: self.project_envrc.clone(),
                 execution: self.execution.clone(),
                 session,
                 graph_loop_runs: self.graph_loop_runs.clone(),
@@ -677,66 +752,6 @@ impl TokioAgentRuntime {
         )
     }
 
-    pub fn spawn_sub_agents_with_working_copy_environments<A>(
-        &self,
-        sub_agent: Arc<A>,
-        fanout: impl IntoIterator<Item = WorkingCopySubAgentFanoutItem<A::Input>>,
-        max_parallelism: usize,
-    ) -> RuntimeTask<RuntimeFanoutResult<A::Output>>
-    where
-        A: SubAgentRuntime,
-    {
-        self.spawn_sub_agents_with_working_copy_environments_with_policy(
-            sub_agent,
-            fanout,
-            RuntimeFanoutJoinPolicy::bounded(max_parallelism),
-        )
-    }
-
-    pub fn spawn_sub_agents_with_working_copy_environments_with_policy<A>(
-        &self,
-        sub_agent: Arc<A>,
-        fanout: impl IntoIterator<Item = WorkingCopySubAgentFanoutItem<A::Input>>,
-        policy: RuntimeFanoutJoinPolicy,
-    ) -> RuntimeTask<RuntimeFanoutResult<A::Output>>
-    where
-        A: SubAgentRuntime,
-    {
-        let runtime = self.clone();
-        let fanout = fanout.into_iter().collect::<Vec<_>>();
-
-        self.spawn_scoped(
-            self.session.session_id(),
-            RuntimeOperationId::new("subagent.fanout"),
-            Self::run_sub_agent_fanout_with_policy(runtime, sub_agent, fanout, policy),
-            observability::runtime_sub_agent_span(),
-        )
-    }
-
-    fn effective_working_copy_fanout_parallelism(
-        policy: &RuntimeFanoutJoinPolicy,
-        item_count: usize,
-    ) -> usize {
-        policy
-            .max_parallelism()
-            .unwrap_or_else(|| item_count.max(1))
-            .max(1)
-    }
-
-    async fn run_sub_agent_fanout_with_policy<A>(
-        runtime: Self,
-        sub_agent: Arc<A>,
-        fanout: Vec<WorkingCopySubAgentFanoutItem<A::Input>>,
-        policy: RuntimeFanoutJoinPolicy,
-    ) -> RuntimeFanoutResult<A::Output>
-    where
-        A: SubAgentRuntime,
-    {
-        WorkingCopySubAgentFanoutRunner::new(runtime, sub_agent, fanout, policy)
-            .run()
-            .await
-    }
-
     pub fn spawn_hook<H>(&self, hook: Arc<H>, request: H::Request) -> RuntimeTask<H::Output>
     where
         H: HookRuntime,
@@ -835,151 +850,4 @@ impl TokioAgentRuntime {
             }),
         )
     }
-}
-
-struct WorkingCopySubAgentFanoutRunner<A>
-where
-    A: SubAgentRuntime,
-{
-    runtime: TokioAgentRuntime,
-    sub_agent: Arc<A>,
-    pending: VecDeque<(usize, WorkingCopySubAgentFanoutItem<A::Input>)>,
-    tasks: JoinSet<(usize, A::Output)>,
-    outputs: Vec<(usize, A::Output)>,
-    receipt: RuntimeFanoutReceipt,
-    policy: RuntimeFanoutJoinPolicy,
-    effective_parallelism: usize,
-}
-
-impl<A> WorkingCopySubAgentFanoutRunner<A>
-where
-    A: SubAgentRuntime,
-{
-    fn new(
-        runtime: TokioAgentRuntime,
-        sub_agent: Arc<A>,
-        fanout: Vec<WorkingCopySubAgentFanoutItem<A::Input>>,
-        policy: RuntimeFanoutJoinPolicy,
-    ) -> Self {
-        let effective_parallelism =
-            TokioAgentRuntime::effective_working_copy_fanout_parallelism(&policy, fanout.len());
-        Self {
-            runtime,
-            sub_agent,
-            pending: fanout.into_iter().enumerate().collect(),
-            tasks: JoinSet::new(),
-            outputs: Vec::new(),
-            receipt: RuntimeFanoutReceipt::new(policy.clone()),
-            policy,
-            effective_parallelism,
-        }
-    }
-
-    async fn run(mut self) -> RuntimeFanoutResult<A::Output> {
-        while self.has_work() {
-            self.spawn_ready_tasks();
-            match self.record_next_join().await {
-                WorkingCopyFanoutStep::Continue => {}
-                WorkingCopyFanoutStep::Cancelled(receipt) => return Err(receipt),
-            }
-        }
-
-        self.finish()
-    }
-
-    fn has_work(&self) -> bool {
-        !self.pending.is_empty() || !self.tasks.is_empty()
-    }
-
-    fn spawn_ready_tasks(&mut self) {
-        while self.tasks.len() < self.effective_parallelism {
-            let Some((index, item)) = self.pending.pop_front() else {
-                break;
-            };
-            let (input, environment, working_copy_receipt) = item.into_parts();
-            let sub_agent = Arc::clone(&self.sub_agent);
-            let context = self
-                .runtime
-                .context()
-                .child_context_with_environment(environment)
-                .with_working_copy_receipt(working_copy_receipt);
-            let Ok(guard) = self.runtime.task_tracker.admit(
-                context.session().session_id(),
-                RuntimeOperationId::new("subagent.fanout.item"),
-            ) else {
-                self.receipt
-                    .push_task_receipt(RuntimeFanoutTaskReceipt::cancelled_before_start(index));
-                continue;
-            };
-            self.tasks.spawn(
-                async move {
-                    let _guard = guard;
-                    (index, sub_agent.run_sub_agent(input, context).await)
-                }
-                .instrument(observability::runtime_sub_agent_span()),
-            );
-        }
-    }
-
-    async fn record_next_join(&mut self) -> WorkingCopyFanoutStep {
-        let Some(joined) = self.tasks.join_next().await else {
-            return WorkingCopyFanoutStep::Continue;
-        };
-
-        match joined {
-            Ok((index, output)) => self.record_completed_task(index, output),
-            Err(error) => self.record_join_error(error),
-        }
-    }
-
-    fn record_completed_task(&mut self, index: usize, output: A::Output) -> WorkingCopyFanoutStep {
-        self.receipt
-            .push_task_receipt(RuntimeFanoutTaskReceipt::completed(index));
-        self.outputs.push((index, output));
-        WorkingCopyFanoutStep::Continue
-    }
-
-    fn record_join_error(&mut self, error: JoinError) -> WorkingCopyFanoutStep {
-        self.receipt
-            .push_task_receipt(RuntimeFanoutTaskReceipt::join_error(error.to_string()));
-        if !self.policy.cancel_on_first_error() {
-            return WorkingCopyFanoutStep::Continue;
-        }
-
-        WorkingCopyFanoutStep::Cancelled(self.cancel_remaining_work())
-    }
-
-    fn cancel_remaining_work(&mut self) -> RuntimeFanoutReceipt {
-        self.tasks.abort_all();
-        while let Some((index, _)) = self.pending.pop_front() {
-            self.receipt
-                .push_task_receipt(RuntimeFanoutTaskReceipt::cancelled_before_start(index));
-        }
-        self.take_receipt()
-    }
-
-    fn finish(mut self) -> RuntimeFanoutResult<A::Output> {
-        if self.receipt.has_join_errors() {
-            return Err(self.receipt);
-        }
-        if self.policy.preserve_input_order() {
-            self.outputs.sort_by_key(|(index, _)| *index);
-        }
-        Ok(RuntimeFanoutOutput::new(
-            self.outputs.into_iter().map(|(_, output)| output).collect(),
-            self.receipt,
-        ))
-    }
-
-    fn take_receipt(&mut self) -> RuntimeFanoutReceipt {
-        std::mem::replace(
-            &mut self.receipt,
-            RuntimeFanoutReceipt::new(self.policy.clone()),
-        )
-    }
-}
-
-enum WorkingCopyFanoutStep {
-    Continue,
-    Cancelled(RuntimeFanoutReceipt),
 }

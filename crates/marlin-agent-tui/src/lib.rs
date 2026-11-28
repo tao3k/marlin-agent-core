@@ -16,6 +16,7 @@ mod context_budget;
 mod edge_gateway;
 mod event_queue;
 mod frame_schedule;
+mod helm;
 mod input;
 mod journal_gateway;
 mod model_catalog;

@@ -4,8 +4,8 @@
 
 ;;; Typed publication contract for the Scheme-owned terminal workbench.
 (import (only-in :clan/poo/object .cc)
-        (only-in :clan/poo/mop Bool Fun Object Type. element?
-                 ClosGenericFunction ClosGenericProtocol)
+        (only-in :clan/poo/mop ClosGenericFunction ClosGenericProtocol)
+        (only-in :clan/poo/type Bool Fun Function Object Type. element?)
         (only-in :clan/poo/type Exactly List Or Record String)
         (only-in "../ui-components/bounds.ss" marlin-ui-bounded-list?))
 
@@ -35,6 +35,7 @@
   (Record identity: [(Exactly 'workbench)] kind: [(Exactly 'workbench)]
           model: [String] session: [String] geometry-policy: [Object]
           transcript-policy: [Object]
+          theme-profile: [UiIdentity] tab-style: [UiIdentity]
           theme-palette: [Object] regions: [(List UiRegion)]
           focus-order: [(List UiIdentity)]))
 (def UiNativeProjection (.cc Type. '.element? vector?))
@@ -46,7 +47,8 @@
 ;; Constructors also validate size and ownership; no runtime authority is conveyed.
 (def UiScopeContract
   (.cc (Record workbench: [(Fun UiWorkbench <- UiWorkbenchFacts)]
-               profile-workbench: [(Fun UiWorkbench <- UiWorkbenchFacts UiIdentity)]
+               profile-workbench: [(Function (list UiWorkbench) (list UiWorkbenchFacts UiIdentity)
+                                             optional: (list UiIdentity))]
                project-workbench: [(Fun UiNativeProjection <- UiWorkbench)]
                focus-event: [(Fun Object <- UiWorkbench)]
                previous-focus-event: [(Fun Object <- UiWorkbench)]

@@ -13,8 +13,9 @@ use crate::ids::{
     GerbilPolicyScopeRef,
 };
 use crate::receipt::{
-    AgentCoordinationDecision, AgentCoordinationEvidenceRef, AgentCoordinationReceipt,
-    AgentPolicyRoutingDecision, AgentPolicyRoutingReceipt, AgentRoutingReceipt,
+    AgentCoordinationDecision, AgentCoordinationEvidenceKind, AgentCoordinationEvidenceRef,
+    AgentCoordinationReceipt, AgentPolicyRoutingDecision, AgentPolicyRoutingReceipt,
+    AgentRoutingReceipt,
 };
 use crate::topology::{
     AgentCoordinationPlan, AgentEdge, AgentEdgeCondition, AgentGraph, AgentTopologyPolicy,
@@ -200,6 +201,11 @@ pub enum AgentGraphRoutingProjectionRejection {
         /// Root node selected by the plan.
         root_node: AgentNodeId,
     },
+    /// The plan lists the same candidate edge more than once.
+    DuplicateCandidateEdge {
+        /// Duplicated candidate edge.
+        edge_id: AgentEdgeId,
+    },
 }
 
 /// Produces a runtime-consumable `AgentCoordinationPlan` without executing it.
@@ -257,8 +263,16 @@ pub fn project_agent_candidate_routing_receipts(
         .iter()
         .map(|edge| (edge.edge_id.clone(), edge))
         .collect::<HashMap<_, _>>();
+    let mut seen_edges = HashSet::with_capacity(plan.candidate_edges.len());
     let mut receipts = Vec::with_capacity(plan.candidate_edges.len());
     for edge_id in &plan.candidate_edges {
+        if !seen_edges.insert(edge_id) {
+            return Err(
+                AgentGraphRoutingProjectionRejection::DuplicateCandidateEdge {
+                    edge_id: edge_id.clone(),
+                },
+            );
+        }
         let Some(edge) = edges_by_id.get(edge_id) else {
             return Err(AgentGraphRoutingProjectionRejection::MissingCandidateEdge {
                 edge_id: edge_id.clone(),
@@ -395,12 +409,12 @@ fn edge_matches_topology_policy(
     node_capabilities: &HashMap<AgentNodeId, HashSet<AgentCapability>>,
 ) -> bool {
     match &graph.topology_policy {
-        AgentTopologyPolicy::Deterministic => edge_condition_matches(edge, target),
+        AgentTopologyPolicy::Deterministic => edge_condition_matches(edge, target, false),
         AgentTopologyPolicy::CapabilityFirst => {
             let Some(required_capability) = target.required_capability.as_ref() else {
-                return edge_condition_matches(edge, target);
+                return edge_condition_matches(edge, target, false);
             };
-            edge_condition_matches(edge, target)
+            edge_condition_matches(edge, target, false)
                 && node_capabilities
                     .get(&edge.to)
                     .is_some_and(|capabilities| capabilities.contains(required_capability))
@@ -450,14 +464,24 @@ fn policy_scoped_candidate_edges(
         .filter(|edge| edge.from == target.root_node)
         .map(|edge| (edge.edge_id.clone(), edge))
         .collect::<HashMap<_, _>>();
+    let has_policy_evidence = policy_receipt
+        .evidence
+        .iter()
+        .any(|item| item.kind == AgentCoordinationEvidenceKind::GerbilPolicyReceipt);
+    let mut seen_edges = HashSet::with_capacity(policy_receipt.candidate_edges.len());
 
     for edge_id in &policy_receipt.candidate_edges {
+        if !seen_edges.insert(edge_id) {
+            return Err(AgentGraphPlanningRejection::PolicyReceiptEdgeNotCandidate {
+                edge_id: edge_id.clone(),
+            });
+        }
         let Some(edge) = outgoing_edges.get(edge_id) else {
             return Err(AgentGraphPlanningRejection::PolicyReceiptEdgeNotCandidate {
                 edge_id: edge_id.clone(),
             });
         };
-        if !edge_condition_matches(edge, target) {
+        if !edge_condition_matches(edge, target, has_policy_evidence) {
             return Err(AgentGraphPlanningRejection::PolicyReceiptEdgeNotCandidate {
                 edge_id: edge_id.clone(),
             });
@@ -478,13 +502,17 @@ fn coordination_evidence(
     evidence
 }
 
-fn edge_condition_matches(edge: &AgentEdge, target: &AgentGraphPlanningTarget) -> bool {
+fn edge_condition_matches(
+    edge: &AgentEdge,
+    target: &AgentGraphPlanningTarget,
+    has_policy_receipt: bool,
+) -> bool {
     match &edge.condition {
         AgentEdgeCondition::Always => true,
         AgentEdgeCondition::CapabilityRequired(required_capability) => target
             .required_capability
             .as_ref()
             .is_some_and(|capability| capability == required_capability),
-        AgentEdgeCondition::PolicyDecision(_) => true,
+        AgentEdgeCondition::PolicyDecision(_) => has_policy_receipt,
     }
 }

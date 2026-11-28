@@ -4,7 +4,7 @@
 
 ;;; Select the contract-checked Policy scope.
 
-(import (only-in :clan/poo/mop validate)
+(import (only-in :clan/poo/type validate)
         "./objects.ss"
         "./types.ss")
 

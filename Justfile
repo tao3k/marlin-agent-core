@@ -7,6 +7,8 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 # Bound native Scheme builds to the available processors unless the caller
 # has selected a smaller budget.
 export GERBIL_BUILD_CORES := env_var_or_default("GERBIL_BUILD_CORES", num_cpus())
+gerbil_prefix := env_var_or_default("GERBIL_PATH", justfile_directory() / "scheme" / ".gerbil")
+export GERBIL_LOADPATH := env_var_or_default("GERBIL_LOADPATH", gerbil_prefix / "lib")
 
 default:
   @just --list
@@ -20,7 +22,7 @@ rust-dev-gate:
   cargo test --locked -p marlin-rust-project-harness-policy --test workspace_policy
 
 # Authored Quint models and reproducible trace checks.
-property-model-gate: app-server-model-gate
+property-model-gate: app-server-model-gate gitops-context-model-gate search-engine-model-gate ui-helm-model-gate graph-engine-model-gate
   quint typecheck dev/quint/host-observer.qnt
   quint run dev/quint/host-observer.qnt --seed=42 --max-samples=100 --max-steps=8 --invariant=safe --verbosity=1
   @output=$(quint run dev/quint/host-observer.qnt --step=badStep --invariant=safe --seed=42 --max-samples=100 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in host exit negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
@@ -35,9 +37,7 @@ property-model-gate: app-server-model-gate
   quint run dev/quint/event-bus.qnt --main=eventBus --seed=42 --max-samples=1000 --max-steps=10 --invariant=safe --verbosity=1
   @output=$(quint run dev/quint/event-bus.qnt --main=eventBus --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=10 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in event bus negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
   @test_binary=$(mktemp -t marlin-event-bus-test.XXXXXX); trap 'rm -f "$test_binary"' EXIT; rustc --edition=2024 --test dev/verification/event_bus_contract.rs -o "$test_binary"; "$test_binary"
-  quint typecheck dev/quint/tui-minibuffer.qnt
-  quint test dev/quint/tui-minibuffer.qnt --max-samples=100
-  quint run dev/quint/tui-minibuffer.qnt --seed=42 --max-samples=1000 --max-steps=30 --invariant=stateSafe --verbosity=1
+  just tui-model-gate
   quint typecheck dev/quint/model-tool-review.qnt
   quint test dev/quint/model-tool-review.qnt --main=modelToolReview --max-samples=100
   quint run dev/quint/model-tool-review.qnt --main=modelToolReview --seed=42 --max-samples=1000 --max-steps=10 --invariant=safe --verbosity=1
@@ -60,6 +60,19 @@ property-model-gate: app-server-model-gate
   quint run dev/quint/process-quota.qnt --main=processQuota --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1
   @output=$(quint run dev/quint/process-quota.qnt --main=processQuota --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in process quota negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
 
+# MAR-UI-R10/R11/R25/R26. Layout, echo, and TUI lifecycle share the same gate.
+tui-model-gate:
+  quint typecheck dev/quint/tui-minibuffer.qnt
+  quint test dev/quint/tui-minibuffer.qnt --main=tuiMinibuffer --max-samples=100
+  quint run dev/quint/tui-minibuffer.qnt --main=tuiMinibuffer --seed=42 --max-samples=1000 --max-steps=30 --invariant=stateSafe --verbosity=1
+  quint test dev/quint/tui-minibuffer.qnt --main=minibufferEcho --max-samples=100
+  quint run dev/quint/tui-minibuffer.qnt --main=minibufferEcho --seed=42 --max-samples=1000 --max-steps=30 --invariant=safe --verbosity=1
+  @output=$(quint run dev/quint/tui-minibuffer.qnt --main=minibufferEcho --step=badStep --seed=42 --max-samples=100 --max-steps=4 --invariant=safe --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in echo timing negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+  quint typecheck dev/quint/tui-lifecycle.qnt
+  quint test dev/quint/tui-lifecycle.qnt --main=tuiLifecycle --max-samples=100
+  quint run dev/quint/tui-lifecycle.qnt --main=tuiLifecycle --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  @for control in pollutedGerbilPathMutation eintrBreaksStdinMutation silentEofExitMutation strandedTerminalMutation unboundedShutdownHangMutation spontaneousExitMutation; do result=0; output=$(quint run dev/quint/tui-lifecycle.qnt --main=tuiLifecycle --step="$control" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
+
 # Run only inside a disposable, root-owned delegated Linux systemd scope.
 strict-linux-os-qualification:
   python3 dev/verification/linux_cgroup_qualification.py
@@ -70,8 +83,75 @@ app-server-model-gate:
   quint test dev/quint/app-server-turn.qnt --max-samples=100
   quint run dev/quint/app-server-turn.qnt --seed=42 --max-samples=1000 --max-steps=30 --invariant=safe --verbosity=1
 
+# MAR-GCTX: versioned source admission, retirement and custody.
+gitops-context-model-gate:
+  quint typecheck dev/quint/gitops-context.qnt
+  quint test dev/quint/gitops-context.qnt --main=gitopsContextAdmission
+  quint test dev/quint/gitops-context.qnt --main=gitopsContextRetention
+  quint test dev/quint/gitops-context.qnt --main=gitopsOrgLinkEvidence
+  quint test dev/quint/gitops-context.qnt --main=gitopsCrossRepoPublication
+  quint test dev/quint/gitops-context.qnt --main=gitopsWorkingCopyPolicy
+  quint run dev/quint/gitops-context.qnt --main=gitopsContextAdmission --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/gitops-context.qnt --main=gitopsContextRetention --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/gitops-context.qnt --main=gitopsOrgLinkEvidence --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/gitops-context.qnt --main=gitopsCrossRepoPublication --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/gitops-context.qnt --main=gitopsWorkingCopyPolicy --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  @for control in gitopsContextAdmission:foreignCloneMutation gitopsContextAdmission:stalePublicationMutation gitopsContextAdmission:cursorMutation gitopsContextRetention:mergeMutation gitopsContextRetention:custodyMutation gitopsOrgLinkEvidence:attachmentMutation gitopsOrgLinkEvidence:crossRepoMutation gitopsCrossRepoPublication:latePublicationMutation gitopsCrossRepoPublication:preOpenMutation gitopsCrossRepoPublication:lateCacheMutation gitopsWorkingCopyPolicy:missingCoreMutation; do result=0; output=$(quint run dev/quint/gitops-context.qnt --main="${control%:*}" --step="${control#*:}" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
+
+# The offline CLI checks Quint IR without starting an RPC server.
+gitops-context-symbolic-gate apalache="apalache-mc":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  model_path="$PWD/dev/quint/gitops-context.qnt"
+  proof_dir="$PWD/target/quint/gitops-context-verification"
+  mkdir -p "$proof_dir"
+  cd "$proof_dir"
+  for module in gitopsContextAdmission gitopsContextRetention gitopsOrgLinkEvidence gitopsCrossRepoPublication gitopsWorkingCopyPolicy; do
+    quint compile "$model_path" --main="$module" --invariant=safe --target=json > "$module.qnt.json"
+    {{ quote(apalache) }} check --init=init --next=step --inv=safe --length=16 "$module.qnt.json" > "$module-apalache.log" 2>&1 || { tail -n 30 "$module-apalache.log"; exit 1; }
+    grep -F "Checker reports no error up to computation length 16" "$module-apalache.log"
+  done
+
+# MAR-SRCH: converged native search engine CAS publication, Scheme ABI admission, edge custody, and Scenario B evidence-chain integrity.
+search-engine-model-gate:
+  quint typecheck dev/quint/search-engine.qnt
+  quint test dev/quint/search-engine.qnt --main=searchGenerationPublication
+  quint test dev/quint/search-engine.qnt --main=searchPlanAbiAdmission
+  quint test dev/quint/search-engine.qnt --main=searchTopologyEdgeCustody
+  quint run dev/quint/search-engine.qnt --main=searchGenerationPublication --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/search-engine.qnt --main=searchPlanAbiAdmission --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/search-engine.qnt --main=searchTopologyEdgeCustody --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  @for control in searchGenerationPublication:publishWithoutBlobMutation searchGenerationPublication:bypassCasMutation searchGenerationPublication:nonMonotonicRevisionMutation searchPlanAbiAdmission:bypassAdmissionMutation searchPlanAbiAdmission:staleGenerationMutation searchTopologyEdgeCustody:crossGenerationLeakMutation searchTopologyEdgeCustody:duplicateCountMutation; do result=0; output=$(quint run dev/quint/search-engine.qnt --main="${control%:*}" --step="${control#*:}" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
+  quint typecheck dev/quint/search-evidence-chain.qnt
+  quint test dev/quint/search-evidence-chain.qnt --main=searchEvidenceChainIntegrity
+  quint run dev/quint/search-evidence-chain.qnt --main=searchEvidenceChainIntegrity --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  @for control in staleStructuralReuseMutation staleNegDomainReuseMutation kvCacheContaminationMutation poisonedPromotionMutation zombieCascadeMutation; do result=0; output=$(quint run dev/quint/search-evidence-chain.qnt --main=searchEvidenceChainIntegrity --step="$control" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
+
+# MAR-HELM: Modern Helm epoch fencing, closed-session immunity, and mark-pruning safety.
+ui-helm-model-gate:
+  quint typecheck dev/quint/ui-helm.qnt
+  quint test dev/quint/ui-helm.qnt --main=uiHelmEpochSafety
+  quint run dev/quint/ui-helm.qnt --main=uiHelmEpochSafety --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  @for control in uiHelmEpochSafety:staleResultOverwriteMutation uiHelmEpochSafety:applyWhileClosedMutation uiHelmEpochSafety:danglingMarkMutation; do result=0; output=$(quint run dev/quint/ui-helm.qnt --main="${control%:*}" --step="${control#*:}" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
+
+# MAR-GRAPH: Session-free TaskActor fencing-epoch anti-split-brain, C4 steering convergence, governed context/detour confinement, and Workbench tab invariants.
+graph-engine-model-gate:
+  quint typecheck dev/quint/graph-engine.qnt
+  quint test dev/quint/graph-engine.qnt --main=graphEngineTaskActorSafety
+  quint test dev/quint/graph-engine.qnt --main=graphEngineWorkbenchTabSafety
+  quint test dev/quint/graph-engine.qnt --main=graphEngineGovernedContextSafety
+  quint run dev/quint/graph-engine.qnt --main=graphEngineTaskActorSafety --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/graph-engine.qnt --main=graphEngineWorkbenchTabSafety --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  quint run dev/quint/graph-engine.qnt --main=graphEngineGovernedContextSafety --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1
+  @for control in graphEngineTaskActorSafety:staleReceiptAcceptMutation graphEngineTaskActorSafety:prematureJoinAdvanceMutation graphEngineTaskActorSafety:detachedProjectCommitMutation graphEngineTaskActorSafety:postTerminalMutation graphEngineWorkbenchTabSafety:unpinnedIndexMutation graphEngineWorkbenchTabSafety:peekOverlapMutation graphEngineGovernedContextSafety:defeaterBelowL3Mutation graphEngineGovernedContextSafety:lethalTrifectaBypassMutation graphEngineGovernedContextSafety:settleDuringBlockerDetourMutation; do result=0; output=$(quint run dev/quint/graph-engine.qnt --main="${control%:*}" --step="${control#*:}" --seed=42 --max-samples=1000 --max-steps=16 --invariant=safe --verbosity=1 2>&1) || result=$?; printf '%s\n%s\n' "$control" "$output"; if [[ $result -ne 1 ]] || ! printf '%s\n' "$output" | grep -q 'Invariant violated'; then exit 1; fi; done
+
+# Multi-scale Criterion benchmarks for Marlin converged search engine bridge.
+search-engine-bench:
+  cargo bench --locked -p marlin-agent-search-engine --bench search_engine_bridge
+
 # One project gate: architecture, model, native Scheme PBT and Rust properties.
 property-gate: sysml-check property-model-gate scheme-property-gate
+  cargo test --locked -p marlin-agent-search-engine
   cargo test --locked -p marlin-agent-telemetry
   cargo test --locked -p marlin-agent-runtime --test unit_test process::quota
   cargo test --locked -p marlin-agent-runtime --test unit_test process::containment
@@ -80,14 +160,19 @@ property-gate: sysml-check property-model-gate scheme-property-gate
   cargo test --locked -p marlin-agent-gitops
   cargo test --locked -p marlin-agent-runtime --lib confirmed_process_does_not_release_until_pipe_endpoint_is_dropped
   cargo test --locked -p marlin-agent-kernel --test unit_test strict_tree_
-  python3 dev/verification/process_quota_gate.py
+  just process-quota-gate
   cargo test --locked -p marlin-agent-tui --no-default-features --lib
   cargo test --locked -p marlin-agent-ui --test ui_native_projection
   if [[ $(uname -s) == Darwin ]]; then just tui-runtime-gate; fi
 
+process-quota-gate:
+  cargo test --locked -p marlin-agent-runtime --test process_quota_gate -- --ignored --nocapture
+
 # Real linked macOS TUI: override MARLIN_TUI_SOAK_SECONDS for longer runs.
 tui-runtime-gate:
   just scheme-build
+  cargo test --locked -p marlin-agent-tui --test pty
+  cargo test --locked -p marlin-agent-tui --test pty streaming_command_navigation_stays_within_admitted_candidates -- --ignored --nocapture
   MARLIN_TUI_SOAK_SECONDS="${MARLIN_TUI_SOAK_SECONDS:-30}" cargo test --locked -p marlin-agent-tui --test pty repeated_stream_cancellation_soak -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty workspace_tool_cancel_reaps_process -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty workspace_tool_shutdown_reaps_after_exit -- --ignored --nocapture
@@ -101,20 +186,17 @@ scheme-property-gate:
   just scheme-test
   just scheme-test t/ui-native-test.ss
 
-# Gerbil owns discovery and assertions; retain its complete receipt because
-# the tool can return zero after a failing Harness.
+# Gerbil owns discovery and assertions; invoke :gerbil/tools/gxtest directly so
+# its structured return value (0 vs 42) governs the process exit status instead
+# of `gerbil test` discarding it and scraping stdout with rg/grep.
 scheme-test module="t/all-test.ss":
   #!/usr/bin/env bash
   set -euo pipefail
-  mkdir -p .cache/scheme-tests
-  log=$(mktemp "$PWD/.cache/scheme-tests/$(basename '{{module}}' .ss).XXXXXX")
+  watchdog=$(command -v timeout || command -v gtimeout)
   export GAMBOPT="${GAMBOPT:+$GAMBOPT,}max-heap=2G,debug=q"
+  export MARLIN_SCHEME_TEST_MODULE={{ quote(module) }}
   cd scheme
-  timeout --signal=TERM --kill-after=5s 600s gxpkg env gerbil -:max-heap=2G,debug=q test '{{module}}' 2>&1 | tee "$log"
-  rg -q -F -x 'MODULE-OK {{module}}' "$log"
-  rg -q '^HARNESS-OK ' "$log"
-  rg -q '^OK$' "$log"
-  ! rg -q 'ERROR CASE|ERROR CHECK|ERROR HARNESS|Heap overflow|Stack overflow' "$log"
+  "$watchdog" --foreground --signal=TERM --kill-after=5s 600s gxpkg env gxi -:max-heap=2G,debug=q -e '(import :gerbil/tools/gxtest) (let (rc (main (getenv "MARLIN_SCHEME_TEST_MODULE"))) (exit (if (eqv? rc 0) 0 (if (fixnum? rc) rc 1))))'
 
 # Install the dependency declared by the workspace Scheme package.
 scheme-deps:
@@ -148,7 +230,13 @@ scheme-package-gate:
   just scheme-test
 
 # Build the init-selected Scheme graph through the package Builder.
-scheme-build:
+scheme-build: (_scheme-package "build")
+
+# Remove the init-selected Scheme build and link products.
+scheme-clean: (_scheme-package "clean")
+
+[private]
+_scheme-package action:
   #!/usr/bin/env bash
   set -euo pipefail
   if [[ "$(uname -s)" == Darwin ]]; then
@@ -156,7 +244,7 @@ scheme-build:
     export PATH="${GERBIL_PREFIX:+$GERBIL_PREFIX/bin:}/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
   fi
   cd scheme
-  gerbil build
+  gerbil {{ quote(action) }}
 
 # Run the fixed full Context workload after provisioning the paired Scheme package.
 context-latency-gate:
@@ -209,20 +297,58 @@ tui-aot-debug: scheme-build
 tui-aot-build: scheme-build
   cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --release
 
+# Stage the linked Release with filesystem compression where Darwin supports it.
+tui-stage-release directory binary="target/release/marlin-tui":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  binary={{ quote(binary) }}
+  directory={{ quote(directory) }}
+  if [[ ! -f "$binary" || ! -x "$binary" ]]; then
+    printf 'Expected a built executable at %s\n' "$binary" >&2
+    exit 1
+  fi
+  mkdir -p -- "$directory"
+  destination="$directory/marlin-tui"
+  if [[ -d "$destination" ]]; then
+    printf 'Expected an executable path at %s\n' "$destination" >&2
+    exit 1
+  fi
+  staging=$(mktemp -d "$directory/.marlin-tui.XXXXXX")
+  trap 'rm -f -- "$staging/marlin-tui"; rmdir -- "$staging"' EXIT
+  case "$(uname -s)" in
+    Darwin) /usr/bin/ditto --hfsCompression "$binary" "$staging/marlin-tui" ;;
+    *) install -m 0755 -- "$binary" "$staging/marlin-tui" ;;
+  esac
+  mv -f -- "$staging/marlin-tui" "$destination"
+
 # Build the same linked binary as distribution while measuring Rust UI mapping.
 tui-ui-mapping-bench: scheme-build
   cargo bench --locked -p marlin-agent-tui --bench ui_mapping
 
 # Keep interaction latency, first-copy startup, and source-free release
 # qualification in one reproducible command. Build time is not a sample.
-tui-performance-bench: tui-aot-debug tui-aot-build
-  cargo test --locked -p marlin-agent-tui --test launch linked_debug_pre_ui_launch_pair -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test launch linked_release_pre_ui_launch_pair -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty first_mx_arrow_is_not_lost_before_the_menu_frame
-  cargo test --locked -p marlin-agent-tui --test pty mx_navigation_pty_latency -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty debug_linked_fresh_copy_startup_pair -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty release_linked_fresh_copy_startup_pair -- --ignored --nocapture
-  cargo test --locked -p marlin-agent-tui --test pty release_linked_ui_first_frame_without_a_gerbil_package_tree -- --ignored --nocapture
+tui-performance-bench: tui-ui-mapping-bench
+  #!/usr/bin/env bash
+  set -euo pipefail
+  artifacts=$(mktemp)
+  trap 'rm -f "$artifacts"' EXIT
+  # Cargo's test build can replace target/debug/marlin-tui with a different artifact.
+  cargo test --locked -p marlin-agent-tui --test launch --test pty --no-run --message-format=json > "$artifacts"
+  test_binary() {
+    jq -er --arg name "$1" 'select(.reason == "compiler-artifact" and .target.name == $name and .executable != null) | .executable' "$artifacts"
+  }
+  launch=$(test_binary launch)
+  pty=$(test_binary pty)
+  cargo build --locked -p marlin-agent-tui --bin marlin-tui
+  cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --release
+  "$launch" linked_debug_pre_ui_launch_pair --ignored --nocapture
+  "$launch" linked_release_pre_ui_launch_pair --ignored --nocapture
+  "$pty" first_mx_arrow_is_not_lost_before_the_menu_frame
+  "$pty" mx_navigation_pty_latency --ignored --nocapture
+  "$pty" debug_linked_fresh_copy_startup_pair --ignored --nocapture
+  "$pty" release_linked_fresh_copy_startup_pair --ignored --nocapture
+  "$pty" release_linked_ui_first_frame_without_a_gerbil_package_tree --ignored --nocapture
+  "$pty" idle_output_probe --ignored --nocapture
   cargo bench --locked -p marlin-agent-runtime --bench runtime_events
 
 # Diagnose whether the size-oriented profile improves a source-matched linked
@@ -251,3 +377,231 @@ agent-policy-routing-abi-bench:
 
 # Local P0-P4 gate for AgentGraph native policy-routing and Gerbil module-system closure.
 agent-graph-abi-routing-gate: scheme-package-gate agent-policy-routing-abi-gate agent-policy-routing-abi-bench-build agent-policy-routing-abi-performance-gate
+
+# Real OS-process E2E gate for live embedded Scheme host (`marlin-scheme-host`) and operator CLI (`marlin-scheme-ctl`).
+scheme-host-e2e-gate: scheme-build
+  just scheme-test t/graph-engine-test.ss
+  cargo test --locked -p marlin-agent-app-server --features "grpc,client,ui-grpc,turso-host" --test ui_grpc
+  cargo test --locked -p marlin-gerbil-scheme --features app-server-host --test scheme_host_process -- --test-threads=1
+
+# Linked-AOT single-binary `marlin-scheme-host-aot` fast startup, 4-layer regression guards, and two-binary `marlin-scheme-ctl` E2E gate.
+scheme-host-aot-gate: scheme-build
+  cargo test --locked -p marlin-gerbil-aot-link
+  PROTOC=/nonexistent cargo test --locked -p marlin-gerbil-scheme --test unit_test dependency_boundary::
+  cargo test --locked -p marlin-gerbil-scheme --features app-server-host --lib scheme_host_runtime::tests
+  cargo test --locked -p marlin-agent-app-server --features ui-grpc --test unit_test scheme_host_client::
+  cargo test --locked -p marlin-agent-app-server --features ui-grpc --bin marlin-scheme-ctl
+  cargo build --locked -p marlin-agent-app-server --features ui-grpc --bin marlin-scheme-ctl
+  GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" MARLIN_SCHEME_CTL_BIN="$PWD/target/debug/marlin-scheme-ctl" cargo test --locked -p marlin-agent-core --features linked-scheme-host --test scheme_host_aot_process -- --test-threads=1 --nocapture
+
+# Build the standalone zero-`.ss` Linked-AOT Scheme Governance Authority daemon (`target/debug/marlin-scheme-host-aot`).
+scheme-host-aot-build: scheme-build
+  GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" cargo build -p marlin-agent-core --features linked-scheme-host --bin marlin-scheme-host-aot
+
+# Build the release standalone zero-`.ss` Linked-AOT Scheme Governance Authority daemon (`target/release/marlin-scheme-host-aot`).
+scheme-host-aot-release: scheme-build
+  GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" cargo build --release -p marlin-agent-core --features linked-scheme-host --bin marlin-scheme-host-aot
+
+# Verify standalone zero-`.ss` boot, READY binding, and clean SIGTERM exit=0 on a Linked-AOT daemon binary.
+scheme-host-aot-smoke binary="target/debug/marlin-scheme-host-aot":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  binary={{ quote(binary) }}
+  if [[ ! -f "$binary" || ! -x "$binary" ]]; then
+    printf 'Expected an executable Linked-AOT daemon at %s\n' "$binary" >&2
+    exit 1
+  fi
+  smoke_dir=$(mktemp -d "${TMPDIR:-/tmp}/marlin-scheme-aot-smoke.XXXXXX")
+  pid=""
+  cleanup() {
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+    rm -rf "$smoke_dir"
+  }
+  trap cleanup EXIT
+  MARLIN_SCHEME_DIR=/nonexistent-zero-scheme-dir \
+  MARLIN_BRIDGE_ADDR=127.0.0.1:0 \
+  MARLIN_BRIDGE_TOKEN=smoke-tok \
+  MARLIN_BRIDGE_TURSO_PATH="$smoke_dir/smoke.db" \
+  MARLIN_SCHEME_GOVERNANCE_MODE=clean \
+  "$binary" >"$smoke_dir/daemon.log" 2>&1 &
+  pid=$!
+  ready_line=""
+  for _ in $(seq 1 100); do
+    if grep -qE '^READY 127\.0\.0\.1:[0-9]+' "$smoke_dir/daemon.log" 2>/dev/null; then
+      ready_line=$(grep -E '^READY 127\.0\.0\.1:[0-9]+' "$smoke_dir/daemon.log" | head -n1)
+      break
+    fi
+    sleep 0.1
+  done
+  if [[ -z "$ready_line" ]]; then
+    printf 'FAIL: %s did not emit READY without .ss files:\n' "$binary" >&2
+    cat "$smoke_dir/daemon.log" >&2
+    exit 1
+  fi
+  kill -TERM "$pid"
+  wait "$pid"
+  pid=""
+  printf 'OK: zero-.ss Linked-AOT smoke passed (%s -> %s, clean SIGTERM exit=0)\n' "$binary" "$ready_line"
+
+# Stage a standalone release `marlin-scheme-host-aot` binary with Darwin HFS compression and zero-`.ss` smoke check.
+scheme-host-aot-stage-release directory binary="target/release/marlin-scheme-host-aot":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  binary={{ quote(binary) }}
+  directory={{ quote(directory) }}
+  if [[ ! -f "$binary" || ! -x "$binary" ]]; then
+    printf 'Expected a built executable at %s\n' "$binary" >&2
+    exit 1
+  fi
+  mkdir -p -- "$directory"
+  destination="$directory/marlin-scheme-host-aot"
+  if [[ -d "$destination" ]]; then
+    printf 'Expected an executable path at %s\n' "$destination" >&2
+    exit 1
+  fi
+  staging=$(mktemp -d "$directory/.marlin-scheme-host-aot.XXXXXX")
+  trap 'rm -f -- "$staging/marlin-scheme-host-aot"; rmdir -- "$staging"' EXIT
+  case "$(uname -s)" in
+    Darwin) /usr/bin/ditto --hfsCompression "$binary" "$staging/marlin-scheme-host-aot" ;;
+    *) install -m 0755 -- "$binary" "$staging/marlin-scheme-host-aot" ;;
+  esac
+  mv -f -- "$staging/marlin-scheme-host-aot" "$destination"
+  just scheme-host-aot-smoke "$destination"
+
+# Full Scheme POO x ASCENT x Bi-Temporal TM x Cedar x 12-countermodel Quint MBT x Linked-AOT governance gate.
+governance-gate: scheme-build
+  just scheme-test t/governance-policy-test.ss
+  just scheme-test t/graph-engine-c-abi-test.ss
+  cargo test -p marlin-agent-kernel --lib governance_cedar
+  cargo test -p marlin-agent-kernel --lib governance_admission
+  cargo test -p marlin-agent-kernel --test governance_admission_mbt
+  cargo test -p marlin-agent-kernel --test durable_governance_mbt
+  cargo test -p marlin-agent-kernel --test unit_test loop_program_side_effects
+  cargo test -p marlin-gerbil-aot-link
+  cargo test -p marlin-gerbil-scheme --features app-server-host --lib governance_host
+  cargo test -p marlin-gerbil-scheme --test governance_policy_vm
+  GERBIL_LOADPATH="$PWD/scheme/.gerbil/lib" cargo build -p marlin-agent-core --features linked-scheme-host --bin marlin-scheme-host-aot
+  just scheme-host-aot-smoke target/debug/marlin-scheme-host-aot
+
+# DEV: Launch native Desktop UI connected to the local Rust host (forwards -config and any extra flags).
+dev-desktop *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  root="$PWD"
+  resolved=()
+  expect_path=0
+  for arg in {{args}}; do
+    if [[ "$expect_path" -eq 1 ]]; then
+      expect_path=0
+      if [[ "$arg" != /* && -e "$root/$arg" ]]; then
+        resolved+=("$(cd "$(dirname "$root/$arg")" && pwd)/$(basename "$arg")")
+      else
+        resolved+=("$arg")
+      fi
+      continue
+    fi
+    case "$arg" in
+      -config|-app-server|-ca|-cert|-key|-turso|-recovery-file|-prefs-file)
+        resolved+=("$arg")
+        expect_path=1
+        ;;
+      -config=*|-app-server=*|-ca=*|-cert=*|-key=*|-turso=*|-recovery-file=*|-prefs-file=*)
+        flag="${arg%%=*}"
+        val="${arg#*=}"
+        if [[ "$val" != /* && -e "$root/$val" ]]; then
+          val="$(cd "$(dirname "$root/$val")" && pwd)/$(basename "$val")"
+        fi
+        resolved+=("$flag=$val")
+        ;;
+      *)
+        resolved+=("$arg")
+        ;;
+    esac
+  done
+  cd "$root/.data/marlin-ui"
+  CORE="$root" exec just dev-desktop ${resolved[@]+"${resolved[@]}"}
+
+# DEV: Launch iOS Companion dev shell connected to the local Rust host (forwards -config and any extra flags).
+dev-ios *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  root="$PWD"
+  resolved=()
+  expect_path=0
+  for arg in {{args}}; do
+    if [[ "$expect_path" -eq 1 ]]; then
+      expect_path=0
+      if [[ "$arg" != /* && -e "$root/$arg" ]]; then
+        resolved+=("$(cd "$(dirname "$root/$arg")" && pwd)/$(basename "$arg")")
+      else
+        resolved+=("$arg")
+      fi
+      continue
+    fi
+    case "$arg" in
+      -config|-app-server|-ca|-cert|-key|-recovery-file|-prefs-file)
+        resolved+=("$arg")
+        expect_path=1
+        ;;
+      -config=*|-app-server=*|-ca=*|-cert=*|-key=*|-recovery-file=*|-prefs-file=*)
+        flag="${arg%%=*}"
+        val="${arg#*=}"
+        if [[ "$val" != /* && -e "$root/$val" ]]; then
+          val="$(cd "$(dirname "$root/$val")" && pwd)/$(basename "$val")"
+        fi
+        resolved+=("$flag=$val")
+        ;;
+      *)
+        resolved+=("$arg")
+        ;;
+    esac
+  done
+  cd "$root/.data/marlin-ui"
+  CORE="$root" exec just dev-ios ${resolved[@]+"${resolved[@]}"}
+
+# Build native iOS .app bundle (`ios/simulator` or `ios`) via MyGo Swift/Metal host.
+build-ios platform="ios/simulator" out=".data/marlin-ui/dist/ios":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  root="$PWD"
+  out="{{out}}"
+  if [[ "$out" != /* ]]; then
+    out="$root/$out"
+  fi
+  cd "$root/.data/marlin-ui"
+  exec just build-ios "{{platform}}" "$out"
+
+# DEV: Live-reload native iOS .app in Xcode iOS Simulator or connected iPhone.
+dev-ios-sim device="":
+  cd .data/marlin-ui && exec just dev-ios-sim "{{device}}"
+
+# Run cross-language G2 AI anti-defensive-programming audit across all production Rust + Scheme files.
+audit-g2 *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  CLI="${DE_AGENT_DEFENSE_AUDIT_CLI:-$HOME/ghq/github.com/hardenedlinux/deterministic-engineering-qnt/packages/agent-defense-audit/src/agent-defense-audit.ts}"
+  if [ ! -f "$CLI" ]; then
+    echo "ERROR: agent-defense-audit CLI not found at $CLI (set DE_AGENT_DEFENSE_AUDIT_CLI)" >&2
+    exit 2
+  fi
+  if [ -n "{{args}}" ]; then
+    exec bun "$CLI" {{args}}
+  fi
+  exec bun "$CLI" --dir crates scheme --lang=rust,scheme --exclude-tests
+
+# Run cross-language SM2-SM36 software aging & ADV-L4 confinement audit across all production Rust files.
+audit-stability *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  CLI="${DE_AGENT_STABILITY_AUDIT_CLI:-$HOME/ghq/github.com/hardenedlinux/deterministic-engineering-qnt/languages-engineering/ts/stability/aging-contrast/agent-stability-audit.ts}"
+  if [ ! -f "$CLI" ]; then
+    echo "ERROR: agent-stability-audit CLI not found at $CLI (set DE_AGENT_STABILITY_AUDIT_CLI)" >&2
+    exit 2
+  fi
+  if [ -n "{{args}}" ]; then
+    exec bun "$CLI" {{args}}
+  fi
+  exec bun "$CLI" --dir crates --lang=rust --exclude-tests

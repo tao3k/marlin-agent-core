@@ -15,6 +15,24 @@ fn session_id_rejects_empty_values() {
 }
 
 #[test]
+fn sm31_adv_l4_session_id_serde_rejects_empty_and_whitespace() {
+    assert!(
+        serde_json::from_str::<SessionId>(r#""""#).is_err(),
+        "SessionId::Deserialize must reject empty string"
+    );
+    assert!(
+        serde_json::from_str::<SessionId>(r#""   \t""#).is_err(),
+        "SessionId::Deserialize must reject whitespace-only string"
+    );
+    assert_eq!(
+        serde_json::from_str::<SessionId>(r#""session/ok""#)
+            .unwrap()
+            .as_str(),
+        "session/ok"
+    );
+}
+
+#[test]
 fn child_session_visibility_is_narrowed_by_parent_context() {
     let parent = AgentSessionContext::root(
         "root",

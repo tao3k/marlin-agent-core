@@ -6,7 +6,7 @@
 # ANTHROPIC_BASE_URL (for DeepSeek: https://api.deepseek.com/anthropic)
 # and ANTHROPIC_API_KEY when not specified here.
 provider = "deepseek"
-model = "deepseek-v4-pro"
+model = "deepseek-flash"
 protocol = "anthropic"
 credential_env = "ANTHROPIC_API_KEY"
 timeout_seconds = 120
@@ -18,19 +18,30 @@ timeout_seconds = 120
 # memory_limit_bytes = 3221225472
 # command_reservation_bytes = 268435456
 
-# Optional Anthropic thinking settings; provider/model support varies.
-# [anthropic]
+# Optional Anthropic thinking / output budget settings; provider/model support varies.
+[anthropic]
+max_tokens = 16384
 # thinking = { type = "adaptive" }
 # effort = "low"
-# max_tokens = 8192
 # Manual mode instead: thinking = { type = "enabled", budget_tokens = 4096 }
 
-# OpenAI alternative (comment the Anthropic fields above before enabling).
+# OpenAI alternative. Replace the default route above and comment out the
+# DeepSeek profile below if you are using only OpenAI credentials.
 # provider = "openai"
 # model = "gpt-4.1-mini"
 # endpoint = "https://api.openai.com/v1/responses"
 # protocol = "open-ai-responses"
 # credential_env = "OPENAI_API_KEY"
+
+# DeepSeek V4 Pro shares the Anthropic environment with the default V4.1 Flash.
+# Use M-x models to list routes, M-x model deepseek-v4-pro to switch to Pro,
+# and M-x model default to return to Flash.
+[models.deepseek-v4-pro]
+provider = "deepseek"
+model = "deepseek-v4-pro"
+protocol = "anthropic"
+credential_env = "ANTHROPIC_API_KEY"
+anthropic = { max_tokens = 16384 }
 
 # Optional named model, selected with M-x model alternate.
 # [models.alternate]

@@ -1,0 +1,186 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+TITLE: RFC 40.185: Marlin AST Elevation & Calibration Plane (Converging :gerbil-parser, :gerbil-ascent Coding Style & ASP crates/agent-semantic-ast)
+#+AUTHOR: tao3k team and Contributors
+#+DATE: 2026-11-26
+#+STATUS: Proposed (Companion Design to ASP RFC 10.35)
+#+DEPENDS: docs/40-rfcs/40.184-gerbil-ascent-poo-unified-search-dsl.org (40.184), ASP docs/10-19-rfcs/10.35-agent-semantic-ast-engine-and-calibration-protocol.org (10.35)
+#+SEE_ALSO: ASP docs/30-39-research/31.32-relational-coding-style-ast-elevation-and-calibration-research.org
+
+* Summary
+
+This RFC defines Marlin Agent CORE's side of the converged two-frontier AST
+architecture specified in ASP RFC 10.35:
+
+- *ASP (~crates/agent-semantic-ast~)* owns the *pure, language-agnostic
+  AI-Native Language Server Rust Backend Runtime*: ~AstProviderRegistry~,
+  Source-Backed Span-Indexed Lossless Overlay, transport bindings
+  (~ResidentActorAstProvider~ & ~HttpJsonAstProviderClient~ over
+  ~POST /v1/provider-runtime~: strictly ~ast-inspect~ and ~ast-verify~ ONLY)
+  for registered native compilers (~asp-rust~ ~syn~, ~asp-typescript~ ~tsc~,
+  ~asp-python~ ~ast~, ~AspJulia.jl~ ~JuliaSyntax~, ~asp-gerbil-scheme~),
+  Oracle-Verified Bounded Syntax Calibration, and single-tree Open EDB
+  projection — with *zero* hardcoded language parsers and *zero* hardcoded
+  Coding Style logic inside Rust. All Coding Style policies, ~:gerbil-ascent~
+  DSL rules, cost lattices, and $\Pi_{\text{LLM}}$ contract projections live
+  exclusively in Marlin's Gerbil Scheme extension plane (~scheme/ast-style/*~).
+- *Marlin (~marlin-agent-core~)* owns:
+  1. *Gerbil Scheme Native AST & ~:gerbil-parser~ Authority*: Full-strength
+     declarative grammar authoring (~deflanguage~), lossless ~ParseArtifact v1~
+     CSTs, bounded *CPCT+ minimum-cost LR recovery* (upgrading
+     ~:gerbil-parser/src/runtime/recovery.ss~ and Rust ~gerbil-parser-runtime~),
+     and Gerbil Scheme AST projection/editing.
+  2. *Frontier 1 — ~:gerbil-ascent~ Coding Style & Higher-Order Code Elevation Plane*:
+     Declarative POO Coding Style packs (~RustStyleFragment.~,
+     ~SchemePooStyleFragment.~) compiled as real ~:gerbil-ascent~ relational +
+     Dusa finite-choice fragments that analyze AST facts, inject precision
+     pre-generation style contracts, and drive cost-guided semantics-preserving
+     AST elevations through ~agent-semantic-ast~.
+  3. *Unified Agent Tooling Surface*: Exposing ~ast_patch~ (superseding raw
+     text patching as the primary structured editing tool) and unifying
+     ~workspace_search~ calibration on the exact same AST calibration contract
+     — allowing clean retirement of the temporary ad-hoc ~scheme/search-dsl/repair.ss~
+     string balancer and handwritten ~scheme/search-dsl/extract.ss~ tokenizer.
+
+* Why ~:gerbil-parser~ Is a Full-Strength Structural Authority (Not "Small DSLs Only")
+
+A critical clarification established in this design:
+
+- We delegate Rust, TypeScript, Python, Julia, and external Gerbil project
+  analysis to ASP's ~languages/asp-*~ HTTP-JSON providers *not* because
+  ~:gerbil-parser~ is limited to tiny DSLs (~:gerbil-parser~ already compiles
+  full-strength contextual grammars such as Bash 5.3, TLA+, HCL, GQL, Cypher,
+  HL7, and FHIRPath to both Scheme and zero-~unsafe~ Rust AOT!).
+- Rather, we respect *Single Native Compiler Authority*: where an external
+  language ecosystem already maintains a complete, spec-authoritative native
+  parser exposed over ASP HTTP-JSON (~syn~, ~tsc~, Python ~ast~, ~JuliaSyntax~),
+  ASP consumes it directly via Source-Backed Span-Overlay rather than
+  maintaining a second drifting grammar.
+- Conversely, for *Gerbil Scheme ASTs*, *specification/engineering languages*
+  (OpenSysML v2, Quint, GQL, HCL, Bash, Org contracts), and *Marlin's own
+  logical query/policy DSLs* (~:gerbil-ascent~, Dusa), ~:gerbil-parser~ IS the
+  authoritative lossless CST + CPCT+ calibration + ~ProjectionPlan~ engine!
+
+* Clean Ownership Split (ASP vs. Marlin vs. ~:gerbil-parser~ / ~:gerbil-ascent~)
+
+| Concern | Authoritative Owner | Concrete Modules / Crates |
+|---------+---------------------+---------------------------|
+| Transactional lossless AST patching, BLAKE3 preimage custody, span splicing, atomic rollback, Open EDB sync | ASP (~crates/agent-semantic-ast~) | ~span_overlay.rs~, ~transaction.rs~, ~open_edb_projection.rs~ |
+| External native parser HTTP-JSON bridge (~ast-inspect~, ~ast-verify~) & Track-B Oracle-Verified Calibration | ASP (~crates/agent-semantic-ast~ + ~languages/asp-*~) | ~provider_port.rs~, ~calibration.rs~, provider ~POST /v1/provider-runtime~ |
+| Declarative grammars, lossless ~ParseArtifact v1~, bounded CPCT+ LR recovery (Scheme & Rust AOT) | ~:gerbil-parser~ + Marlin Scheme | ~recovery.ss~, ~gerbil-parser-runtime~, ~deflanguage~ packs (Ascent, SysML, Quint, Gerbil) |
+| Frontier 1 Coding Style ontology, AST smell rules, cost-guided local elevation & Dusa refactoring choice | Marlin Scheme (~scheme/ast-style/*~ on ~:gerbil-ascent~ + POO) | ~RustStyleFragment.~ (~asp-rust-rules.md~), ~SchemePooStyleFragment.~ (~CODING-STYLE.org~) |
+| Host LLM Tool Surface (~ast_patch~, ~workspace_search~) & TUI Helm / Diff Preview | Marlin Rust (~crates/marlin-agent-tooling~, ~crates/marlin-agent-tui~) | Thin typed adapters calling ~agent-semantic-ast~ + ~agent-semantic-search~ |
+
+* Frontier 1 in Marlin: Machine-Native Relational Coding Style & ~:gerbil-ascent~ Elevation Plane
+
+** Why Machine-Native Mathematical / Relational Specs Replace Prose Style Guides
+
+Natural-language style guides are human-facing; letting LLMs interpret prose
+rules directly causes attention dilution, verbose boilerplate, and drift
+between prompt advice and deterministic verification (see full literature
+synthesis in ASP ~31.32-relational-coding-style-ast-elevation-and-calibration-research.org~).
+
+Marlin therefore unifies Coding Style over *three executable DSL layers*:
+1. *~:gerbil-parser~ Structural DSL* (~deflanguage~ + ~QueryPattern~ + ~ProjectionPlan~)
+   for Gerbil Scheme and declarative languages.
+2. *External Native Language AST DSL* via ASP ~crates/agent-semantic-ast~
+   (~languages/asp-*~ HTTP-JSON ~ast-inspect~ / ~ast-verify~).
+3. *~:gerbil-ascent~ Relational & Algebraic Style Engine* (Horn clauses,
+   cost lattices $\preceq_{\text{style}}$, equivalence rewrites
+   $\text{LHS} \leadsto \text{RHS}$, and Dusa POPL 2025 finite-choice).
+
+From this single executable style theory $\mathcal{T}$, Marlin derives *both*:
+- *Deterministic AST Verification & Class-1 Elevation*; and
+- *Compact Symbolic LLM Contracts ($\Pi_{\text{LLM}}(\mathcal{T}, \text{target})$)*
+  using mathematical quantifiers ($\forall$, $\neg\exists$), relation
+  predicates, algebraic rewrite schemas, and concrete in-scope types/helpers
+  queried from Open EDB — never dumping long natural-language style prose into
+  the agent's prompt!
+
+** Expressing Real Repository Style Rules Declaratively
+
+Instead of burying style intelligence in prose prompts or 74 imperative Rust
+AST visitors, Marlin defines composable POO ~StyleFragment.~ prototypes built
+on real ~:gerbil-ascent~ fragments over ~agent-semantic-ast~'s relational AST
+facts:
+
+1. *~RustStyleFragment.~* (aligned with ~asp-rust-rules.md~):
+   - *Class 1 (~AutoElevate~, local semantics-preserving)*:
+     - Manual ~let mut acc = Vec::new(); for x in xs { if p { acc.push(e); } }~
+       -> iterator adapter pipeline (~RUST-AGENT-ITER-PUBLIC-017 / IMPL-026~).
+     - Redundant ~match opt { Some(v) => Some(f(v)), None => None }~
+       -> ~opt.map(f)~; nested guardable ~if~ -> ~let-else~ / early return
+       (~RUST-AGENT-CFG-PUBLIC-015~).
+     - Loop-local ~slice.iter().any(|x| x == k)~ over invariant slice
+       -> precomputed ~HashSet~ (~RUST-AGENT-DATA-MEMBERSHIP-029~).
+   - *Class 2 (~ProposeAstPatch~, architectural/API-level)*:
+     - Primitive ~&str~ / ~String~ semantic identifier in public signature
+       -> propose domain newtype + call-site ~AstPatchOp~ (~RUST-AGENT-API-TYPE-012~).
+     - Implementation item placed inside ~mod.rs~ or oversized module (>800 LOC)
+       -> propose ~SplitOwnerItems~ ~AstPatchOp~ (~RUST-MOD-R001 / R002~).
+   - *Class 3 (~PreGenContract~, preventive)*:
+     - Before editing ~target~, query Open EDB for existing domain newtypes,
+       error enums, and helper functions in sibling modules so the LLM reuses
+       them on the first try.
+2. *~SchemePooStyleFragment.~* (aligned with Marlin ~scheme/CODING-STYLE.org~):
+   - *Class 1 (~AutoElevate~)*:
+     - Artificial ~-value~ / ~-input~ wrapper bindings around POO ~.o~ slots
+       -> POO lexical constant capture ~(slot := expr)~.
+     - Redundant imperative list accumulation loops -> ~:std~ / SRFI ~map~,
+       ~filter-map~, ~fold~.
+   - *Class 2 (~ProposeAstPatch~)*:
+     - Missing ~.new/checked~ on Class instantiation, misplaced POO prototypes
+       outside ~objects.ss~, or hand-rolled dispatch that fits ~.defgeneric~.
+
+** Example: ~:gerbil-ascent~ Elevation Rule Sketch
+
+#+begin_src scheme
+;; Declarative detection + cost-guided Class-1 elevation over AST facts from agent-semantic-ast
+(ascent-fragment
+  (relation elevatable_loop
+    ((loop_id string?) (acc_var string?) (iter_expr string?) (cost_saving integer?)))
+  ((elevatable_loop loop_id acc_var iter_expr 4)
+   <-- (ast_node loop_id parent "loop" "for_expr" _ _)
+       (ast_attr loop_id "iter_expr" iter_expr)
+       (ast_node push_id loop_id "call" "method_call" _ _)
+       (ast_attr push_id "method" "push")
+       (ast_attr push_id "receiver" acc_var)
+       (ast_attr acc_var "init_kind" "vec_new")
+       (not (ast_attr loop_id "has_early_break" "true"))
+       (not (ast_attr acc_var "mutated_outside" loop_id))))
+#+end_src
+
+When ~elevatable_loop~ derives a match, ~agent-semantic-ast~'s elevation stage
+renders the iterator chain, verifies it through the native Rust oracle
+(~ast-verify~), checks strictly lower style cost, and splices it losslessly
+into the target ~ByteSpan~ inside the exact same transaction.
+
+* Convergence & Cleanup Plan (Retiring Ad-Hoc Code in ~scheme/search-dsl~)
+
+To eliminate the architectural sprawl identified during Wave 3 review, once ASP
+~crates/agent-semantic-ast~ and ~:gerbil-parser~ CPCT+ land, Marlin executes a
+strict, zero-shim cleanup:
+
+| Current Ad-Hoc Module (Wave 3) | Architectural Defect | Clean Replacement |
+|--------------------------------+----------------------+-------------------|
+| ~scheme/search-dsl/repair.ss~ (617 lines) | Imperative string-level paren counter (~balance-sexp-parens~) + tool-specific ad-hoc heuristics | *Retired*: syntax calibration moves to ~:gerbil-parser~ bounded CPCT+ LR recovery + ~agent-semantic-ast::calibration~; ~search-dsl~ retains only thin POO relation-signature hole specs (~< 80 lines~) |
+| ~scheme/search-dsl/extract.ss~ (452 lines) | Handwritten imperative ~tokenize-model-source~ scanner for ~.sysml~ / ~.qnt~ violating ~:gerbil-parser~ RFC 0002 | *Retired*: replaced by declarative ~:gerbil-parser~ ~deflanguage~ grammars + ~QueryPattern~ / ~ProjectionPlan~ projecting directly to ~semantic-open-edb.v1~ |
+| Empty ~crates/marlin-workspace-patch/~ directory | Unused placeholder | Either removed or repurposed solely as a thin host adapter binding ~agent-semantic-ast~ into ~marlin-agent-tooling~ (~ast_patch~ tool) |
+
+* Verification Gates (Required Before Any Phase Marks Done)
+
+1. *ASP & Marlin RFC / SysML Gates*:
+   - ~sysml dev/sysml/ast-engine.sysml~ (ASP) and ~just sysml-check~ (Marlin)
+   - ASP ~pytest tests/unit/test_marlin_host_integration_rfc.py tests/unit/test_docs_rfc_skill_contracts.py~
+2. *Formal Safety Controls*:
+   - Quint ~ast-engine.qnt~ negative mutation controls proving zero stale commits,
+     zero ambiguous auto-repairs, and zero dirty partial writes.
+   - Lean minimality/uniqueness theorems for bounded CPCT+ LR recovery in
+     ~:gerbil-parser~.
+3. *Comparative End-to-End Benchmarks*:
+   - Matched real-code suite comparing (a) raw LLM + text ~apply_patch~ vs.
+     (b) Marlin + ~agent-semantic-ast~ + ~:gerbil-ascent~ Elevation on style
+     violation count, single-turn syntax acceptance rate, calibration false
+     positives (strictly 0%), and total token consumption.

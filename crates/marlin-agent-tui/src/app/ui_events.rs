@@ -3,16 +3,167 @@
 
 //! Dispatch Scheme UI requests and minibuffer navigation.
 
-use super::runner::publish_error;
+use super::publish_error;
 use super::{
-    App, MessageEvent, MessageSeverity, MessageSource, UiBrowseDirection, UiEvent, UiHost,
+    App, Arc, AtomicU64, INPUT_QUEUE_ITEMS, InputDecoder, Key, MessageEvent, MessageSeverity,
+    MessageSource, Ordering, RetryInterruptedRead, TerminalInput, UiBrowseDirection, UiEvent,
+    UiHost, UiKeyAction, WheelAccumulator, io, mpsc, thread,
 };
+use crate::ui_elements::{HitRegion, hit_test_command};
+use crate::{command::Command, config};
+use marlin_agent_ui::{
+    UiCommandArguments, UiCommandCapability, UiKeyMode, UiPackageCommandSource, UiPackageEvent,
+};
+use termion::input::TermReadEventsAndRaw;
+
+pub(super) fn unexpected_stdin_eof() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::UnexpectedEof,
+        "terminal input closed unexpectedly (stdin EOF)",
+    )
+}
+
+pub(super) fn exit_reason_for_input_error(error: &io::Error) -> &'static str {
+    if error.kind() == io::ErrorKind::UnexpectedEof {
+        "stdin-eof"
+    } else {
+        "input-error"
+    }
+}
+
+pub(super) fn handle_history_search_input(
+    app: &mut App,
+    received: Result<io::Result<TerminalInput>, mpsc::RecvTimeoutError>,
+) -> io::Result<bool> {
+    let Some(search) = app.history_search.as_mut() else {
+        return Ok(false);
+    };
+    match received {
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => return Ok(true),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('c' | 'g') | Key::Esc))) => {
+            app.history_search = None;
+            app.disarm_exit();
+        }
+        Ok(Ok(TerminalInput::Key(Key::Char('\n')))) => app.accept_history_search(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('r')))) => search.previous(&app.history),
+        Ok(Ok(TerminalInput::Key(Key::Backspace))) => search.backspace(&app.history),
+        Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() => {
+            search.insert(&c.to_string(), &app.history)
+        }
+        Ok(Ok(TerminalInput::Paste(text))) => search.insert(&text, &app.history),
+        Ok(Err(err)) => return Err(err),
+        Err(mpsc::RecvTimeoutError::Disconnected) => return Err(unexpected_stdin_eof()),
+        _ => {}
+    }
+    Ok(false)
+}
+
+pub(super) fn spawn_stdin_reader(
+    mouse_position: Arc<AtomicU64>,
+    wheel_steps: Arc<WheelAccumulator>,
+) -> mpsc::Receiver<io::Result<TerminalInput>> {
+    let (keys_tx, keys_rx) = mpsc::sync_channel(INPUT_QUEUE_ITEMS);
+    thread::spawn(move || {
+        let mut decoder = InputDecoder::default();
+        for event in RetryInterruptedRead(io::stdin()).events_and_raw() {
+            match event {
+                Ok((event, raw)) => {
+                    if let Some(input) = decoder.accept(event, &raw) {
+                        match input {
+                            TerminalInput::MouseMove(x, y) => {
+                                mouse_position
+                                    .store((u64::from(y) << 16) | u64::from(x), Ordering::Relaxed);
+                            }
+                            TerminalInput::MouseWheel { up, column, row } => {
+                                mouse_position.store(
+                                    (u64::from(row) << 16) | u64::from(column),
+                                    Ordering::Relaxed,
+                                );
+                                if wheel_steps.push(up, column, row) {
+                                    let _ = keys_tx.try_send(Ok(TerminalInput::WheelWake));
+                                }
+                            }
+                            TerminalInput::MouseClick(x, y) => {
+                                mouse_position
+                                    .store((u64::from(y) << 16) | u64::from(x), Ordering::Relaxed);
+                                if keys_tx.send(Ok(TerminalInput::MouseClick(x, y))).is_err() {
+                                    break;
+                                }
+                            }
+                            input => {
+                                if keys_tx.send(Ok(input)).is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => {
+                    let _ = keys_tx.send(Err(error));
+                    break;
+                }
+            }
+        }
+    });
+    keys_rx
+}
 
 pub(super) fn command_menu_active(app: &App, ui: &UiHost<'_>) -> bool {
     app.command_draft.is_some()
         && app.composer.cursor_at_end()
         && ui.accepts_text(true)
         && !app.command_candidates.is_empty()
+}
+
+pub(super) fn route_terminal_key(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    key: Key,
+) -> Result<UiKeyAction, marlin_agent_ui::UiProjectionError> {
+    let command_active = app.command_draft.is_some();
+    let action = ui.route_key(key, command_active, command_active, app.key_mode);
+    sync_key_feedback(app, ui);
+    action
+}
+
+pub(super) fn release_interrupted_key_sequence(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    input: Option<&TerminalInput>,
+) {
+    if (app.tool_review_prompt.is_some()
+        || app.history_search.is_some()
+        || app.helm.is_some()
+        || matches!(
+            input,
+            Some(TerminalInput::Paste(_) | TerminalInput::MouseClick(_, _))
+        ))
+        && ui.cancel_key_sequence()
+    {
+        sync_key_feedback(app, ui);
+    }
+}
+
+fn sync_key_feedback(app: &mut App, ui: &UiHost<'_>) {
+    app.echo_key_sequence(ui.key_feedback());
+    app.set_key_hint(ui.keypad_hint(app.key_mode), ui.transient_hint());
+}
+
+pub(super) fn apply_editor_mode(app: &mut App, ui: &mut UiHost<'_>, mode: UiKeyMode) {
+    match mode {
+        UiKeyMode::Normal => {
+            if app.key_mode == UiKeyMode::Insert {
+                app.composer.normal_cursor();
+            }
+            app.key_mode = mode;
+            app.editor_keyboard_active = false;
+        }
+        UiKeyMode::Insert => match ui.focus_editor() {
+            Ok(()) => app.enter_insert_mode(false),
+            Err(error) => publish_error(app, MessageSource::Ui, "Input focus failed", &error),
+        },
+    }
 }
 
 pub(super) fn browse_menu(
@@ -38,17 +189,38 @@ pub(super) fn browse_menu(
     }
 }
 
+/// Prepare a painted command for submission, or select a list row.
+pub(super) fn route_frame_click(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    regions: &[HitRegion],
+    column: u16,
+    row: u16,
+) -> bool {
+    let Some((x, y)) = column.checked_sub(1).zip(row.checked_sub(1)) else {
+        return false;
+    };
+    if let Some(target) = hit_test_command(regions, x, y) {
+        let command = app
+            .command_descriptor(target.as_str())
+            .filter(|command| command.arguments == UiCommandArguments::None)
+            .map(|command| command.name.clone());
+        return app.tool_review_prompt.is_none()
+            && app.history_search.is_none()
+            && app.helm.is_none()
+            && command.is_some_and(|name| app.prepare_bound_command(&name));
+    }
+    select_clicked_list_row(app, ui, x, y);
+    false
+}
+
 /// Select a painted list row without committing a command or review decision.
-pub(super) fn select_clicked_list_row(app: &mut App, ui: &mut UiHost<'_>, column: u16, row: u16) {
-    let clicked = column
-        .checked_sub(1)
-        .zip(row.checked_sub(1))
-        .and_then(|(x, y)| {
-            app.list_state
-                .borrow()
-                .hit(x, y)
-                .map(|hit| (hit.list.clone(), hit.key.clone(), hit.selects_command))
-        });
+fn select_clicked_list_row(app: &mut App, ui: &mut UiHost<'_>, x: u16, y: u16) {
+    let clicked = app
+        .list_state
+        .borrow()
+        .hit(x, y)
+        .map(|hit| (hit.list.clone(), hit.key.clone(), hit.selects_command));
     let Some((list, key, selects_command)) = clicked else {
         return;
     };
@@ -122,6 +294,306 @@ pub(super) fn apply_ui_request(app: &mut App, ui: &mut UiHost<'_>) {
         if let Err(error) = ui.enter_transient(&id) {
             publish_error(app, MessageSource::Ui, "Command group failed", &error);
         }
-        app.transient_hint = ui.transient_hint().cloned();
+        app.set_key_hint(None, ui.transient_hint());
+    }
+}
+
+pub(super) fn stage_ui_package(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    pending: &mut Option<config::TuiUiPackageConfig>,
+) -> bool {
+    let Some(package) = pending.take() else {
+        return false;
+    };
+    let Some(directory) = package.directory.to_str() else {
+        return false;
+    };
+    apply_package_event(
+        app,
+        ui,
+        UiPackageEvent::Catalog {
+            directory,
+            module: &package.module,
+            export: &package.export,
+        },
+    )
+}
+
+pub(super) fn activate_deferred_command(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    source: UiPackageCommandSource,
+) -> bool {
+    if app.command_draft.is_none() || app.pending.is_some() || app.workspace.is_pending() {
+        return true;
+    }
+    let input = app.command_lookup_query();
+    let Some(command) = app
+        .command_descriptor(&input)
+        .filter(|command| command.capability == UiCommandCapability::Deferred)
+    else {
+        return true;
+    };
+    if Command::arguments(command, &input).is_none() {
+        return false;
+    }
+    let command = command.name.clone();
+    apply_package_event(
+        app,
+        ui,
+        UiPackageEvent::Execute {
+            command: &command,
+            source,
+        },
+    )
+}
+
+fn apply_package_event(app: &mut App, ui: &mut UiHost<'_>, event: UiPackageEvent<'_>) -> bool {
+    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+        ui.package_event(event)?;
+        app.sync_window(ui.view())?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        publish_error(app, MessageSource::Ui, "UI package event failed", &error);
+        return false;
+    }
+    app.set_commands(ui.view());
+    app.transcript_policy = Some(ui.view().layout.transcript_policy.clone());
+    true
+}
+
+/// Handle one terminal input event while the interactive Helm overlay is open.
+/// Returns `Ok(true)` if the user explicitly requested exit (`Ctrl-q`), or
+/// `Err(UnexpectedEof)` when the terminal input stream disconnects.
+pub(super) fn handle_helm_input(
+    app: &mut App,
+    ui: &mut UiHost<'_>,
+    runtime: &tokio::runtime::Handle,
+    terminal_size: (u16, u16),
+    received: Result<std::io::Result<TerminalInput>, std::sync::mpsc::RecvTimeoutError>,
+) -> std::io::Result<bool> {
+    if app.helm.is_none() {
+        return Ok(false);
+    }
+    let mut accepted: Option<super::HelmAction> = None;
+    let mut close_helm = false;
+    let mut disarm_exit = false;
+    let mut yank_register = std::mem::take(&mut app.yank_register);
+    let helm = app.helm.as_mut().expect("checked helm present");
+    match received {
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => {
+            app.yank_register = yank_register;
+            return Ok(true);
+        }
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('c' | 'g')))) => {
+            close_helm = true;
+            disarm_exit = true;
+        }
+        Ok(Ok(TerminalInput::Key(Key::Esc))) => {
+            if helm.completion_mode {
+                helm.close_completion_mode();
+            } else if helm.action_mode {
+                helm.toggle_action_mode();
+            } else {
+                close_helm = true;
+                disarm_exit = true;
+            }
+        }
+        Ok(Ok(TerminalInput::Key(Key::Char('\n')))) => {
+            let (should_close, action) = helm.accept(false);
+            accepted = action;
+            close_helm = should_close;
+        }
+        Ok(Ok(TerminalInput::Key(Key::Alt('e')))) => {
+            let (should_close, action) = helm.accept(true);
+            accepted = action;
+            close_helm = should_close;
+        }
+        Ok(Ok(TerminalInput::Key(Key::Up | Key::Ctrl('p')))) => helm.move_selection(-1),
+        Ok(Ok(TerminalInput::Key(Key::Down | Key::Ctrl('n')))) => helm.move_selection(1),
+        Ok(Ok(TerminalInput::Key(Key::PageUp | Key::Alt('v')))) => helm.move_selection(-8),
+        Ok(Ok(TerminalInput::Key(Key::PageDown | Key::Ctrl('v')))) => helm.move_selection(8),
+        Ok(Ok(TerminalInput::Key(Key::Null | Key::Ctrl(' ') | Key::Alt('m')))) => {
+            helm.toggle_mark_and_advance();
+        }
+        Ok(Ok(TerminalInput::Key(Key::Alt('a')))) => helm.toggle_mark_all(),
+        Ok(Ok(TerminalInput::Key(Key::Alt(d @ '1'..='5')))) => {
+            helm.select_search_preset((d as u8 - b'1') as usize);
+        }
+        Ok(Ok(TerminalInput::Key(Key::F(n @ 1..=5)))) => {
+            helm.select_search_preset((n - 1) as usize);
+        }
+        Ok(Ok(TerminalInput::Key(Key::Alt('[') | Key::BackTab))) => {
+            helm.cycle_search_preset_prev();
+        }
+        Ok(Ok(TerminalInput::Key(Key::Alt(']') | Key::Ctrl('t')))) => {
+            helm.cycle_search_preset();
+        }
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('k')))) => helm.kill_to_line_end(&mut yank_register),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('u')))) => helm.kill_to_line_start(&mut yank_register),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('w') | Key::Alt('\x7f' | '\x08')))) => {
+            helm.delete_backward_word(&mut yank_register);
+        }
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('y')))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::PasteSelection,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::Alt('b')))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::PreviousWord,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::Alt('f')))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::NextWord,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::Left))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::BackwardChar,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::Right))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::ForwardChar,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::Home))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::LineStart,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::End))) => {
+            helm.edit(marlin_agent_ui::UiEditorAction::LineEnd, &mut yank_register);
+        }
+        Ok(Ok(TerminalInput::Key(Key::Delete))) => {
+            helm.edit(
+                marlin_agent_ui::UiEditorAction::DeleteChar,
+                &mut yank_register,
+            );
+        }
+        Ok(Ok(TerminalInput::Key(Key::Char('\t')))) => helm.toggle_tab_mode(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('z')))) => helm.toggle_follow_preview(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('o')))) => helm.jump_next_source(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('s')))) => helm.cycle_source_filter(),
+        Ok(Ok(TerminalInput::Key(Key::Ctrl('l')))) => helm.refresh_index(runtime),
+        Ok(Ok(TerminalInput::Key(Key::Backspace))) => helm.backspace(),
+        Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() => {
+            helm.insert_text(&c.to_string());
+        }
+        Ok(Ok(TerminalInput::Key(key @ (Key::Ctrl(_) | Key::Alt(_))))) => {
+            // Inherit every global Emacs editing keybinding declared in Scheme
+            // `meow-global` (`C-a`, `C-e`, `C-b`, `C-f`, `C-d`, `C-g`, etc.)!
+            match ui.route_key(key, true, true, UiKeyMode::Insert) {
+                Ok(UiKeyAction::Edit(action)) => helm.edit(action, &mut yank_register),
+                Ok(UiKeyAction::Cancel) => {
+                    close_helm = true;
+                    disarm_exit = true;
+                }
+                _ => {}
+            }
+        }
+        Ok(Ok(TerminalInput::Paste(text))) => helm.insert_text(&text),
+        Ok(Ok(TerminalInput::MouseClick(column, row))) => {
+            let full = ratatui::layout::Rect::new(0, 0, terminal_size.0, terminal_size.1);
+            if let Some(area) = crate::helm::helm_window_area(full)
+                && let Some(tab_idx) =
+                    crate::helm::hit_test_helm_mode_tab(area, &helm.search_presets, column, row)
+            {
+                helm.select_search_preset(tab_idx);
+            }
+        }
+        Ok(Err(err)) => {
+            app.yank_register = yank_register;
+            return Err(err);
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            app.yank_register = yank_register;
+            return Err(unexpected_stdin_eof());
+        }
+        _ => {}
+    }
+    app.yank_register = yank_register;
+    if disarm_exit {
+        app.disarm_exit();
+    }
+    if close_helm {
+        app.helm = None;
+    }
+    if let Some(action) = accepted {
+        app.apply_helm_action(action);
+        apply_ui_request(app, ui);
+    }
+    Ok(false)
+}
+
+pub(super) fn apply_wheel_scroll(
+    app: &mut App,
+    ui: &UiHost<'_>,
+    painted_regions: &[super::super::ui_elements::HitRegion],
+    up: bool,
+    pulses: usize,
+    column: u16,
+    row: u16,
+) {
+    if let Some(helm) = app.helm.as_mut() {
+        let step = isize::try_from(pulses.saturating_mul(3)).unwrap_or(isize::MAX);
+        helm.move_selection(if up { -step } else { step });
+        return;
+    }
+    let hit = if column > 0 && row > 0 {
+        super::super::ui_elements::hit_test_scroll(painted_regions, column - 1, row - 1)
+    } else {
+        None
+    };
+    let target = hit.and_then(|region| region.scroll_target());
+    let units = pulses.saturating_mul(usize::from(
+        hit.and_then(|region| region.scroll_step()).map_or(0, |step| step),
+    ));
+    if target == Some("transcript")
+        && let Some(prompt) = app.tool_review_prompt.as_mut()
+    {
+        prompt.scroll = if up {
+            prompt
+                .scroll
+                .saturating_sub(u16::try_from(units).unwrap_or(u16::MAX))
+        } else {
+            prompt
+                .scroll
+                .saturating_add(u16::try_from(units).unwrap_or(u16::MAX))
+        };
+    } else if target == Some("candidates") && app.tool_review_prompt.is_some() {
+        if let Some(prompt) = app.tool_review_prompt.as_mut() {
+            prompt.selected = if up {
+                prompt.selected.saturating_sub(units)
+            } else {
+                prompt
+                    .selected
+                    .saturating_add(units)
+                    .min(prompt.menu.choices.len().saturating_sub(1))
+            };
+        }
+    } else if target == Some("candidates") && command_menu_active(app, ui) {
+        browse_menu(
+            app,
+            ui,
+            if up {
+                UiBrowseDirection::Previous
+            } else {
+                UiBrowseDirection::Next
+            },
+            u16::try_from(units).unwrap_or(u16::MAX),
+        );
+    } else if target == Some("transcript") {
+        app.scroll_lines(up, units);
     }
 }

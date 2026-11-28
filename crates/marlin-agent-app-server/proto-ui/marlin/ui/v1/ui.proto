@@ -1,0 +1,504 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+syntax = "proto3";
+
+package marlin.ui.v1;
+
+import "marlin/common/v1/common.proto";
+
+// Host-neutral declarative UI IR and workbench projection boundary mirroring
+// crates/marlin-agent-ui (UiWorkbench, UiElement, UiEvent, UiIntent, UiTheme).
+// Scheme authors compose these trees via Yuanxu POO; Rust validates bounds and
+// successor agreement before publishing snapshots over gRPC to MyGo shells or
+// consuming plugin-emitted subtrees from wazero WASM-IR plugins.
+service UiWorkbenchService {
+  rpc OpenWorkbench(OpenWorkbenchRequest) returns (OpenWorkbenchResponse);
+  rpc WatchWorkbench(WatchWorkbenchRequest) returns (stream WatchWorkbenchResponse);
+  rpc DispatchUiEvent(DispatchUiEventRequest) returns (DispatchUiEventResponse);
+  rpc BrowseCommands(BrowseCommandsRequest) returns (BrowseCommandsResponse);
+}
+
+message OpenWorkbenchResponse {
+  UiWorkbenchSnapshot workbench = 1;
+}
+
+message WatchWorkbenchResponse {
+  UiWorkbenchSnapshot workbench = 1;
+}
+
+message BrowseCommandsResponse {
+  UiCommandCandidates candidates = 1;
+}
+
+message OpenWorkbenchRequest {
+  string session_id = 1;
+  marlin.common.v1.TargetKind client_target_kind = 2;
+  optional string preferred_profile = 3;
+}
+
+message WatchWorkbenchRequest {
+  string session_id = 1;
+  uint64 after_generation = 2;
+}
+
+message UiWorkbenchSnapshot {
+  uint64 generation = 1;
+  string profile_name = 2;
+  string model_label = 3;
+  string session_label = 4;
+  string focus_component_id = 5;
+  UiTheme theme = 6;
+  UiFrame frame = 7;
+  UiLayoutPolicy layout = 8;
+  repeated UiRegion regions = 9;
+  repeated UiCommand commands = 10;
+  repeated UiKeyBinding keymap = 11;
+  repeated UiTransient transients = 12;
+  repeated SlotDeclaration slots = 13;
+}
+
+message UiRgb {
+  uint32 red = 1;
+  uint32 green = 2;
+  uint32 blue = 3;
+}
+
+message UiTheme {
+  UiRgb canvas = 1;
+  UiRgb ink = 2;
+  UiRgb bar = 3;
+  UiRgb accent = 4;
+  UiRgb info = 5;
+  UiRgb success = 6;
+  UiRgb warning = 7;
+  UiRgb muted = 8;
+}
+
+enum UiTone {
+  UI_TONE_UNSPECIFIED = 0;
+  UI_TONE_NORMAL = 1;
+  UI_TONE_CANVAS = 2;
+  UI_TONE_ACCENT = 3;
+  UI_TONE_INFO = 4;
+  UI_TONE_SUCCESS = 5;
+  UI_TONE_WARNING = 6;
+  UI_TONE_MUTED = 7;
+}
+
+enum UiBackgroundKind {
+  UI_BACKGROUND_KIND_UNSPECIFIED = 0;
+  UI_BACKGROUND_KIND_NONE = 1;
+  UI_BACKGROUND_KIND_CANVAS = 2;
+  UI_BACKGROUND_KIND_BAR = 3;
+  UI_BACKGROUND_KIND_TONE = 4;
+}
+
+message UiBackground {
+  UiBackgroundKind kind = 1;
+  UiTone tone = 2;
+}
+
+message UiWindow {
+  string id = 1;
+  string buffer_id = 2;
+}
+
+message UiFrame {
+  string id = 1;
+  repeated UiWindow windows = 2;
+  string selected_window = 3;
+  string minibuffer = 4;
+  repeated string buffer_ids = 5;
+}
+
+message UiLayoutPolicy {
+  UiElement frame_tree = 1;
+  map<string, string> role_regions = 2;
+  uint32 max_chatbox_rows = 3;
+  uint32 max_command_rows = 4;
+  UiTranscriptPolicy transcript_policy = 5;
+}
+
+message UiTranscriptPolicy {
+  bool default_collapsed = 1;
+  string user_prefix = 2;
+  string assistant_role = 3;
+  string thinking_collapsed_role = 4;
+  string thinking_expanded_role = 5;
+}
+
+enum SlotCardinality {
+  SLOT_CARDINALITY_UNSPECIFIED = 0;
+  SLOT_CARDINALITY_SINGLE = 1;
+  SLOT_CARDINALITY_LIST = 2;
+  SLOT_CARDINALITY_KEYED = 3;
+}
+
+// Explicit extension point declared by Scheme/Workbench where MyGo may hot-plug
+// native renderers, Untrusted WebViews, or wazero WASM-IR plugins.
+message SlotDeclaration {
+  string slot_id = 1;
+  SlotCardinality cardinality = 2;
+  string fallback_renderer = 3;
+  bool allow_untrusted_plugin = 4;
+}
+
+enum UiSlotSource {
+  UI_SLOT_SOURCE_UNSPECIFIED = 0;
+  UI_SLOT_SOURCE_SELECTED_BUFFER = 1;
+  UI_SLOT_SOURCE_FOCUSED_EXTENSION = 2;
+  UI_SLOT_SOURCE_RUNTIME_POLICY = 3;
+  UI_SLOT_SOURCE_TRANSIENT_HINT = 4;
+  UI_SLOT_SOURCE_NAMED_PLUGIN_SLOT = 5;
+}
+
+enum UiListSourceKind {
+  UI_LIST_SOURCE_KIND_UNSPECIFIED = 0;
+  UI_LIST_SOURCE_KIND_CONVERSATION = 1;
+  UI_LIST_SOURCE_KIND_MESSAGES = 2;
+  UI_LIST_SOURCE_KIND_WORKSPACE = 3;
+  UI_LIST_SOURCE_KIND_REVIEW = 4;
+  UI_LIST_SOURCE_KIND_CANDIDATES = 5;
+  UI_LIST_SOURCE_KIND_EXTENSIONS = 6;
+  UI_LIST_SOURCE_KIND_INLINE_ROWS = 7;
+}
+
+enum UiBarSide {
+  UI_BAR_SIDE_UNSPECIFIED = 0;
+  UI_BAR_SIDE_LEFT = 1;
+  UI_BAR_SIDE_RIGHT = 2;
+}
+
+// 1:1 projection of crates/marlin-agent-ui/src/element/tree.rs::UiElement.
+message UiElement {
+  oneof node {
+    UiTextNode text = 1;
+    UiSlotNode slot = 2;
+    UiPanelNode panel = 3;
+    UiTemplateNode template = 4;
+    UiPromptNode prompt = 5;
+    UiBarNode bar = 6;
+    UiListNode list = 7;
+    UiInputNode input = 8;
+    UiElementSequence rows = 9;
+    UiElementSequence columns = 10;
+    UiChoiceNode choice = 11;
+    UiSizedNode sized = 12;
+    UiRegionNode region = 13;
+  }
+}
+
+message UiSpan {
+  string text = 1;
+  UiTone tone = 2;
+}
+
+message UiTextNode {
+  repeated UiSpan spans = 1;
+}
+
+message UiSlotNode {
+  UiSlotSource source = 1;
+  // Populated when source == UI_SLOT_SOURCE_NAMED_PLUGIN_SLOT.
+  optional string slot_id = 2;
+}
+
+message UiPanelNode {
+  optional UiTone border_tone = 1;
+  UiElement field_template = 2;
+  optional UiElement title = 3;
+  UiElement child = 4;
+}
+
+message UiTemplateSpan {
+  oneof value {
+    string literal = 1;
+    string binding_id = 2;
+    UiSizedBinding column = 3;
+    UiSizedBinding tail = 4;
+  }
+  UiTone tone = 5;
+  bool bold = 6;
+}
+
+message UiSizedBinding {
+  string id = 1;
+  UiSize width = 2;
+}
+
+message UiTemplateNode {
+  UiBackground background = 1;
+  repeated UiTemplateSpan spans = 2;
+}
+
+message UiPromptNode {
+  string field_id = 1;
+  UiElement template = 2;
+}
+
+message UiBarSegment {
+  UiBarSide side = 1;
+  uint32 priority = 2;
+  uint32 min_width = 3;
+  optional string condition_id = 4;
+  UiElement child = 5;
+  optional string command_name = 6;
+}
+
+message UiBarNode {
+  UiBackground background = 1;
+  uint32 right_divisor = 2;
+  repeated UiBarSegment segments = 3;
+}
+
+message UiListRowValue {
+  optional string id = 1;
+  map<string, string> fields = 2;
+}
+
+message UiListNode {
+  string id = 1;
+  UiListSourceKind source_kind = 2;
+  repeated UiListRowValue inline_rows = 3;
+  UiSize offset = 4;
+  UiElement child = 5;
+}
+
+message UiInputAdornment {
+  uint32 cells = 1;
+  UiElement view = 2;
+}
+
+message UiInputNode {
+  bool bordered = 1;
+  UiBackground background = 2;
+  optional UiElement prefix = 3;
+  optional string title_id = 4;
+  string active_id = 5;
+  optional UiInputAdornment trailing = 6;
+}
+
+message UiElementSequence {
+  repeated UiElement children = 1;
+}
+
+message UiChoiceCase {
+  string fact_id = 1;
+  UiElement view = 2;
+}
+
+message UiChoiceNode {
+  repeated UiChoiceCase cases = 1;
+  UiElement fallback = 2;
+}
+
+message UiSizedNode {
+  UiSize size = 1;
+  UiElement child = 2;
+}
+
+message UiScrollTarget {
+  string id = 1;
+  uint32 step = 2;
+}
+
+message UiRegionNode {
+  string id = 1;
+  optional UiScrollTarget scroll_target = 2;
+  UiElement child = 3;
+}
+
+message UiSize {
+  oneof expr {
+    uint32 cells = 1;
+    uint32 flex = 2;
+    string binding_id = 3;
+    UiBoundedSize bounded = 4;
+    UiBinarySize min_size = 5;
+    UiBinarySize max_size = 6;
+    UiBinarySize add_size = 7;
+    UiBinarySize subtract_size = 8;
+    UiSizeChoice choice = 9;
+  }
+}
+
+message UiBoundedSize {
+  string value_id = 1;
+  string limit_id = 2;
+}
+
+message UiBinarySize {
+  UiSize left = 1;
+  UiSize right = 2;
+}
+
+message UiSizeChoiceCase {
+  string fact_id = 1;
+  UiSize size = 2;
+}
+
+message UiSizeChoice {
+  repeated UiSizeChoiceCase cases = 1;
+  UiSize fallback = 2;
+}
+
+message UiRegion {
+  oneof kind {
+    UiEmptyMarker transcript = 1;
+    UiEmptyMarker composer = 2;
+    UiCommandRegion commands = 3;
+    UiStatusRegion status = 4;
+    UiExtensionRegion extension = 5;
+  }
+}
+
+message UiEmptyMarker {}
+
+message UiCommandRegion {
+  repeated UiCommand commands = 1;
+}
+
+message UiStatusItem {
+  string id = 1;
+  string label = 2;
+  string compact_label = 3;
+  UiTone tone = 4;
+  UiTone active_tone = 5;
+  uint32 min_width = 6;
+  uint32 compact_below = 7;
+  uint32 keep_priority = 8;
+}
+
+message UiStatusRegion {
+  repeated UiStatusItem items = 1;
+}
+
+message UiExtensionRegion {
+  string id = 1;
+  string label = 2;
+  bool focusable = 3;
+  UiElement content = 4;
+}
+
+enum UiCommandArguments {
+  UI_COMMAND_ARGUMENTS_UNSPECIFIED = 0;
+  UI_COMMAND_ARGUMENTS_NONE = 1;
+  UI_COMMAND_ARGUMENTS_REQUIRED = 2;
+  UI_COMMAND_ARGUMENTS_OPTIONAL = 3;
+}
+
+message UiCommand {
+  string name = 1;
+  string description = 2;
+  UiCommandArguments arguments = 3;
+  string capability = 4;
+  optional string fixed_value = 5;
+}
+
+enum UiKeyScope {
+  UI_KEY_SCOPE_UNSPECIFIED = 0;
+  UI_KEY_SCOPE_GLOBAL = 1;
+  UI_KEY_SCOPE_INSERT = 2;
+  UI_KEY_SCOPE_NORMAL = 3;
+}
+
+message UiKeyBinding {
+  UiKeyScope scope = 1;
+  repeated string sequence = 2;
+  string action_kind = 3;
+  optional string command_name = 4;
+}
+
+enum UiTransientForeign {
+  UI_TRANSIENT_FOREIGN_UNSPECIFIED = 0;
+  UI_TRANSIENT_FOREIGN_EXIT = 1;
+  UI_TRANSIENT_FOREIGN_WARN = 2;
+  UI_TRANSIENT_FOREIGN_RUN = 3;
+}
+
+message UiTransientHead {
+  string key = 1;
+  optional string command_name = 2;
+  string label = 3;
+  bool exit = 4;
+}
+
+message UiTransient {
+  string id = 1;
+  UiElement hint = 2;
+  UiElement warning_hint = 3;
+  UiTransientForeign foreign = 4;
+  repeated UiTransientHead heads = 5;
+}
+
+enum UiSimpleEventKind {
+  UI_SIMPLE_EVENT_KIND_UNSPECIFIED = 0;
+  UI_SIMPLE_EVENT_KIND_NEXT_FOCUS = 1;
+  UI_SIMPLE_EVENT_KIND_PREVIOUS_FOCUS = 2;
+  UI_SIMPLE_EVENT_KIND_SUBMIT = 3;
+  UI_SIMPLE_EVENT_KIND_DISMISS = 4;
+  UI_SIMPLE_EVENT_KIND_SCROLL_UP = 5;
+  UI_SIMPLE_EVENT_KIND_SCROLL_DOWN = 6;
+}
+
+message UiSelectListRowEvent {
+  string list_id = 1;
+  string row_id = 2;
+}
+
+message DispatchUiEventRequest {
+  string session_id = 1;
+  uint64 expected_generation = 2;
+  oneof event {
+    UiSimpleEventKind simple = 3;
+    string select_focus = 4;
+    string select_profile = 5;
+    string select_buffer = 6;
+    UiSelectListRowEvent select_list_row = 7;
+    string record_command = 8;
+  }
+}
+
+enum UiScrollDirection {
+  UI_SCROLL_DIRECTION_UNSPECIFIED = 0;
+  UI_SCROLL_DIRECTION_UP = 1;
+  UI_SCROLL_DIRECTION_DOWN = 2;
+}
+
+message UiIntent {
+  oneof intent {
+    UiEmptyMarker submit_draft = 1;
+    string focus_component_id = 2;
+    UiScrollDirection scroll = 3;
+    string select_buffer_id = 4;
+  }
+}
+
+message DispatchUiEventResponse {
+  bool admitted = 1;
+  optional UiIntent intent = 2;
+  optional UiWorkbenchSnapshot next_workbench = 3;
+  optional marlin.common.v1.TypedDenial denial = 4;
+}
+
+enum UiBrowseDirection {
+  UI_BROWSE_DIRECTION_UNSPECIFIED = 0;
+  UI_BROWSE_DIRECTION_NEXT = 1;
+  UI_BROWSE_DIRECTION_PREVIOUS = 2;
+}
+
+message BrowseCommandsRequest {
+  string session_id = 1;
+  string query = 2;
+  optional string previous_command = 3;
+  UiBrowseDirection direction = 4;
+  uint32 steps = 5;
+  repeated string allowed_commands = 6;
+}
+
+message UiCommandCandidates {
+  repeated string names = 1;
+  optional string selected = 2;
+}

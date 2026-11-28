@@ -10,14 +10,42 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+grpc = [
+    "dep:prost",
+    "dep:tokio-stream",
+    "dep:tonic",
+    "dep:tonic-prost",
+    "dep:tonic-prost-build",
+]
+
 [dependencies]
 gerbil-scheme.workspace = true
-marlin-agent-runtime.workspace = true
 marlin-agent-protocol.workspace = true
+marlin-agent-runtime.workspace = true
+marlin-agent-search-engine.workspace = true
+prost = { workspace = true, optional = true }
+serde_json.workspace = true
+tokio.workspace = true
+tokio-stream = { workspace = true, features = ["net"], optional = true }
+tonic = { workspace = true, features = ["router", "server"], optional = true }
+tonic-prost = { workspace = true, optional = true }
+
+[build-dependencies]
+tonic-prost-build = { workspace = true, optional = true }
 
 [dev-dependencies]
-marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
+asp-rust.workspace = true
+marlin-agent-sessions.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
 
 [[test]]
 name = "unit_test"
 path = "tests/unit_test.rs"
+
+[[test]]
+name = "aitia_review_tool_test"
+path = "tests/aitia_review_tool_test.rs"

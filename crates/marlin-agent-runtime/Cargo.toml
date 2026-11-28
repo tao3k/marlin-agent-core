@@ -11,10 +11,12 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+async-trait.workspace = true
+marlin-agent-gitops.workspace = true
+thiserror.workspace = true
 aho-corasick.workspace = true
 globset.workspace = true
 libc.workspace = true
-marlin-agent-environment.workspace = true
 marlin-agent-graph.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-sessions.workspace = true
@@ -32,11 +34,13 @@ toml.workspace = true
 tower.workspace = true
 tracing.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process"] }
+
 [dev-dependencies]
 criterion.workspace = true
-marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
+asp-rust.workspace = true
 marlin-agent-harness-types.workspace = true
-marlin-agent-test-support.workspace = true
 tempfile.workspace = true
 
 [[bench]]
@@ -50,3 +54,7 @@ harness = false
 [[test]]
 name = "policy"
 path = "tests/unit/policy.rs"
+
+[[test]]
+name = "process_quota_gate"
+path = "tests/integration/process_quota_gate.rs"

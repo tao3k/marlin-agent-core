@@ -6,7 +6,7 @@
 
 use crate::org::store::{FileSystemReleaseStatusStore, OrgSourceStoreResult};
 use marlin_gerbil_ir::ReleaseTopologySpec;
-use marlin_workspace_status::{ReleaseGateReceipt, ReleaseStatus};
+use marlin_workspace::status::{ReleaseGateReceipt, ReleaseStatus};
 use serde::{Deserialize, Serialize};
 
 /// File-backed release status commit emitted from the Gerbil release workflow.

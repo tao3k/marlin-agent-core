@@ -35,12 +35,10 @@ fn workspace_tool_cancel_reaps_process() {
     let config = path.join("config.toml");
     fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:9/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
     let git = path.join("git");
-    fs::write(
+    write_git_status_fixture(
         &git,
-        "#!/bin/sh\nprintf '%s' \"$$\" > \"$MARLIN_TEST_GIT_PID\"\nexec /bin/sleep 30\n",
-    )
-    .unwrap();
-    fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
+        "printf '%s' \"$$\" > \"$MARLIN_TEST_GIT_PID\"\nexec /bin/sleep 30\n",
+    );
     let pidfile = path.join("git.pid");
     let metrics = path.join("metrics.csv");
     let variables = [
@@ -56,6 +54,7 @@ fn workspace_tool_cancel_reaps_process() {
     ];
     let mut terminal = Terminal::start_in(&config, &[], &variables, 30, 100, path);
     terminal.wait_status("Message: Enter send");
+    terminal.enter_normal_mode();
     for cycle in 1..=20 {
         let _ = fs::remove_file(&pidfile);
         terminal.send(b"\x0f");
@@ -153,12 +152,10 @@ fn workspace_tool_parent_crash_and_restart() {
     let config = path.join("config.toml");
     fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:9/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
     let git = path.join("git");
-    fs::write(
+    write_git_status_fixture(
         &git,
-        "#!/bin/sh\nprintf '%s' \"$$\" > \"$MARLIN_TEST_GIT_PID\"\nexec /bin/sleep 30\n",
-    )
-    .unwrap();
-    fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
+        "printf '%s' \"$$\" > \"$MARLIN_TEST_GIT_PID\"\nexec /bin/sleep 30\n",
+    );
     let pidfile = path.join("git.pid");
     let variables = [
         ("PATH", format!("{}:/usr/bin:/bin", path.display())),
@@ -169,6 +166,7 @@ fn workspace_tool_parent_crash_and_restart() {
     ];
     let mut terminal = Terminal::start_in(&config, &[], &variables, 30, 100, path);
     terminal.wait_status("Message: Enter send");
+    terminal.enter_normal_mode();
     terminal.send(b"\x0f");
     terminal.wait_text("M-x");
     terminal.send(b"status\r");
@@ -224,12 +222,10 @@ fn workspace_tool_shutdown_reaps_after_exit() {
     let config = path.join("config.toml");
     fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:9/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
     let git = path.join("git");
-    fs::write(
+    write_git_status_fixture(
         &git,
-        "#!/bin/sh\nprintf '%s' \"$$\" > \"$MARLIN_TEST_GIT_PID\"\nexec /bin/sleep 30\n",
-    )
-    .unwrap();
-    fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
+        "printf '%s' \"$$\" > \"$MARLIN_TEST_GIT_PID\"\nexec /bin/sleep 30\n",
+    );
     let pidfile = path.join("git.pid");
     let variables = [
         ("PATH", format!("{}:/usr/bin:/bin", path.display())),
@@ -240,6 +236,7 @@ fn workspace_tool_shutdown_reaps_after_exit() {
     ];
     let mut terminal = Terminal::start_in(&config, &[], &variables, 30, 100, path);
     terminal.wait_status("Message: Enter send");
+    terminal.enter_normal_mode();
     terminal.send(b"\x0f");
     terminal.wait_text("M-x");
     terminal.send(b"status\r");
@@ -277,6 +274,7 @@ fn stalled_collector_does_not_delay_runtime_drain_or_block_tui_exit() {
     let config = write_group_tool_fixture(path);
     let metrics = path.join("metrics.csv");
     let pidfile = path.join("git.pids");
+    let probe_pidfile = path.join("worktree-probe.pid");
     let variables = [
         ("PATH", format!("{}:/usr/bin:/bin", path.display())),
         (
@@ -286,6 +284,10 @@ fn stalled_collector_does_not_delay_runtime_drain_or_block_tui_exit() {
         (
             "MARLIN_TUI_RUNTIME_METRICS_FILE",
             metrics.to_string_lossy().into_owned(),
+        ),
+        (
+            "MARLIN_TEST_WORKTREE_PROBE_PID",
+            probe_pidfile.to_string_lossy().into_owned(),
         ),
         ("MARLIN_TUI_STARTUP_TRACE", "1".to_owned()),
         (
@@ -299,10 +301,20 @@ fn stalled_collector_does_not_delay_runtime_drain_or_block_tui_exit() {
     ];
     let mut terminal = Terminal::start_in(&config, &[], &variables, 30, 100, path);
     terminal.wait_status("Message: Enter send");
+    terminal.enter_normal_mode();
     terminal.send(b"\x0f");
     terminal.wait_text("M-x");
     terminal.send(b"status\r");
     let startup_deadline = Instant::now() + Duration::from_secs(10);
+    let probe = wait_for_fixture(startup_deadline, "blocked worktree probe", || {
+        let pid = fs::read_to_string(&probe_pidfile).ok()?.parse().ok()?;
+        Some(Pid::from_raw(pid))
+    });
+    let mut probe_guard = ChildGuard(Some(probe));
+    assert!(
+        kill(probe, None).is_ok(),
+        "worktree probe must be alive before shutdown"
+    );
     let (tool, descendant) = wait_for_fixture(startup_deadline, "workspace process group", || {
         let pids = fs::read_to_string(&pidfile).ok()?;
         let (tool, descendant) = pids.trim().split_once(' ')?;
@@ -322,6 +334,7 @@ fn stalled_collector_does_not_delay_runtime_drain_or_block_tui_exit() {
 
     let quit = Instant::now();
     let deadline = quit + Duration::from_secs(10);
+    eprintln!("requesting TUI exit with group={tool} descendant={descendant} probe={probe}");
     terminal.send(b"\x11");
     let mut connection = wait_for_fixture(deadline, "OTLP shutdown request", || {
         match collector.accept() {
@@ -338,17 +351,19 @@ fn stalled_collector_does_not_delay_runtime_drain_or_block_tui_exit() {
     assert!(headers.starts_with("POST /v1/traces HTTP/1.1\r\n"));
     assert!(contains(&body, b"marlin-tui") && contains(&body, b"runtime.task"));
     let flush_started = quit.elapsed();
+    eprintln!("collector received the shutdown batch after {flush_started:?}");
 
     // Check at the collector boundary while the TUI is alive and still waiting for a response.
     assert!(terminal.child.try_wait().unwrap().is_none());
     assert_eq!(runtime_counts(&metrics), Some((0, 0)));
-    for pid in [tool, descendant, Pid::from_raw(-tool.as_raw())] {
+    for pid in [probe, tool, descendant, Pid::from_raw(-tool.as_raw())] {
         assert_eq!(
             kill(pid, None),
             Err(nix::errno::Errno::ESRCH),
             "live resource {pid} during OTLP export"
         );
     }
+    probe_guard.0 = None;
     tool_guard.0 = None;
     descendant_guard.0 = None;
     terminal.wait_for(
@@ -383,11 +398,10 @@ fn quiet_workspace_tool_survives_idle_observation() {
     let path = directory.path();
     let config = write_group_tool_fixture(path);
     let git = path.join("git");
-    fs::write(
+    write_git_status_fixture(
         &git,
-        "#!/bin/sh\nprintf '%s' \"$$\" > \"$MARLIN_TEST_GIT_PID\"\nexec /bin/sleep 30\n",
-    )
-    .unwrap();
+        "printf '%s' \"$$\" > \"$MARLIN_TEST_GIT_PID\"\nexec /bin/sleep 30\n",
+    );
     let pidfile = path.join("git.pid");
     let variables = [
         ("PATH", format!("{}:/usr/bin:/bin", path.display())),
@@ -398,6 +412,7 @@ fn quiet_workspace_tool_survives_idle_observation() {
     ];
     let mut terminal = Terminal::start_in(&config, &[], &variables, 30, 100, path);
     terminal.wait_status("Message: Enter send");
+    terminal.enter_normal_mode();
     terminal.send(b"\x0f");
     terminal.wait_text("M-x");
     terminal.send(b"status\r");
@@ -445,6 +460,7 @@ fn process_buffer_stops_a_managed_generation() {
     ];
     let mut terminal = Terminal::start_in(&config, &[], &variables, 30, 100, path);
     terminal.wait_status("Message: Enter send");
+    terminal.enter_normal_mode();
     let command = |terminal: &mut Terminal, input: &str| {
         terminal.send(b"\x0f");
         terminal.wait_text("M-x");
@@ -538,6 +554,7 @@ fn independent_observer_distinguishes_stall_from_exit() {
     ];
     let mut terminal = Terminal::start_in(&config, &[], &variables, 30, 120, path);
     terminal.wait_status("Message: Enter send");
+    terminal.enter_normal_mode();
     let host = terminal.child.id();
     let host_pid = Pid::from_raw(host.try_into().unwrap());
     let reports = || -> Option<Vec<_>> {
@@ -653,16 +670,35 @@ fn independent_observer_distinguishes_stall_from_exit() {
 }
 
 #[cfg(target_os = "macos")]
+fn write_git_status_fixture(git: &Path, body: &str) {
+    // Status is managed. Tests can independently hold the startup probe open.
+    let script = format!(
+        r#"#!/bin/sh
+for argument do
+  if [ "$argument" = status ]; then
+{body}    exit $?
+  fi
+  if [ "$argument" = rev-parse ] && [ -n "${{MARLIN_TEST_WORKTREE_PROBE_PID:-}}" ]; then
+    printf '%s' "$$" > "$MARLIN_TEST_WORKTREE_PROBE_PID"
+    exec /bin/sleep 30
+  fi
+done
+exec /usr/bin/git "$@"
+"#
+    );
+    fs::write(git, script).unwrap();
+    fs::set_permissions(git, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[cfg(target_os = "macos")]
 fn write_group_tool_fixture(path: &Path) -> std::path::PathBuf {
     let config = path.join("config.toml");
     fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:9/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
     let git = path.join("git");
-    fs::write(
+    write_git_status_fixture(
         &git,
-        "#!/bin/sh\n/bin/sleep 30 &\nprintf '%s %s\\n' \"$$\" \"$!\" > \"$MARLIN_TEST_GIT_PID\"\nwait\n",
-    )
-    .unwrap();
-    fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
+        "/bin/sleep 30 &\nprintf '%s %s\\n' \"$$\" \"$!\" > \"$MARLIN_TEST_GIT_PID\"\nwait\n",
+    );
     config
 }
 

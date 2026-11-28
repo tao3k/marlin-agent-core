@@ -4,5 +4,7 @@
 
 #[path = "unit/session_catalog.rs"]
 mod session_catalog;
+#[path = "unit/sm31_storage_boundary_confinement.rs"]
+mod sm31_storage_boundary_confinement;
 #[path = "unit/storage_cases.rs"]
 mod unit;

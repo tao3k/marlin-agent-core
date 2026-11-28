@@ -8,6 +8,8 @@ mod abi_projection;
 mod error;
 mod ids;
 mod manifest;
+#[cfg(not(feature = "external-program"))]
+mod native_bridge;
 mod package;
 mod projection;
 mod registry;
@@ -29,6 +31,8 @@ pub use manifest::{
     GerbilSchemeTypeManifestValidationReceipt, GerbilSchemeTypeSpec,
     GerbilSchemeTypedValueValidationReceipt, decode_gerbil_scheme_type_manifest_fixture,
 };
+#[cfg(not(feature = "external-program"))]
+pub use native_bridge::project_rooted_scheme_object;
 pub use package::{
     GerbilSchemeCAbiContract, GerbilSchemeCAbiReadinessPlan,
     GerbilSchemePackageAbiReadinessReceipt, GerbilSchemePackageManifest,

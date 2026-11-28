@@ -12,6 +12,7 @@ repository = "https://github.com/tao3k/marlin-agent-core"
 publish = false
 
 [dependencies]
+marlin-agent-gitops = { workspace = true, optional = true }
 mrr-data-backend = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true, optional = true }
@@ -21,11 +22,16 @@ tokio = { workspace = true, optional = true }
 default = []
 turso = ["dep:mrr-data-backend", "mrr-data-backend/turso", "dep:serde_json", "dep:tokio"]
 turso-sync = ["turso", "mrr-data-backend/turso-sync"]
+context-index = ["turso", "dep:marlin-agent-gitops"]
+
+[[test]]
+name = "context_locator_index"
+path = "tests/integration/context_locator_index.rs"
+required-features = ["context-index"]
 
 [dev-dependencies]
 asp-rust.workspace = true
 marlin-agent-protocol.workspace = true
-marlin-agent-sessions = { workspace = true }
 marlin-agent-context = { workspace = true, features = ["org-memory"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

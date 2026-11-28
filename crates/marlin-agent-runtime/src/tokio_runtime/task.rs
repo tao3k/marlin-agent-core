@@ -45,7 +45,8 @@ enum AdmissionKind {
 }
 
 /// Operation within a runtime session.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct RuntimeOperationId(String);
 
 impl RuntimeOperationId {
@@ -59,7 +60,10 @@ impl RuntimeOperationId {
 }
 
 /// Monotonic generation allocated within the host process.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
 pub struct RuntimeResourceGeneration(u64);
 
 impl RuntimeResourceGeneration {

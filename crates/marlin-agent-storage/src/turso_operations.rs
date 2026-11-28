@@ -139,12 +139,14 @@ impl TursoAgentStorage {
             });
         }
 
-        let connection = self.connections.acquire().await?;
+        let mut connection = self.connections.acquire().await?;
         const MAX_ATTEMPTS: u32 = 8;
         let mut retry_count = 0;
         for attempt in 0..MAX_ATTEMPTS {
+            connection.mark_transaction_active();
             match append_session_events_transaction(&connection, transaction_mode, &records).await {
                 Ok(rows_affected) => {
+                    connection.mark_transaction_clean();
                     return Ok(TursoBatchWriteReceipt {
                         transaction_mode,
                         item_count: records.len(),
@@ -153,19 +155,25 @@ impl TursoAgentStorage {
                     });
                 }
                 Err(BatchAttemptError::Domain(error)) => {
-                    let _ = connection.execute("ROLLBACK", ()).await;
+                    if connection.execute("ROLLBACK", ()).await.is_ok() {
+                        connection.mark_transaction_clean();
+                    }
                     return Err(error);
                 }
                 Err(BatchAttemptError::Backend(error))
                     if is_retryable_turso_error(&error) && attempt + 1 < MAX_ATTEMPTS =>
                 {
-                    let _ = connection.execute("ROLLBACK", ()).await;
+                    if connection.execute("ROLLBACK", ()).await.is_ok() {
+                        connection.mark_transaction_clean();
+                    }
                     retry_count += 1;
                     let backoff_ms = 1_u64 << attempt.min(5);
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                 }
                 Err(BatchAttemptError::Backend(error)) => {
-                    let _ = connection.execute("ROLLBACK", ()).await;
+                    if connection.execute("ROLLBACK", ()).await.is_ok() {
+                        connection.mark_transaction_clean();
+                    }
                     return Err(map_turso_error(error));
                 }
             }

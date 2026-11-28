@@ -8,6 +8,27 @@ use marlin_agent_ui::{
     UiProfileName, UiTransientId,
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EnvrcCommand {
+    Apply(marlin_agent_runtime::EnvrcIntent),
+    Cancel,
+    Status,
+}
+
+impl EnvrcCommand {
+    fn from_value(value: &str) -> Option<Self> {
+        use marlin_agent_runtime::EnvrcIntent;
+        Some(match value {
+            "allow" => Self::Apply(EnvrcIntent::Allow),
+            "reload" => Self::Apply(EnvrcIntent::Reload),
+            "deny" => Self::Apply(EnvrcIntent::Deny),
+            "cancel" => Self::Cancel,
+            "status" => Self::Status,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum Command<'a> {
     Models,
@@ -23,11 +44,13 @@ pub(crate) enum Command<'a> {
     ContextBudget,
     Runtime,
     KillProcess(std::num::NonZeroU64),
+    Envrc(EnvrcCommand),
     OpenMenu(&'a str),
     SelectUi(UiEvent),
     EnterTransient(UiTransientId),
     ToggleThinking(usize),
     Clear,
+    Helm(Option<&'a str>),
 }
 
 impl<'a> Command<'a> {
@@ -56,10 +79,16 @@ impl<'a> Command<'a> {
                 Required,
                 None,
             ) => true,
-            (Capability::Sessions, Optional, None) => true,
+            (Capability::Envrc, NoArguments, Some(action)) => {
+                EnvrcCommand::from_value(action).is_some()
+            }
+            (Capability::Sessions | Capability::Helm, Optional, None) => true,
+            (Capability::SchemeAction, _, Some(action)) => UiCommandName::new(action).is_ok(),
+            (Capability::Deferred, _, None) => true,
             (Capability::History, NoArguments, Some("older" | "newest")) => true,
             (Capability::Workspace, NoArguments, Some("status"))
             | (Capability::Workspace, Optional, Some("diff"))
+            | (Capability::Workspace, Required, Some("worktree-switch"))
             | (Capability::ToggleThinking, Optional, None) => true,
             (Capability::OpenMenu, NoArguments, Some(prefix)) => {
                 prefix.ends_with('-') && UiCommandName::is_valid_prefix(prefix)
@@ -75,12 +104,7 @@ impl<'a> Command<'a> {
         }
     }
 
-    /// Parse arguments using the selected descriptor, then select one native
-    /// capability. A new command alias needs no Rust name-table edit.
-    pub(crate) fn parse(descriptor: &'a UiCommand, input: &'a str) -> Option<Self> {
-        if !Self::admit(descriptor) {
-            return None;
-        }
+    pub(crate) fn arguments(descriptor: &UiCommand, input: &'a str) -> Option<Option<&'a str>> {
         let input = input.trim();
         let (name, argument) = input
             .split_once(' ')
@@ -88,7 +112,7 @@ impl<'a> Command<'a> {
         if name != descriptor.name.as_str() {
             return None;
         }
-        let argument = match descriptor.arguments {
+        Some(match descriptor.arguments {
             UiCommandArguments::None if argument.is_none() => None,
             UiCommandArguments::Required
                 if argument.is_some_and(|value| !value.trim().is_empty()) =>
@@ -99,7 +123,16 @@ impl<'a> Command<'a> {
                 argument
             }
             _ => return None,
-        };
+        })
+    }
+
+    /// Parse arguments using the selected descriptor, then select one native
+    /// capability. A new command alias needs no Rust name-table edit.
+    pub(crate) fn parse(descriptor: &'a UiCommand, input: &'a str) -> Option<Self> {
+        if !Self::admit(descriptor) {
+            return None;
+        }
+        let argument = Self::arguments(descriptor, input)?;
         let value = descriptor.value.as_deref();
         use UiCommandCapability as Capability;
         Some(match descriptor.capability {
@@ -120,6 +153,7 @@ impl<'a> Command<'a> {
             Capability::ContextBudget => Self::ContextBudget,
             Capability::Runtime => Self::Runtime,
             Capability::KillProcess => Self::KillProcess(argument?.trim().parse().ok()?),
+            Capability::Envrc => Self::Envrc(EnvrcCommand::from_value(value?)?),
             Capability::OpenMenu => Self::OpenMenu(value?),
             Capability::SelectProfile => {
                 Self::SelectUi(UiEvent::SelectProfile(UiProfileName::new(value?).ok()?))
@@ -129,6 +163,15 @@ impl<'a> Command<'a> {
             }
             Capability::EnterTransient => Self::EnterTransient(UiTransientId::new(value?).ok()?),
             Capability::Clear => Self::Clear,
+            Capability::Helm => Self::Helm(argument.map(str::trim).filter(|s| !s.is_empty())),
+            Capability::SchemeAction => Self::SelectUi(UiEvent::SchemeAction {
+                action: UiCommandName::new(value?).ok()?,
+                argument: argument
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned),
+            }),
+            Capability::Deferred => return None,
             Capability::ToggleThinking => Self::ToggleThinking(match argument {
                 Some(value) => value.trim().parse().ok().filter(|index| *index > 0)?,
                 None => 1,

@@ -209,6 +209,41 @@ impl TokioGraphLoopController {
         self
     }
 
+    /// Attaches an authoritative `ExecutionCircuitBreaker` ("脱扣" / E-Stop) directly
+    /// to the controller's side-effect executor so all projected tool spawns and file writes
+    /// are fenced fail-closed.
+    pub fn with_execution_breaker(
+        mut self,
+        breaker: Arc<crate::ExecutionCircuitBreaker>,
+    ) -> Self {
+        self.loop_program_side_effect_executor = self
+            .loop_program_side_effect_executor
+            .with_execution_breaker(breaker);
+        self
+    }
+
+    /// Configures the CaMeL/FIDES `ToolIfcContext` evaluated by the controller's side-effect executor.
+    pub fn with_tool_ifc_context(mut self, ifc: crate::ToolIfcContext) -> Self {
+        self.loop_program_side_effect_executor = self
+            .loop_program_side_effect_executor
+            .with_ifc_context(ifc);
+        self
+    }
+
+    /// Attaches a live Scheme-synchronized `GovernanceAdmissionGate` directly
+    /// to the controller's side-effect executor.
+    pub fn with_governance_gate(
+        mut self,
+        gate: Arc<crate::GovernanceAdmissionGate>,
+        actor: crate::GovernedSubjectName,
+        derivation_id: Option<crate::DerivationId>,
+    ) -> Self {
+        self.loop_program_side_effect_executor = self
+            .loop_program_side_effect_executor
+            .with_governance_gate(gate, actor, derivation_id);
+        self
+    }
+
     pub(crate) fn loop_program_side_effect_executor(&self) -> LoopProgramRuntimeSideEffectExecutor {
         self.loop_program_side_effect_executor.clone()
     }

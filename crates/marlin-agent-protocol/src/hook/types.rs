@@ -349,7 +349,7 @@ impl From<&str> for HookSchemeProcedure {
 
 /// Optional policy extension boundary for complex hook decisions.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct HookPolicyExtension {
     pub kind: HookPolicyExtensionKind,
     pub module: Option<HookSchemeModule>,

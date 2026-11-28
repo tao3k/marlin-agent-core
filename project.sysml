@@ -34,6 +34,11 @@ package MarlinAgentCORE {
     dependency declarativeTuiEngine from project to MarlinDeclarativeUi::engine;
     dependency contextOrgDesign from project to MarlinTuiArchitecture::target::contextOrgAuthority;
     dependency contextOrgLifecycle from project to MarlinContextOrgLifecycle::OrgTurnLifecycle;
+    dependency gitOpsContextDesign from project to MarlinGitOpsContext::target;
+    dependency sharedOrgSessionDesign from project to MarlinOrgBabelSession::target;
+    dependency searchEngineDesign from project to MarlinSearchEngine::target;
+    dependency modernHelmDesign from project to MarlinUiHelm::target;
+    dependency graphEngineDesign from project to MarlinGraphEngine::target;
     dependency tuiTurnLifecycle from project to MarlinTuiLifecycle::TurnLifecycle;
 
     view projectStructure {
@@ -106,5 +111,80 @@ package MarlinAgentCORE {
         expose MarlinRustPackageOwnership::packages;
         expose MarlinRustPackageOwnership::scheme;
         render asInterconnectionDiagram;
+    }
+
+    view gitOpsContextDiscovery {
+        expose MarlinGitOpsContext::actual;
+        expose MarlinGitOpsContext::target;
+        render asTreeDiagram;
+    }
+
+    view gitOpsContextRestore : StandardViewDefinitions::ActionFlowView {
+        expose MarlinGitOpsContext::RestoreContext;
+    }
+
+    view gitOpsContextOrgLink : StandardViewDefinitions::ActionFlowView {
+        expose MarlinGitOpsContext::QualifyOrgLink;
+    }
+
+    view sharedOrgContextArchitecture {
+        expose MarlinOrgBabelSession::target;
+        expose MarlinOrgBabelSession::orgFileAsSharedContext;
+        expose MarlinOrgBabelSession::orgElementsToGqlMapping;
+        expose MarlinOrgBabelSession::ascentProgressiveDisclosureAndDynamicFacets;
+        expose MarlinOrgBabelSession::threeTierEngineeringDecoupling;
+        expose MarlinOrgBabelSession::twoStageAstAndFlashRepair;
+        expose MarlinOrgBabelSession::zeroCompactionEvolutionAndDirectRendering;
+        expose MarlinOrgBabelSession::declarativeInterfaceAndPooDerivation;
+        expose MarlinOrgBabelSession::durableOrchestratorAndPlanAIndex;
+        expose MarlinOrgBabelSession::taskAsTabAutoArchiveProjection;
+        expose MarlinOrgBabelSession::funflowCasDagAndGovernanceScopeIsolation;
+        render asTreeDiagram;
+    }
+
+    view searchEngineArchitecture {
+        expose MarlinSearchEngine::actual;
+        expose MarlinSearchEngine::target;
+        expose MarlinSearchEngine::nativeRustIntegration;
+        expose MarlinSearchEngine::rootedSchemeAbiOnly;
+        expose MarlinSearchEngine::singleOwnerPorts;
+        expose MarlinSearchEngine::atomicCasAndEdgeIsolation;
+        expose MarlinSearchEngine::zeroSubmodulePackaging;
+        expose MarlinSearchEngine::formalAndStatefulVerification;
+        expose MarlinSearchEngine::highPerformanceQualification;
+        render asTreeDiagram;
+    }
+
+    view searchEngineQueryFlow : StandardViewDefinitions::ActionFlowView {
+        expose MarlinSearchEngine::ExecuteConvergedSearch;
+    }
+
+    view modernHelmArchitecture {
+        expose MarlinUiHelm::target;
+        expose MarlinUiHelm::nonBlockingNativeExecution;
+        expose MarlinUiHelm::twoStageConsultOrderless;
+        expose MarlinUiHelm::epochFencingAndMarkSafety;
+        expose MarlinUiHelm::boundedVirtualViewport;
+        expose MarlinUiHelm::embarkAgentAndContextActions;
+        render asTreeDiagram;
+    }
+
+    view modernHelmFlow : StandardViewDefinitions::ActionFlowView {
+        expose MarlinUiHelm::ExecuteHelmSearch;
+    }
+
+    view graphEngineArchitecture {
+        expose MarlinGraphEngine::target;
+        expose MarlinGraphEngine::sessionFreeTaskActorLifecycle;
+        expose MarlinGraphEngine::c4SteeringConvergenceGate;
+        expose MarlinGraphEngine::monotonicFencingEpochAntiSplitBrain;
+        expose MarlinGraphEngine::detachedScopeWriteIsolation;
+        expose MarlinGraphEngine::rootedAbiAndPinnedIndexWorkbench;
+        expose MarlinGraphEngine::governedContextAndDetourConfinement;
+        render asTreeDiagram;
+    }
+
+    view graphEngineDispatchFlow : StandardViewDefinitions::ActionFlowView {
+        expose MarlinGraphEngine::ExecuteGraphDispatch;
     }
 }

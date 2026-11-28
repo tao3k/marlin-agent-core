@@ -6,8 +6,8 @@
 (import (only-in :clan/poo/object .get .o)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
 
-(def admit (.get marlin-agent-core.init.exports Marlin context org-contract-source))
-(def source-graph (.get marlin-agent-core.init.exports Marlin context org-source-graph))
+(def admit (.get marlin-agent-core.init.exports Marlin context-system org-contract-source))
+(def source-graph (.get marlin-agent-core.init.exports Marlin context-system org-source-graph))
 (def raw "#+title: Evidence\n:PROPERTIES:\n:ID: root\n:CONTRACT_ID: example.v1\n:CONTRACT_REVISION: 1\n:END:\n* TODO Work\n:PROPERTIES:\n:ID: work\n:END:\nOriginal 中文 content.\n")
 (def cut (admit (.o identity: "source-a" generation: 1 source: raw)))
 (unless (and (eq? (.get cut kind) 'context.org-source.v1)

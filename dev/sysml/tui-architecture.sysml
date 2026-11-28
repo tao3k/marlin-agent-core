@@ -488,14 +488,15 @@ package MarlinTuiArchitecture {
                    tests, including a blocked consumer and restarted process. */
         }
         requirement <'MAR-TUI-R09'> responsiveStartup {
-            doc /* Measure process start to first responsive terminal state and
-                   separately to admitted Scheme UI readiness. Partition
+            doc /* Measure process start to the usable workbench and its first
+                   successful input. Observe Scheme UI admission separately. Partition
                    spawn return, first process output, VM admission, UI
-                   publication and first frame. Compare fresh-file and repeated
-                   execution of one artifact with a small native control so
-                   host first-execution cost is not charged to Scheme. Target subsecond
-                   first interaction and readiness within a few seconds; retain
-                   the existing ten-second workbench and five-second exit gates.
+                   publication and first frame. Compare the installed path,
+                   fresh-file and repeated execution of one artifact with a small
+                   native control. Use a fixed source and SDK cohort for the
+                   subsecond first-interaction target. Retain the ten-second
+                   workbench and five-second natural-exit gates. Observe plugin
+                   first use and repeated actions separately.
                    Loading, failure, cancellation and cleanup must be observable. */
         }
         requirement <'MAR-TUI-R10'> hybridExecutionEquivalence {

@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
+#[path = "unit/environment/mod.rs"]
+mod environment;
 #[path = "unit/runtime/plugin_lifecycle.rs"]
 mod plugin_lifecycle;
 #[path = "unit/runtime.rs"]
@@ -14,6 +16,8 @@ mod runtime_agent_graph;
 mod runtime_cleanup;
 #[path = "unit/runtime/dependency_boundary.rs"]
 mod runtime_dependency_boundary;
+#[path = "unit/runtime/effect_pump.rs"]
+mod runtime_effect_pump;
 #[path = "unit/runtime/events.rs"]
 mod runtime_events;
 #[path = "unit/runtime/graph_loop_run_registry.rs"]
@@ -26,6 +30,8 @@ mod runtime_model_gateway;
 mod runtime_model_tool_catalog;
 #[path = "unit/runtime/observability.rs"]
 mod runtime_observability;
+#[path = "unit/runtime/panel_plugin.rs"]
+mod runtime_panel_plugin;
 #[path = "unit/runtime/process/mod.rs"]
 mod runtime_process;
 #[path = "unit/runtime/resilience.rs"]
@@ -34,6 +40,8 @@ mod runtime_resilience;
 mod runtime_session;
 #[path = "unit/runtime/spawn_config.rs"]
 mod runtime_spawn_config;
+#[path = "unit/runtime/task_actor_runtime.rs"]
+mod runtime_task_actor_runtime;
 #[path = "unit/runtime/task_tracker.rs"]
 mod runtime_task_tracker;
 #[path = "unit/runtime/working_copy.rs"]

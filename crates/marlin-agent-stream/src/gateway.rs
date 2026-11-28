@@ -9,8 +9,9 @@ use marlin_agent_protocol::{
     ModelContinuation, ModelContinuationKind, ModelDestinationBinding, ModelEndpoint, ModelGateway,
     ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
     ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole,
-    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelProviderId, ModelToolCall,
-    ModelToolCallId, ModelToolChoice, ModelToolName, assistant_gateway_message,
+    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelProviderId,
+    ModelStreamInterruption, ModelToolCall, ModelToolCallId, ModelToolChoice, ModelToolName,
+    assistant_gateway_message,
 };
 use tokio_stream::StreamExt;
 use weaver_llm::{
@@ -156,10 +157,19 @@ impl WeaverModelGateway {
                     .complete(&self.endpoint, &self.credential, &request)
                     .await
                     .map_err(gateway_error)?;
+                let mut total_output_bytes = 0usize;
                 let choices = response
                     .choices
                     .into_iter()
                     .map(|choice| {
+                        check_stream_output_budget(
+                            self.stream_output_limit,
+                            total_output_bytes,
+                            0,
+                            choice.message.content.len(),
+                        )?;
+                        total_output_bytes =
+                            total_output_bytes.saturating_add(choice.message.content.len());
                         let mut message = assistant_gateway_message(choice.message.content);
                         message.name = choice.message.name;
                         message.tool_calls = provider_tool_calls(choice.message.tool_calls)?;
@@ -186,10 +196,33 @@ impl WeaverModelGateway {
                 let stream = self.stream_turn(&endpoint, &request).await?;
                 let mut stream = std::pin::pin!(stream.into_stream());
                 let mut text = String::new();
-                while let Some(event) = stream.next().await.transpose().map_err(gateway_error)? {
+                let mut thinking_bytes = 0usize;
+                while let Some(event) = stream
+                    .next()
+                    .await
+                    .transpose()
+                    .map_err(crate::streaming::stream_event_error)?
+                {
                     match event {
-                        TurnEvent::Text(delta) => text.push_str(&delta),
-                        TurnEvent::Thinking(_) => {}
+                        TurnEvent::Text(delta) => {
+                            check_stream_output_budget(
+                                self.stream_output_limit,
+                                text.len(),
+                                thinking_bytes,
+                                delta.len(),
+                            )?;
+                            text.push_str(&delta);
+                        }
+                        TurnEvent::Thinking(delta) => {
+                            let delta = delta.as_str();
+                            check_stream_output_budget(
+                                self.stream_output_limit,
+                                text.len(),
+                                thinking_bytes,
+                                delta.len(),
+                            )?;
+                            thinking_bytes += delta.len();
+                        }
                         TurnEvent::Finished {
                             reason,
                             identity: Some(identity),
@@ -270,8 +303,8 @@ pub(crate) fn provider_continuation(
     }))
 }
 
-/// Check that observed thinking and answer are represented in an Anthropic
-/// continuation. This is consistency checking, not signature authentication.
+/// Check that observed thinking, answer text, and tool calls are represented in
+/// an Anthropic continuation. This is consistency checking, not signature authentication.
 pub fn matches_observed_anthropic_thinking(message: &ModelGatewayMessage, thinking: &str) -> bool {
     let Some(state) = &message.continuation else {
         return false;
@@ -281,8 +314,71 @@ pub fn matches_observed_anthropic_thinking(message: &ModelGatewayMessage, thinki
     {
         return false;
     }
-    serde_json::from_str::<weaver_llm::AnthropicOutput>(&state.payload)
-        .is_ok_and(|output| output.matches_observed(&message.content, thinking))
+    let Ok(output) = serde_json::from_str::<weaver_llm::AnthropicOutput>(&state.payload) else {
+        return false;
+    };
+    if message.tool_calls.is_empty() {
+        return output.matches_observed(&message.content, thinking);
+    }
+    let Ok(blocks) = serde_json::from_str::<Vec<serde_json::Value>>(&state.payload) else {
+        return false;
+    };
+    matches_observed_anthropic_tool_blocks(&blocks, message, thinking)
+}
+
+fn matches_observed_anthropic_tool_blocks(
+    blocks: &[serde_json::Value],
+    message: &ModelGatewayMessage,
+    thinking: &str,
+) -> bool {
+    let mut output_text = String::new();
+    let mut remaining_thinking = thinking;
+    let mut call_index = 0usize;
+    for block in blocks {
+        match block["type"].as_str() {
+            Some("text") => {
+                let Some(text) = block["text"].as_str() else {
+                    return false;
+                };
+                output_text.push_str(text);
+            }
+            Some("thinking") => {
+                let Some(part) = block["thinking"].as_str() else {
+                    return false;
+                };
+                if block.get("signature").is_some_and(|sig| !sig.is_string()) {
+                    return false;
+                }
+                let Some(rest) = remaining_thinking.strip_prefix(part) else {
+                    return false;
+                };
+                remaining_thinking = rest;
+            }
+            Some("redacted_thinking") if block["data"].is_string() => {}
+            Some("tool_use") => {
+                let Some(expected) = message.tool_calls.get(call_index) else {
+                    return false;
+                };
+                let Some(id) = block["id"].as_str().filter(|s| !s.is_empty()) else {
+                    return false;
+                };
+                let Some(name) = block["name"].as_str().filter(|s| !s.is_empty()) else {
+                    return false;
+                };
+                if block["input"].as_object() != Some(&expected.arguments)
+                    || expected.id.as_str() != id
+                    || expected.name.as_str() != name
+                {
+                    return false;
+                }
+                call_index += 1;
+            }
+            _ => return false,
+        }
+    }
+    output_text == message.content
+        && remaining_thinking.is_empty()
+        && call_index == message.tool_calls.len()
 }
 
 pub(crate) fn request_message(
@@ -386,6 +482,27 @@ pub(crate) fn provider_tool_calls(
         });
     }
     Ok(result)
+}
+
+pub(crate) fn check_stream_output_budget(
+    limit: Option<crate::ModelStreamOutputLimit>,
+    text_bytes: usize,
+    thinking_bytes: usize,
+    delta_bytes: usize,
+) -> ModelGatewayResult<()> {
+    if let Some(limit) = limit
+        && text_bytes
+            .checked_add(thinking_bytes)
+            .and_then(|size| size.checked_add(delta_bytes))
+            .is_none_or(|size| size > limit.bytes())
+    {
+        return Err(ModelGatewayError::StreamInterrupted(
+            ModelStreamInterruption::OutputLimit {
+                limit_bytes: limit.bytes(),
+            },
+        ));
+    }
+    Ok(())
 }
 
 fn gateway_error(error: weaver_llm::Error) -> ModelGatewayError {

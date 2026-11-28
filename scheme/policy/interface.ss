@@ -4,8 +4,12 @@
 
 ;;; Policy operations exposed through Marlin's Yuanxu selection.
 
+(import (only-in :clan/poo/object .def .o)
+        (only-in "./config.ss" PolicyScope)
+        (only-in "./types.ss" PolicyScopeContract))
+(export Policy)
+
 (.def Policy
   identity: 'policy
   core: (.o scope-contract: PolicyScopeContract
-            exports: PolicyScope)
-  features: (.o))
+            exports: PolicyScope))

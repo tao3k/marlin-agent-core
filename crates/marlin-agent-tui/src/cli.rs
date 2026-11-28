@@ -22,8 +22,16 @@ pub(crate) struct CliArgs {
 }
 
 pub(crate) enum CliAction {
-    Open { session: Option<SessionId> },
-    List { after: Option<SessionId> },
+    Open {
+        session: Option<SessionId>,
+    },
+    List {
+        after: Option<SessionId>,
+    },
+    #[cfg(unix)]
+    EnrollContext {
+        remote: Option<marlin_agent_gitops::GitRemoteName>,
+    },
 }
 
 pub(crate) fn parse_cli(args: impl Iterator<Item = OsString>) -> Result<CliArgs, String> {
@@ -39,12 +47,45 @@ pub(crate) fn parse_cli(args: impl Iterator<Item = OsString>) -> Result<CliArgs,
         }
         [config, option] if option == "--list-sessions" => (config, CliAction::List { after: None }),
         [config, option, after, id] if option == "--list-sessions" && after == "--after" => (config, CliAction::List { after: Some(session_id(id)?) }),
-        _ => return Err("Usage: marlin-tui <config.toml> [--session <session-id> | --list-sessions [--after <session-id>]]".into()),
+        #[cfg(unix)]
+        [config, option] if option == "--enroll-context" => (config, CliAction::EnrollContext { remote: None }),
+        #[cfg(unix)]
+        [config, option, remote, name] if option == "--enroll-context" && remote == "--remote" => {
+            let name = name.to_str().ok_or("Git remote name must be valid UTF-8")?;
+            let name = marlin_agent_gitops::GitRemoteName::new(name).map_err(|error| error.to_string())?;
+            (config, CliAction::EnrollContext { remote: Some(name) })
+        }
+        _ => return Err("Usage: marlin-tui <config.toml> [--session <session-id> | --list-sessions [--after <session-id>] | --enroll-context [--remote <name>]]".into()),
     };
     Ok(CliArgs {
         config: config.into(),
         action,
     })
+}
+
+#[cfg(unix)]
+pub(crate) fn enroll_context(
+    path: &std::path::Path,
+    remote: Option<marlin_agent_gitops::GitRemoteName>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use marlin_agent_gitops::{EnrolledRepository, GitOperations};
+
+    let approval = config::Config::load(path)?
+        .git_context
+        .ok_or("--enroll-context requires a [git_context] repository")?;
+    let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let owner = runtime.block_on(async {
+        let context = GitOperations::context(&approval.repository).await?;
+        Ok::<_, Box<dyn std::error::Error>>(
+            EnrolledRepository::enroll(std::path::Path::new(&home), &context, remote.as_ref())
+                .await?,
+        )
+    })?;
+    writeln!(io::stdout().lock(), "{}", owner.root().display())?;
+    Ok(())
 }
 
 pub(crate) fn list_sessions(

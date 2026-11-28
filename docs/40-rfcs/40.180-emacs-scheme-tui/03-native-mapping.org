@@ -29,7 +29,8 @@ Rust-owned. No ad hoc string event bus or native hook DSL is introduced.
 
 * Mapping and geometry
 
-The shared model is in [[file:../../../crates/marlin-agent-ui/src/element.rs][element.rs]] and its typed projection in
+The shared element tree and its decoder live under
+[[file:../../../crates/marlin-agent-ui/src/element/mod.rs][element]]. The typed workbench projection lives in
 [[file:../../../crates/marlin-agent-ui/src/projection.rs][projection.rs]]. The Ratatui interpreter lives under
 [[file:../../../crates/marlin-agent-tui/src/ui_elements/mod.rs][ui_elements]]. It maps element structure, styles, clipping, cell widths, lists,
 input and content bindings. Host-side data sources provide application facts;

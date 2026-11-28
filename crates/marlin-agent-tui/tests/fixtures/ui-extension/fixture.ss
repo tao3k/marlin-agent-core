@@ -4,10 +4,17 @@
 
 ;;; A contributed component and method bundle selected from the real UI scope.
 (import (only-in :clan/poo/object .get .o)
+        (only-in :clan/poo/type Exactly Fun Record Symbol)
+        (only-in :tao3k/yuanxu/prelude define-yuanxu-module-declaration yuanxu-autoload)
         (only-in :marlin-agent-core/ui/config UiScope)
+        (only-in :marlin-agent-core/ui-centaur-tabs/funcs marlin-ui-buffer-tabs)
+        (only-in :marlin-agent-core/ui-layout/config marlin-ui-layout-with-tab-bar)
+        (only-in "./catalog.ss" test-catalog)
         (only-in :clan/poo/mop .defgeneric .defmethod .defmethod-bundle)
-        (only-in :marlin-agent-core/ui-elements/objects
-                 ui-rows ui-columns ui-region ui-sized ui-text ui-list ui-size-cells ui-template)
+        (only-in :marlin-agent-core/ui-elements/funcs
+                 ui-binding-present ui-rows ui-columns ui-region ui-sized ui-sized-with
+                 ui-text ui-list
+                 ui-size-cells ui-size-choice ui-template)
         (only-in :marlin-agent-core/ui/session UiPackage. make-ui-package
                  marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch))
 (export test-extension make-test-methods make-test-forged-methods test-publication
@@ -15,20 +22,25 @@
 
 ;;; This package contributes only Scheme values. The host has no case for
 ;;; notes, open-notes or M-z.
+(def RowAction (Fun (Record kind: [(Exactly 'focus)] identity: [Symbol]) <- Symbol))
+
 (def (make-package-methods)
   (def event-protocol (.get UiScope event-protocol))
   (def select-row (.get UiScope events select-list-row))
+  (def select-package-row
+    (yuanxu-autoload ':marlin-tui-ui-test/row-action 'select-package-row contract: RowAction))
   (.defgeneric package-event (component event) (protocol event-protocol))
   (.defmethod-bundle PackageMethods event-protocol
     (.defmethod (package-event (list-id (eql 'package-list))
                                (event (prototype select-row)))
-      (.o kind: 'focus identity: (if (eq? (.get event row) 'first) 'commands 'composer))))
+      (select-package-row (.get event row))))
   PackageMethods)
 
-(def test-publication
+(define-yuanxu-module-declaration test-publication
   (make-ui-package
     (.o (:: @ UiPackage.)
-        buffers: `((notes "Package notes"
+        buffers: (let (header (car (.get test-catalog buffers)))
+          `((,(car header) ,(cadr header)
                      ("*Notes*"
                        ,(ui-region 'notes-body #f
                           (ui-rows
@@ -41,11 +53,25 @@
                                       '#(#(first #(#(entry "First Scheme row")))
                                          #(second #(#(entry "Second Scheme row"))))
                                       (ui-size-cells 0)
-                                      (ui-template 'none '((binding normal #f entry)))))))))
-                     #f))
-        commands: '(("open-notes" "Open package notes" none select-buffer "notes"))
-        keymap: '((global (M-z) open-notes "Package notes"))
+                                      (ui-template 'none '((binding normal #f entry)))))
+                                  (ui-sized-with
+                                    (ui-size-choice
+                                      (list (list (ui-binding-present 'package-state) (ui-size-cells 1)))
+                                      (ui-size-cells 0))
+                                    (ui-region 'package-status #f
+                                      (ui-template 'none '((binding accent #f package-state)))))))))
+                     ,(caddr header))))
+        commands: (.get test-catalog commands)
+        keymap: (.get test-catalog keymap)
+        layout: (marlin-ui-layout-with-tab-bar
+                  (lambda (buffers style)
+                    (marlin-ui-buffer-tabs buffers '((notes "Lab Notes" packages)) style)))
         method-factories: (vector make-package-methods))))
+
+(let (receipt (getenv "MARLIN_TEST_UI_PUBLICATION_RECEIPT" #f))
+  (when receipt
+    (call-with-output-file (list path: receipt append: #t)
+      (lambda (port) (display "UI-PUBLICATION-LOADED\n" port)))))
 
 ;;; A bounded frame dialogue: assertions stay in this independently compiled
 ;;; package; the native test window returns the actual Ratatui screen rows.
@@ -56,10 +82,18 @@
     (lambda (screen)
       (case step
         ((0)
-         (let* ((view (marlin-ui-session-project state))
-                (base-session (marlin-ui-session-open
+         (let* ((base-session (marlin-ui-session-open
                                 (vector UiScope #("model" "session" #() #()) #())))
-                (base (marlin-ui-session-project base-session)))
+                (base (marlin-ui-session-project base-session))
+                (resumed (vector-ref (marlin-ui-session-dispatch
+                                       (vector base-session 'select-buffer 'messages)) 0))
+                (activated (marlin-ui-session-project
+                             (marlin-ui-session-open (vector test-publication resumed))))
+                (frame (vector-ref activated 6))
+                (window (vector-ref (vector-ref frame 1) 0))
+                (view (marlin-ui-session-project state)))
+           (unless (eq? (vector-ref window 1) 'messages)
+             (error "package activation changed the selected Buffer"))
            (unless (and (memq 'notes (vector->list (vector-ref (vector-ref view 6) 4)))
                         (not (memq 'notes (vector->list (vector-ref (vector-ref base 6) 4))))
                         (member '#(global #(M-z) open-notes)
@@ -71,11 +105,24 @@
              (error "package method escaped its session")))
          (set! state (vector-ref (marlin-ui-session-dispatch
                                   (vector state 'select-buffer 'notes)) 0))
+         (set! state (vector-ref (marlin-ui-session-dispatch
+                                  (vector state 'select-profile 'tabs-box)) 0))
          (set! step 1)
-         (vector 60 20 (marlin-ui-session-project state) #(#(2 1) #(2 3))))
+         (vector 60 20 (marlin-ui-session-project state) #(#(2 2) #(2 4))
+                 '#(#(package-state "Provided by Scheme"))))
         ((1)
          (unless (and (ormap (lambda (row) (string-contains row "Scheme package window"))
                              (vector->list (vector-ref screen 0)))
+                      (string-contains (vector-ref (vector-ref screen 0) 0) "Lab Notes│")
+                      (ormap (lambda (row) (string-contains row "Provided by Scheme"))
+                             (vector->list (vector-ref screen 0)))
+                      (ormap (lambda (hit) (and (eq? (vector-ref hit 0) 'package-status)
+                                                (= (vector-ref hit 4) 1)))
+                             (vector->list (vector-ref screen 1)))
+                      (ormap (lambda (hit)
+                               (and (eq? (vector-ref hit 0) 'buffer-notes)
+                                    (= (vector-ref hit 2) 0)))
+                             (vector->list (vector-ref screen 1)))
                       (ormap (lambda (hit) (eq? (vector-ref hit 0) 'notes-body))
                              (vector->list (vector-ref screen 1)))
                       (eq? (vector-ref (vector-ref (vector-ref screen 3) 0) 0) 'notes-body)
@@ -90,11 +137,16 @@
          (vector 32 10 (marlin-ui-session-project state) #()))
         ((2)
          (unless (and (= (vector-length (vector-ref screen 0)) 10)
+                      (string-contains (vector-ref (vector-ref screen 0) 0) "Lab Notes")
                       (ormap (lambda (row) (string-contains row "Scheme package window"))
                              (vector->list (vector-ref screen 0)))
                       (ormap (lambda (row)
                                (and (string-contains row "中") (string-contains row "🐟")))
                              (vector->list (vector-ref screen 0)))
+                      (not (ormap (lambda (row) (string-contains row "Provided by Scheme"))
+                                  (vector->list (vector-ref screen 0))))
+                      (not (ormap (lambda (hit) (eq? (vector-ref hit 0) 'package-status))
+                                  (vector->list (vector-ref screen 1))))
                       (<= 0 (vector-ref (vector-ref screen 2) 0) 31)
                       (<= 0 (vector-ref (vector-ref screen 2) 1) 9))
            (error "package window resize failed"))

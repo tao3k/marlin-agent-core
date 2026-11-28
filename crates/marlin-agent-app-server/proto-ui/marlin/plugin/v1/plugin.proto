@@ -1,0 +1,213 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+syntax = "proto3";
+
+package marlin.plugin.v1;
+
+import "marlin/common/v1/common.proto";
+import "marlin/ui/v1/ui.proto";
+
+// Implements RFC 40.166 (Plugin Contract) over gRPC:
+// 1. Operator surface for installing signed releases, configuring declarative
+//    options, granting project capabilities, and inspecting retained evidence.
+// 2. Scoped Panel surface proxied by the MyGo PluginHost on behalf of isolated
+//    Untrusted WebView or wazero WASM-IR plugins.
+service PluginService {
+  // --- Operator RPCs (MyGo Marketplace & Settings UI) ---
+  rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
+  rpc InstallSignedRelease(InstallSignedReleaseRequest) returns (InstallSignedReleaseResponse);
+  rpc EnableWorkflow(EnableWorkflowRequest) returns (EnableWorkflowResponse);
+  rpc DisableWorkflow(DisableWorkflowRequest) returns (DisableWorkflowResponse);
+  rpc SetProjectGrants(SetProjectGrantsRequest) returns (SetProjectGrantsResponse);
+  rpc GetWorkflowEvidence(GetWorkflowEvidenceRequest) returns (GetWorkflowEvidenceResponse);
+
+  // --- Scoped Panel RPCs (Host-mediated; never exposed raw to plugins) ---
+  rpc OpenScopedPanelStream(OpenScopedPanelStreamRequest) returns (stream OpenScopedPanelStreamResponse);
+  rpc SubmitScopedPanelAction(SubmitScopedPanelActionRequest) returns (SubmitScopedPanelActionResponse);
+}
+
+message EnableWorkflowResponse {
+  WorkflowActivationReceipt receipt = 1;
+}
+
+message DisableWorkflowResponse {
+  WorkflowDisableReceipt receipt = 1;
+}
+
+message SetProjectGrantsResponse {
+  ProjectGrantReceipt receipt = 1;
+}
+
+message OpenScopedPanelStreamResponse {
+  ScopedPanelEvent event = 1;
+}
+
+message SubmitScopedPanelActionResponse {
+  ScopedPanelActionReceipt receipt = 1;
+}
+
+enum PanelRuntimeKind {
+  PANEL_RUNTIME_KIND_UNSPECIFIED = 0;
+  // Data-only TOML/Scheme presets and themes; zero client executable code.
+  PANEL_RUNTIME_KIND_DECLARATIVE = 1;
+  // TS/Web bundle (React/Svelte/Canvas/WebGL) inside Untrusted ui.WebView.
+  PANEL_RUNTIME_KIND_WEBVIEW_UNTRUSTED = 2;
+  // Go/Rust/Zig wasip1 bundle running in pure-Go wazero emitting UiElement IR.
+  PANEL_RUNTIME_KIND_WASM_UI_IR = 3;
+  // Go mygo/ui + ui/shader compiled to js/wasm running in Untrusted ui.WebView.
+  PANEL_RUNTIME_KIND_MYGO_JS_WASM = 4;
+}
+
+message ReleaseAttestation {
+  string publisher_id = 1;
+  // 20-byte git commit revision.
+  bytes source_revision = 2;
+  // 32-byte build evidence SHA-256.
+  bytes build_evidence_digest = 3;
+}
+
+message PanelAssetDescriptor {
+  string contribution_id = 1;
+  PanelRuntimeKind runtime = 2;
+  string slot_id = 3;
+  marlin.ui.v1.SlotCardinality cardinality = 4;
+  optional string slot_key = 5;
+  string entry_path = 6;
+  bytes archive_sha256 = 7;
+  uint64 byte_size = 8;
+  repeated string read_scopes = 9;
+  repeated string declared_actions = 10;
+}
+
+message SignedReleaseEnvelope {
+  // Exact TOML bytes covered by ed25519_signature.
+  bytes manifest_toml = 1;
+  ReleaseAttestation attestation = 2;
+  // 64-byte Ed25519 signature.
+  bytes ed25519_signature = 3;
+  repeated PanelAssetDescriptor panel_assets = 4;
+}
+
+message InstalledReleaseSummary {
+  string plugin_id = 1;
+  string version = 2;
+  string publisher_id = 3;
+  bytes bundle_digest_sha256 = 4;
+  bool enabled = 5;
+  uint64 active_generation = 6;
+  repeated string declared_capabilities = 7;
+  repeated string granted_capabilities = 8;
+  repeated PanelAssetDescriptor panel_assets = 9;
+}
+
+message ListReleasesRequest {
+  optional string project_id = 1;
+}
+
+message ListReleasesResponse {
+  repeated InstalledReleaseSummary releases = 1;
+}
+
+message InstallSignedReleaseRequest {
+  SignedReleaseEnvelope release = 1;
+}
+
+message InstallSignedReleaseResponse {
+  bool installed = 1;
+  optional InstalledReleaseSummary summary = 2;
+  optional marlin.common.v1.TypedDenial denial = 3;
+}
+
+message EnableWorkflowRequest {
+  string project_id = 1;
+  string plugin_id = 2;
+  string contribution_id = 3;
+  // Project-scoped TOML overrides validated by the trusted Scheme module.
+  bytes settings_toml = 4;
+}
+
+message WorkflowActivationReceipt {
+  bool activated = 1;
+  string activation_id = 2;
+  uint64 generation = 3;
+  bytes effective_settings_sha256 = 4;
+  optional marlin.common.v1.ReceiptRef receipt = 5;
+  optional marlin.common.v1.TypedDenial denial = 6;
+}
+
+message DisableWorkflowRequest {
+  string project_id = 1;
+  string activation_id = 2;
+}
+
+message WorkflowDisableReceipt {
+  bool disabled = 1;
+  uint64 closed_generation = 2;
+  optional marlin.common.v1.ReceiptRef receipt = 3;
+  optional marlin.common.v1.TypedDenial denial = 4;
+}
+
+message SetProjectGrantsRequest {
+  string project_id = 1;
+  string plugin_id = 2;
+  bytes expected_bundle_digest = 3;
+  repeated string granted_capabilities = 4;
+}
+
+message ProjectGrantReceipt {
+  bool updated = 1;
+  repeated string granted_capabilities = 2;
+  optional marlin.common.v1.ReceiptRef receipt = 3;
+  optional marlin.common.v1.TypedDenial denial = 4;
+}
+
+message GetWorkflowEvidenceRequest {
+  string project_id = 1;
+  string activation_id = 2;
+}
+
+message GetWorkflowEvidenceResponse {
+  string activation_id = 1;
+  bytes bundle_digest_sha256 = 2;
+  bytes project_digest_sha256 = 3;
+  repeated marlin.common.v1.ReceiptRef effect_receipts = 4;
+  optional marlin.common.v1.ArtifactRef replay_bundle = 5;
+}
+
+message OpenScopedPanelStreamRequest {
+  string project_id = 1;
+  string session_id = 2;
+  string plugin_id = 3;
+  string contribution_id = 4;
+  uint64 activation_generation = 5;
+  optional string after_event_id = 6;
+}
+
+message ScopedPanelEvent {
+  string event_id = 1;
+  string plugin_id = 2;
+  uint64 activation_generation = 3;
+  string topic = 4;
+  // Bounded, host-filtered JSON view authorized by the plugin's read_scopes.
+  bytes payload_json = 5;
+}
+
+message SubmitScopedPanelActionRequest {
+  string project_id = 1;
+  string session_id = 2;
+  string plugin_id = 3;
+  string contribution_id = 4;
+  uint64 activation_generation = 5;
+  string action_name = 6;
+  bytes args_json = 7;
+  string idempotency_key = 8;
+}
+
+message ScopedPanelActionReceipt {
+  bool admitted = 1;
+  optional bytes result_json = 2;
+  optional marlin.common.v1.ReceiptRef receipt = 3;
+  optional marlin.common.v1.TypedDenial denial = 4;
+}

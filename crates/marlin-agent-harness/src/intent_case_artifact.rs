@@ -5,9 +5,16 @@
 //! Materialization of typed intent-case artifact bundles.
 
 use std::{
-    fs,
+    collections::BTreeSet,
+    fs::{self, OpenOptions},
+    io::Write,
     path::{Component, Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
 };
+
+const MAX_MANIFEST_ARTIFACTS: usize = 64;
+static ARTIFACT_TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
 use crate::{
     intent_case_artifact_diff::render_diff_artifact,
@@ -135,17 +142,48 @@ fn materialize_intent_case_artifact_bundle(
         );
     ensure_execution_trace_matches(&manifest, execution_receipt)?;
     ensure_trace_correlation_integrity(&manifest)?;
-    let bundle_root = bundle_root(output_root, &manifest)?;
-    create_directory(&bundle_root)?;
+    let (bundle_root, bundle_relative) = bundle_root(output_root, &manifest)?;
+    let manifest_relative = bundle_relative.join("manifest.receipt");
+    let manifest_path = verify_confined_no_symlinks(output_root, &manifest_relative).map_err(
+        |()| IntentCaseArtifactBundleMaterializationError::UnsafeArtifactPath {
+            artifact_id: IntentCaseArtifactId::new(format!(
+                "{}:manifest",
+                manifest.case_id.as_str()
+            )),
+            path: manifest_relative.display().to_string(),
+        },
+    )?;
 
-    let manifest_path = bundle_root.join("manifest.receipt");
-    let mut artifacts = Vec::new();
+    let mut planned = Vec::new();
+    let mut seen_paths = BTreeSet::new();
+    seen_paths.insert(manifest_path.clone());
     for artifact in manifest
         .artifacts
         .iter()
         .filter(|artifact| artifact.present)
     {
-        let path = materialized_artifact_path(output_root, artifact)?;
+        let (relative, path) = materialized_artifact_path(output_root, artifact)?;
+        if !seen_paths.insert(path.clone()) {
+            return Err(
+                IntentCaseArtifactBundleMaterializationError::UnsafeArtifactPath {
+                    artifact_id: artifact.artifact_id.clone(),
+                    path: artifact.path.clone().unwrap_or_default(),
+                },
+            );
+        }
+        planned.push((artifact, relative, path));
+    }
+
+    create_directory(&bundle_root)?;
+
+    let mut artifacts = Vec::with_capacity(planned.len());
+    for (artifact, relative, path) in planned {
+        verify_confined_no_symlinks(output_root, &relative).map_err(|()| {
+            IntentCaseArtifactBundleMaterializationError::UnsafeArtifactPath {
+                artifact_id: artifact.artifact_id.clone(),
+                path: artifact.path.clone().unwrap_or_default(),
+            }
+        })?;
         let content = render_artifact_content(
             artifact,
             &manifest,
@@ -177,6 +215,15 @@ fn materialize_intent_case_artifact_bundle(
         );
     }
 
+    verify_confined_no_symlinks(output_root, &manifest_relative).map_err(|()| {
+        IntentCaseArtifactBundleMaterializationError::UnsafeArtifactPath {
+            artifact_id: IntentCaseArtifactId::new(format!(
+                "{}:manifest",
+                manifest.case_id.as_str()
+            )),
+            path: manifest_relative.display().to_string(),
+        }
+    })?;
     write_file(
         &manifest_path,
         render_manifest_receipt(&manifest, &completeness_receipt),
@@ -276,7 +323,7 @@ fn append_runtime_artifact_if_missing(
     artifact_prefix: &str,
     filename: &str,
 ) {
-    if manifest.has_artifact_kind(kind) {
+    if manifest.has_artifact_kind(kind) || manifest.artifacts.len() >= MAX_MANIFEST_ARTIFACTS {
         return;
     }
     manifest.artifacts.push(IntentCaseArtifactRef::present(
@@ -322,39 +369,63 @@ fn ensure_execution_trace_matches(
 fn bundle_root(
     output_root: &Path,
     manifest: &IntentCaseArtifactManifest,
-) -> Result<PathBuf, IntentCaseArtifactBundleMaterializationError> {
+) -> Result<(PathBuf, PathBuf), IntentCaseArtifactBundleMaterializationError> {
     let first_artifact = manifest
         .artifacts
         .iter()
         .find(|artifact| artifact.present)
         .ok_or(IntentCaseArtifactBundleMaterializationError::EmptyManifest)?;
-    let artifact_path = materialized_artifact_path(output_root, first_artifact)?;
-    Ok(artifact_path
+    let (relative_path, artifact_path) = materialized_artifact_path(output_root, first_artifact)?;
+    let bundle_dir = artifact_path
         .parent()
-        .expect("artifact path should have parent")
-        .to_owned())
+        .ok_or_else(|| {
+            IntentCaseArtifactBundleMaterializationError::UnsafeArtifactPath {
+                artifact_id: first_artifact.artifact_id.clone(),
+                path: first_artifact.path.clone().unwrap_or_default(),
+            }
+        })?
+        .to_owned();
+    let bundle_rel = relative_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or_else(|| {
+            IntentCaseArtifactBundleMaterializationError::UnsafeArtifactPath {
+                artifact_id: first_artifact.artifact_id.clone(),
+                path: first_artifact.path.clone().unwrap_or_default(),
+            }
+        })?
+        .to_owned();
+    Ok((bundle_dir, bundle_rel))
 }
 
 fn materialized_artifact_path(
     output_root: &Path,
     artifact: &IntentCaseArtifactRef,
-) -> Result<PathBuf, IntentCaseArtifactBundleMaterializationError> {
+) -> Result<(PathBuf, PathBuf), IntentCaseArtifactBundleMaterializationError> {
     let relative_path = artifact.path.as_ref().ok_or_else(|| {
         IntentCaseArtifactBundleMaterializationError::MissingArtifactPath {
             artifact_id: artifact.artifact_id.clone(),
         }
     })?;
-    safe_relative_path(relative_path)
-        .map(|path| output_root.join(path))
-        .map_err(
-            |()| IntentCaseArtifactBundleMaterializationError::UnsafeArtifactPath {
-                artifact_id: artifact.artifact_id.clone(),
-                path: relative_path.clone(),
-            },
-        )
+    let relative = safe_relative_path(relative_path).map_err(|()| {
+        IntentCaseArtifactBundleMaterializationError::UnsafeArtifactPath {
+            artifact_id: artifact.artifact_id.clone(),
+            path: relative_path.clone(),
+        }
+    })?;
+    let confined = verify_confined_no_symlinks(output_root, &relative).map_err(|()| {
+        IntentCaseArtifactBundleMaterializationError::UnsafeArtifactPath {
+            artifact_id: artifact.artifact_id.clone(),
+            path: relative_path.clone(),
+        }
+    })?;
+    Ok((relative, confined))
 }
 
 fn safe_relative_path(path: &str) -> Result<PathBuf, ()> {
+    if path.trim().is_empty() || path.contains('\\') || path.chars().any(char::is_control) {
+        return Err(());
+    }
     let path = Path::new(path);
     if path.is_absolute() {
         return Err(());
@@ -368,7 +439,58 @@ fn safe_relative_path(path: &str) -> Result<PathBuf, ()> {
             _ => return Err(()),
         }
     }
+    if relative.as_os_str().is_empty() {
+        return Err(());
+    }
     Ok(relative)
+}
+
+fn verify_confined_no_symlinks(output_root: &Path, relative: &Path) -> Result<PathBuf, ()> {
+    match fs::symlink_metadata(output_root) {
+        Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => return Err(()),
+        Ok(_) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err(()),
+    }
+    let canonical_root = fs::canonicalize(output_root).ok();
+    let mut current = output_root.to_path_buf();
+    let mut stop_fs_walk = false;
+    let mut components = relative.components().peekable();
+    while let Some(component) = components.next() {
+        let is_last = components.peek().is_none();
+        match component {
+            Component::Normal(segment) => {
+                current.push(segment);
+                if stop_fs_walk {
+                    continue;
+                }
+                match fs::symlink_metadata(&current) {
+                    Ok(meta) => {
+                        if meta.file_type().is_symlink() {
+                            return Err(());
+                        }
+                        if !is_last && !meta.is_dir() {
+                            stop_fs_walk = true;
+                        } else if !is_last
+                            && meta.is_dir()
+                            && let Some(canon_root) = &canonical_root
+                            && let Ok(canon_cur) = fs::canonicalize(&current)
+                            && !canon_cur.starts_with(canon_root)
+                        {
+                            return Err(());
+                        }
+                    }
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                        stop_fs_walk = true;
+                    }
+                    Err(_) => return Err(()),
+                }
+            }
+            Component::CurDir => {}
+            _ => return Err(()),
+        }
+    }
+    Ok(current)
 }
 
 fn create_directory(path: &Path) -> Result<(), IntentCaseArtifactBundleMaterializationError> {
@@ -382,10 +504,50 @@ fn write_file(
     path: &Path,
     content: String,
 ) -> Result<u64, IntentCaseArtifactBundleMaterializationError> {
-    if let Some(parent) = path.parent() {
-        create_directory(parent)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| IntentCaseArtifactBundleMaterializationError::Io {
+            path: path.to_owned(),
+            message: "artifact path has no parent directory".to_owned(),
+        })?;
+    create_directory(parent)?;
+
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let seq = ARTIFACT_TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("artifact");
+    let temp = parent.join(format!(
+        ".{name}.marlin-tmp-{}-{suffix}-{seq}",
+        std::process::id()
+    ));
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)
+        .map_err(|error| IntentCaseArtifactBundleMaterializationError::Io {
+            path: temp.clone(),
+            message: error.to_string(),
+        })?;
+    if let Err(error) = file
+        .write_all(content.as_bytes())
+        .and_then(|()| file.sync_all())
+    {
+        drop(file);
+        let _ = fs::remove_file(&temp);
+        return Err(IntentCaseArtifactBundleMaterializationError::Io {
+            path: path.to_owned(),
+            message: error.to_string(),
+        });
     }
-    fs::write(path, content.as_bytes()).map_err(|error| {
+    drop(file);
+    fs::rename(&temp, path).map_err(|error| {
+        let _ = fs::remove_file(&temp);
         IntentCaseArtifactBundleMaterializationError::Io {
             path: path.to_owned(),
             message: error.to_string(),

@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+TITLE: Marlin GraphEngine Integration
+
+* Purpose
+
+=scheme/graph-engine= integrates the pure =agentic-ai-lab= =GraphEngine= library
+(=ContextTrunk=, C4 disjoint DAG frontier, Tarjan SCC cyclic feedback subgraphs,
+Session-free =TaskActor=, C4 mid-flight Steering, and =MarlinDispatchEnvelope=)
+into =marlin-agent-core=.
+
+* Boundaries
+
+- Pure Scheme projections stay in =funcs.ss=:
+  - =marlin-graph-engine-project-workbench-ui=: projects =TaskActor=s +
+    =TaskActorIndex= directly into Marlin's checked =UiPackage= via
+    =make-marlin-task-workbench-package= (pinned =Index= + active task tabs +
+    read-only ID peek tabs + =L0..L3= progressive disclosure).
+  - =marlin-graph-engine-dispatch->continuation=: maps fail-closed
+    =MarlinDispatchEnvelope= admission results onto Marlin's Rust-validated
+    =marlin-graph-loop-continuation-next-action= native ABI projection
+    (=continue_with_graph=, =escalate_to_human=, =stop_completed=, =stop_failed=).
+- Effectful persistence stays strictly behind the explicit =!= boundary
+  (=marlin-graph-engine-execute-turso-dispatch!=) enabled via
+  =(graph-engine +sqlite-turso)= in =scheme/init.ss=.

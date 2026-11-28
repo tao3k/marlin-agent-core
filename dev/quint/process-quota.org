@@ -22,7 +22,7 @@ quint run dev/quint/process-quota.qnt --main=processQuota --step=badStep --invar
 quint verify dev/quint/process-quota.qnt --main=processQuota --backend=tlc --invariant=safe --max-steps=8
 #+end_src
 
-=python3 dev/verification/process_quota_gate.py= generates three named and 20
+=just process-quota-gate= generates three named and 20
 seeded ITF traces in a temporary directory, replays each against Rust and
 observes OS PIDs at every state. It probes queued admission while A is alive,
 and checks an isolated copy with the production cleanup method mutated to

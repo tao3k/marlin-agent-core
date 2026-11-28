@@ -157,7 +157,7 @@ impl<'a> WorkingCopyCommandProjectionBuilder<'a> {
                     git_toplevel,
                     working_copy,
                     base_ref.as_ref(),
-                ));
+                )?);
             }
             WorkingCopyIsolationPlanStep::GitWorktreeSwitch {
                 repository_discovery_path,
@@ -201,7 +201,7 @@ impl<'a> WorkingCopyCommandProjectionBuilder<'a> {
             } => {
                 let git_toplevel = resolve_git_toplevel(repository_discovery_path)?;
                 self.commands
-                    .push(worktrunk_switch(git_toplevel, working_copy, mode));
+                    .push(worktrunk_switch(git_toplevel, working_copy, mode)?);
             }
             WorkingCopyIsolationPlanStep::WorktrunkList {
                 repository_discovery_path,
@@ -261,7 +261,7 @@ fn git_worktree_create(
     git_toplevel: WorkingCopyGitTopLevel,
     working_copy: &WorkingCopyHandle,
     base_ref: Option<&super::WorkingCopyBaseRef>,
-) -> WorkingCopyCommandInvocation {
+) -> Result<WorkingCopyCommandInvocation, WorkingCopyCommandProjectionError> {
     let mut args = vec![
         "-c".to_owned(),
         DISABLED_HOOKS.to_owned(),
@@ -270,22 +270,25 @@ fn git_worktree_create(
     ];
     if let Some(branch) = working_copy.branch.as_ref() {
         args.push("-b".to_owned());
-        args.push(branch.as_str().to_owned());
+        args.push(validate_branch_name(branch)?);
     }
     args.push("--".to_owned());
     args.push(working_copy.path.display().to_string());
     if let Some(base_ref) = base_ref {
-        args.push(base_ref.as_str().to_owned());
+        args.push(validate_base_ref(base_ref)?);
     }
-    WorkingCopyCommandInvocation::new(WorkingCopyCommandProgram::Git, git_toplevel)
-        .with_args(args)
-        .with_expected_working_copy(working_copy.clone())
+    Ok(
+        WorkingCopyCommandInvocation::new(WorkingCopyCommandProgram::Git, git_toplevel)
+            .with_args(args)
+            .with_expected_working_copy(working_copy.clone()),
+    )
 }
 
 fn git_worktree_switch(
     git_toplevel: WorkingCopyGitTopLevel,
     working_copy: &WorkingCopyHandle,
 ) -> Result<WorkingCopyCommandInvocation, WorkingCopyCommandProjectionError> {
+    let target = validate_branch_or_id_target(working_copy)?;
     Ok(
         WorkingCopyCommandInvocation::new(WorkingCopyCommandProgram::Git, git_toplevel)
             .with_args([
@@ -295,7 +298,7 @@ fn git_worktree_switch(
                 git_checkout_path(working_copy)?,
                 "switch".to_owned(),
                 "--".to_owned(),
-                branch_or_id_target(working_copy),
+                target,
             ])
             .with_expected_working_copy(working_copy.clone()),
     )
@@ -330,6 +333,7 @@ fn git_finalize_branch(
     working_copy: &WorkingCopyHandle,
     branch: &WorkingCopyBranchName,
 ) -> Result<WorkingCopyCommandInvocation, WorkingCopyCommandProjectionError> {
+    let branch_name = validate_branch_name(branch)?;
     Ok(
         WorkingCopyCommandInvocation::new(WorkingCopyCommandProgram::Git, git_toplevel)
             .with_args([
@@ -339,7 +343,7 @@ fn git_finalize_branch(
                 git_checkout_path(working_copy)?,
                 "switch".to_owned(),
                 "-c".to_owned(),
-                branch.as_str().to_owned(),
+                branch_name,
             ])
             .with_expected_working_copy(working_copy.clone()),
     )
@@ -363,7 +367,7 @@ fn worktrunk_switch(
     git_toplevel: WorkingCopyGitTopLevel,
     working_copy: &WorkingCopyHandle,
     mode: &super::WorkingCopySwitchMode,
-) -> WorkingCopyCommandInvocation {
+) -> Result<WorkingCopyCommandInvocation, WorkingCopyCommandProjectionError> {
     let mut args = vec![
         "switch".to_owned(),
         "--no-cd".to_owned(),
@@ -375,13 +379,15 @@ fn worktrunk_switch(
         args.push("--create".to_owned());
         if let Some(base_ref) = mode.base_ref() {
             args.push("--base".to_owned());
-            args.push(base_ref.as_str().to_owned());
+            args.push(validate_base_ref(base_ref)?);
         }
     }
-    args.push(branch_or_id_target(working_copy));
-    WorkingCopyCommandInvocation::new(WorkingCopyCommandProgram::Worktrunk, git_toplevel)
-        .with_args(args)
-        .with_expected_working_copy(working_copy.clone())
+    args.push(validate_branch_or_id_target(working_copy)?);
+    Ok(
+        WorkingCopyCommandInvocation::new(WorkingCopyCommandProgram::Worktrunk, git_toplevel)
+            .with_args(args)
+            .with_expected_working_copy(working_copy.clone()),
+    )
 }
 
 fn worktrunk_list(
@@ -444,6 +450,10 @@ fn worktrunk_pull_request_checkout(
     if !repository.is_valid() {
         return Err(WorkingCopyCommandProjectionError::InvalidGitHubRepository);
     }
+    #[cfg(feature = "worktrunk")]
+    let prefix = worktrunk::git::RefType::Pr.syntax();
+    #[cfg(not(feature = "worktrunk"))]
+    let prefix = "pr:";
     let mut command =
         WorkingCopyCommandInvocation::new(WorkingCopyCommandProgram::Worktrunk, git_toplevel)
             .with_args([
@@ -452,20 +462,77 @@ fn worktrunk_pull_request_checkout(
                 "--no-hooks".to_owned(),
                 "--format".to_owned(),
                 "json".to_owned(),
-                format!("pr:{pull_request}"),
+                format!("{prefix}{pull_request}"),
             ])
             .with_expected_working_copy(working_copy.clone());
     command.github_repository = Some(repository.clone());
     Ok(command)
 }
 
-fn branch_or_id_target(working_copy: &WorkingCopyHandle) -> String {
-    working_copy
-        .branch
-        .as_ref()
-        .map(WorkingCopyBranchName::as_str)
-        .unwrap_or_else(|| working_copy.id.as_str())
-        .to_owned()
+pub(crate) fn is_valid_branch_name(branch: &str) -> bool {
+    !branch.is_empty()
+        && branch.len() <= 255
+        && !branch.starts_with(['-', '@', '/'])
+        && !branch.ends_with(['/', '.'])
+        && !branch.ends_with(".lock")
+        && !branch.contains("..")
+        && !branch.contains("//")
+        && !branch.contains("@{")
+        && !branch.chars().any(|ch| {
+            ch.is_control()
+                || ch.is_whitespace()
+                || matches!(ch, '~' | '^' | ':' | '?' | '*' | '[' | '\\')
+        })
+}
+
+fn validate_branch_name(
+    branch: &WorkingCopyBranchName,
+) -> Result<String, WorkingCopyCommandProjectionError> {
+    let value = branch.as_str();
+    if !is_valid_branch_name(value) {
+        return Err(WorkingCopyCommandProjectionError::InvalidArgument {
+            field: "branch",
+            value: value.to_owned(),
+        });
+    }
+    Ok(value.to_owned())
+}
+
+fn validate_base_ref(
+    base_ref: &super::WorkingCopyBaseRef,
+) -> Result<String, WorkingCopyCommandProjectionError> {
+    let value = base_ref.as_str();
+    if value.is_empty()
+        || value.len() > 255
+        || value.starts_with('-')
+        || value.contains("..")
+        || value.contains('\\')
+        || value
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return Err(WorkingCopyCommandProjectionError::InvalidArgument {
+            field: "base_ref",
+            value: value.to_owned(),
+        });
+    }
+    Ok(value.to_owned())
+}
+
+fn validate_branch_or_id_target(
+    working_copy: &WorkingCopyHandle,
+) -> Result<String, WorkingCopyCommandProjectionError> {
+    if let Some(branch) = working_copy.branch.as_ref() {
+        return validate_branch_name(branch);
+    }
+    let id = working_copy.id.as_str();
+    if !is_valid_branch_name(id) {
+        return Err(WorkingCopyCommandProjectionError::InvalidArgument {
+            field: "working_copy_id",
+            value: id.to_owned(),
+        });
+    }
+    Ok(id.to_owned())
 }
 
 /// Error raised when a typed plan cannot be projected to provider commands.
@@ -492,4 +559,6 @@ pub enum WorkingCopyCommandProjectionError {
     InvalidGitHubRepository,
     #[error("pull request number is outside Worktrunk's supported range: {0}")]
     InvalidPullRequestNumber(u64),
+    #[error("invalid working-copy {field} argument: {value:?}")]
+    InvalidArgument { field: &'static str, value: String },
 }

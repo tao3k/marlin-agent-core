@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use super::{
-    app::{App, REPLY_QUEUE_BYTES, process_replies},
+    app::{App, REPLY_QUEUE_BYTES},
     event_queue::{ReplyError, reply_channel},
 };
 use marlin_agent_protocol::{
@@ -296,7 +296,7 @@ fn event_batches_leave_a_control_input_opportunity() {
         }
     });
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
-    assert_eq!(process_replies(&mut app, &mut receiver, 16), 16);
+    assert_eq!(app.process_replies(&mut receiver, 16), 16);
     assert_eq!(receiver.len(), 4);
-    assert_eq!(process_replies(&mut app, &mut receiver, 16), 4);
+    assert_eq!(app.process_replies(&mut receiver, 16), 4);
 }

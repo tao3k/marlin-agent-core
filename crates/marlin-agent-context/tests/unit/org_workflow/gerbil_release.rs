@@ -12,7 +12,7 @@ use marlin_agent_context::org::workflow::{
     GerbilReleaseStatusCommit, GerbilReleaseStatusCommitter,
 };
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
-use marlin_workspace_status::{ReleaseGateReceipt, ReleaseGateState};
+use marlin_workspace::status::{ReleaseGateReceipt, ReleaseGateState};
 
 #[test]
 fn gerbil_release_status_commit_persists_sidecar_status() {

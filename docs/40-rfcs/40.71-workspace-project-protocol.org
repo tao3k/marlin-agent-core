@@ -227,7 +227,7 @@ receipts before runtime consumes it.
 P3 connects protocol projection to runtime execution without duplicating provider
 command semantics.
 
-=marlin-agent-environment= owns the runtime driver:
+=marlin-agent-gitops= owns the working-copy driver:
 
 - it compiles =WorkingCopyIsolationRequest= into =WorkingCopyIsolationPlan=;
 
@@ -327,6 +327,34 @@ The =jj-vcs/jj= repository is the motivating shape: Git remains the Rust-core
 operations foundation, =jj= is represented as a Scheme-policy VCS extension,
 and GitHub remains the collaboration and operations plane.
 
+** Repository backend audit
+
+=gix= is the candidate for in-process Git reads. Its repository API exposes
+the common Git directory, worktree, index and status. Marlin's read
+contract requires bounded output, staged and unstaged changes, and
+repository identity across linked worktrees. A migration needs parity on
+those cases and separate benchmarks for discovery, status and diff.
+[[https://docs.rs/gix/latest/gix/struct.Repository.html][gix repository API]]
+
+=jj= uses Git storage through gitoxide and adds its own workspace,
+working-copy commits, bookmarks and operation log. Those semantics suit an
+explicit project capability for Jujutsu workspaces. Colocation alone does
+not establish equivalence to Git's index and working-tree observations.
+[[https://docs.jj-vcs.dev/latest/git-compatibility/][Jujutsu Git compatibility]]
+[[https://github.com/jj-vcs/jj/blob/main/docs/technical/architecture.md][Jujutsu architecture]]
+
+Keep Git and Worktrunk execution until a replacement meets the current
+worktree registration, hooks, repository identity and pull request
+checkout contracts. Lab's provider policy receives only the capabilities
+Rust can execute. A selection grants no custody or execution authority.
+
+Marlin's GitOps Module composes the scope, contract and Worktrunk Feature
+published by Agentic AI Lab. Marlin selects =(gitops +worktrunk)= through
+its =init.ss=. The bridge supplies typed host observations to that selected
+policy. The Cargo feature =marlin-agent-gitops/worktrunk= links the
+Worktrunk library for pull request reference syntax. Environment applies
+Worktrunk plans through =wt=.
+
 ** Acceptance Criteria
 
 - =marlin-agent-gitops= exports typed working-copy isolation providers,
@@ -339,8 +367,8 @@ and GitHub remains the collaboration and operations plane.
   after repository discovery paths resolve to Git top-levels, with structured
   program, =git_toplevel=, argv, and expected working-copy metadata.
 
-- =marlin-agent-environment= executes =WorkingCopyCommandProjection= through an
-  injectable runtime driver and records command receipts without duplicating
+- =marlin-agent-gitops= executes =WorkingCopyCommandProjection= through an
+  injectable working-copy driver and records command receipts without duplicating
   provider argv construction.
 
 - Before removal, the driver verifies that the target is a worktree root of
@@ -373,7 +401,7 @@ and GitHub remains the collaboration and operations plane.
 | Owner | Acceptance signal | Validation |
 |-------+-------------------+------------|
 | =marlin-agent-gitops= | Resolve a nested discovery path and project provider commands and typed receipts. | ~cargo test --locked -p marlin-agent-gitops~ |
-| =marlin-agent-environment= | Exercise the Worktrunk executable, verify its registered path and branch, and remove that worktree through the returned receipt. | ~cargo test --locked -p marlin-agent-environment --test unit_test -- --ignored worktrunk~ |
+| =marlin-agent-gitops= | Exercise the Worktrunk executable, verify its registered path and branch, and remove that worktree through the returned receipt. | ~cargo test --locked -p marlin-agent-gitops --test unit_test -- --ignored worktrunk~ |
 | =marlin-gerbil-scheme= | The built Scheme policy selects Git Worktree or Worktrunk. Rust executes the projected request and verifies the actual Git worktree and receipt. | [[file:../../.github/workflows/linked-scheme-aot-gate.yaml][Linked GitHub workflow]] |
 | =marlin-agent-runtime= | Working-copy fanout binds each receipt into the child environment and preserves bounded concurrency and stable output order. | ~cargo test --locked -p marlin-agent-runtime --test unit_test working_copy~ |
 

@@ -7,6 +7,8 @@
 mod denial;
 mod evidence;
 mod lifecycle;
+mod panel_lifecycle;
+mod panel_release;
 mod release;
 #[cfg(unix)]
 mod workspace;
@@ -16,6 +18,14 @@ pub use evidence::{ClosedWorkflowEvidence, WorkflowEffectEvidence, WorkflowEvide
 pub use lifecycle::{
     Activation, ActivationId, DisableReceipt, EffectAdmission, EffectId, EffectOutcome,
     EnableWorkflow, PluginHost, ProjectGrant, WorkflowRegistration, WorkflowSettingsValidator,
+};
+pub use panel_lifecycle::{
+    PanelActionRecord, PanelActivationId, PanelActivationRecord, PanelDisableReceipt,
+    PanelGenerationStatus, PanelPluginHost, PanelProjectId, ScopedPanelActionRequest,
+};
+pub use panel_release::{
+    PanelCapability, PanelContribution, PanelContributionKind, PanelDescriptor, PanelRuntimeKind,
+    SignedPanelRelease, SlotCardinality, SlotId, TargetKind, VerifiedPanelRelease,
 };
 pub use release::{
     BundleDigest, CapabilityId, ContributionId, FileCapability, PluginId, PluginVersion,

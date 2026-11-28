@@ -4,12 +4,17 @@
 
 //! Runtime context and execution identity ownership.
 
+use std::future::Future;
+use std::time::Duration;
+
 use super::{
     AgentSessionContext, CancellationToken, ContextNamespace, ContextVisibility, GraphId, RunId,
-    RuntimeEnvironment, RuntimeEvent, RuntimeEventSendError, RuntimeEventSink, SessionId,
-    SessionIsolationReceipt, SessionKind, SubAgentContextPolicy, SubAgentContextVisibility,
-    WorkingCopyActiveBinding, WorkingCopyIsolationReceipt,
+    RuntimeEnvironment, RuntimeEvent, RuntimeEventSendError, RuntimeEventSink, RuntimeOperationId,
+    RuntimeTask, SessionId, SessionIsolationReceipt, SessionKind, SubAgentContextPolicy,
+    SubAgentContextVisibility,
 };
+use crate::observability;
+use marlin_agent_gitops::working_copy::{WorkingCopyActiveBinding, WorkingCopyIsolationReceipt};
 
 /// Per-call runtime context passed into provider, tool, and sub-agent work.
 #[derive(Clone, Debug)]
@@ -17,6 +22,7 @@ pub struct RuntimeContext {
     pub(super) cancellation: CancellationToken,
     pub(super) events: RuntimeEventSink,
     pub(super) environment: RuntimeEnvironment,
+    pub(super) project_envrc: Option<crate::ProjectEnvrcDiscovery>,
     pub(super) execution: Option<RuntimeExecutionIdentity>,
     pub(super) session: AgentSessionContext,
     pub(super) active_working_copy: Option<WorkingCopyActiveBinding>,
@@ -39,6 +45,16 @@ impl RuntimeContext {
 
     pub fn environment(&self) -> &RuntimeEnvironment {
         &self.environment
+    }
+
+    pub(crate) async fn project_envrc(&self) -> std::io::Result<Option<crate::ProjectEnvrc>> {
+        let Some(discovery) = &self.project_envrc else {
+            return Ok(None);
+        };
+        discovery
+            .wait(&self.cancellation)
+            .await
+            .map_err(|status| std::io::Error::new(std::io::ErrorKind::Interrupted, status.label()))
     }
 
     pub fn session(&self) -> &AgentSessionContext {
@@ -97,6 +113,7 @@ impl RuntimeContext {
             cancellation: self.cancellation.child_token(),
             events: self.events.clone(),
             environment: self.environment.clone(),
+            project_envrc: self.project_envrc.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
             active_working_copy: self.active_working_copy.clone(),
@@ -114,6 +131,7 @@ impl RuntimeContext {
             cancellation: self.cancellation.child_token(),
             events: self.events.clone(),
             environment,
+            project_envrc: self.project_envrc.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
             active_working_copy: self.active_working_copy.clone(),
@@ -140,6 +158,7 @@ impl RuntimeContext {
                 cancellation: self.cancellation.child_token(),
                 events: self.events.clone(),
                 environment: self.environment.clone(),
+                project_envrc: self.project_envrc.clone(),
                 execution: self.execution.clone(),
                 session,
                 active_working_copy: self.active_working_copy.clone(),
@@ -156,6 +175,37 @@ impl RuntimeContext {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancellation.is_cancelled()
+    }
+
+    /// Run blocking work under this context's tracked runtime session and tracing span.
+    pub fn spawn_blocking<F, T>(&self, operation: F) -> RuntimeTask<T>
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        let span = observability::runtime_task_span(observability::RUNTIME_KIND_BLOCKING);
+        let task_guard = match self.task_tracker.admit(
+            self.session.session_id(),
+            RuntimeOperationId::new("task.blocking"),
+        ) {
+            Ok(guard) => guard,
+            Err(error) => return RuntimeTask::rejected(error),
+        };
+        RuntimeTask::new(
+            task_guard.id().clone(),
+            tokio::task::spawn_blocking(move || {
+                let _task_guard = task_guard;
+                span.in_scope(operation)
+            }),
+        )
+    }
+
+    /// Bound an async operation by `duration` through the runtime boundary.
+    pub fn timeout<F>(&self, duration: Duration, future: F) -> tokio::time::Timeout<F>
+    where
+        F: Future,
+    {
+        tokio::time::timeout(duration, future)
     }
 
     pub async fn emit(&self, event: RuntimeEvent) -> Result<(), RuntimeEventSendError> {

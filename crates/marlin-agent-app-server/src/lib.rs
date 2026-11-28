@@ -11,20 +11,39 @@ pub use grpc::AppServer;
 #[cfg(feature = "grpc")]
 mod session;
 #[cfg(feature = "grpc")]
-pub use session::SessionBinding;
-
+pub use session::{SessionBinding, SessionOpen};
 #[cfg(feature = "grpc")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SessionOpen {
-    Create,
-    Existing,
-}
+pub mod atomic_effect_substrate;
+#[cfg(feature = "grpc")]
+pub use atomic_effect_substrate::{
+    AllowlistSandboxRunner, AtomicSandboxRunner, BoundedTokioSandboxRunner,
+    CompositeAtomicEffectExecutor, DenySandboxRunner, StorageCasStore,
+};
+#[cfg(feature = "grpc")]
+pub use marlin_agent_stream::{OpenAiCompatibleHttpClient, OpenAiHttpConfig};
+#[cfg(feature = "grpc")]
+pub mod task_actors;
+#[cfg(feature = "grpc")]
+pub use task_actors::{
+    RegisterTaskActorRequest, TaskActorControlPlane, TaskActorPersistenceHandle,
+};
 
-/// Versioned wire types and client bindings. The `grpc` feature adds service bindings.
 #[cfg(feature = "client")]
-pub mod v1 {
-    tonic::include_proto!("marlin.app.v1");
+pub mod v1;
 
-    /// Descriptor set generated with the bindings from the same Protobuf source.
-    pub const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("marlin-app-v1");
-}
+#[cfg(feature = "ui-grpc")]
+pub mod wire;
+
+#[cfg(feature = "ui-grpc")]
+pub mod scheme_host_client;
+#[cfg(feature = "ui-grpc")]
+pub use scheme_host_client::{
+    CedarProbeResultView, FleetAuditCapsuleView, FleetTaskAction, GovernanceAuthoritySnapshotView,
+    GovernanceFactAction, GrpcCode, GrpcStatus, HostStatusSnapshot, MarlinSchemeHostClient,
+};
+#[cfg(feature = "ui-grpc")]
+pub mod ui_grpc;
+#[cfg(feature = "ui-grpc")]
+pub mod mygo_host;
+#[cfg(feature = "ui-grpc")]
+pub mod scheme_ctl;

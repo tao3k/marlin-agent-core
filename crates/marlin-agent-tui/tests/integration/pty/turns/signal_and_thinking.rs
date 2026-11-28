@@ -223,18 +223,19 @@ fn anthropic_thinking_continuation_survives_restart() {
                 .iter()
                 .any(|line| !line.trim().is_empty())
         });
-        terminal.send(b"\x1bx");
+        terminal.enter_normal_mode();
+        terminal.send(b"\x1bxtoggle-thinking");
         terminal.wait_for(Duration::from_secs(20), "thinking command", |output| {
             screen_lines(output)
                 .iter()
-                .any(|line| line.contains("toggle-thinking"))
+                .any(|line| line.contains("M-x toggle-thinking"))
         });
         assert!(
             !screen_lines(&terminal.output)
                 .iter()
                 .any(|line| line.contains("reasoning-fixture"))
         );
-        terminal.send(b"toggle-thinking\r");
+        terminal.send(b"\r");
         terminal.wait_for(Duration::from_secs(20), "expanded thinking", |output| {
             let rows = screen_lines(output);
             rows.iter().any(|line| line.contains("reasoning-fixture"))
@@ -261,7 +262,7 @@ fn anthropic_thinking_continuation_survives_restart() {
         }
         thread::sleep(Duration::from_millis(500));
         let offset = terminal.output.len();
-        terminal.send(b"follow-up\r");
+        terminal.send(b"ifollow-up\r");
         let expected: &[u8] = if first { b"answer-live" } else { b"restart" };
         terminal.wait_for(Duration::from_secs(20), "follow-up outcome", |output| {
             if changed {

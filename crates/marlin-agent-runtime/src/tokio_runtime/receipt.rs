@@ -88,6 +88,14 @@ impl RuntimeFanoutTaskReceipt {
         }
     }
 
+    pub fn join_error_for_input(input_index: usize, join_error: impl Into<String>) -> Self {
+        Self {
+            input_index: Some(input_index),
+            status: RuntimeFanoutTaskStatus::JoinError,
+            join_error: Some(join_error.into()),
+        }
+    }
+
     pub fn cancelled_before_start(input_index: usize) -> Self {
         Self {
             input_index: Some(input_index),

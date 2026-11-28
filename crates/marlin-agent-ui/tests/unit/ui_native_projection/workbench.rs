@@ -301,6 +301,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
                         prefix,
                         runtime.scalar_object(SchemeScalar::Boolean(false)).unwrap(),
                         symbol(&runtime, "focused"),
+                        runtime.scalar_object(SchemeScalar::Boolean(false)).unwrap(),
                     ],
                 ),
             ],
@@ -562,9 +563,67 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             vector(&runtime, &[]),
         ],
     );
-    let workbench = decode_workbench(root).unwrap();
+    // Change only the echo policy in an otherwise valid workbench (MAR-UI-R25).
+    let fields = root
+        .into_collection(gerbil_scheme::CollectionKind::Vector)
+        .unwrap();
+    let layout_fields = fields
+        .element(4)
+        .unwrap()
+        .into_collection(gerbil_scheme::CollectionKind::Vector)
+        .unwrap();
+    let echo_fields = layout_fields
+        .element(7)
+        .unwrap()
+        .into_collection(gerbil_scheme::CollectionKind::Vector)
+        .unwrap();
+    for (index, value, reason) in [
+        (
+            0,
+            vector(&runtime, &[symbol(&runtime, "text"), vector(&runtime, &[])]),
+            "invalid echo area template",
+        ),
+        (
+            1,
+            runtime.scalar_object(SchemeScalar::Fixnum(99)).unwrap(),
+            "invalid echo area timeout",
+        ),
+        (
+            1,
+            runtime.scalar_object(SchemeScalar::Fixnum(30_001)).unwrap(),
+            "invalid echo area timeout",
+        ),
+        (
+            2,
+            runtime.scalar_object(SchemeScalar::Fixnum(1)).unwrap(),
+            "invalid echo area clear rule",
+        ),
+    ] {
+        let mut invalid_echo = (0..echo_fields.len())
+            .map(|i| echo_fields.element(i).unwrap())
+            .collect::<Vec<_>>();
+        invalid_echo[index] = value;
+        let mut invalid_layout = (0..layout_fields.len())
+            .map(|i| layout_fields.element(i).unwrap())
+            .collect::<Vec<_>>();
+        invalid_layout[7] = vector(&runtime, &invalid_echo);
+        let mut invalid_root = (0..fields.len())
+            .map(|i| fields.element(i).unwrap())
+            .collect::<Vec<_>>();
+        invalid_root[4] = vector(&runtime, &invalid_layout);
+        let error = decode_workbench(vector(&runtime, &invalid_root)).unwrap_err();
+        use marlin_agent_ui::UiProjectionError::{Field, Invalid};
+        assert!(
+            matches!(&error, Field { name: "layout", source }
+                if matches!(source.as_ref(), Invalid(observed) if *observed == reason)),
+            "echo field {index}: expected {reason}, got {error:?}"
+        );
+    }
+    drop(echo_fields);
+    drop(layout_fields);
+    let workbench = decode_workbench(fields.into_object()).unwrap();
     assert!(
-        matches!(workbench.layout.frame_tree.region_child("transcript"), Some(marlin_agent_ui::UiElement::Panel { border_tone: marlin_agent_ui::UiTone::Info, child, .. }) if matches!(child.as_ref(), marlin_agent_ui::UiElement::Slot(marlin_agent_ui::UiSlotSource::SelectedBuffer)))
+        matches!(workbench.layout.frame_tree.region_child("transcript"), Some(marlin_agent_ui::UiElement::Panel { border_tone: Some(marlin_agent_ui::UiTone::Info), child, .. }) if matches!(child.as_ref(), marlin_agent_ui::UiElement::Slot(marlin_agent_ui::UiSlotSource::SelectedBuffer)))
     );
     assert!(matches!(
         workbench.layout.frame_tree.region_child("editor"),
@@ -606,6 +665,8 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     assert_eq!(workbench.layout.message_frame.prompt, "input> ");
     assert_eq!(workbench.layout.command_frame.fixed_editor_rows, 1);
     assert_eq!(workbench.layout.command_frame.footer_rows, 0);
+    assert_eq!(workbench.layout.echo.timeout.as_millis(), 731);
+    assert!(workbench.layout.echo.clear_on_input);
     assert_eq!(
         (
             workbench

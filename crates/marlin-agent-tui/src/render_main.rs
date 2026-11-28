@@ -165,6 +165,7 @@ impl ui_elements::UiSlotRenderer for FrameSlots<'_> {
 
 pub(super) struct EditorSlots<'a> {
     pub composer: &'a Composer,
+    pub expansion_bindings: &'a [marlin_agent_ui::UiKeyBinding],
     pub show_cursor: bool,
     pub read_only: bool,
 }
@@ -197,10 +198,11 @@ impl ui_elements::UiSlotRenderer for EditorSlots<'_> {
             |width, height| {
                 if self.read_only {
                     None
+                } else if self.expansion_bindings.is_empty() {
+                    self.composer.view(width, height)
                 } else {
                     self.composer
-                        .view(width, height)
-                        .map(|view| (view.rows, view.cursor))
+                        .view_with_expansion(width, height, self.expansion_bindings)
                 }
             },
         );

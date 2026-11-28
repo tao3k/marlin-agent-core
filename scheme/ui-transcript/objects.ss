@@ -5,7 +5,7 @@
 ;;; Semantic transcript presentation. Runtime events and ORG evidence remain
 ;;; with their owners; this module only selects labels and fold defaults.
 (import (only-in :clan/poo/object .def seal-object!))
-(export marlin-ui-transcript-policy-for)
+(export doom-transcript-policy pi-transcript-policy)
 
 (.def UiTranscriptDoom.
   thinking-collapsed: #t
@@ -23,9 +23,3 @@
 
 (def doom-transcript-policy (seal-object! UiTranscriptDoom.))
 (def pi-transcript-policy (seal-object! UiTranscriptPi.))
-
-(def (marlin-ui-transcript-policy-for profile)
-  (case profile
-    ((doom-one) doom-transcript-policy)
-    ((pi) pi-transcript-policy)
-    (else (error "unknown UI transcript profile"))))

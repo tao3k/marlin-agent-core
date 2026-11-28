@@ -2,9 +2,25 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use super::*;
-use std::collections::{HashMap, VecDeque};
-use vm::{Completion, MessageId};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::{Arc, Mutex, atomic::AtomicBool},
+    time::Duration,
+};
+
+use marlin_agent_context::ContextAdmissionRequest;
+use tokio::{
+    sync::{mpsc, oneshot, watch},
+    time::Instant,
+};
+use tokio_util::sync::CancellationToken;
+
+use super::{
+    DeckModuleInstanceId, Job, ModuleState, Outcome, OwnerMessage, owner,
+    vm::{Completion, MessageId},
+    wake,
+};
+use crate::{DeckRuntime, DeckRuntimeMetrics, DeckRuntimeRejection};
 #[path = "context_fixture.rs"]
 mod context_fixture;
 
@@ -12,7 +28,7 @@ fn job(index: usize) -> (Job, oneshot::Receiver<Outcome>) {
     let (reply, result) = oneshot::channel();
     (
         Job {
-            module: super::DeckModuleInstanceId(std::num::NonZeroU64::MIN),
+            module: DeckModuleInstanceId(std::num::NonZeroU64::MIN),
             #[cfg(feature = "context-profiling")]
             enqueued_at: std::time::Instant::now(),
             request: context_fixture::request(&context_fixture::scope("source"), index),
@@ -312,4 +328,37 @@ fn an_elapsed_budget_remains_a_deadline_when_its_caller_has_retired() {
         job.check_active(),
         Err(DeckRuntimeRejection::Cancelled)
     ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sm36_deck_timer_refuses_unbounded_multi_year_delay_before_vm_enqueue() {
+    let (queue, mut jobs) = mpsc::channel(4);
+    let (_finished, stopped) = watch::channel(None);
+    let deck = DeckRuntime {
+        metadata: Arc::new(crate::DeckRuntimeMetadata {
+            module_id: crate::DeckRuntimeModuleId("queue-fixture".into()),
+            version: 0,
+        }),
+        queue,
+        wake: Arc::new(wake::Wake::new().unwrap()),
+        default_module: ModuleState::new(DeckModuleInstanceId(std::num::NonZeroU64::MIN)),
+        stopping: Arc::new(AtomicBool::new(false)),
+        stopped,
+        owner: Arc::new(Mutex::new(None)),
+    };
+    let module = deck.context_module();
+    let res = tokio::time::timeout(
+        Duration::from_millis(200),
+        module.timer(Duration::from_secs(365 * 86_400)),
+    )
+    .await
+    .expect("oversize timer delay must reject immediately without entering the VM queue");
+    assert!(
+        matches!(res, Err(DeckRuntimeRejection::TimerDelay)),
+        "SM36: multi-year timer delay must return TimerDelay, got {res:?}"
+    );
+    assert!(
+        jobs.try_recv().is_err(),
+        "SM36: rejected oversize timer must never enter the VM owner queue"
+    );
 }

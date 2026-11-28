@@ -5,5 +5,8 @@
 //! Entrypoint for the Marlin terminal client.
 
 fn main() {
+    if std::env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some() {
+        eprintln!("marlin-tui startup Rust main");
+    }
     marlin_agent_tui::launch();
 }

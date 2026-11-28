@@ -28,6 +28,10 @@ RFC documents define proposed or active protocol contracts before they become ac
 [[file:40.164-poo-flow-agent-flow-loop-substrate.org][40.164 POO Flow Agent-Flow Loop Substrate]]
 [[file:40.165-loop-policy-ir-performance-boundary.org][40.165 LoopPolicyIR Performance Boundary]]
 [[file:40.166-plugin-contract.org][40.166 Plugin Contract]]
+[[file:40.180-emacs-scheme-tui.org][40.180 Emacs Scheme TUI]]
+[[file:40.181-context-org-ownership.org][40.181 Context-owned Org Architecture]]
+[[file:40.182-gitops-context-discovery.org][40.182 GitOps Context Discovery]]
+[[file:40.183-org-elements-gql-shared-context.org][40.183 Shared Org-as-Context, Declarative POO/Durable Orchestration, and Task-as-Tab Lifecycle]]
 ** Acceleration Lanes
 | Lane | RFCs | Goal | Immediate Gate |
 ** Progress Rules

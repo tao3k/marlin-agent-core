@@ -5,17 +5,26 @@
 [package]
 license.workspace = true
 name = "marlin-agent-gitops"
-description = "Repository reads and typed GitOps plans for Marlin agents."
+description = "Repository reads and working-copy operations for Marlin agents."
 edition.workspace = true
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+worktrunk = ["dep:worktrunk"]
+
 [dependencies]
+async-trait.workspace = true
+serde_json.workspace = true
 marlin-agent-protocol.workspace = true
 serde.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+url.workspace = true
+worktrunk = { workspace = true, optional = true }
 
-[dev-dependencies]
-tempfile.workspace = true
+[[test]]
+name = "gitops_context_worktrunk"
+path = "tests/integration/gitops_context_worktrunk.rs"

@@ -5,6 +5,99 @@
 use super::composer::Composer;
 
 #[test]
+fn character_selection_and_expansion_keep_complete_graphemes() {
+    use marlin_agent_ui::UiCharacterSelection;
+    let steps = std::num::NonZeroU8::MIN;
+    let mut composer = Composer::default();
+    composer.insert_text("x e\u{301} one é two e\u{301} end");
+    composer.line_start();
+    composer.select_character(
+        'e',
+        UiCharacterSelection {
+            inclusive: true,
+            backward: false,
+        },
+    );
+    assert_eq!(composer.selected_text(), Some("x e\u{301}"));
+    assert!(composer.expand_selection(steps));
+    assert_eq!(composer.selected_text(), Some("x e\u{301} one"));
+    composer.clear_selection();
+    composer.line_end();
+    composer.select_character(
+        'é',
+        UiCharacterSelection {
+            inclusive: false,
+            backward: true,
+        },
+    );
+    assert_eq!(composer.selected_text(), Some(" two e\u{301} end"));
+}
+
+#[test]
+fn expansion_uses_the_same_unicode_endpoints_for_marks_and_selection() {
+    use marlin_agent_ui::{
+        UiEditorAction, UiKeyBinding, UiKeyCommand, UiKeyMode, UiKeyScope, UiKeyToken, UiTone,
+    };
+
+    let mut composer = Composer::default();
+    let step = |count| std::num::NonZeroU8::new(count).unwrap();
+    composer.insert_text("é 中 文");
+    composer.line_start();
+    composer.select_word();
+    let bindings = [UiKeyBinding {
+        scope: UiKeyScope::Mode(UiKeyMode::Normal),
+        sequence: vec![UiKeyToken::new("4").unwrap()],
+        command: UiKeyCommand::Edit(UiEditorAction::ExpandSelection {
+            steps: step(1),
+            tone: UiTone::Accent,
+            at_rest_start: false,
+        }),
+    }];
+    let view = composer.view_with_expansion(20, 2, &bindings).unwrap();
+    assert_eq!(view.marks.len(), 1);
+    let mark = &view.marks[0];
+    assert_eq!((mark.column, mark.row, mark.label), (4, 0, '4'));
+    assert!(composer.expand_selection(step(1)));
+    assert_eq!(composer.selected_text(), Some("é 中"));
+    assert!(composer.expand_selection(step(10)));
+    assert_eq!(composer.selected_text(), Some("é 中"));
+    composer.previous_selection();
+    assert_eq!(composer.selected_text(), Some("é"));
+}
+
+#[test]
+fn delimited_ranges_are_grapheme_aligned_and_history_is_draft_local() {
+    let mut composer = Composer::default();
+    composer.insert_text("(outer (e\u{301}) tail)");
+    composer.line_start();
+    for _ in 0..8 {
+        composer.right();
+    }
+    composer.select_delimited('(', ')', false);
+    assert_eq!(composer.selected_text(), Some("e\u{301}"));
+    composer.select_delimited('(', ')', true);
+    assert_eq!(composer.selected_text(), Some("(e\u{301})"));
+    composer.previous_selection();
+    assert_eq!(composer.selected_text(), Some("e\u{301}"));
+    composer.insert_text("鱼");
+    composer.previous_selection();
+    assert_eq!(composer.text(), "(outer (鱼) tail)");
+    assert_eq!(composer.selected_text(), None);
+    assert!(composer.text().is_char_boundary(composer.cursor()));
+
+    composer.take();
+    composer.insert_text(r#"before "a\"b" after"#);
+    composer.line_start();
+    for _ in 0..11 {
+        composer.right();
+    }
+    composer.select_delimited('"', '"', false);
+    assert_eq!(composer.selected_text(), Some(r#"a\"b"#));
+    composer.select_delimited('[', ']', false);
+    assert_eq!(composer.selected_text(), Some(r#"a\"b"#));
+}
+
+#[test]
 fn word_and_line_edits_undo_without_breaking_unicode_boundaries() {
     let mut composer = Composer::default();
     composer.insert_text("abc βeta\nlast");

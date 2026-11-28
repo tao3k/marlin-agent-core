@@ -6,10 +6,11 @@
 ;;; with its owner; bounded static content is declared beside its Buffer.
 (import (only-in :clan/poo/object .def .get .o seal-object!)
         (only-in :std/list/list find)
-        (only-in "./keymap.ss" marlin-ui-keymap-help))
+        (only-in "../ui-meow/key-bindings.ss" UiMeowScope))
 (export marlin-ui-make-frame marlin-ui-select-buffer marlin-ui-project-frame
         marlin-ui-buffer-command-entries marlin-ui-buffer-alias-command-entries
-        marlin-ui-buffer-static-entries marlin-ui-buffer-identities marlin-ui-buffer-catalog)
+        marlin-ui-buffer-static-entries marlin-ui-buffer-identities marlin-ui-buffer-catalog
+        marlin-ui-buffer-command-name)
 
 (.def UiBuffer.)
 (.def UiWindow.)
@@ -21,7 +22,7 @@
              (help "Keyboard shortcuts"
                    ("*Help*"
                     ,(append (list "Enter  Send message")
-                            (marlin-ui-keymap-help)
+                            ((.get UiMeowScope help) (.get UiMeowScope bindings))
                             (list "PageUp / PageDown  Scroll current buffer"
                                   "Esc / Ctrl-C  Cancel · Ctrl-Q  Quit")))
                    "help")
@@ -45,11 +46,13 @@
        (filter (lambda (entry) (cadddr entry))
                (.get catalog entries))))
 
+(def (marlin-ui-buffer-command-name identity-value)
+  (string-append "buffer-" (symbol->string identity-value)))
+
 (def (marlin-ui-buffer-command-entries (catalog marlin-ui-buffer-catalog))
   (map (lambda (entry)
-         (let (identity-value (symbol->string (car entry)))
-           (list (string-append "buffer-" identity-value) (cadr entry)
-                 'none 'select-buffer identity-value)))
+         (list (marlin-ui-buffer-command-name (car entry)) (cadr entry)
+               'none 'select-buffer (symbol->string (car entry))))
        (.get catalog entries)))
 
 (def (marlin-ui-make-frame (catalog marlin-ui-buffer-catalog))

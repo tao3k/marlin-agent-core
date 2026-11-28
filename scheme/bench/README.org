@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Deck Runtime Qualification
+#+language: en
+
+The Marlin package build publishes the qualification program under
+=marlin-agent-core/programs/bench= on =GERBIL_LOADPATH=. Cargo's
+=mailbox-benchmark= feature links that program for the =mailbox= and
+=context_profile= workloads. The program reuses the production Deck ABI
+and adds the benchmark entry points.

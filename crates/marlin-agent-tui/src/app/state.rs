@@ -4,6 +4,7 @@
 
 //! Terminal application state and transcript navigation.
 
+use super::echo_area::EchoArea;
 use super::{
     Arc, BufferView, Command, Composer, ContextBudget, ConversationTurnId, GatewayObservation,
     HistorySearch, JournalGateway, MAX_COMPLETION_HEAP_BYTES, MessageEvent, MessageSeverity,
@@ -12,6 +13,7 @@ use super::{
     SessionPageRequestError, SharedGateway, Transcript, TursoAgentStorage, UiBufferId, UiCommand,
     UiCommandName, UiContent, UiEvent, UiTranscriptPolicy, UiWorkbench, WorkspaceStatus,
 };
+use std::time::{Duration, Instant};
 
 pub(crate) const REPLY_BATCH_LIMIT: usize = 16;
 pub(crate) const REPLY_QUEUE_ITEMS: usize = 64;
@@ -47,8 +49,34 @@ pub(crate) struct CommandMenu {
     pub(crate) prompt: String,
 }
 
+pub(super) struct PendingKeyHint {
+    pub(super) view: marlin_agent_ui::UiElement,
+    pub(super) delay: Duration,
+    pub(super) show_at: Option<Instant>,
+}
+
+pub(crate) struct ToolExecutionRecord {
+    pub(crate) call_id: String,
+    pub(crate) tool_name: String,
+    pub(crate) arguments: Vec<(String, String)>,
+    pub(crate) state: &'static str,
+    pub(crate) started_at: Instant,
+    pub(crate) duration_ms: Option<u64>,
+    pub(crate) otel_span: &'static str,
+    pub(crate) output_summary: String,
+    pub(crate) output_lines: Vec<String>,
+}
+
+pub(crate) struct ToolReviewCallSummary {
+    pub(crate) call_id: String,
+    pub(crate) tool_name: String,
+    pub(crate) arguments: Vec<(String, String)>,
+    pub(crate) compact_args: String,
+}
+
 pub(crate) struct ToolReviewPrompt {
     pub(crate) key: marlin_agent_sessions::ConversationToolRequestKey,
+    pub(crate) calls: Vec<ToolReviewCallSummary>,
     pub(crate) menu: marlin_agent_ui::UiToolReviewMenu,
     pub(crate) details: Transcript,
     pub(crate) selected: usize,
@@ -60,10 +88,32 @@ pub(crate) struct App {
     pub(super) runtime_events: marlin_agent_runtime::RuntimeEventStream,
     pub(crate) composer: Composer,
     pub(crate) minibuffer_hovered: bool,
+    pub(crate) editor_keyboard_active: bool,
     pub(crate) key_mode: marlin_agent_ui::UiKeyMode,
+    pub(super) yank_register: String,
     pub(crate) gateway_observation: GatewayObservation,
     pub(super) prompt_history: PromptHistory,
     pub(crate) history_search: Option<HistorySearch>,
+    pub(crate) helm: Option<super::HelmOverlay>,
+    pub(crate) search_index: Option<crate::helm::SharedSearchIndex>,
+    pub(crate) search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig,
+    pub(crate) search_hydration_policy: Option<marlin_agent_search_engine::AspHydrationPolicy>,
+    pub(crate) search_presets: Vec<marlin_agent_search_engine::HelmSearchPresetSpec>,
+    pub(crate) search_cache_dir: Option<std::path::PathBuf>,
+    pub(crate) search_dsl_catalog: Vec<marlin_agent_search_engine::SearchDslCompletionEntry>,
+    pub(crate) asp_live_status: super::asp_supervisor::AspLiveStatus,
+    pub(super) asp_endpoint: Option<marlin_agent_search_engine::AspForwardingEndpoint>,
+    pub(super) asp_hydrating: Option<tokio::sync::watch::Receiver<Option<(usize, usize)>>>,
+    pub(super) search_index_warming:
+        Option<tokio::sync::oneshot::Receiver<crate::helm::SharedSearchIndex>>,
+    pub(super) search_index_syncing: Option<tokio::sync::oneshot::Receiver<bool>>,
+    #[cfg(feature = "linked-ui")]
+    pub(crate) search_index_handle: marlin_agent_tooling::SearchGatewayIndexHandle,
+    #[cfg(feature = "linked-ui")]
+    pub(super) _search_grpc_server: Option<marlin_agent_tooling::LoopbackSearchGrpcServer>,
+    #[cfg(feature = "linked-ui")]
+    pub(crate) active_search_session:
+        Arc<std::sync::RwLock<marlin_agent_search_engine::SearchDslSessionId>>,
     pub(crate) command_draft: Option<Composer>,
     pub(crate) command_menu: Option<CommandMenu>,
     pub(crate) command_selection: Option<(String, UiCommandName)>,
@@ -76,13 +126,18 @@ pub(crate) struct App {
     pub(crate) ui_request: Option<UiEvent>,
     pub(crate) command_history_request: Option<UiCommandName>,
     pub(crate) transient_request: Option<super::UiTransientId>,
+    pub(super) envrc_command: Option<crate::command::EnvrcCommand>,
+    pub(super) worktree_switch: Option<String>,
+    pub(super) context_worktree: Option<std::path::PathBuf>,
     pub(crate) quit_armed: bool,
     pub(crate) transcript: Transcript,
     pub(crate) transcript_policy: Option<UiTranscriptPolicy>,
     pub(crate) messages: Transcript,
     pub(crate) buffer_view: BufferView,
-    pub(crate) minibuffer_notice: Option<String>,
+    pub(crate) echo_area: EchoArea,
     pub(crate) transient_hint: Option<marlin_agent_ui::UiElement>,
+    pub(crate) keypad_open: bool,
+    pub(super) pending_key_hint: Option<PendingKeyHint>,
     pub(crate) history: Arc<Vec<ModelGatewayMessage>>,
     pub(crate) context_budget: ContextBudget,
     pub(super) endpoint: ModelEndpoint,
@@ -110,12 +165,14 @@ pub(crate) struct App {
     >,
     pub(crate) tool_review_task: Option<marlin_agent_runtime::RuntimeTask<()>>,
     pub(crate) tool_review_suppressed: bool,
+    pub(crate) tool_executions: Vec<ToolExecutionRecord>,
+    pub(crate) tool_executions_revision: u64,
     pub(super) unverified_thinking: bool,
     pub(crate) runtime_edge: Option<RuntimeEdgePolicyReceipt>,
     pub(crate) runtime_content: Vec<UiContent>,
     pub(crate) runtime_receipt_open: bool,
     pub(crate) dynamic_buffer_content: std::collections::HashMap<UiBufferId, Vec<UiContent>>,
-    pub(super) process_snapshot: Option<(marlin_agent_runtime::SessionId, u64)>,
+    pub(super) process_snapshot: Option<(marlin_agent_runtime::SessionId, u64, u64, usize, usize)>,
     pub(super) session_browser: Option<SessionBrowser<TursoAgentStorage>>,
     pub(super) current_session: Option<SessionId>,
     pub(super) history_position: Option<HistoryPosition>,
@@ -123,6 +180,23 @@ pub(crate) struct App {
 }
 
 impl App {
+    pub(crate) fn process_replies(
+        &mut self,
+        receiver: &mut tokio::sync::mpsc::Receiver<crate::event_queue::QueuedReply>,
+        limit: usize,
+    ) -> usize {
+        let mut processed = 0;
+        while processed < limit {
+            let Ok(event) = receiver.try_recv() else {
+                break;
+            };
+            let (id, reply) = event.into_parts();
+            self.receive(id, reply);
+            processed += 1;
+        }
+        processed
+    }
+
     pub(crate) fn new(endpoint: ModelEndpoint) -> Self {
         let (runtime_owner, runtime_events) = marlin_agent_runtime::TokioAgentRuntime::new(64);
         Self::with_runtime(endpoint, runtime_owner, runtime_events)
@@ -139,10 +213,35 @@ impl App {
             runtime_events,
             composer: Composer::default(),
             minibuffer_hovered: false,
+            editor_keyboard_active: false,
             key_mode: marlin_agent_ui::UiKeyMode::Insert,
+            yank_register: String::new(),
             gateway_observation: GatewayObservation::Unchecked,
             prompt_history: PromptHistory::default(),
             history_search: None,
+            helm: None,
+            search_index: None,
+            search_index_config: marlin_agent_search_engine::WorkspaceIndexConfig::default(),
+            search_hydration_policy: None,
+            search_presets: Vec::new(),
+            search_cache_dir: None,
+            search_dsl_catalog: Vec::new(),
+            asp_live_status: super::asp_supervisor::AspLiveStatus::default(),
+            asp_endpoint: None,
+            asp_hydrating: None,
+            search_index_warming: None,
+            search_index_syncing: None,
+            #[cfg(feature = "linked-ui")]
+            search_index_handle: marlin_agent_tooling::SearchGatewayIndexHandle::lazy(
+                std::path::PathBuf::from("."),
+            ),
+            #[cfg(feature = "linked-ui")]
+            _search_grpc_server: None,
+            #[cfg(feature = "linked-ui")]
+            active_search_session: Arc::new(std::sync::RwLock::new(
+                marlin_agent_search_engine::SearchDslSessionId::new("tui-default")
+                    .expect("static search session ID"),
+            )),
             command_draft: None,
             command_menu: None,
             command_selection: None,
@@ -155,13 +254,18 @@ impl App {
             ui_request: None,
             command_history_request: None,
             transient_request: None,
+            envrc_command: None,
+            worktree_switch: None,
+            context_worktree: None,
             quit_armed: false,
             transcript: Transcript::new(vec![]),
             transcript_policy: None,
             messages: Transcript::new(vec![]),
             buffer_view: BufferView::Conversation,
-            minibuffer_notice: None,
+            echo_area: EchoArea::default(),
             transient_hint: None,
+            keypad_open: false,
+            pending_key_hint: None,
             history: Arc::new(Vec::new()),
             context_budget: ContextBudget::default(),
             endpoint,
@@ -181,6 +285,8 @@ impl App {
             tool_review_inflight: None,
             tool_review_task: None,
             tool_review_suppressed: false,
+            tool_executions: Vec::new(),
+            tool_executions_revision: 0,
             unverified_thinking: false,
             runtime_edge: None,
             runtime_content: Vec::new(),
@@ -268,6 +374,9 @@ impl App {
                             descriptor.capability,
                             marlin_agent_ui::UiCommandCapability::ToggleThinking
                                 | marlin_agent_ui::UiCommandCapability::KillProcess
+                                | marlin_agent_ui::UiCommandCapability::Envrc
+                                | marlin_agent_ui::UiCommandCapability::Helm
+                                | marlin_agent_ui::UiCommandCapability::SchemeAction
                         ) || (descriptor.capability
                             == marlin_agent_ui::UiCommandCapability::SelectBuffer
                             && descriptor.value.as_deref() == Some("processes")))
@@ -290,7 +399,13 @@ impl App {
     pub(crate) fn accept_command_completion(&mut self, completed: &str) -> bool {
         let runnable = self
             .command_descriptor(completed)
-            .is_some_and(|descriptor| Command::parse(descriptor, completed).is_some());
+            .is_some_and(|descriptor| {
+                if descriptor.capability == marlin_agent_ui::UiCommandCapability::Deferred {
+                    Command::arguments(descriptor, completed).is_some()
+                } else {
+                    Command::parse(descriptor, completed).is_some()
+                }
+            });
         let display = self
             .command_menu
             .as_ref()
@@ -474,6 +589,22 @@ impl App {
             return;
         }
         self.command_draft = Some(std::mem::take(&mut self.composer));
+    }
+
+    /// Begin an admitted action through the ordinary command submit path.
+    pub(super) fn prepare_bound_command(&mut self, name: &UiCommandName) -> bool {
+        if self.command_draft.is_none() {
+            self.toggle_command();
+        }
+        if self.command_draft.is_none() {
+            return false;
+        }
+        self.command_menu = None;
+        self.composer.take();
+        self.composer.insert_text(name.as_str());
+        self.command_selection = None;
+        self.command_selection_locked = false;
+        true
     }
 
     pub(super) fn show_sessions(&mut self, runtime: &tokio::runtime::Runtime, next: bool) {
@@ -693,6 +824,11 @@ impl App {
                 self.unverified_thinking = false;
                 self.scroll_up = 0;
                 self.current_session = Some(opened.id.clone());
+                #[cfg(feature = "linked-ui")]
+                super::startup::sync_active_search_session(
+                    &self.active_search_session,
+                    opened.id.as_str(),
+                );
                 self.ui_request = Some(UiEvent::SelectBuffer(
                     UiBufferId::new("conversation").expect("static buffer ID"),
                 ));

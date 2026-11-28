@@ -7,11 +7,11 @@
 ;;; Color references: doomemacs/themes themes/doom-one-theme.el at a5920291.
 ;;; The upstream repository is MIT licensed; no theme implementation is copied.
 (import (only-in :clan/poo/object .def .mix seal-object!))
-(export marlin-ui-doom-one-theme marlin-ui-theme-for
+(export marlin-ui-doom-one-theme
         marlin-ui-theme-profiles marlin-ui-default-profile)
 
 (.def UiThemeBase.
-  canvas: '(40 44 52)
+  canvas: '(34 36 43)
   ink: '(187 194 207)
   bar: '(28 31 36))
 (.def UiDoomOne.
@@ -20,7 +20,7 @@
   info: '(81 175 239)
   success: '(152 190 101)
   warning: '(236 190 123)
-  muted: '(115 121 126))
+  muted: '(140 146 156))
 (def marlin-ui-doom-one-theme
   (seal-object! (.mix UiDoomOne. UiThemeBase.)))
 
@@ -42,7 +42,3 @@
   (list (list 'doom-one "Doom One Modeline" marlin-ui-doom-one-theme)
         (list 'pi "oh-my-pi-inspired Modeline" pi-inspired-theme)))
 (def marlin-ui-default-profile (caar marlin-ui-theme-profiles))
-
-(def (marlin-ui-theme-for profile)
-  (let (entry (assq profile marlin-ui-theme-profiles))
-    (if entry (caddr entry) (error "unknown UI theme profile"))))

@@ -1,0 +1,268 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+TITLE: RFC 40.184: Native Gerbil-Ascent + Gerbil-Parser + POO Unified Search DSL, Zero-Regex Open EDB & Model AST Repair Hook
+#+AUTHOR: tao3k team and Contributors
+#+DATE: 2026-11-26
+#+STATUS: Accepted
+
+* Summary
+
+This RFC establishes Marlin Agent CORE's first-principles search interface and
+reasoning architecture, permanently retiring flat JSON ~Kind/Syntax/Symbol~
+buckets, ASP's pseudo-Tree-sitter ~.scm~ query layer (~agent-semantic-tree-sitter~),
+ASP's Rust ~ascent = "0.8.0"~ / ~agent-semantic-mrr~ crate, ad hoc regex
+entity/edge extractors, and legacy ~@lang:~ / ~@sym:~ string-parsing shims in
+the ~workspace_search~ LLM tool.
+
+Crucially, Marlin does *not* invent a replacement pseudo S-expression DSL, does
+*not* ship regex mini-parsers in Rust or Scheme, and does *not* depend on
+runtime ~eval-syntax~ / expander calls (which are both unsafe for untrusted tool
+input and incompatible with AOT ~linked-ui~ binaries). Instead:
+
+1. *ASP Rust (~agent-semantic-search~)* operates purely as a minimal,
+   *zero-regex, protocol-native runtime search engine interface*: sub-millisecond
+   compact 6-byte trigram pre-filtering, Tantivy/regex ranking, zero-copy ~mmap~
+   snapshots, BLAKE3 generation custody, incremental file delta sync, and
+   generation-scoped Open EDB ingestion & projection
+   (~WorkspaceSearchIndex::ingest_open_edb_facts~ / ~project_prefiltered_edb~)
+   governed by one converged JSON Schema (~schemas/semantic-open-edb.v1.schema.json~).
+   ASP contains *zero* regex fact extractors, *zero* pseudo-Tree-sitter ~.scm~
+   files, and *zero* Rust ~ascent~ / MRR.
+2. *Schema Convergence & Leverage (~semantic-open-edb.v1~ + POO)*:
+   Instead of proliferating bespoke per-language JSON schemas for every syntax
+   construct, ASP converges onto one minimal dual-layer wire schema
+   (~kind~ + native parser ~languageKind~ + ~source~ + open ~attrs~ + ~edges~).
+   External heavy language providers (~asp-rust~, ~asp-typescript~, ~asp-python~,
+   ~asp-julia~, ~asp-gerbil-scheme~ over HTTP/gRPC) emit native compiler AST
+   facts (e.g. ~kind="item", languageKind="impl_item"~; ~kind="macro",
+   languageKind="macro_rules"~), while Marlin's Scheme POO + ~:gerbil-ascent~ +
+   ~:gerbil-parser~ leverage that single universal protocol to define rich
+   language relations dynamically without adding new static schemas or Rust code.
+3. *Marlin Gerbil Scheme (~scheme/search-dsl/*~)* owns lightweight/sub-syntax
+   parsing, language composition, pre-tool-call AST repair, and relational/choice
+   reasoning directly via three upstream libraries already linked in
+   ~agentic-ai-lab~:
+   - *=:gerbil-ascent= (Zero-Eval Closed-Source + Dusa POPL 2025 Finite-Choice)*:
+     - Relational queries use *real upstream =(ascent ...)= / =(ascent-fragment ...)=*
+       syntax lowered strictly via ~:gerbil-ascent/rules/closed-source#ascent-closed-dsl-parts~
+       (zero ~eval-syntax~, fail-closed against arbitrary host callbacks, 100%
+       AOT ~linked-ui~ safe), composed directly with the real compiled
+       ~ascent-fragment~ objects owned by POO language prototypes.
+     - Finite-choice queries use *real upstream =(relational-choice-program ...)=*
+       and ~relational-choice-solve~ with derivation provenance (~provenance?: #t~).
+   - *=:gerbil-parser= (Typed Structured Syntax Engine)*:
+     - ~scheme/search-dsl/grammar.ss~ declares ~deflanguage~ /
+       ~deflanguage-parser-loader~ parsers directly in Scheme for complex query
+       selectors and lightweight/DSL sub-syntaxes, eliminating mini-parsers in Rust.
+   - *=:clan/poo/object= + =defrules= / =defsyntax= Live Introspection*:
+     - ~defsearch-language~ (~scheme/search-dsl/syntax.ss~) compiles each
+       language fragment (~RustSearchFragment.~, ~SchemePooSearchFragment.~,
+       ~TypeScriptSearchFragment.~, ~PythonSearchFragment.~,
+       ~ModelSearchFragment.~) into a POO prototype carrying a *real compiled
+       =:gerbil-ascent= =ascent-fragment= object* purely over ASP's universal
+       ~(lang, kind, language_kind)~ protocol (~rust_fn~, ~rust_impl~,
+       ~rust_macro~, ~scheme_poo_def~, ~scheme_grammar~, ~sysml_requirement~,
+       ~quint_action~, …) with *zero regexes*.
+     - Both ~workspace_search~'s Tool Schema (~defsearch-tool-spec~) and Helm's
+       interactive *TAB completion table* are *live-introspected* from the
+       composed ~:gerbil-ascent~ relation objects — zero duplicated predicate
+       string tables and zero ad-hoc ~string-append~ prose stitching.
+   - *Safe Pre-Tool-Call Model AST Repair Hook v2 (~scheme/search-dsl/repair.ss~)*:
+     - Automatically runs before ~:gerbil-ascent~ lowering on LLM tool calls and
+       interactive Helm DSL prompts to safely heal deterministic 5–10% model
+       syntax slips: markdown code fences, bounded missing/extra trailing
+       parentheses, ~<-~/~:-~ arrow typos, omitted column predicates, omitted
+       head ~(relation ...)~ declarations inferred from POO registry signatures,
+       missing trailing wildcards on known EDB/POO relations
+       (~pad-relation-wildcards~, e.g. ~(edge a b "imports")~ ->
+       ~(edge a b "imports" _ _)~), bare Dusa choice symbols
+       (~normalize-choice-values~, e.g. ~'hot~ -> ~(value 'hot)~), and missing
+       ~(limits ...)~ in Dusa choice programs.
+     - Emits an auditable ~repairs:~ receipt in both tool responses and Helm's
+       mode line while keeping *strict fail-closed security* against legacy
+       ~@lang:/@sym:~, read-time eval ~#.(...)~, unknown top-level forms, and
+       arbitrary Scheme host callbacks — and enriches unknown-relation errors
+       with POO-registry-backed ~did you mean: ...?~ suggestions.
+   - *Zero-Regex Native AST Fact Producers & BLAKE3 ~content_hash~ Cache*:
+     - ~scheme/search-dsl/extract.ss~ (exported via ~marlin_search_dsl_extract_facts~)
+       extracts native Open EDB facts for Gerbil Scheme ~.ss~ (via Gerbil's safe
+       reader ~readtable-eval-allowed? #f~), OpenSysML v2 ~.sysml~, and Quint
+       ~.qnt~ (pure token-stream parsers) with *zero regular expressions*.
+     - ~crates/marlin-agent-search-engine/src/open_edb_hydrator.rs~ extracts
+       canonical ~.org~ headings/properties via ~marlin-context-org-model~
+       (~parse_live_org_nodes~), drives Scheme extraction over zero-JSON
+       ~RootedSchemeObject~, and persists/restores ASP's BLAKE3 ~content_hash~-keyed
+       Open EDB cache (~default_workspace_edb_cache_path~) automatically during
+       Helm warm-up, ~C-l~ refresh, and ~SharedSearchIndexSlot~ sync —
+       guaranteeing zero stale facts across restarts and disk mutations.
+
+* Zero-Regex Converged Open EDB Protocol (~semantic-open-edb.v1~)
+
+The Open EDB consists of four language-agnostic base relations published by
+~BaseSearchLanguageFragment.~'s real ~ascent-fragment~:
+
+1. ~(file id lang path)~
+2. ~(entity id file_id lang kind language_kind name line)~
+3. ~(edge src dst rel path line)~
+4. ~(attr id key val)~
+
+Facts enter this Open EDB with zero regex extractors from three clean sources:
+
+| Source | Producer | Role |
+|--------+----------+------|
+| ~native-parser~ | External language providers over HTTP/gRPC (~asp-rust~, ~asp-typescript~, ~asp-python~, ~asp-julia~, ~asp-gerbil-scheme~) | Compiler-grade AST facts (~impl_item~, ~macro_rules~, ~struct_item~, type-checked edges) ingested via ~WorkspaceSearchIndex::ingest_open_edb_facts~ |
+| ~gerbil-parser~ | Marlin Scheme ~:gerbil-parser~ (~deflanguage~ -> typed ~ParseArtifact~) & ~orgize-fold~ | Exact structured parsing of query selectors, Gerbil POO, SysML/Quint/Org, and DSL sub-syntaxes in Scheme without Rust mini-parsers |
+| ~resident-index~ | ASP Rust ~WorkspaceSearchIndex::project_prefiltered_edb~ baseline | Zero-regex pre-indexed resident symbols & imports when a file has not yet received an external provider batch; automatically refreshed on ~apply_file_delta~ |
+
+* Three-Layer Ownership Architecture
+
+#+begin_src mermaid
+flowchart TD
+    subgraph Scheme["Marlin Gerbil Scheme Plane (scheme/search-dsl, scheme/ui-helm, scheme/tooling)"]
+        REPAIR["Pre-Tool-Call Model AST Repair Hook (repair.ss)\nSafe fence/paren/arrow/type/decl healing + audit receipt"]
+        POO["POO LanguageFragment. Registry (defrules defsearch-language)\nZero-regex :gerbil-ascent fragments over (lang, kind, language_kind)"]
+        PARSER[":gerbil-parser (deflanguage)\nTyped Structured Query & Sub-Syntax Parsing"]
+        ASCENT[":gerbil-ascent (closed-source zero-eval + Dusa POPL 2025)\nRelational Datalog + Finite-Choice + Provenance"]
+        INTROSPECT["Live Relation Introspection\nTool Schema (defsearch-tool-spec) & Helm TAB Completion Table"]
+    end
+
+    subgraph ABI["Native Rooted C-ABI (Thin Rust Mapping Framework, Zero JSON, AOT Safe)"]
+        BRIDGE["marlin-agent-search-engine::edb_bridge\nRootedSchemeObject <-> WorkspaceEdbPrefilter / Snapshot"]
+    end
+
+    subgraph Rust["ASP Pure-Rust Runtime Engine (agent-semantic-search)"]
+        IDX["WorkspaceSearchIndex\n6B Trigram Prefilter + mmap + BLAKE3 + Delta Sync"]
+        EDB["ingest_open_edb_facts / project_prefiltered_edb\nZero-Regex Generation-Scoped Open EDB (semantic-open-edb.v1)"]
+    end
+
+    subgraph Ext["External Native Language Providers (HTTP/gRPC)"]
+        PROV["asp-rust, asp-typescript, asp-python, asp-julia, asp-gerbil-scheme"]
+    end
+
+    REPAIR -->|"repaired S-exp + repair tags"| ASCENT
+    POO -->|"real ascent-fragments & signatures"| REPAIR
+    POO -->|"real ascent-fragments"| ASCENT
+    POO -->|"live relation introspection"| INTROSPECT
+    PARSER --> ASCENT
+    BRIDGE -->|"WorkspaceEdbPrefilter (zero regex)"| IDX
+    PROV -->|"semantic-open-edb.v1 batch"| EDB
+    IDX --> EDB
+    EDB -->|"Open EDB (file, entity, edge, attr)"| BRIDGE
+    BRIDGE -->|"RootedSchemeObject"| ASCENT
+#+end_src
+
+* Canonical Native ~:gerbil-ascent~ Queries & Safe AST Repair
+
+The ~workspace_search~ LLM tool accepts *exclusively* safe, bounded, zero-~eval~
+upstream ~:gerbil-ascent~ or ~:gerbil-parser~ S-expression forms (read with
+~readtable-eval-allowed? #f~ and ~readtable-sharing-allowed? #f~) passing through
+~scheme/search-dsl/repair.ss~. Legacy ~@lang:~ / ~@sym:~ / ~@graph:~ inputs and
+arbitrary Scheme callbacks are rejected fail-closed.
+
+** 1. Relational Query over POO Native ~language_kind~ Relations (~ascent-fragment~)
+
+#+begin_src scheme
+(ascent-fragment
+  (relation answer ((path string?) (name string?) (trait_name string?) (line integer?)))
+  ((answer path name trait_name line)
+   <-- (file f "rust" path)
+       (rust_impl id f name line)
+       (attr id "trait" trait_name)))
+#+end_src
+
+** 2. Recursive Multi-Hop Graph Closure & Stratified Negation (~ascent-fragment~)
+
+#+begin_src scheme
+(ascent-fragment
+  (relation reach ((a string?) (b string?)))
+  ((reach a b) <-- (edge a b _ _ _))
+  ((reach a c) <-- (reach a b) (edge b c _ _ _)))
+#+end_src
+
+** 3. Lean-Verified Dusa POPL 2025 Finite-Choice (~relational-choice-program~)
+
+#+begin_src scheme
+(relational-choice-program
+  (choice tier (f t))
+  (rule (closed (tier ?f) ((value 'hot) (value 'warm)))
+        (file ?f (value 'rust) ?_))
+  (rule (closed (tier ?f) ((value 'hot)))
+        (rust_impl ?_ ?f (value 'ResidentSearchToolHandler) ?_))
+  (limits 4096 4096 4096))
+#+end_src
+
+** 4. Pre-Tool-Call Safe Model AST Repair Hook Example
+
+If an LLM emits a slightly malformed query (markdown fence, missing closing
+paren, ~<-~ arrow, or omitted column predicates / head ~(relation ...)~):
+
+#+begin_src scheme
+```scheme
+(ascent-fragment
+  ((answer path name line)
+   <- (file f "rust" path)
+      (rust_macro id f name line))
+```
+#+end_src
+
+~scheme/search-dsl/repair.ss~ safely repairs it in pure Scheme AST before
+~:gerbil-ascent/rules/closed-source~ lowering, infers exact column predicates
+from ~SearchLanguageRegistryValue~ (~path: string?~, ~name: string?~,
+~line: integer?~), executes cleanly, and reports:
+~repairs: strip-code-fence, close-missing-parens, normalize-rule-arrow, synthesize-head-relation~.
+
+* Interactive Helm Live ~:gerbil-ascent~ / Dusa Execution & TAB Completion
+
+Helm preserves instant sub-millisecond fuzzy/Orderless navigation for ordinary
+text prompts, and switches cleanly to *live structured ~:gerbil-ascent~ / Dusa
+execution* (~HELM-DSL~ badge) whenever a prompt starts with ~(~:
+
+- *Live Execution & Navigation*: Structured rows (~SearchDslStructuredResult~)
+  project directly into ~HelmSourceKind::Dsl~ (~Ascent / Dusa DSL~) candidates
+  carrying ~@path:line~ citations, live RAM source previews via
+  ~WorkspaceSearchIndex::live_file_context~, ~repaired[...]~ mode-line badges
+  for auditable AST repairs, and full ~C-SPC~/~M-m~ multi-mark + Embark
+  citation export. Under AOT ~linked-ui~, ~linked_ui::service_helm_dsl~ executes
+  pending queries directly on the main thread owning ~GerbilRuntime~ (zero
+  channel deadlock).
+- *Context-Aware TAB Completion*: Pressing ~TAB~ opens the *Helm TAB Completion
+  Table* (~HELM-TAB~ badge: ~Form │ Kind │ Lang │ Signature · Doc~), populated
+  at startup by introspecting ~SearchLanguageRegistry.~ via
+  ~marlin_search_dsl_completions~ (zero hardcoded completion lists in Rust).
+  ~C-p~ / ~C-n~ selects an entry, ~RET~ inserts the template while keeping Helm
+  open, and ~ESC~ dismisses completion mode.
+
+* Measured Criterion Performance Benchmarks & Schema Convergence
+
+ASP's 453-file ~schemas/~ directory converges *19 fragmented syntax/tree-sitter/projection
+schemas* onto one ~semantic-open-edb.v1.schema.json~ wire contract (12 legacy
+tree-sitter/syntax-plan schemas frozen solely for V1 provider bundle
+compatibility; 7 provider fact/projection schemas losslessly bridged via ASP's
+zero-regex Rust wire adapters).
+
+Reproducible Criterion benchmark measurements across both repositories:
+
+| Repository & Suite | Benchmark | Median Time | Throughput |
+|--------------------+-----------+-------------+------------|
+| ASP (~asp_open_edb_hot_path~) | ~ingest_open_edb_facts_512~ | ~278 µs~ | ~1.84 Melem/s~ |
+| ASP (~asp_open_edb_hot_path~) | ~project_prefiltered_edb_trigram~ | ~1.396 µs~ | ~716 Kelem/s~ |
+| ASP (~asp_open_edb_hot_path~) | ~restore_open_edb_cache_256_files~ | ~268 µs~ | ~3.73 Kelem/s~ |
+| Marlin (~marlin_open_edb_hydration_and_dsl~) | ~extract_org_open_edb_64_headings~ | ~43.24 µs~ | ~1.48 Melem/s~ |
+| Marlin (~marlin_open_edb_hydration_and_dsl~) | ~encode_edb_snapshot_zero_json~ | ~961.2 µs~ | ~61.4 Kelem/s~ |
+| Marlin (~marlin_open_edb_hydration_and_dsl~) | ~execute_package_search_dsl_structured~ | ~38.16 ms~ | ~26.2 queries/s~ |
+
+* Verification
+
+- Scheme suite: ~gxtest scheme/t/search-dsl-test.ss~,
+  ~gxi scheme/t/tooling-test.ss~, ~gxtest scheme/t/ui-helm-test.ss~.
+- Rust native bridge, tool & TUI gates:
+  - ~cargo test -p marlin-agent-search-engine --features turso~
+  - ~cargo test -p marlin-agent-tooling~
+  - ~cargo test -p marlin-agent-tui --no-default-features --lib helm~
+  - ~cargo test -p marlin-agent-tui --no-default-features --test policy~
+  - ~cargo check -p marlin-agent-tui --features linked-ui~
+- ASP workspace verification: ~cargo test --workspace --all-features~,
+  ~asp_workspace_source_policy_is_clean~, and root Python schema/RFC gates
+  validating ~schemas/semantic-open-edb.v1.schema.json~.

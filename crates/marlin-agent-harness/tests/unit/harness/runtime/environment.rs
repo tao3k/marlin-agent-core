@@ -4,16 +4,16 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use marlin_agent_harness::{
-    AgentHarness, AgentHarnessEvidenceKind, AgentHarnessRuntime, AgentHarnessScenario,
-    agent_harness_runtime_environment_visibility_evidence,
-    agent_harness_working_copy_isolation_visibility_evidence,
-};
-use marlin_agent_runtime::{
+use marlin_agent_gitops::working_copy::{
     WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandReceipt,
     WorkingCopyCreateRequest, WorkingCopyGitTopLevel, WorkingCopyHandle,
     WorkingCopyIsolationProvider, WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest,
     WorkingCopyIsolationStatus,
+};
+use marlin_agent_harness::{
+    AgentHarness, AgentHarnessEvidenceKind, AgentHarnessRuntime, AgentHarnessScenario,
+    agent_harness_runtime_environment_visibility_evidence,
+    agent_harness_working_copy_isolation_visibility_evidence,
 };
 use marlin_agent_test_support::{
     assert_custom_sub_agent_environment, assert_hook_environment_uses_root_home,

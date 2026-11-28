@@ -22,8 +22,40 @@ use crate::host_watchdog::{HostObservation, HostObservationRecord, HostObserver,
 const MODE: &str = "--marlin-internal-host-observer";
 const THRESHOLD: Duration = Duration::from_secs(2);
 
+fn is_macos_system_root_link(dir: &Path) -> bool {
+    dir == Path::new("/var") || dir == Path::new("/tmp") || dir == Path::new("/etc")
+}
+
+fn verify_report_path_no_symlinks(path: &Path) -> io::Result<()> {
+    let raw = path.as_os_str();
+    if raw.is_empty() || path.to_string_lossy().chars().any(char::is_control) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "host observer report path must be nonempty without control characters",
+        ));
+    }
+    let mut cur = path.parent();
+    while let Some(dir) = cur {
+        if dir.as_os_str().is_empty() || dir == Path::new("/") {
+            break;
+        }
+        if !is_macos_system_root_link(dir)
+            && let Ok(meta) = std::fs::symlink_metadata(dir)
+            && meta.file_type().is_symlink()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "host observer report path traverses a symlinked directory",
+            ));
+        }
+        cur = dir.parent();
+    }
+    Ok(())
+}
+
 /// Start the observer when a local report file is explicitly configured.
 pub fn start_host_observer(path: &Path) -> io::Result<HostPulse> {
+    verify_report_path_no_symlinks(path)?;
     let report = OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -31,6 +63,7 @@ pub fn start_host_observer(path: &Path) -> io::Result<HostPulse> {
         .open(path)?;
     let (send, receive) = HostPulse::channel()?;
     let mut child = Command::new(env::current_exe()?)
+        .env_clear()
         .arg(MODE)
         .arg(std::process::id().to_string())
         .stdin(Stdio::from(OwnedFd::from(receive)))
@@ -54,11 +87,23 @@ pub fn run_host_observer_if_requested() -> bool {
     if args.next().as_deref() != Some(std::ffi::OsStr::new(MODE)) {
         return false;
     }
-    let result = args
+    let host_pid = args
         .next()
         .and_then(|arg| arg.to_str()?.parse::<u32>().ok())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid observer host PID"))
-        .and_then(run);
+        .filter(|pid| *pid > 1);
+    let extra_args = args.next().is_some();
+    let result = if extra_args {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "unexpected trailing observer arguments",
+        ))
+    } else {
+        host_pid
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "invalid observer host PID")
+            })
+            .and_then(run)
+    };
     if result.is_err() {
         std::process::exit(1);
     }

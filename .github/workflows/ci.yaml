@@ -105,6 +105,12 @@ jobs:
           host=$(descriptor host)
           cmp -- "$client" "$host"
           sha256sum -- "$host"
+      - name: Test Bridge SDK, marlin-mygo-host, marlin-scheme-ctl, and ASP Rust unit gates
+        shell: bash
+        run: |
+          cargo test --locked -p marlin-agent-app-server --features ui-grpc --test unit_test scheme_host_client::
+          cargo test --locked -p marlin-agent-app-server --features ui-grpc --test unit_test
+          cargo test --locked -p marlin-agent-app-server --features ui-grpc --bin marlin-scheme-ctl --bin marlin-mygo-host
 
   model:
     name: Quint / protocol models
@@ -121,9 +127,30 @@ jobs:
           tool: just@1.56.0
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.npm
-          key: quint-npm-${{ runner.os }}-${{ runner.arch }}-0.33.0
+          path: |
+            ~/.npm
+            ~/.quint
+          key: quint-npm-${{ runner.os }}-${{ runner.arch }}-0.33.0-eval-v0.7.0
       - name: Install Quint
         run: npm install --global --no-audit --no-fund @informalsystems/quint@0.33.0
+      - name: Pre-fetch Quint Rust evaluator
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          eval_dir="$HOME/.quint/rust-evaluator-v0.7.0"
+          eval_bin="$eval_dir/quint_evaluator"
+          if [[ ! -x "$eval_bin" ]]; then
+            mkdir -p "$eval_dir"
+            tmp_archive=$(mktemp)
+            trap 'rm -f "$tmp_archive"' EXIT
+            curl -fsSL \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              "https://github.com/quint-co/quint/releases/download/evaluator/v0.7.0/quint_evaluator-x86_64-unknown-linux-gnu.tar.gz" \
+              -o "$tmp_archive"
+            tar -xzf "$tmp_archive" -C "$eval_dir"
+            chmod +x "$eval_bin"
+          fi
       - name: Run the maintained model gates
         run: just property-model-gate

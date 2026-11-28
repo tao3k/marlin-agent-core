@@ -9,10 +9,6 @@ use marlin_agent_runtime::{
     RuntimeContext, RuntimeEnvironment, RuntimeFuture, SessionKind, SubAgentRuntime,
     TokioAgentRuntime,
 };
-use marlin_agent_test_support::{
-    assert_sub_agent_memory_session_fixture, sub_agent_memory_allowed_fixture,
-    sub_agent_memory_denied_fixture, sub_agent_memory_session_replay_evidence,
-};
 
 #[tokio::test]
 async fn sub_agent_session_context_isolated_from_parent() {
@@ -70,93 +66,6 @@ async fn sub_agent_session_context_isolated_from_parent() {
     assert_eq!(child_session.visibility().max_history_items(), Some(8));
     assert_eq!(receipt.denied_namespaces(), &[ContextNamespace::Secrets]);
     assert!(receipt.history_limit_applied());
-}
-
-#[tokio::test]
-async fn configured_sub_agent_inherits_memory_when_parent_session_allows_it() {
-    let fixture = sub_agent_memory_allowed_fixture();
-    let (runtime, _events) = TokioAgentRuntime::with_session(
-        4,
-        CancellationToken::new(),
-        RuntimeEnvironment::default(),
-        fixture.parent_session().clone(),
-    );
-
-    let (task, receipt) = runtime.spawn_sub_agent_with_config(
-        Arc::new(SessionEchoSubAgent),
-        (),
-        fixture.config().clone(),
-    );
-    let child_session = task
-        .join()
-        .await
-        .expect("configured sub-agent session task should finish");
-
-    assert_sub_agent_memory_session_fixture(
-        &fixture,
-        &child_session,
-        receipt.config(),
-        receipt.isolation_receipt(),
-    );
-}
-
-#[tokio::test]
-async fn configured_sub_agent_memory_visibility_is_denied_without_parent_grant() {
-    let fixture = sub_agent_memory_denied_fixture();
-    let (runtime, _events) = TokioAgentRuntime::with_session(
-        4,
-        CancellationToken::new(),
-        RuntimeEnvironment::default(),
-        fixture.parent_session().clone(),
-    );
-
-    let (task, receipt) = runtime.spawn_sub_agent_with_config(
-        Arc::new(SessionEchoSubAgent),
-        (),
-        fixture.config().clone(),
-    );
-    let child_session = task
-        .join()
-        .await
-        .expect("configured sub-agent session task should finish");
-
-    assert_sub_agent_memory_session_fixture(
-        &fixture,
-        &child_session,
-        receipt.config(),
-        receipt.isolation_receipt(),
-    );
-}
-
-#[tokio::test]
-async fn configured_sub_agent_memory_replay_evidence_records_visibility_contraction() {
-    let fixture = sub_agent_memory_denied_fixture();
-    let (runtime, _events) = TokioAgentRuntime::with_session(
-        4,
-        CancellationToken::new(),
-        RuntimeEnvironment::default(),
-        fixture.parent_session().clone(),
-    );
-
-    let (task, receipt) = runtime.spawn_sub_agent_with_config(
-        Arc::new(SessionEchoSubAgent),
-        (),
-        fixture.config().clone(),
-    );
-    let child_session = task
-        .join()
-        .await
-        .expect("configured sub-agent session task should finish");
-    let evidence =
-        sub_agent_memory_session_replay_evidence(&child_session, receipt.isolation_receipt());
-    let detail = evidence.detail.as_deref().expect("replay detail");
-
-    assert!(detail.contains("parent_session_id=session/root"));
-    assert!(detail.contains("requested_namespaces=[System,User,Workspace,Memory]"));
-    assert!(detail.contains("granted_namespaces=[System,User,Workspace]"));
-    assert!(detail.contains("denied_namespaces=[Memory]"));
-    assert!(detail.contains("visibility_contracted=true"));
-    assert!(detail.contains("live_llm=false"));
 }
 
 #[tokio::test]

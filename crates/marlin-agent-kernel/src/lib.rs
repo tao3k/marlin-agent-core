@@ -7,6 +7,22 @@
 mod adapters;
 mod controller;
 mod driver;
+pub mod confidential_enclave;
+pub mod context_distillation;
+pub mod defense_pillar_coordinator;
+pub mod execution_breaker;
+pub mod federated_arbitration_liveness;
+pub mod federated_org_reciprocity;
+pub mod geo_residency_sovereignty;
+pub mod governance_admission;
+pub mod governance_cedar;
+pub mod governance_plane;
+pub mod key_rotation_shredding;
+pub mod model_weight_attestation;
+pub mod post_quantum_agility;
+pub mod supply_chain_provenance;
+pub mod transparency_log;
+pub mod zk_selective_disclosure;
 mod loop_machine;
 mod loop_program_controller;
 mod loop_program_execution;
@@ -14,6 +30,7 @@ mod loop_program_handoff;
 mod loop_program_handoff_executor;
 mod loop_program_policy_matrix;
 mod loop_program_side_effects;
+mod task_actor_executor;
 
 pub use adapters::{ProviderNodeAdapter, SubAgentNodeAdapter, ToolNodeAdapter};
 pub use controller::{
@@ -25,22 +42,112 @@ pub use driver::{
     GraphLoopKernel, GraphNodeExecutor, GraphPolicyProposalCompilation, TokioGraphLoopKernel,
     compile_graph_policy_proposal_with_c_abi_readiness, compile_static_graph_policy_proposal,
 };
+pub use execution_breaker::{
+    BreakerActor, BreakerActorId, BreakerRejectionReason, BreakerTripEpoch, BreakerTripReason,
+    ExecutionBreakerCommitReceipt, ExecutionBreakerRearmReceipt, ExecutionBreakerSnapshot,
+    ExecutionBreakerTripReceipt, ExecutionCircuitBreaker, ToolBudgetUnits, ToolExecutionLease,
+    ToolExecutionLeaseId, ToolIfcContext,
+};
+pub use governance_admission::{
+    CedarPolicyId, DerivationId, GOVERNANCE_ADMISSION_SCHEMA_VERSION,
+    GOVERNANCE_DURABLE_CHECKPOINT_VERSION, GovernanceAdmissionError, GovernanceAdmissionGate,
+    GovernanceDurableCheckpoint, GovernanceGateSnapshot, GovernanceProofDigest,
+    GovernanceProofEnvelope, GovernanceProofEpoch, GovernanceProofSyncReceipt, GovernedSubjectName,
+    SynthesizedCedarPolicy, governance_sha256_bytes,
+};
+pub use governance_cedar::{
+    CedarContextValue, CedarEffect, CedarEntityRef, CedarEvaluationDecision,
+    CedarEvaluationRequest, CedarScopeMatcher, CedarWhenCondition, CompiledCedarPolicy,
+    compile_cedar_policy, evaluate_compiled_cedar_policies, infer_actor_roles,
+};
+pub use governance_plane::{
+    AuthorityEpoch, BackendSecurityGovernanceCoordinator, ChatroomGateStatus,
+    ChatroomIngressGovernor, ChatroomIngressReceipt, DelegatedAgentAuthzLedger,
+    DelegatedAgentTicket, DelegatedExecutionReceipt, DelegationScopeLevel, DelegationTicketId,
+    DualControlSodLedger, ExternalIngressRequest, GovernanceActorId, GovernanceChannelId,
+    GovernanceGateId, GovernancePlaneRejection, GovernancePrincipal, GovernanceProposalId,
+    GovernanceTenantId, MultiTenantIsolationFence, PrivilegedHumanReceipt, SodProposalRecord,
+    TenantExecutionTicket, TenantExecutionTicketId, TenantOutboxEntry, TenantOutboxEntryId,
+};
+pub use confidential_enclave::{
+    ConfidentialEnclaveGate, ConfidentialEnclaveRejection, EnclaveAttestationQuote,
+    EnclaveKeyReleaseReceipt,
+};
+pub use context_distillation::{
+    ContextDistillationGate, ContextDistillationReceipt, ContextDistillationRejection,
+    ContextSegment, DistilledContextPacket, EpistemicIntegrity, SecrecyClass,
+};
+pub use defense_pillar_coordinator::{
+    UnifiedDefensePillarCoordinator, UnifiedDefenseRejection, UnifiedDefenseReleaseCertificate,
+    UnifiedDefenseReleaseClaim,
+};
+pub use federated_arbitration_liveness::{
+    ArbitrationClaim, ArbitrationPhase, ArbitrationReceipt, ArbitrationRejection,
+    FederatedArbitrationLivenessGate,
+};
+pub use federated_org_reciprocity::{
+    BilateralTreaty, FederatedOpClaim, FederatedOpReceipt, FederatedOrgReciprocityGate,
+    FederatedOrgRejection,
+};
+pub use geo_residency_sovereignty::{
+    CrossBorderPermit, GeoPlacementClaim, GeoPlacementReceipt, GeoResidencyRejection,
+    GeoResidencySovereigntyGate,
+};
+pub use key_rotation_shredding::{
+    CryptoOpReceipt, CryptoRewrapClaim, CryptoShredTombstone, CryptoWriteClaim,
+    KeyRotationReceipt, KeyRotationRejection, KeyRotationShreddingGate,
+};
+pub use model_weight_attestation::{
+    ModelInferenceAdmissionReceipt, ModelInferenceClaim, ModelWeightAttestationGate,
+    ModelWeightGovernancePolicy, ModelWeightRejection, compute_shard_merkle_root,
+};
+pub use post_quantum_agility::{
+    CryptoSuite, HybridEnvelopeAdmissionReceipt, HybridSignatureEnvelope, PostQuantumAgilityGate,
+    PostQuantumRejection,
+};
+pub use supply_chain_provenance::{
+    SupplyChainAdmissionReceipt, SupplyChainBuildClaim, SupplyChainDependencySpec,
+    SupplyChainProvenanceGate, SupplyChainRejection,
+};
+pub use transparency_log::{
+    GovernanceTransparencyLog, GovernanceTreeHead, MerkleConsistencyProof, MerkleInclusionProof,
+    SplitViewEquivocationFraudProof, TransparencyLogRejection, verify_inclusion_proof,
+    verify_tree_head_progression,
+};
+pub use zk_selective_disclosure::{
+    ZkDisclosureClaim, ZkDisclosureReceipt, ZkDisclosureRejection, ZkSelectiveDisclosureGate,
+};
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor); do not wire new production callers or governance gates here"
+)]
 pub use loop_machine::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,
     GenericLoopMachineStepIndex,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor)"
+)]
 pub use loop_program_controller::{
     LoopProgramRunReceipt, LoopProgramRunRequest, LoopProgramRunStatus,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor)"
+)]
 pub use loop_program_execution::{
     LoopProgramEventMapper, LoopProgramExecutionDriver, LoopProgramExecutionReceipt,
     LoopProgramExecutionRequest, LoopProgramExecutionStatus, LoopProgramExecutionStepReceipt,
     ReceiptDrivenLoopProgramEventMapper, ScriptedLoopProgramEventMapper,
     TerminalLoopProgramEventMapper,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor)"
+)]
 pub use loop_program_handoff::{
     LoopProgramRuntimeHandoff, LoopProgramRuntimeHandoffKind, LoopProgramRuntimeHandoffPlan,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor)"
+)]
 pub use loop_program_handoff_executor::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, DeferredLoopProgramRuntimeHandoffHandler,
     DenylistedLoopProgramToolDispatchHandler, HybridLoopProgramRuntimeHandoffExecutor,
@@ -55,6 +162,9 @@ pub use loop_program_handoff_executor::{
     RetryBudgetToolHandler, StaticLoopProgramRuntimeHandoffHandler,
     spawn_loop_program_tool_process,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor)"
+)]
 pub use loop_program_policy_matrix::{
     RuntimePolicyExperimentCaseId, RuntimePolicyExperimentCount, RuntimePolicyExperimentDigest,
     RuntimePolicyExperimentReceipt, RuntimePolicyImprovementRecommendation,
@@ -62,6 +172,9 @@ pub use loop_program_policy_matrix::{
     RuntimePolicyRecommendationPriority, RuntimePolicyRecommendationTarget,
     has_memory_recall_intent, runtime_policy_experiment_receipt,
 };
+#[deprecated(
+    note = "SM25: legacy LoopProgram engine superseded by GraphEngine (TaskActorKernelExecutor + CompositeAtomicEffectExecutor)"
+)]
 pub use loop_program_side_effects::{
     LoopProgramDerivedSessionPolicyStatus, LoopProgramExecutionReplayBundleReceipt,
     LoopProgramFileSandbox, LoopProgramFileWriteReceipt, LoopProgramFileWriteRequest,
@@ -91,3 +204,4 @@ pub use marlin_agent_protocol::{
     LoopQueuePolicy, LoopSelfEvolutionPolicy, LoopToolBatchPolicy, NodeId, RunId,
     RuntimePlanSnapshot,
 };
+pub use task_actor_executor::{TaskActorKernelExecutor, TaskActorStepHandler};
