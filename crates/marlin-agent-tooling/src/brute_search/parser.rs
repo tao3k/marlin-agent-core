@@ -42,6 +42,7 @@ pub(crate) struct FileOutlineRequest {
     pub(crate) exclude_tests: bool,
     pub(crate) max_symbols: usize,
     pub(crate) max_per_file: Option<usize>,
+    pub(crate) file_cursor: usize,
     pub(crate) skeleton: bool,
     pub(crate) kind_summary: bool,
     pub(crate) type_detail: bool,
@@ -452,6 +453,7 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
         exclude_tests: false,
         max_symbols: DEFAULT_OUTLINE_MAX_SYMBOLS,
         max_per_file: None,
+        file_cursor: 1,
         skeleton: false,
         kind_summary: false,
         type_detail: false,
@@ -520,6 +522,16 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
                     req.max_per_file = Some(parsed.clamp(1, MAX_OUTLINE_SYMBOLS));
                     idx += 2;
                 }
+                "cursor" | "file-cursor" | "offset" | "start" => {
+                    let Some(SexpAtom::Text(val)) = atoms.get(idx + 1) else {
+                        return Err(format!("missing value for `{kw}:` in (file-outline ...)"));
+                    };
+                    let parsed = val
+                        .parse::<usize>()
+                        .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
+                    req.file_cursor = parsed.max(1);
+                    idx += 2;
+                }
                 "exclude-tests?" | "exclude-tests" | "prod-only?" | "prod-only" => {
                     let Some(SexpAtom::Text(val)) = atoms.get(idx + 1) else {
                         return Err(format!("missing value for `{kw}:` in (file-outline ...)"));
@@ -565,7 +577,7 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
                 }
                 other => {
                     return Err(format!(
-                        "unknown keyword `{other}:` in (file-outline ...); allowed: path-prefix:, exclude-tests?:, exclude-path-prefix:, lang:, kind:, name-contains:, name-all:, projection:, skeleton?:, limit:, max-per-file:"
+                        "unknown keyword `{other}:` in (file-outline ...); allowed: path-prefix:, cursor:, exclude-tests?:, exclude-path-prefix:, lang:, kind:, name-contains:, name-all:, projection:, skeleton?:, limit:, max-per-file:"
                     ));
                 }
             },

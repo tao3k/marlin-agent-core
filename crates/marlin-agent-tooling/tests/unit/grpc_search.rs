@@ -318,5 +318,41 @@ mod grpc_tests {
             "expected multi-symbol signature-only read-file output: {}",
             batch_sig_read.rendered_text
         );
+
+        // 9. Regression: directory `(file-outline ...)` emits stable `next_cursor:` +
+        //    `next_query:` and resumes cleanly at `cursor: 2`!
+        let page1 = client
+            .search_step(SearchStepRequest {
+                session_id: "sess-grpc-outline".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(file-outline \"crates/marlin-agent-search-engine/src/edb_bridge/\" limit: 1)".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("file-outline page 1")
+            .into_inner();
+        assert!(
+            page1.rendered_text.contains("next_cursor: 2")
+                && page1.rendered_text.contains("cursor: 2"),
+            "expected stable next_cursor on truncated dir file-outline: {}",
+            page1.rendered_text
+        );
+        let page2 = client
+            .search_step(SearchStepRequest {
+                session_id: "sess-grpc-outline".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(file-outline \"crates/marlin-agent-search-engine/src/edb_bridge/\" cursor: 2 limit: 10)".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("file-outline page 2")
+            .into_inner();
+        assert!(
+            page2.rendered_text.contains("file_cursor: 2..=2/2")
+                && page2.rendered_text.contains("SearchDslExecutionRequest")
+                && page2.rendered_text.contains("truncated: false"),
+            "expected file-outline page 2 to resume at runner.rs without truncation: {}",
+            page2.rendered_text
+        );
     }
 }

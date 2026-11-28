@@ -449,6 +449,31 @@ fn outline_name_matches(name: &str, name_contains: &[String], name_all: &[String
     any_ok && all_ok
 }
 
+fn format_outline_next_page_query(
+    req: &super::parser::FileOutlineRequest,
+    next_cursor: usize,
+) -> String {
+    let scope = req.path_prefix.as_deref().unwrap_or("");
+    let proj = if req.kind_summary {
+        " projection: \"kind-summary\""
+    } else if req.type_detail {
+        " projection: \"struct-enum-detail\""
+    } else if req.skeleton {
+        " projection: \"callable-skeleton\""
+    } else {
+        ""
+    };
+    let excl = if req.exclude_tests {
+        " exclude-tests?: #t"
+    } else {
+        ""
+    };
+    format!(
+        "(file-outline \"{scope}\" cursor: {next_cursor}{proj}{excl} limit: {})",
+        req.max_symbols
+    )
+}
+
 pub(super) fn execute_file_outline(
     index: &WorkspaceSearchIndex,
     raw_query: &str,
@@ -597,6 +622,7 @@ pub(super) fn execute_file_outline(
         return Ok(out);
     }
 
+    let skip_files = req.file_cursor.saturating_sub(1);
     if req.kind_summary {
         let mut ranked_kinds: Vec<(&str, usize)> = scoped_kind_counts.into_iter().collect();
         ranked_kinds.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
@@ -609,6 +635,7 @@ pub(super) fn execute_file_outline(
         let mut used = 0usize;
         let rows: Vec<String> = by_file
             .iter()
+            .skip(skip_files)
             .map(|(path, entry)| format_kind_summary_file_row(path, entry))
             .take_while(|row| {
                 if used + row.len() <= body_budget {
@@ -620,45 +647,54 @@ pub(super) fn execute_file_outline(
             })
             .collect();
         let returned_files = rows.len();
-        let truncated = returned_files < total_files;
+        let has_more_files = skip_files.saturating_add(returned_files) < total_files;
         let _ = writeln!(
             out,
-            "projection: kind-summary\nkind_totals: {}\nreturned: {returned_files}\ntruncated: {truncated}",
+            "projection: kind-summary\nkind_totals: {}\nreturned: {returned_files}\ntruncated: {has_more_files}",
             if kind_totals.is_empty() {
                 "none".to_owned()
             } else {
                 kind_totals.join(", ")
             }
         );
+        if has_more_files {
+            let next_cursor = skip_files.saturating_add(returned_files).saturating_add(1);
+            let next_q = format_outline_next_page_query(&req, next_cursor);
+            let _ = writeln!(out, "next_cursor: {next_cursor}\nnext_query: {next_q}");
+        }
         rows.iter().for_each(|r| out.push_str(r));
-        if truncated {
+        if has_more_files {
+            let next_cursor = skip_files.saturating_add(returned_files).saturating_add(1);
+            let next_q = format_outline_next_page_query(&req, next_cursor);
             let _ = writeln!(
                 out,
-                "  ... (+{} more file(s); narrow path-prefix: or call (file-outline \"<path>\" projection: \"callable-skeleton\"))",
-                total_files.saturating_sub(returned_files)
+                "  ... (+{} more file(s); next_query: {next_q} or call (file-outline \"<path>\" projection: \"callable-skeleton\"))",
+                total_files.saturating_sub(skip_files.saturating_add(returned_files))
             );
         }
         return Ok(out);
     }
 
+    let remaining_files = total_files.saturating_sub(skip_files);
     let per_file_cap = req.max_per_file.or_else(|| {
-        (total_files > 1 && total_symbols > req.max_symbols)
-            .then(|| (req.max_symbols / total_files).max(6))
+        (remaining_files > 1 && total_symbols > req.max_symbols)
+            .then(|| (req.max_symbols / remaining_files).max(6))
     });
     let render_cfg = OutlineRenderConfig {
         max_symbols: req.max_symbols,
         per_file_cap,
-        use_skeleton: req.skeleton || total_files == 1,
+        use_skeleton: req.skeleton || remaining_files == 1,
         use_type_detail: req.type_detail,
-        body_budget: output_limit.saturating_sub(out.len() + 220),
+        body_budget: output_limit.saturating_sub(out.len() + 280),
     };
     let mut state = OutlineRenderState::default();
     let mut omitted_dirs: BTreeSet<String> = BTreeSet::new();
     let mut stopped = false;
-    for (path, mut entry) in by_file {
+    let mut files_emitted = 0usize;
+    for (path, mut entry) in by_file.into_iter().skip(skip_files) {
         if stopped {
             omitted_dirs.insert(top_two_segments(path));
-            if state.omitted_files.len() < 10 && !entry.symbols.is_empty() {
+            if state.omitted_files.len() < 16 && !entry.symbols.is_empty() {
                 entry
                     .symbols
                     .sort_unstable_by_key(|(line, _, name)| (*line, *name));
@@ -671,11 +707,16 @@ pub(super) fn execute_file_outline(
             }
             continue;
         }
+        let before_syms = state.emitted_symbols;
         if append_outline_file_block(index, path, entry, &render_cfg, &mut state) {
-            if state.emitted_symbols == 0 || state.body.len() >= render_cfg.body_budget {
+            if state.emitted_symbols > before_syms {
+                files_emitted += 1;
+            } else {
                 omitted_dirs.insert(top_two_segments(path));
             }
             stopped = true;
+        } else {
+            files_emitted += 1;
         }
     }
 
@@ -683,8 +724,26 @@ pub(super) fn execute_file_outline(
     let body = state.body;
     let omitted_files = state.omitted_files;
 
-    let truncated = emitted_symbols < total_symbols;
+    let has_more_files = skip_files.saturating_add(files_emitted) < total_files;
+    let truncated = (skip_files == 0 && emitted_symbols < total_symbols) || has_more_files;
+    let next_page = has_more_files.then(|| {
+        let next_cursor = skip_files
+            .saturating_add(files_emitted.max(1))
+            .saturating_add(1);
+        (next_cursor, format_outline_next_page_query(&req, next_cursor))
+    });
+    if skip_files > 0 {
+        let _ = writeln!(
+            out,
+            "file_cursor: {}..={}/{total_files}",
+            req.file_cursor,
+            skip_files.saturating_add(files_emitted).min(total_files)
+        );
+    }
     let _ = writeln!(out, "returned: {emitted_symbols}\ntruncated: {truncated}");
+    if let Some((next_cursor, ref next_q)) = next_page {
+        let _ = writeln!(out, "next_cursor: {next_cursor}\nnext_query: {next_q}");
+    }
     if truncated && total_files > 1 && !dir_symbol_counts.is_empty() {
         let mut ranked_dirs: Vec<(String, usize)> = dir_symbol_counts.into_iter().collect();
         ranked_dirs.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
@@ -710,6 +769,12 @@ pub(super) fn execute_file_outline(
                 out,
                 "  ... (+{} symbols omitted; next_query: (file-outline \"{exact_path}\" limit: {total_symbols}) — omit max-per-file: on exact files to inspect all {total_symbols} symbols)",
                 total_symbols.saturating_sub(emitted_symbols),
+            );
+        } else if let Some((_, ref next_q)) = next_page {
+            let _ = writeln!(
+                out,
+                "  ... (+{} file(s) remaining; next_query: {next_q} or narrow path-prefix:/kind:)",
+                total_files.saturating_sub(skip_files.saturating_add(files_emitted)),
             );
         } else {
             let _ = writeln!(
