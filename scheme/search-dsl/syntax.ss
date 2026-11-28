@@ -32,9 +32,6 @@
         defsearch-tool-spec
         collect-unique-relations
         render-search-spec-summary
-        render-l0-search-tool-summary
-        render-l1-structural-tool-summary
-        render-l2-constraint-tool-summary
         render-relation-signature)
 
 ;;; Deduplicate compiled `:gerbil-ascent` relation objects across POO fragments
@@ -68,44 +65,10 @@
     (call-with-output-string
       (lambda (port) (write (cons name cols) port)))))
 
-(def (render-l0-search-tool-summary lang-names)
-  (call-with-output-string
-    (lambda (port)
-      (display "Pure-Rust RAM reader, AST skeleton & text search (<1ms; prefer over bash/rg/find/cat). SEQUENTIAL DAG: 1-2 targeted calls/turn (avoid speculative 4-6 parallel probes); start cross-layer/symbol/impact/duplicate tasks in `structural_query` and placement tasks in `constraint_solve`. Turn 1 returns workspace_layers + grounded next_dag_templates; Turn 2+ auto-unloads (compact_mode: true). Omit exclude-tests?: #t when tests are requested. Langs: " port)
-      (display (string-join lang-names ",") port)
-      (display ".\nForms:\n" port)
-      (display "1) (read-file \"path\" symbols: (\"SymA\" \"fn_b\")) | (read-file \"path\" symbol: \"Fn\") | (read-file \"path\" cursor: 1 max-lines: 360)\n" port)
-      (display "2) (file-outline \"dir-or-file/\" projection: \"callable-skeleton|struct-enum-detail|kind-summary\" lang: \"rust\" kind: (\"struct\" \"enum\") exclude-tests?: #t limit: 100)\n" port)
-      (display "3) (brute-search \"patA|patB\" path-prefix: \"dir/\" exclude-tests?: #t exclude-path-prefix: \"tests/\" lang: \"rust\" context: 2 limit: 24)\n" port)
-      (display "4) (workspace-map \"\" depth: 2 limit: 48) — last resort only (Turn 1 frontier already prints workspace_layers)." port))))
-
-(def (render-l1-structural-tool-summary edb-rels lang-names)
-  (call-with-output-string
-    (lambda (port)
-      (display "PRIMARY Structural AST & cross-language graph engine (:gerbil-ascent over ASP Open EDB + live M1 evidence-chain). SEQUENTIAL DAG: start here on Turn 1 (1-2 composite calls/turn); Turn 1 projects workspace_layers + grounded next_dag_templates; Turn 2+ auto-compacts & reuses verified M1 facts. Omit exclude-tests?: #t when tests are requested. Langs: " port)
-      (display (string-join lang-names ",") port)
-      (display ".\nForms (accept path-prefix:, exclude-tests?: #t, exclude-path-prefix:, limit:, context:):\n" port)
-      (display "1) (find-symbols name-contains: (\"termA\" \"termB\") lang: \"any\" limit: 60) — polyglot Turn-1 discovery (IDF+prod ranked; name-all: AND inside one symbol)\n" port)
-      (display "2) (find-impact (\"SymA\" \"SymB\") limit: 80) — one-shot multi-symbol blast radius with [DEFINITIONS], affected_layers, [PROD] and [TEST]\n" port)
-      (display "3) (find-collisions kind: (\"struct\" \"fn\") path-prefix: \"crates/\" lang: \"rust\" min-files: 2 exclude-tests?: #t limit: 40) — one-shot multi-kind duplicates with signatures\n" port)
-      (display "4) (trace-path from: \"A\" to: \"B\" ...) | (find-callers \"fn\" ...) | (find-impls \"Trait\" ...)\n" port)
-      (display "Custom Datalog: (ascent-fragment (scope path-prefix: \"...\") (limit 40) ((answer ...) <-- ...)) over " port)
-      (display (string-join (map symbol->string edb-rels) ",") port)
-      (display " + prod_path/is_test_path/path_contains/name_contains/symbol_ref/verified_tier/verified_resolution/verified_evidence (plain vars, no ?)." port))))
-
-(def (render-l2-constraint-tool-summary)
-  (call-with-output-string
-    (lambda (port)
-      (display "Dusa Finite-Choice Constraint Solver + live M1 evidence-chain harvesting. Invoke directly in 1 call (no prior dir scan!) for placement solving or disambiguation; invariant [deduction] facts auto-harvest into M1 verified_tier/verified_resolution while [branch] worlds stay explicit.\n" port)
-      (display "Forms:\n" port)
-      (display "1) (solve-placement path-prefix: \"<crate>/src/\" module-limit: auto choices: (resident provider) forbid-hot-path: provider state-budget: 128)\n" port)
-      (display "2) (solve-resolve path-prefix: \"<crate>/src/\" module-limit: 6 exclude-tests?: #t state-budget: 32)\n" port)
-      (display "Custom Dusa: (search-choice-program (use rust) (scope path-prefix: \"...\" limit: 8) (choice tier (m lvl)) (rule (closed (tier ?m) (resident provider)) (module-in-scope ?m)) (rule (closed (tier ?m) ()) (hot-path-module ?m) (tier ?m provider)) (solve tier state-budget: 128 provenance?: #t)) (vars start with ?)." port))))
-
 (def (render-search-spec-summary form-heads edb-rels lang-names)
   (call-with-output-string
     (lambda (port)
-      (display "PRIMARY codebase search, outline & read tool (ALWAYS prefer over bash/rg/grep/find/ls/sed/cat). Unified 3-tier search over resident RAM index & ASP Open EDB. Issue multiple independent calls in PARALLEL in one turn to finish in 2-4 rounds! Forms: " port)
+      (display "Unified 3-tier search, AST reader & constraint solver (prefer over bash). SEQUENTIAL DAG: 1 targeted call on Turn 1 (never pair workspace-map with find-symbols; Turn 1 returns workspace_layers, dsl_tips & next_dag_templates; Turn 2+ auto-compacts & reuses M1 facts). Omit exclude-tests?: #t for tests.\nForms: " port)
       (display (string-join
                  (map (lambda (h)
                         (call-with-output-string
@@ -116,18 +79,11 @@
       (display ". Langs: " port)
       (display (string-join lang-names ",") port)
       (display ".\n" port)
-      (display "[L0 Pure-Rust RAM (<1ms, lock-free parallel)] " port)
-      (display "1) (brute-search \"pat\" path-prefix: \"crates/\" exclude-path-prefix: \"tests/\" lang: \"rust\" context: 2 limit: 32) — multiline regex \"re:...\" enabled by default; list files with \"\". " port)
-      (display "2) (file-outline \"path-or-dir/\" limit: 80 max-per-file: 12) — instant AST symbol map (fairly distributed across files in dirs); use instead of regex scanning! " port)
-      (display "3) (read-file \"path/to/file.rs\" start: 1 end: 120) or (read-file \"path/to/file.rs\" around: 320 context: 30) — zero-I/O RAM line-range reader (up to 200 lines/call); NEVER use re:. to read a file.\n" port)
-      (display "[L1 Structural Datalog (:gerbil-ascent)] EDB: " port)
+      (display "L1 (start here): (find-symbols name-contains: (\"stemA\" \"stemB\") lang: \"any\" limit: 60) [specific stems or name-all:] | (find-impact (\"SymA\" \"SymB\") limit: 120) [one-shot cross-layer DEFINITIONS, affected_layers, PROD & TEST] | (find-collisions kind: (\"struct\" \"fn\") path-prefix: \"crates/\" lang: \"rust\" min-files: 2 exclude-tests?: #t) | (find-callers \"f\") | (find-impls \"T\") | (trace-path from: \"A\" to: \"B\") | (ascent-fragment ...) EDB:" port)
       (display (string-join (map symbol->string edb-rels) ",") port)
-      (display " => file(fid,lang,path) entity(id,fid,lang,kind,lk,name,line) edge(src,dst,rel,path,line) attr(id,k,v). " port)
-      (display "Ontology: callable/type_decl(id,fid,lang,name,line), contains_edge/imports_edge/calls_edge/implements_edge(src,dst,path,line), calls_symbol(caller_name,callee_name,path,line), impl_trait(type_name,trait_name,path,line), entity_locator(id,loc), depends_on(src,dst). " port)
-      (display "Special: rust_fn/rust_method/rust_impl/rust_struct/rust_enum/rust_trait/rust_macro(id,fid,name,line), scheme_def/scheme_poo_def, py_fn/py_class, ts_fn/ts_interface, julia_fn/julia_macro. " port)
-      (display "First-class syntax: omit (relation ...), plain vars (no ?), quoted lang (\"rust\"), top-level (scope path-prefix: \"...\"), (limit N), (context N) (auto-attaches RAM source snippets for <=20 hits!), negation (not (...)), disjunction (or c1 c2), and guards (= k \"v\") / (!= a b) / (not (= a b)) / (< a b). Example: (ascent-fragment (scope path-prefix: \"crates/\") (limit 40) ((answer name p1 p2) <-- (rust_struct _ f1 name _) (rust_struct _ f2 name _) (file f1 \"rust\" p1) (file f2 \"rust\" p2) (!= f1 f2))).\n" port)
-      (display "[L2 Dusa Finite-Choice Constraint Solver] " port)
-      (display "Use ONLY for finite-choice disambiguation & architecture constraints (vars MUST start with ?; no != guards). Keep (scope ... limit: N) small (e.g. limit: 4..8) because k unconstrained choices yield 2^k worlds! Built-ins: ref-at(?call,?name), same-module-def(?call,?name,?def), workspace-def(?name,?def), in-test-file(?def), module-in-scope(?m), hot-path-module(?m), module-depends(?m,?dst). Example: (search-choice-program (use rust) (scope path-prefix: \"crates/marlin-agent-search-engine/src/\" limit: 6) (choice tier (m lvl)) (rule (closed (tier ?m) (resident provider)) (module-in-scope ?m)) (rule (closed (tier ?m) ()) (hot-path-module ?m) (tier ?m provider)) (solve tier state-budget: 64 provenance?: #t))." port))))
+      (display "+verified_tier (plain vars).\n" port)
+      (display "L0 (<1ms): (read-file \"p\" symbols: (\"A\" \"B\")) | (read-file \"p\" symbol: \"F\") | (read-file \"p\" cursor: 1 max-lines: 360) | (file-outline \"p/\" projection: \"kind-summary|callable-skeleton\") | (brute-search \"a|b\" path-prefix: \"d/\" exclude-tests?: #t limit: 24).\n" port)
+      (display "L2 Dusa (1 call): (solve-placement path-prefix: \"<c>/src/\" module-limit: auto choices: (resident provider) forbid-hot-path: provider) | (solve-resolve path-prefix: \"<c>/src/\" exclude-tests?: #t) | (search-choice-program ... hot-path-module provenance?: #t) (?vars)." port))))
 
 ;;; Declare a full POO language extension over ASP's General Language Ontology
 ;;; (ZERO regexes, ZERO duplicated lexical delimiter/comment rules!):
@@ -209,17 +165,11 @@
                 (lang-names (map symbol->string (.get reg languages)))
                 (relations (collect-unique-relations (.get reg ascent-fragments)))
                 (relation-names (map (lambda (r) (.ref r 'name)) relations))
-                (summary-text (render-search-spec-summary form-heads edb-rels lang-names))
-                (l0-text (render-l0-search-tool-summary lang-names))
-                (l1-text (render-l1-structural-tool-summary edb-rels lang-names))
-                (l2-text (render-l2-constraint-tool-summary)))
+                (summary-text (render-search-spec-summary form-heads edb-rels lang-names)))
            (seal-object!
              (.o forms: form-heads
                  edb-relations: edb-rels
                  derived-relations: relation-names
                  languages: lang-names
-                 summary: summary-text
-                 l0-summary: l0-text
-                 l1-summary: l1-text
-                 l2-summary: l2-text)))))
+                 summary: summary-text)))))
     (_ (raise-syntax-error #f "invalid defsearch-tool-spec form" stx))))

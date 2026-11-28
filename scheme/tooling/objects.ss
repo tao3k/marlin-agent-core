@@ -9,7 +9,7 @@
 
 (.def ToolDeclaration.
   name: 'bash
-  description: "Run a Bash command in the workspace after approval (builds, tests, git, or file edits). Do NOT use bash for codebase search, rg/grep, find, or directory/file listing — ALWAYS use workspace_search, structural_query, or constraint_solve first."
+  description: "Run a Bash command in the workspace after approval (builds, tests, git, or file edits). Do NOT use bash for codebase search, rg/grep, find, or directory/file listing — ALWAYS use workspace_search first."
   capability: 'shell
   governance: 'ask
   argument: 'command
@@ -19,27 +19,7 @@
 (def WorkspaceSearchToolDeclaration
   (seal-object!
     (.mix (.o name: 'workspace_search
-              description: (.get WorkspaceSearchToolSpecValue l0-summary)
-              capability: 'search
-              governance: 'ask
-              argument: 'query
-              timeout-seconds: 10
-              output-bytes: 65536)
-          ToolDeclaration.)))
-(def StructuralQueryToolDeclaration
-  (seal-object!
-    (.mix (.o name: 'structural_query
-              description: (.get WorkspaceSearchToolSpecValue l1-summary)
-              capability: 'search
-              governance: 'ask
-              argument: 'query
-              timeout-seconds: 15
-              output-bytes: 65536)
-          ToolDeclaration.)))
-(def ConstraintSolveToolDeclaration
-  (seal-object!
-    (.mix (.o name: 'constraint_solve
-              description: (.get WorkspaceSearchToolSpecValue l2-summary)
+              description: (.get WorkspaceSearchToolSpecValue summary)
               capability: 'search
               governance: 'ask
               argument: 'query
@@ -50,9 +30,6 @@
 (.def BashTools.
   (declarations => append (list BashToolDeclaration)))
 (.def SearchTools.
-  (declarations => append
-    (list WorkspaceSearchToolDeclaration
-          StructuralQueryToolDeclaration
-          ConstraintSolveToolDeclaration)))
+  (declarations => append (list WorkspaceSearchToolDeclaration)))
 (def ToolingCatalogValue
   (seal-object! (.mix SearchTools. BashTools. ToolingCatalog.)))

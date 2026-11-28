@@ -54,10 +54,7 @@ fn normalize_brute_pattern(raw: &str) -> (String, Option<&'static str>) {
         }
         // Enable multiline anchors silently as first-class surface syntax
         // (zero `repairs:` noise) so `^`/`$` always match line boundaries.
-        if has_line_anchor(expr)
-            && !expr.starts_with("(?m)")
-            && !expr.starts_with("(?-m)")
-        {
+        if has_line_anchor(expr) && !expr.starts_with("(?m)") && !expr.starts_with("(?-m)") {
             return (format!("re:(?m){expr}"), None);
         }
         return (raw.to_owned(), None);
@@ -136,17 +133,22 @@ fn format_hit_block(
     }
 
     let total_file_matches = hit.line_matches.len();
-    let header_loc = hit
-        .line_matches
-        .first()
-        .map_or_else(|| format!("@{}", hit.path), |m| format!("@{}:{}", hit.path, m.line_number));
+    let header_loc = hit.line_matches.first().map_or_else(
+        || format!("@{}", hit.path),
+        |m| format!("@{}:{}", hit.path, m.line_number),
+    );
     let _ = writeln!(
         block,
         "  - {header_loc}  [{lang} · {axes} · {total_file_matches} match(es)]"
     );
     if effective_context == 0 {
         for m in hit.line_matches.iter().take(max_matches_per_file) {
-            let _ = writeln!(block, "      L{}: {}", m.line_number, m.line_text.trim_end());
+            let _ = writeln!(
+                block,
+                "      L{}: {}",
+                m.line_number,
+                m.line_text.trim_end()
+            );
         }
         if total_file_matches > max_matches_per_file {
             let _ = writeln!(
@@ -280,7 +282,7 @@ fn format_brute_zero_hit_diagnostic(
             ));
         } else {
             hints.push(
-                "regex pattern matched 0 files; the exact symbol name(s) may differ — try shorter identifier stems, (file-outline ...), or `structural_query`"
+                "regex pattern matched 0 files; the exact symbol name(s) may differ — try shorter identifier stems, (file-outline ...), or (find-symbols ...)"
                     .to_owned(),
             );
         }
@@ -300,7 +302,10 @@ fn format_brute_zero_hit_diagnostic(
         });
         let scope_files = scope_probe.matched_files;
         if scope_files == 0 {
-            let parent = prefix.trim_end_matches('/').rsplit_once('/').map(|(p, _)| p);
+            let parent = prefix
+                .trim_end_matches('/')
+                .rsplit_once('/')
+                .map(|(p, _)| p);
             let siblings = parent.map(|parent_dir| {
                 let sib = index.query(&WorkspaceSearchQuery {
                     pattern: "",
@@ -687,7 +692,7 @@ fn execute_brute_search_only(
             (Some(next_q), None) => {
                 let _ = writeln!(
                     out,
-                    "  ... (+{} omitted; next_query: {next_q} or use `structural_query` (find-impact ...) / (find-symbols name-all: (...)))",
+                    "  ... (+{} omitted; next_query: {next_q} or use (find-impact ...) / (find-symbols name-all: (...)))",
                     total_hits - returned_hits
                 );
             }
@@ -701,7 +706,7 @@ fn execute_brute_search_only(
             (None, None) => {
                 let _ = writeln!(
                     out,
-                    "  ... (+{} omitted; next_query: narrow path-prefix: to one crate from top_dirs, add exclude-tests?: #t, or use `structural_query` (find-impact ...) / (find-symbols ...))",
+                    "  ... (+{} omitted; next_query: narrow path-prefix: to one crate from top_dirs, add exclude-tests?: #t, or use (find-impact ...) / (find-symbols ...))",
                     total_hits - returned_hits
                 );
             }

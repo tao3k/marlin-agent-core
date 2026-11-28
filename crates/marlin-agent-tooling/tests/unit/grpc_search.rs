@@ -89,10 +89,10 @@ mod grpc_tests {
         });
 
         let decl = ModelToolDeclaration::search(SearchToolDeclarationRequest {
-            name: ModelToolName::new("structural_query").unwrap(),
-            description: "gRPC structural search".to_owned(),
+            name: ModelToolName::new("workspace_search").unwrap(),
+            description: "gRPC unified search".to_owned(),
             argument: "query".to_owned(),
-            timeout_seconds: 30,
+            timeout_seconds: 15,
             output_limit: 16384,
         })
         .unwrap();
@@ -115,15 +115,15 @@ mod grpc_tests {
             .expect("GetToolSchema")
             .into_inner();
         assert_eq!(schema.tools.len(), 1);
-        assert_eq!(schema.tools[0].name, "structural_query");
+        assert_eq!(schema.tools[0].name, "workspace_search");
         assert!(schema.tools[0].read_only);
 
-        // 2. Turn 1 Dusa placement: teaching_kit_active == true, workspace_layers populated,
+        // 2. Turn 1 Dusa placement: teaching_kit_active == true, workspace_layers + dsl_tips populated,
         //    live Scheme evidence-chain.ss harvests 2 invariant M1 `verified_tier` claims!
         let t1 = client
             .search_step(SearchStepRequest {
                 session_id: "sess-grpc-1".to_owned(),
-                tool_name: "constraint_solve".to_owned(),
+                tool_name: "workspace_search".to_owned(),
                 query: "(solve-placement path-prefix: \"crates/marlin-agent-search-engine/src/edb_bridge/\" module-limit: auto choices: (resident provider) forbid-hot-path: provider state-budget: 64)".to_owned(),
                 output_limit: 16384,
             })
@@ -134,6 +134,7 @@ mod grpc_tests {
         assert_eq!(f1.step, 1);
         assert!(f1.teaching_kit_active);
         assert!(!f1.compact_mode);
+        assert!(t1.rendered_text.contains("dsl_tips:"));
         assert!(f1.workspace_layers.contains("crates/(marlin-agent-search-engine)"));
         assert!(f1.workspace_layers.contains("scheme/(c-abi)"));
         assert_eq!(f1.total_m1_claims, 2);
@@ -141,11 +142,11 @@ mod grpc_tests {
         assert_eq!(f1.epistemic_status, "unique-deduction");
 
         // 3. Turn 2 Ascent directly consumes Turn 1's M1 `verified_tier` ("越搜越强")
-        //    and auto-unloads teaching kit (`compact_mode == true`, `workspace_layers == ""`).
+        //    and auto-unloads teaching kit (`compact_mode == true`, `workspace_layers == ""`, no `dsl_tips:`).
         let t2 = client
             .search_step(SearchStepRequest {
                 session_id: "sess-grpc-1".to_owned(),
-                tool_name: "structural_query".to_owned(),
+                tool_name: "workspace_search".to_owned(),
                 query: "(ascent-fragment ((answer m lvl) <-- (verified_tier m lvl)))".to_owned(),
                 output_limit: 16384,
             })
@@ -157,6 +158,7 @@ mod grpc_tests {
         assert!(!f2.teaching_kit_active);
         assert!(f2.compact_mode);
         assert!(f2.workspace_layers.is_empty());
+        assert!(!t2.rendered_text.contains("dsl_tips:"));
         assert!(t2.rendered_text.contains("runner.rs"));
         assert!(t2.rendered_text.contains("resident"));
         assert!(f2.open_frontiers.iter().any(|p| p.contains("scheme/c-abi")));
@@ -169,7 +171,7 @@ mod grpc_tests {
             .run_tool(
                 ModelToolCall {
                     id: ModelToolCallId::new("grpc-t3").unwrap(),
-                    name: ModelToolName::new("structural_query").unwrap(),
+                    name: ModelToolName::new("workspace_search").unwrap(),
                     arguments: serde_json::Map::from_iter([(
                         "query".to_owned(),
                         serde_json::Value::String(
@@ -206,7 +208,7 @@ mod grpc_tests {
         assert!(!f4.workspace_layers.is_empty());
 
         // 6. Regression: fast `workspace-map` arriving before `find-symbols` must NOT
-        //    suppress `structural_query: (find-impact ...)` in `next_dag_templates`!
+        //    suppress `workspace_search: (find-impact ...)` in `next_dag_templates`!
         let _ = client
             .search_step(SearchStepRequest {
                 session_id: "sess-grpc-race".to_owned(),
@@ -219,7 +221,7 @@ mod grpc_tests {
         let after_syms = client
             .search_step(SearchStepRequest {
                 session_id: "sess-grpc-race".to_owned(),
-                tool_name: "structural_query".to_owned(),
+                tool_name: "workspace_search".to_owned(),
                 query: "(find-symbols name-contains: \"SearchDsl\" lang: \"rust\" limit: 20)"
                     .to_owned(),
                 output_limit: 16384,
@@ -246,5 +248,38 @@ mod grpc_tests {
             f_race.open_frontiers
         );
         assert_eq!(f_race.conflict_count, 0);
+
+        // 7. Regression: empty-path `file-outline ""` auto-projects without error, and
+        //    explicit `file-outline` harvests exact anchor symbols into `find-impact` next_dag!
+        let empty_outline = client
+            .search_step(SearchStepRequest {
+                session_id: "sess-grpc-outline".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(file-outline \"\" projection: \"kind-summary\")".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("empty-path file-outline auto-projects")
+            .into_inner();
+        assert!(empty_outline.rendered_text.contains("workspace-map"));
+        let dir_outline = client
+            .search_step(SearchStepRequest {
+                session_id: "sess-grpc-outline".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(file-outline \"crates/marlin-agent-search-engine/src/edb_bridge/\" projection: \"callable-skeleton\")".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("dir file-outline")
+            .into_inner();
+        let f_out = dir_outline.frontier.expect("outline frontier");
+        assert!(
+            f_out
+                .next_dag_templates
+                .iter()
+                .any(|t| t.contains("find-impact") && t.contains("SearchDslExecutionRequest")),
+            "expected file-outline to harvest anchor symbols into find-impact next_dag: {:?}",
+            f_out.next_dag_templates
+        );
     }
 }

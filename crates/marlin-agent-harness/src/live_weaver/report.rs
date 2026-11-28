@@ -69,7 +69,6 @@ pub fn classify_tool_call(tool_name: &str, argument: &str) -> QueryTierKind {
         || head.starts_with("relational-choice-program")
         || head.starts_with("solve-placement")
         || head.starts_with("solve-resolve")
-        || tool_name == "constraint_solve"
     {
         QueryTierKind::L2Dusa
     } else if head.starts_with("ascent")
@@ -80,7 +79,6 @@ pub fn classify_tool_call(tool_name: &str, argument: &str) -> QueryTierKind {
         || head.starts_with("find-symbols")
         || head.starts_with("trace-path")
         || head.starts_with('(')
-        || tool_name == "structural_query"
     {
         QueryTierKind::L1Ascent
     } else if head.starts_with("search-selector") {
@@ -115,7 +113,9 @@ pub fn parse_search_receipt(output: &str) -> ParsedSearchReceipt {
         } else if let Some(v) = line.strip_prefix("hits:") {
             parsed.total_count = v.trim().parse::<usize>().ok();
         } else if let Some(v) = line.strip_prefix("dirs:") {
-            parsed.total_count = parsed.total_count.or_else(|| v.trim().parse::<usize>().ok());
+            parsed.total_count = parsed
+                .total_count
+                .or_else(|| v.trim().parse::<usize>().ok());
         } else if let Some(v) = line.strip_prefix("worlds:") {
             parsed.total_count = v
                 .split_whitespace()
@@ -227,11 +227,7 @@ pub fn detect_scenario_gaps(
     }
 
     let is_search_tool = |tc: &ToolCallTelemetry| {
-        tc.governance.capability == "search"
-            || matches!(
-                tc.tool_name.as_str(),
-                "workspace_search" | "structural_query" | "constraint_solve"
-            )
+        tc.governance.capability == "search" || tc.tool_name == "workspace_search"
     };
     if scenario.require_workspace_search && !tool_calls.iter().any(is_search_tool) {
         gaps.push(DetectedGap {
@@ -409,10 +405,7 @@ pub fn render_live_eval_markdown_report(
         md,
         "| Scenario | Rounds | Search Tools (L0/L1/L2) | `bash` Denied | Errors | 0-Hits | Causal Proof | Spans | Ground Truth | Wall (ms) | Gaps |"
     );
-    let _ = writeln!(
-        md,
-        "|---|---:|---|---:|---:|---:|---|---:|---|---:|---:|"
-    );
+    let _ = writeln!(md, "|---|---:|---|---:|---:|---:|---|---:|---|---:|---:|");
 
     for r in reports {
         let l0 = r
@@ -433,13 +426,7 @@ pub fn render_live_eval_markdown_report(
         let ws_total = r
             .tool_calls
             .iter()
-            .filter(|c| {
-                c.governance.capability == "search"
-                    || matches!(
-                        c.tool_name.as_str(),
-                        "workspace_search" | "structural_query" | "constraint_solve"
-                    )
-            })
+            .filter(|c| c.governance.capability == "search" || c.tool_name == "workspace_search")
             .count();
         let bash_n = r
             .tool_calls
@@ -453,10 +440,7 @@ pub fn render_live_eval_markdown_report(
             .filter(|c| c.status == "completed" && c.receipt.total_count == Some(0))
             .count();
         let causal_badge = if r.temporal_causality.admitted {
-            format!(
-                "ADMITTED ({} ev)",
-                r.temporal_causality.causal_event_count
-            )
+            format!("ADMITTED ({} ev)", r.temporal_causality.causal_event_count)
         } else {
             format!("REJECTED ({:?})", r.temporal_causality.forbidden_hits)
         };
@@ -510,10 +494,7 @@ pub fn render_live_eval_markdown_report(
         let _ = writeln!(
             md,
             "- EvidenceGraph: `{}` nodes (`{}` missing, `{}` counterexamples), `{}` edges",
-            eg.nodes,
-            eg.missing_nodes,
-            eg.counterexamples,
-            eg.edges,
+            eg.nodes, eg.missing_nodes, eg.counterexamples, eg.edges,
         );
         let mut span_counts: BTreeMap<&str, usize> = BTreeMap::new();
         for s in &r.telemetry_spans {
@@ -524,7 +505,11 @@ pub fn render_live_eval_markdown_report(
             .map(|(name, n)| format!("{name}={n}"))
             .collect::<Vec<_>>()
             .join(", ");
-        let _ = writeln!(md, "- OTel Spans ({}): `{span_summary}`", r.telemetry_spans.len());
+        let _ = writeln!(
+            md,
+            "- OTel Spans ({}): `{span_summary}`",
+            r.telemetry_spans.len()
+        );
         let _ = writeln!(
             md,
             "- Rounds: `{}`, Wall: `{}ms`, Ground truth: `{}/{}` (missed: `{}`)",
@@ -582,7 +567,11 @@ pub fn render_live_eval_markdown_report(
                 compact_one_line(&tc.error_or_preview, 240),
             );
         }
-        let _ = writeln!(md, "\n### Causal Trajectory DAG ({} events)", r.trajectory.len());
+        let _ = writeln!(
+            md,
+            "\n### Causal Trajectory DAG ({} events)",
+            r.trajectory.len()
+        );
         for ev in &r.trajectory {
             let _ = writeln!(
                 md,

@@ -345,7 +345,9 @@ pub(crate) fn parse_brute_search_form(raw_query: &str) -> Result<BruteSearchRequ
                     let (vals, next) = consume_string_or_list(&atoms, idx, kw)?;
                     let concrete: Vec<String> = vals
                         .into_iter()
-                        .filter(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "any" | "all" | "*"))
+                        .filter(|v| {
+                            !matches!(v.trim().to_ascii_lowercase().as_str(), "any" | "all" | "*")
+                        })
                         .collect();
                     push_unique_nonempty(&mut req.languages, concrete);
                     idx = next;
@@ -462,7 +464,9 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
                     let (vals, next) = consume_string_or_list(&atoms, idx, kw)?;
                     let concrete: Vec<String> = vals
                         .into_iter()
-                        .filter(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "any" | "all" | "*"))
+                        .filter(|v| {
+                            !matches!(v.trim().to_ascii_lowercase().as_str(), "any" | "all" | "*")
+                        })
                         .collect();
                     push_unique_nonempty(&mut req.languages, concrete);
                     idx = next;
@@ -578,12 +582,6 @@ pub(crate) fn parse_file_outline_form(raw_query: &str) -> Result<FileOutlineRequ
     if req.type_detail && req.kinds.is_empty() {
         req.kinds = vec!["struct".to_owned(), "enum".to_owned()];
     }
-    if req.path_prefix.is_none() && req.languages.is_empty() {
-        return Err(
-            "(file-outline ...) requires a file path or directory prefix, e.g. (file-outline \"crates/marlin-agent-kernel/src/governance_cedar.rs\")"
-                .to_owned(),
-        );
-    }
     Ok(req)
 }
 
@@ -606,7 +604,9 @@ pub(crate) fn parse_workspace_map_form(raw_query: &str) -> Result<WorkspaceMapRe
                     let (vals, next) = consume_string_or_list(&atoms, idx, kw)?;
                     let concrete: Vec<String> = vals
                         .into_iter()
-                        .filter(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "any" | "all" | "*"))
+                        .filter(|v| {
+                            !matches!(v.trim().to_ascii_lowercase().as_str(), "any" | "all" | "*")
+                        })
                         .collect();
                     push_unique_nonempty(&mut req.languages, concrete);
                     idx = next;

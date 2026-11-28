@@ -101,33 +101,40 @@
        (not (string-contains text "/"))
        (not (string-contains text "#"))))
 
-;;; Split hyphen/underscore-separated needles (`"read-only"`, `"blocked_continuation"`)
-;;; into atomic trigram stems (`"read"`, `"only"`) so Rust's trigram prefilter
-;;; stays sound across kebab-case, snake_case, and CamelCase while preserving
-;;; high-selectivity pushdown.
+;;; Split hyphen/underscore/CamelCase needles (`"read-only"`, `"blocked_continuation"`,
+;;; `"SearchRequest"`) into lowercase atomic trigram stems (`"read"`, `"only"`,
+;;; `"search"`, `"request"`) so Rust's trigram prefilter stays sound across kebab-case,
+;;; snake_case, CamelCase, and infix-separated compound symbols (`SearchDslExecutionRequest`).
 (def (split-orthography-tokens text)
   (let ((n (string-length text)))
     (let loop ((i 0) (start 0) (acc '()))
       (cond
         ((>= i n)
-         (let ((seg (substring text start n)))
+         (let ((seg (string-downcase (substring text start n))))
            (reverse (if (safe-content-token? seg) (cons seg acc) acc))))
         ((or (char=? (string-ref text i) #\-)
              (char=? (string-ref text i) #\_))
-         (let ((seg (substring text start i)))
+         (let ((seg (string-downcase (substring text start i))))
            (loop (+ i 1) (+ i 1)
+                 (if (safe-content-token? seg) (cons seg acc) acc))))
+        ((and (> i start)
+              (char-upper-case? (string-ref text i))
+              (char-lower-case? (string-ref text (- i 1))))
+         (let ((seg (string-downcase (substring text start i))))
+           (loop (+ i 1) i
                  (if (safe-content-token? seg) (cons seg acc) acc))))
         (else (loop (+ i 1) start acc))))))
 
 (def (append-name-prefilter-tokens tokens needle)
   (if (not (safe-content-token? needle))
     tokens
-    (if (or (string-contains needle "-") (string-contains needle "_"))
-      (let loop ((parts (split-orthography-tokens needle)) (acc tokens))
-        (if (null? parts)
-          acc
-          (loop (cdr parts) (append-unique acc (car parts)))))
-      (append-unique tokens needle))))
+    (let ((parts (split-orthography-tokens needle)))
+      (if (>= (length parts) 2)
+        (let loop ((rest parts) (acc tokens))
+          (if (null? rest)
+            acc
+            (loop (cdr rest) (append-unique acc (car rest)))))
+        (append-unique tokens needle)))))
 
 (def (extract-atom-hints atom registry langs path-prefix tokens)
   (if (not (and (pair? atom) (symbol? (car atom))))

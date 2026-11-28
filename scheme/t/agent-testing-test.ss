@@ -38,10 +38,10 @@
         ;; Strict <5 round budget across every scenario in Test Case One.
         (check (< (vector-ref first 3) 5) => #t)
         (check (< (vector-ref first 4) 5) => #t)
-        ;; Strict read-only search governance: write-allowed? = #f, 3 read-only search tools allowed, bash denied.
+        ;; Strict read-only search governance: write-allowed? = #f, unified workspace_search allowed, bash denied.
         (check (vector-ref gov 0) => 'read-only-search-governance)
         (check (vector-ref gov 1) => #f)
-        (check (vector-ref gov 4) => '#(workspace_search structural_query constraint_solve))
+        (check (vector-ref gov 4) => '#(workspace_search))
         (check (vector-ref gov 5) => '#(bash))
         (check (>= (vector-length cedar) 4) => #t)
         (check (vector-ref first 9) => #f)

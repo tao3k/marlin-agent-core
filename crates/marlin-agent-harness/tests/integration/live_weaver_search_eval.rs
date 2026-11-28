@@ -89,21 +89,15 @@ fn live_weaver_harness_scheme_suite_governance_and_temporal_causality_contract()
     assert_eq!(permit_search.cedar_decision, "Allow");
     assert!(!permit_search.is_write);
 
-    let permit_structural =
-        gate.evaluate_tool_call(&first.id, "call-1b", "structural_query", Some("search"));
-    assert!(
-        permit_structural.permitted,
-        "structural_query must be permitted"
-    );
-    assert_eq!(permit_structural.cedar_decision, "Allow");
-
-    let permit_constraint =
-        gate.evaluate_tool_call(&first.id, "call-1c", "constraint_solve", Some("search"));
-    assert!(
-        permit_constraint.permitted,
-        "constraint_solve must be permitted"
-    );
-    assert_eq!(permit_constraint.cedar_decision, "Allow");
+    // Retired split tool names MUST fail closed against the unified `workspace_search` allowlist.
+    for retired in ["structural_query", "constraint_solve"] {
+        let deny_retired =
+            gate.evaluate_tool_call(&first.id, "call-retired", retired, Some("search"));
+        assert!(
+            !deny_retired.permitted,
+            "retired split tool `{retired}` must be denied fail-closed"
+        );
+    }
 
     let deny_bash = gate.evaluate_tool_call(&first.id, "call-2", "bash", Some("shell"));
     assert!(!deny_bash.permitted, "bash MUST be denied in read-only search eval");
@@ -253,11 +247,11 @@ fn live_weaver_harness_scheme_suite_governance_and_temporal_causality_contract()
         QueryTierKind::L0Brute
     );
     assert_eq!(
-        classify_tool_call("structural_query", "(ascent-fragment ((answer x) <-- (rust_struct _ _ x _)))"),
+        classify_tool_call("workspace_search", "(ascent-fragment ((answer x) <-- (rust_struct _ _ x _)))"),
         QueryTierKind::L1Ascent
     );
     assert_eq!(
-        classify_tool_call("constraint_solve", "(search-choice-program (use rust) (choice tier (m l)) (solve tier))"),
+        classify_tool_call("workspace_search", "(search-choice-program (use rust) (choice tier (m l)) (solve tier))"),
         QueryTierKind::L2Dusa
     );
     let (matched, missed) = score_ground_truth(

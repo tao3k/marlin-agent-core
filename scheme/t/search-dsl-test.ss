@@ -1361,4 +1361,35 @@
                     (member "read-only-policy-ok?" names)
                     (= (length names) 3)
                     #t)
-               => #t)))))
+               => #t)))
+
+    (test-case "Ordered CamelHumps/token matching resolves infix-separated compound symbols in name_contains"
+      (let* ((edb
+               '((file
+                   (1 "rust" "crates/bridge/src/types.rs")
+                   (2 "rust" "crates/bridge/src/runner.rs"))
+                 (entity
+                   ("e1" 1 "rust" "struct" "struct_item" "SearchDslExecutionRequest" 12)
+                   ("e2" 2 "rust" "function" "fn_item" "execute_package_search_dsl" 40)
+                   ("e3" 2 "rust" "function" "fn_item" "request_search_audit" 88))
+                 (edge)
+                 (attr)
+                 (symbol_ref)))
+             (res-req
+               (evaluate-search-dsl-over-edb
+                 "(find-symbols name-contains: \"SearchRequest\" lang: \"rust\" limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             (res-exec
+               (evaluate-search-dsl-over-edb
+                 "(find-symbols name-contains: \"execute_search\" lang: \"rust\" limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             (res-rev
+               (evaluate-search-dsl-over-edb
+                 "(find-symbols name-contains: \"RequestSearch\" lang: \"rust\" limit: 20)"
+                 edb SearchLanguageRegistryValue)))
+        ;; Matches infix-separated `SearchDslExecutionRequest` (NOT reversed `request_search_audit`)!
+        (check (map car (vector-ref res-req 3)) => '("SearchDslExecutionRequest"))
+        ;; Matches infix-separated `execute_package_search_dsl`!
+        (check (map car (vector-ref res-exec 3)) => '("execute_package_search_dsl"))
+        ;; Strict token order prevents reversed false positives: matches ONLY `request_search_audit`!
+        (check (map car (vector-ref res-rev 3)) => '("request_search_audit"))))))

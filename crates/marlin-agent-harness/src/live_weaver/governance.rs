@@ -61,7 +61,9 @@ impl CompiledHarnessGovernanceGate {
     /// Compile all Scheme-projected Cedar policies fail-closed.
     pub fn compile(policy: ProjectedHarnessGovernance) -> Result<Self, String> {
         if policy.policy_id.trim().is_empty() || policy.policy_id.chars().any(char::is_control) {
-            return Err("governance policy_id must be non-empty and free of control characters".to_owned());
+            return Err(
+                "governance policy_id must be non-empty and free of control characters".to_owned(),
+            );
         }
         if policy.cedar_policies.is_empty() {
             return Err(format!(
@@ -436,10 +438,10 @@ pub fn format_actionable_denial_message(
         "workspace_search: (workspace-map \"\" depth: 2) or (file-outline \"crates/\" lang: \"rust\" kind: \"struct\" exclude-tests?: #t limit: 80)"
             .to_owned()
     } else if lower.contains("rg ") || lower.contains("grep ") {
-        "workspace_search: (brute-search \"<pattern>\" exclude-tests?: #t limit: 40) or structural_query: (find-symbols name-contains: \"<stem>\" lang: \"any\" exclude-tests?: #t)"
+        "workspace_search: (brute-search \"<pattern>\" exclude-tests?: #t limit: 40) or (find-symbols name-contains: \"<stem>\" lang: \"any\" exclude-tests?: #t)"
             .to_owned()
     } else {
-        "workspace_search: (brute-search \"...\" exclude-tests?: #t) / (file-outline \"...\") / (read-file \"...\" symbol: \"...\") or structural_query: (find-impact \"...\")"
+        "workspace_search: (brute-search \"...\" exclude-tests?: #t) / (file-outline \"...\") / (read-file \"...\" symbol: \"...\") / (find-impact \"...\")"
             .to_owned()
     };
     format!("{base_reason}\nsuggested_replacement: {replacement}")

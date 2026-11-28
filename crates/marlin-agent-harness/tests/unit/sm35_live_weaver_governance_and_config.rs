@@ -81,10 +81,24 @@ fn sm35_v3_cedar_governance_gate_refuses_capability_spoofing_substring_and_case_
         "SM35 V3: write_allowed=false with allowed_capabilities containing `write` MUST fail compile()"
     );
 
-    // 5. Positive control: legitimate read-only search tools remain permitted.
-    for safe in ["workspace_search", "structural_query", "constraint_solve"] {
-        let ok = gate.evaluate_tool_call("s1", "c-ok", safe, Some("search"));
-        assert!(ok.permitted && !ok.is_write, "safe tool `{safe}` must stay permitted: {ok:?}");
+    // 5. Positive control: unified read-only `workspace_search` remains permitted.
+    let ok = gate.evaluate_tool_call("s1", "c-ok", "workspace_search", Some("search"));
+    assert!(
+        ok.permitted && !ok.is_write,
+        "safe tool `workspace_search` must stay permitted: {ok:?}"
+    );
+
+    // 6. Fail-closed allowlist: when allowed_tools pins `workspace_search`, unlisted/retired names are denied.
+    let mut strict = read_only_governance();
+    strict.allowed_tools = vec!["workspace_search".to_owned()];
+    let strict_gate =
+        CompiledHarnessGovernanceGate::compile(strict).expect("compile strict allowlist gate");
+    for retired in ["structural_query", "constraint_solve"] {
+        let denied = strict_gate.evaluate_tool_call("s1", "c-ret", retired, Some("search"));
+        assert!(
+            !denied.permitted,
+            "retired unlisted tool `{retired}` must fail closed under strict allowlist: {denied:?}"
+        );
     }
 }
 

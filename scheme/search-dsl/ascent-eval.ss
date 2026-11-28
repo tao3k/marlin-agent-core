@@ -511,6 +511,62 @@
                 (write-char ch port)))
             (loop (+ i 1))))))))
 
+;;; Split a CamelCase, snake_case, or kebab-case identifier into lowercase
+;;; atomic word tokens (length >= 3) for Orderless / CamelHumps symbol search.
+;;; E.g. "SearchRequest" -> '("search" "request"), "execute_search" -> '("execute" "search").
+(def (split-ident-tokens s)
+  (let ((n (string-length s)))
+    (let loop ((i 0) (start #f) (acc '()))
+      (if (>= i n)
+        (let ((final (if start
+                       (cons (string-downcase (substring s start n)) acc)
+                       acc)))
+          (reverse (filter (lambda (tok) (>= (string-length tok) 3)) final)))
+        (let ((ch (string-ref s i)))
+          (cond
+            ((not (or (char-alphabetic? ch) (char-numeric? ch)))
+             (loop (+ i 1)
+                   #f
+                   (if start
+                     (cons (string-downcase (substring s start i)) acc)
+                     acc)))
+            ((and start
+                  (char-upper-case? ch)
+                  (> i start)
+                  (char-lower-case? (string-ref s (- i 1))))
+             (loop (+ i 1)
+                   i
+                   (cons (string-downcase (substring s start i)) acc)))
+            (else
+             (loop (+ i 1) (or start i) acc))))))))
+
+;;; Return the 0-based index of `needle` in `haystack` starting at `start`, or #f.
+(def (string-find-substr haystack needle start)
+  (let ((hlen (string-length haystack))
+        (nlen (string-length needle)))
+    (let loop ((i start))
+      (cond
+        ((> (+ i nlen) hlen) #f)
+        ((let inner ((j 0))
+           (cond
+             ((= j nlen) #t)
+             ((char=? (string-ref haystack (+ i j)) (string-ref needle j))
+              (inner (+ j 1)))
+             (else #f)))
+         i)
+        (else (loop (+ i 1)))))))
+
+;;; Return #t iff every token in `tokens` appears in order within `haystack-lc`.
+(def (ident-tokens-in-order? haystack-lc tokens)
+  (let loop ((rest tokens) (pos 0))
+    (if (null? rest)
+      #t
+      (let* ((tok (car rest))
+             (hit (string-find-substr haystack-lc tok pos)))
+        (if hit
+          (loop (cdr rest) (+ hit (string-length tok)))
+          #f)))))
+
 (def (materialize-derived-name-edb-rows rel-name all-names pred-lits)
   (case rel-name
     ((name_contains)
@@ -520,7 +576,9 @@
                 (let* ((needle-lc (string-downcase needle))
                        (needle-norm (normalize-ident-key needle))
                        (use-norm? (and (>= (string-length needle-norm) 3)
-                                       (not (string=? needle-norm needle-lc)))))
+                                       (not (string=? needle-norm needle-lc))))
+                       (tokens (split-ident-tokens needle))
+                       (use-tokens? (>= (length tokens) 2)))
                   (filter-map
                     (lambda (nm)
                       (let ((nm-lc (string-downcase nm)))
@@ -529,7 +587,9 @@
                                       (or use-norm?
                                           (string-contains nm-lc "_")
                                           (string-contains nm-lc "-"))
-                                      (string-contains (normalize-ident-key nm-lc) needle-norm)))
+                                      (string-contains (normalize-ident-key nm-lc) needle-norm))
+                                 (and use-tokens?
+                                      (ident-tokens-in-order? nm-lc tokens)))
                              (list nm needle))))
                     all-names)))
               needles))))

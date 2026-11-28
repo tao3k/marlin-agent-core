@@ -81,7 +81,12 @@ fn format_kind_summary_file_row(path: &str, entry: &OutlineFileEntry<'_>) -> Str
         .map(|(kind, names)| {
             let preview: Vec<&str> = names.iter().copied().take(8).collect();
             if names.len() > 8 {
-                format!("{kind}({}): {}, +{}", names.len(), preview.join(", "), names.len() - 8)
+                format!(
+                    "{kind}({}): {}, +{}",
+                    names.len(),
+                    preview.join(", "),
+                    names.len() - 8
+                )
             } else {
                 format!("{kind}({}): {}", names.len(), preview.join(", "))
             }
@@ -396,9 +401,7 @@ fn append_outline_file_block(
         .symbols
         .iter()
         .take(allowed)
-        .map(|&(line, kind, name)| {
-            format_outline_symbol_row(index, path, line, kind, name, cfg)
-        })
+        .map(|&(line, kind, name)| format_outline_symbol_row(index, path, line, kind, name, cfg))
         .take_while(|row| {
             if cur_len + row.len() <= cfg.body_budget {
                 cur_len += row.len();
@@ -452,6 +455,17 @@ pub(super) fn execute_file_outline(
     output_limit: usize,
 ) -> Result<String, String> {
     let req = parse_file_outline_form(raw_query)?;
+    if req.path_prefix.is_none() && req.languages.is_empty() {
+        let mut map = super::workspace_map::execute_workspace_map(
+            index,
+            "(workspace-map \"\" depth: 2 limit: 32)",
+            output_limit,
+        )?;
+        map.push_str(
+            "note: empty path in (file-outline \"\" ...) auto-projected to workspace-map; pass a directory/file prefix or use (find-symbols ...) / (find-impact ...)\n",
+        );
+        return Ok(map);
+    }
     let prefilter = WorkspaceEdbPrefilter {
         languages: &req.languages,
         documents: &[],
@@ -651,11 +665,9 @@ pub(super) fn execute_file_outline(
                 entry
                     .symbols
                     .dedup_by(|a, b| a.0 == b.0 && a.1 == b.1 && a.2 == b.2);
-                state.omitted_files.push(format_omitted_file_inventory(
-                    path,
-                    &entry.symbols,
-                    0,
-                ));
+                state
+                    .omitted_files
+                    .push(format_omitted_file_inventory(path, &entry.symbols, 0));
             }
             continue;
         }
@@ -702,7 +714,7 @@ pub(super) fn execute_file_outline(
         } else {
             let _ = writeln!(
                 out,
-                "  ... (+{} symbols omitted; next_query: narrow path-prefix: to one crate from top_dirs, add kind: \"struct|enum|fn\", or use `structural_query` (find-collisions ...))",
+                "  ... (+{} symbols omitted; next_query: narrow path-prefix: to one crate from top_dirs, add kind: \"struct|enum|fn\", or use (find-collisions ...))",
                 total_symbols.saturating_sub(emitted_symbols),
             );
         }

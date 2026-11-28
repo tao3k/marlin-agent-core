@@ -17,9 +17,8 @@ use std::time::Instant;
 
 use marlin_agent_runtime::RuntimeContext;
 use marlin_agent_search_engine::{
-    SearchDslExecutionMode, SearchDslSessionId, SearchDslSessionRunner,
-    SearchDslStructuredResult, SearchEpistemicStatus, SearchEvidenceChainReceipt,
-    WorkspaceEdbPrefilter, WorkspaceSearchIndex,
+    SearchDslExecutionMode, SearchDslSessionId, SearchDslSessionRunner, SearchDslStructuredResult,
+    SearchEpistemicStatus, SearchEvidenceChainReceipt, WorkspaceEdbPrefilter, WorkspaceSearchIndex,
 };
 use tonic::{Request, Response, Status};
 
@@ -113,7 +112,8 @@ impl SessionFrontierState {
         } else {
             String::new()
         };
-        let layer_distribution = summarize_broad_layer_distribution(raw_query, rendered_body, structured);
+        let layer_distribution =
+            summarize_broad_layer_distribution(raw_query, rendered_body, structured);
         let next_dag_templates =
             self.build_next_dag_templates(teaching_kit_active, &open_frontiers, raw_query);
 
@@ -204,12 +204,7 @@ impl SessionFrontierState {
         receipt.newly_harvested
     }
 
-    fn ingest_l0_evidence(
-        &mut self,
-        tier: SearchQueryTier,
-        raw_query: &str,
-        rendered_body: &str,
-    ) {
+    fn ingest_l0_evidence(&mut self, tier: SearchQueryTier, raw_query: &str, rendered_body: &str) {
         if tier != SearchQueryTier::BruteForce {
             return;
         }
@@ -231,6 +226,21 @@ impl SessionFrontierState {
             .for_each(|layer| {
                 self.covered_layers.insert(layer);
             });
+        if raw_query.contains("file-outline") && !self.impact_ran {
+            let outline_syms = extract_outline_anchor_symbols(rendered_body);
+            if !outline_syms.is_empty() {
+                // Prioritize exact symbols just discovered from an explicit file/dir outline
+                // ahead of earlier broad lexical guesses so `find-impact` targets real APIs.
+                let mut seen = BTreeSet::new();
+                self.discovered_symbols = outline_syms
+                    .into_iter()
+                    .chain(self.discovered_symbols.iter().cloned())
+                    .filter(|sym| seen.insert(sym.clone()))
+                    .take(6)
+                    .collect();
+                self.seen_symbols = seen;
+            }
+        }
     }
 
     fn record_referenced_path(&mut self, path: &str, sym: Option<&str>) {
@@ -279,17 +289,18 @@ impl SessionFrontierState {
                 .filter(|resolved| seen.insert(resolved.clone()))
                 .for_each(|resolved| ordered.push(resolved));
         }
-        for layer in &self.referenced_layers {
-            if ordered.len() >= 4 {
-                break;
-            }
-            if !self.covered_layers.contains(layer)
-                && !layer.ends_with("/tests")
-                && seen.insert(layer.clone())
-            {
-                ordered.push(layer.clone());
-            }
-        }
+        let remaining = 4usize.saturating_sub(ordered.len());
+        ordered.extend(
+            self.referenced_layers
+                .iter()
+                .filter(|layer| {
+                    !self.covered_layers.contains(*layer)
+                        && !layer.ends_with("/tests")
+                        && seen.insert((*layer).clone())
+                })
+                .take(remaining)
+                .cloned(),
+        );
         ordered.truncate(4);
         ordered
     }
@@ -341,7 +352,7 @@ impl SessionFrontierState {
             } else {
                 format!("({})", quoted.join(" "))
             };
-            out.push(format!("structural_query: (find-impact {arg} limit: 80)"));
+            out.push(format!("workspace_search: (find-impact {arg} limit: 120)"));
         }
         for frontier in open_frontiers.iter().take(2) {
             out.push(format_open_frontier_template(
@@ -352,7 +363,7 @@ impl SessionFrontierState {
         }
         if out.is_empty() && teaching_active && raw_query.contains("workspace-map") {
             out.push(
-                "structural_query: (find-symbols name-contains: (\"<stemA>\" \"<stemB>\") lang: \"any\" limit: 60)"
+                "workspace_search: (find-symbols name-contains: (\"<stemA>\" \"<stemB>\") lang: \"any\" limit: 60)"
                     .to_owned(),
             );
         }
@@ -575,11 +586,21 @@ fn format_frontier_footer(
     if !frontier.workspace_layers.is_empty() {
         let _ = writeln!(out, "workspace_layers: {}", frontier.workspace_layers);
     }
+    if frontier.teaching_kit_active {
+        let _ = writeln!(
+            out,
+            "dsl_tips: for cross-layer change impact, run ONE (find-impact (\"SymA\" \"SymB\" \"SymC\") limit: 120) — returns [DEFINITIONS], affected_layers, [PROD] & [TEST] across all crates; read exact files via (read-file \"<path>\" symbols: (\"SymA\" \"SymB\")); Turn 2+ auto-unloads this kit"
+        );
+    }
     if !layer_distribution.is_empty() {
         let _ = writeln!(out, "matched_layer_distribution: {layer_distribution}");
     }
     if !frontier.covered_layers.is_empty() {
-        let _ = writeln!(out, "covered_layers: {}", frontier.covered_layers.join(", "));
+        let _ = writeln!(
+            out,
+            "covered_layers: {}",
+            frontier.covered_layers.join(", ")
+        );
     }
     if !frontier.ambiguous_branches.is_empty() {
         let _ = writeln!(
@@ -601,7 +622,11 @@ fn format_frontier_footer(
             let _ = writeln!(out, "open_frontiers: none ({stop_hint})");
         }
     } else {
-        let _ = writeln!(out, "open_frontiers: {}", frontier.open_frontiers.join(", "));
+        let _ = writeln!(
+            out,
+            "open_frontiers: {}",
+            frontier.open_frontiers.join(", ")
+        );
     }
     if !frontier.next_dag_templates.is_empty() {
         let label = if frontier.teaching_kit_active {
@@ -688,10 +713,7 @@ fn format_open_frontier_template(
     layer_sample_symbols: &BTreeMap<String, Vec<String>>,
 ) -> String {
     if let Some(path) = layer_sample_paths.get(frontier) {
-        if let Some(sym_list) = layer_sample_symbols
-            .get(frontier)
-            .filter(|v| !v.is_empty())
-        {
+        if let Some(sym_list) = layer_sample_symbols.get(frontier).filter(|v| !v.is_empty()) {
             let quoted: Vec<String> = sym_list.iter().map(|s| format!("\"{s}\"")).collect();
             return format!(
                 "workspace_search: (read-file \"{path}\" symbols: ({}))",
@@ -706,6 +728,32 @@ fn format_open_frontier_template(
     format!(
         "workspace_search: (file-outline \"{frontier}/\" projection: \"kind-summary\" limit: 60)"
     )
+}
+
+fn extract_outline_anchor_symbols(rendered_body: &str) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    rendered_body
+        .lines()
+        .take(120)
+        .filter_map(parse_outline_symbol_from_line)
+        .filter(|sym| is_high_signal_anchor_symbol(sym, None))
+        .filter(|sym| seen.insert((*sym).to_owned()))
+        .take(4)
+        .map(str::to_owned)
+        .collect()
+}
+
+fn parse_outline_symbol_from_line(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    ["[struct] ", "[enum] ", "[trait] ", "[function] ", "[type] "]
+        .iter()
+        .find_map(|tag| trimmed.split_once(tag))
+        .map(|(_, rest)| {
+            rest.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+                .next()
+                .unwrap_or("")
+        })
+        .filter(|ident| !ident.is_empty())
 }
 
 fn is_high_signal_anchor_symbol(sym: &str, path: Option<&str>) -> bool {
@@ -765,7 +813,10 @@ fn summarize_counts(
         {
             total = n;
         } else if let Some(v) = line.strip_prefix("worlds:")
-            && let Some(n) = v.split_whitespace().next().and_then(|s| s.parse::<u32>().ok())
+            && let Some(n) = v
+                .split_whitespace()
+                .next()
+                .and_then(|s| s.parse::<u32>().ok())
         {
             total = n;
         } else if let Some(v) = line.strip_prefix("returned:")
@@ -781,7 +832,8 @@ fn summarize_counts(
             total = u32::try_from(res.rows.len().max(res.choice_worlds.len())).unwrap_or(u32::MAX);
         }
         if returned == 0 {
-            returned = u32::try_from(res.rows.len().max(res.choice_worlds.len())).unwrap_or(u32::MAX);
+            returned =
+                u32::try_from(res.rows.len().max(res.choice_worlds.len())).unwrap_or(u32::MAX);
         }
     }
     (total, returned, truncated)

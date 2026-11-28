@@ -15,7 +15,7 @@
   write-allowed?: #f
   allowed-capabilities: '(search)
   denied-capabilities: '(shell write edit mutation)
-  allowed-tools: '(workspace_search structural_query constraint_solve)
+  allowed-tools: '(workspace_search)
   denied-tools: '(bash)
   cedar-policies:
   '((permit-search-tool
@@ -27,14 +27,14 @@
     (forbid-write-context
      "forbid(principal, action, resource) when { context.is_write == true };"))
   denial-message:
-  "Governance policy DENIED this tool call (read-only search/Helm/ASP/Dusa testing forbids all write and shell capabilities). Use read-only tools instead: `workspace_search` for L0 `(brute-search ...)` / `(file-outline ...)` / `(read-file ...)`, `structural_query` for L1 `:gerbil-ascent`, or `constraint_solve` for L2 Dusa `(search-choice-program ...)`.")
+  "Governance policy DENIED this tool call (read-only search/Helm/ASP/Dusa testing forbids all write and shell capabilities). Use the unified read-only `workspace_search` tool instead for L0 `(brute-search ...)` / `(file-outline ...)` / `(read-file ...)`, L1 `(find-symbols ...)` / `(find-impact ...)` / `:gerbil-ascent`, and L2 Dusa `(solve-placement ...)` / `(search-choice-program ...)`.")
 
 (def ReadOnlySearchTestingGovernance.
   (.mix (.o id: 'read-only-search-governance
             write-allowed?: #f
             allowed-capabilities: '(search)
             denied-capabilities: '(shell write edit mutation)
-            allowed-tools: '(workspace_search structural_query constraint_solve)
+            allowed-tools: '(workspace_search)
             denied-tools: '(bash))
         TestingGovernancePolicy.))
 

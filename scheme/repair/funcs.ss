@@ -23,10 +23,10 @@
         format-canonical-search-form)
 
 (def +wrapped-tool-heads+
-  '(structural_query structural-query constraint_solve constraint-solve))
+  '(workspace_search workspace-search))
 
 ;;; Unwrap accidental tool-name wrapper calls such as
-;;; `(structural_query "(find-symbols ...)")` or `(constraint_solve "(solve-placement ...)")`
+;;; `(workspace_search "(find-symbols ...)")` or `(workspace_search "(solve-placement ...)")`
 ;;; while recording an explicit `unwrap-tool-wrapper` repair receipt.
 (def (unwrap-tool-wrapper-form form tags)
   (if (and (pair? form)
