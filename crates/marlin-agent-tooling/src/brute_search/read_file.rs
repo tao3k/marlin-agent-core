@@ -130,7 +130,9 @@ fn append_symbol_slice(
     let after = budget.symbol_context.clamp(16, 80);
     let start = anchor_line.saturating_sub(before).max(1);
     let end = match ast_end {
-        Some(end_line) => end_line.saturating_add(1).min(anchor_line.saturating_add(80)),
+        Some(end_line) => end_line
+            .saturating_add(1)
+            .min(anchor_line.saturating_add(80)),
         None => anchor_line.saturating_add(after),
     };
     let span = end.saturating_sub(start);
@@ -144,7 +146,9 @@ fn append_symbol_slice(
         .filter(|l| l.line_number >= start && l.line_number <= end)
         .collect();
     let actual_end = slice.last().map_or(start, |l| l.line_number);
-    let span_note = ast_end.map_or_else(String::new, |e| format!(" [ast_span: L{anchor_line}..=L{e}]"));
+    let span_note = ast_end.map_or_else(String::new, |e| {
+        format!(" [ast_span: L{anchor_line}..=L{e}]")
+    });
     let header = format!(
         "=== symbol: {sym} @ {path}:L{anchor_line} (L{start}..=L{actual_end}){span_note} ===\n"
     );
@@ -284,17 +288,221 @@ fn collect_remaining_file_symbols(
     syms
 }
 
+fn is_type_declaration_header(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.contains("struct ")
+        || trimmed.contains("enum ")
+        || trimmed.contains("trait ")
+        || trimmed.starts_with("pub type ")
+        || trimmed.starts_with("type ")
+        || trimmed.starts_with("(.def ")
+}
+
+fn is_signature_terminator(trimmed: &str, is_type_decl: bool, is_scheme: bool) -> bool {
+    if is_scheme {
+        return trimmed.ends_with(')') && !trimmed.starts_with("(def (");
+    }
+    if is_type_decl {
+        return trimmed == "}" || trimmed.ends_with("};") || trimmed.ends_with(';');
+    }
+    trimmed.ends_with('{')
+        || trimmed.ends_with(';')
+        || trimmed.ends_with("{}")
+        || trimmed.contains(") {")
+}
+
+fn extract_signature_block_lines(
+    index: &WorkspaceSearchIndex,
+    path: &str,
+    anchor_line: usize,
+) -> Vec<(usize, String)> {
+    let is_scheme = path.ends_with(".ss") || path.ends_with(".scm");
+    let raw = index.live_file_context(path, anchor_line.saturating_add(10), 14);
+    let anchor_text = raw
+        .iter()
+        .find(|l| l.line_number == anchor_line)
+        .map_or("", |l| l.text.as_str());
+    let is_type_decl = !is_scheme && is_type_declaration_header(anchor_text);
+    let max_sig_lines = if is_type_decl {
+        24
+    } else if is_scheme {
+        6
+    } else {
+        10
+    };
+    let mut done = false;
+    raw.into_iter()
+        .filter(|l| l.line_number >= anchor_line)
+        .take(max_sig_lines)
+        .take_while(|l| {
+            if done {
+                return false;
+            }
+            if is_signature_terminator(l.text.trim(), is_type_decl, is_scheme) {
+                done = true;
+            }
+            true
+        })
+        .map(|l| (l.line_number, l.text.trim_end().to_owned()))
+        .collect()
+}
+
+fn collect_all_file_signature_targets(
+    index: &WorkspaceSearchIndex,
+    path: &str,
+) -> Vec<(usize, String, String)> {
+    let prefilter = WorkspaceEdbPrefilter {
+        languages: &[],
+        documents: &[],
+        path_prefix: Some(path),
+        extension: None,
+        required_tokens: &[],
+        max_files: 4,
+        max_facts: 4096,
+    };
+    let snapshot = index.project_prefiltered_edb(&prefilter);
+    let mut syms: Vec<(usize, String, String)> = snapshot
+        .entities
+        .iter()
+        .filter(|ent| ent.path == path && ent.kind != "import")
+        .map(|ent| {
+            let kind = refine_coarse_entity_kind(index, path, ent.line, &ent.kind);
+            (ent.line, kind.to_owned(), ent.name.clone())
+        })
+        .collect();
+    syms.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| a.2.cmp(&b.2)));
+    syms.dedup_by(|a, b| a.0 == b.0 && a.2 == b.2);
+    syms.truncate(48);
+    syms
+}
+
+fn format_signature_entry(
+    index: &WorkspaceSearchIndex,
+    path: &str,
+    sym: &str,
+    kind_opt: Option<&str>,
+    anchor_line: usize,
+) -> (String, usize) {
+    let sig_lines = extract_signature_block_lines(index, path, anchor_line);
+    let ast_end = find_symbol_definition_end_line(index, path, anchor_line, 120);
+    let span_note = ast_end.map_or_else(
+        || format!("L{anchor_line}"),
+        |end| format!("L{anchor_line}..=L{end}"),
+    );
+    let kind_tag = kind_opt.map_or_else(String::new, |k| format!(" [{k}]"));
+    let mut block = format!("=== {sym}{kind_tag} @ {path}:{span_note} ===\n");
+    let count = sig_lines.len();
+    sig_lines
+        .into_iter()
+        .for_each(|(ln, text)| {
+            let _ = writeln!(block, "L{ln}: {text}");
+        });
+    (block, count)
+}
+
+fn execute_read_file_signatures(
+    index: &WorkspaceSearchIndex,
+    req: &ReadFileRequest,
+    output_limit: usize,
+) -> Result<String, String> {
+    if index.live_file_context(&req.path, 1, 0).is_empty() {
+        let suggestions = suggest_nearby_paths(index, &req.path);
+        let hint = if suggestions.is_empty() {
+            "list workspace structure with (workspace-map \"\" depth: 2)".to_owned()
+        } else {
+            format!("did you mean: {}", suggestions.join(", "))
+        };
+        return Err(format!(
+            "read-file: path `{}` not found in resident workspace index ({hint})",
+            req.path
+        ));
+    }
+
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "generation: {}\nindexed_files: {}\nmode: read-file (L0 pure-Rust zero-I/O RAM signature-only reader)\npath: {}",
+        index.generation_digest().as_str(),
+        index.file_count(),
+        req.path,
+    );
+    if req.wrapped_bare_form {
+        let _ = writeln!(out, "repairs: wrap-read-file-parens");
+    }
+    let companion_tests = discover_crate_companion_tests(index, &req.path);
+    if !companion_tests.is_empty() {
+        let _ = writeln!(out, "crate_tests: {}", companion_tests.join(", "));
+    }
+
+    let mut missing: Vec<&str> = Vec::new();
+    let targets: Vec<(usize, Option<String>, String)> = if req.symbols.is_empty() {
+        collect_all_file_signature_targets(index, &req.path)
+            .into_iter()
+            .map(|(line, kind, name)| (line, Some(kind), name))
+            .collect()
+    } else {
+        req.symbols
+            .iter()
+            .filter_map(|sym| match resolve_symbol_anchor_in_file(index, &req.path, sym) {
+                Ok(line) => Some((line, None, sym.clone())),
+                Err(_) => {
+                    missing.push(sym.as_str());
+                    None
+                }
+            })
+            .collect()
+    };
+
+    let body_budget = output_limit.saturating_sub(out.len() + 256);
+    let mut used = 0usize;
+    let mut total_lines = 0usize;
+    let mut emitted_syms = 0usize;
+    let blocks: Vec<String> = targets
+        .iter()
+        .map(|(line, kind, name)| {
+            format_signature_entry(index, &req.path, name, kind.as_deref(), *line)
+        })
+        .take_while(|(block, count)| {
+            if used + block.len() <= body_budget {
+                used += block.len();
+                total_lines += *count;
+                emitted_syms += 1;
+                true
+            } else {
+                false
+            }
+        })
+        .map(|(block, _)| block)
+        .collect();
+    let truncated = emitted_syms < targets.len();
+    let _ = writeln!(
+        out,
+        "symbols_matched: {}/{}\nhits: {total_lines}\nreturned: {total_lines}\ntruncated: {truncated}",
+        emitted_syms,
+        targets.len()
+    );
+    if !missing.is_empty() {
+        let _ = writeln!(out, "missing_symbols: {}", missing.join(", "));
+    }
+    blocks.into_iter().for_each(|b| out.push_str(&b));
+    Ok(out)
+}
+
 pub(super) fn execute_read_file(
     index: &WorkspaceSearchIndex,
     raw_query: &str,
     output_limit: usize,
 ) -> Result<String, String> {
     let req = parse_read_file_form(raw_query)?;
+    if req.signature_only {
+        return execute_read_file_signatures(index, &req, output_limit);
+    }
     if req.symbols.len() > 1 {
         return execute_read_file_multi_symbols(index, &req, output_limit);
     }
     let single_symbol = req.symbols.first().map(String::as_str);
-    let (eff_start, eff_end, symbol_anchor_line, symbol_ast_end) = if let Some(sym) = single_symbol {
+    let (eff_start, eff_end, symbol_anchor_line, symbol_ast_end) = if let Some(sym) = single_symbol
+    {
         match resolve_symbol_anchor_in_file(index, &req.path, sym) {
             Ok(anchor_line) => {
                 let before = (req.symbol_context / 3).clamp(3, 8);
@@ -380,7 +588,10 @@ pub(super) fn execute_read_file(
         }
     }
     if req.requested_end_clamped {
-        let _ = writeln!(out, "range_clamped: true (max {MAX_READ_LINES} lines per call)");
+        let _ = writeln!(
+            out,
+            "range_clamped: true (max {MAX_READ_LINES} lines per call)"
+        );
     }
     let remaining = if has_more {
         collect_remaining_file_symbols(index, &req.path, actual_end)
@@ -403,7 +614,7 @@ pub(super) fn execute_read_file(
                 .collect();
             let _ = writeln!(
                 out,
-                "next_symbol_query: (read-file \"{}\" symbols: ({}))",
+                "next_symbol_query: (read-file \"{}\" symbols: ({}) signature-only?: #t)",
                 req.path,
                 jump_syms.join(" ")
             );

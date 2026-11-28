@@ -1392,4 +1392,40 @@
         ;; Matches infix-separated `execute_package_search_dsl`!
         (check (map car (vector-ref res-exec 3)) => '("execute_package_search_dsl"))
         ;; Strict token order prevents reversed false positives: matches ONLY `request_search_audit`!
-        (check (map car (vector-ref res-rev 3)) => '("request_search_audit"))))))
+        (check (map car (vector-ref res-rev 3)) => '("request_search_audit"))))
+
+    (test-case "find-callers merges AST calls_symbol with RAM symbol_ref fallback on partially hydrated files"
+      (let* ((edb
+               '((file
+                   (1 "rust" "crates/bridge/src/runner.rs")
+                   (2 "rust" "crates/tooling/src/handler.rs")
+                   (3 "rust" "crates/harness/src/eval.rs"))
+                 (entity
+                   ("e-def" 1 "rust" "function" "fn_item" "execute_linked_search_dsl" 10)
+                   ("e-caller" 2 "rust" "function" "fn_item" "run_search_tool" 25))
+                 (edge
+                   ("e-caller" "execute_linked_search_dsl" "calls" "crates/tooling/src/handler.rs" 30))
+                 (attr)
+                 (symbol_ref
+                   ("execute_linked_search_dsl" "crates/bridge/src/runner.rs" 10)
+                   ("execute_linked_search_dsl" "crates/tooling/src/handler.rs" 30)
+                   ("execute_linked_search_dsl" "crates/harness/src/eval.rs" 44))))
+             (pref
+               (compile-search-dsl-prefilter
+                 "(find-callers \"execute_linked_search_dsl\" limit: 20)"
+                 SearchLanguageRegistryValue))
+             (res
+               (evaluate-search-dsl-over-edb
+                 "(find-callers \"execute_linked_search_dsl\" limit: 20)"
+                 edb SearchLanguageRegistryValue))
+             (rows (vector-ref res 3)))
+        ;; Prefilter keeps selective target token AND activates `symbol_ref` hydration!
+        (check (vector-ref pref 3) => #("execute_linked_search_dsl"))
+        (check (and (member 'symbol_ref (vector->list (vector-ref pref 5))) #t) => #t)
+        ;; Emits AST caller (`run_search_tool`), RAM `<ref>` fallback (`eval.rs:44`),
+        ;; excludes definition site (`runner.rs:10`), and avoids duplicating `handler.rs:30`!
+        (check (length rows) => 2)
+        (check (and (member '("run_search_tool" "crates/tooling/src/handler.rs" 30) rows)
+                    (member '("<ref>" "crates/harness/src/eval.rs" 44) rows)
+                    #t)
+               => #t)))))

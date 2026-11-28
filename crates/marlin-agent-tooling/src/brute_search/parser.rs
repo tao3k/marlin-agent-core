@@ -67,6 +67,7 @@ pub(crate) struct ReadFileRequest {
     pub(crate) requested_end_clamped: bool,
     pub(crate) symbols: Vec<String>,
     pub(crate) symbol_context: usize,
+    pub(crate) signature_only: bool,
     pub(crate) wrapped_bare_form: bool,
 }
 
@@ -681,6 +682,7 @@ pub(crate) fn parse_read_file_form(raw_query: &str) -> Result<ReadFileRequest, S
     let mut around_line: Option<usize> = None;
     let mut around_context: Option<usize> = None;
     let mut symbols: Vec<String> = Vec::new();
+    let mut signature_only = false;
     let mut idx = 1usize;
     while idx < atoms.len() {
         match &atoms[idx] {
@@ -726,9 +728,13 @@ pub(crate) fn parse_read_file_form(raw_query: &str) -> Result<ReadFileRequest, S
                                 .map_err(|_| format!("invalid integer `{val}` for `{kw}:`"))?;
                             line_count = Some(parsed.max(1));
                         }
+                        "signature-only?" | "signature-only" | "signatures-only?"
+                        | "signatures-only" | "signatures?" | "signatures" => {
+                            signature_only = parse_bool_atom(val)?;
+                        }
                         other => {
                             return Err(format!(
-                                "unknown keyword `{other}:` in (read-file ...); allowed: path:, symbol:, symbols:, start:, cursor:, end:, around:, context:, max-lines:, lines:"
+                                "unknown keyword `{other}:` in (read-file ...); allowed: path:, symbol:, symbols:, signature-only?:, start:, cursor:, end:, around:, context:, max-lines:, lines:"
                             ));
                         }
                     }
@@ -781,6 +787,7 @@ pub(crate) fn parse_read_file_form(raw_query: &str) -> Result<ReadFileRequest, S
         requested_end_clamped: requested_end > max_end,
         symbols,
         symbol_context: around_context.unwrap_or(30),
+        signature_only,
         wrapped_bare_form,
     })
 }

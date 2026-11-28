@@ -79,10 +79,10 @@
       (display ". Langs: " port)
       (display (string-join lang-names ",") port)
       (display ".\n" port)
-      (display "L1 (start here): (find-symbols name-contains: (\"stemA\" \"stemB\") lang: \"any\" limit: 60) [specific stems or name-all:] | (find-impact (\"SymA\" \"SymB\") limit: 120) [one-shot cross-layer DEFINITIONS, affected_layers, PROD & TEST] | (find-collisions kind: (\"struct\" \"fn\") path-prefix: \"crates/\" lang: \"rust\" min-files: 2 exclude-tests?: #t) | (find-callers \"f\") | (find-impls \"T\") | (trace-path from: \"A\" to: \"B\") | (ascent-fragment ...) EDB:" port)
+      (display "L1 (start here): (find-symbols name-contains: (\"stemA\" \"stemB\") lang: \"any\" limit: 60) [CamelHumps or name-all:] | (find-impact (\"SymA\" \"SymB\") limit: 120) [one-shot cross-layer DEFINITIONS, CROSS-FFI, affected_layers, PROD & TEST] | (find-collisions kind: (\"struct\" \"fn\") path-prefix: \"crates/\" lang: \"rust\" min-files: 2 exclude-tests?: #t) | (find-callers \"f\") | (find-impls \"T\") | (trace-path from: \"A\" to: \"B\") | (ascent-fragment ...) EDB:" port)
       (display (string-join (map symbol->string edb-rels) ",") port)
       (display "+verified_tier (plain vars).\n" port)
-      (display "L0 (<1ms): (read-file \"p\" symbols: (\"A\" \"B\")) | (read-file \"p\" symbol: \"F\") | (read-file \"p\" cursor: 1 max-lines: 360) | (file-outline \"p/\" projection: \"kind-summary|callable-skeleton\") | (brute-search \"a|b\" path-prefix: \"d/\" exclude-tests?: #t limit: 24).\n" port)
+      (display "L0 (<1ms): (read-file \"p\" signature-only?: #t) | (read-file \"p\" symbols: (\"A\" \"B\") signature-only?: #t) | (read-file \"p\" symbol: \"F\") | (read-file \"p\" cursor: 1 max-lines: 360) | (file-outline \"p/\" projection: \"kind-summary|callable-skeleton\") | (brute-search \"a|b\" path-prefix: \"d/\" exclude-tests?: #t limit: 24).\n" port)
       (display "L2 Dusa (1 call): (solve-placement path-prefix: \"<c>/src/\" module-limit: auto choices: (resident provider) forbid-hot-path: provider) | (solve-resolve path-prefix: \"<c>/src/\" exclude-tests?: #t) | (search-choice-program ... hot-path-module provenance?: #t) (?vars)." port))))
 
 ;;; Declare a full POO language extension over ASP's General Language Ontology

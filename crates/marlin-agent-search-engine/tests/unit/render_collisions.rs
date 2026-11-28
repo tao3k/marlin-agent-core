@@ -177,3 +177,51 @@ fn identifier_stem_splitter_handles_pascal_snake_and_kebab_cases() {
         vec!["read", "only", "gov"]
     );
 }
+
+#[test]
+fn grouped_impact_renderer_follows_cross_language_ffi_boundaries_automatically() {
+    use agent_semantic_search::{WorkspaceIndexConfig, WorkspaceSearchIndex};
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge_dir = dir.path().join("crates/search-engine/src/edb_bridge");
+    let cabi_dir = dir.path().join("scheme/c-abi");
+    std::fs::create_dir_all(&bridge_dir).unwrap();
+    std::fs::create_dir_all(&cabi_dir).unwrap();
+    std::fs::write(
+        bridge_dir.join("runner.rs"),
+        "pub struct SearchReq;\npub fn invoke_bridge() {\n    let sym = \"marlin-search-dsl-eval-edb\";\n    let _ = sym;\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        cabi_dir.join("search-dsl.ss"),
+        "(def (marlin-search-dsl-eval-edb input)\n  (unless (= (vector-length input) 2)\n    (error \"bad arity\"))\n  input)\n(c-define (search-dsl-eval-edb root) (int64) int64\n  \"marlin_search_dsl_eval_edb\" \"extern\"\n  marlin-search-dsl-eval-edb)\n",
+    )
+    .unwrap();
+
+    let index = WorkspaceSearchIndex::build_with_config(dir.path(), WorkspaceIndexConfig::default());
+    let rows = vec![SearchDslStructuredRow {
+        cells: vec![
+            "def".to_owned(),
+            "prod".to_owned(),
+            "SearchReq".to_owned(),
+            "crates/search-engine/src/edb_bridge/runner.rs".to_owned(),
+            "1".to_owned(),
+        ],
+        display: String::new(),
+        path: Some("crates/search-engine/src/edb_bridge/runner.rs".to_owned()),
+        line: Some(1),
+    }];
+    let (summary, lines) = render_grouped_impact_lines(&rows, Some(&index), 8192);
+    assert!(
+        summary.contains("scheme/c-abi(1)"),
+        "expected scheme/c-abi layer in affected_layers summary: {summary}"
+    );
+    let joined = lines.join("");
+    assert!(
+        joined.contains("[CROSS-LANGUAGE FFI BOUNDARY]")
+            && joined.contains("marlin-search-dsl-eval-edb (c-abi: marlin_search_dsl_eval_edb)")
+            && joined.contains("scheme/c-abi/search-dsl.ss:L5 [def: L1]")
+            && joined.contains("(def (marlin-search-dsl-eval-edb input)"),
+        "expected auto-followed cross-language FFI section with inline Scheme def: {joined}"
+    );
+}

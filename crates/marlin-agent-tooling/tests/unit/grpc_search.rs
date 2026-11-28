@@ -281,5 +281,42 @@ mod grpc_tests {
             "expected file-outline to harvest anchor symbols into find-impact next_dag: {:?}",
             f_out.next_dag_templates
         );
+
+        // 8. Regression: `(read-file "<path>" signature-only?: #t)` and multi-symbol
+        //    `(read-file "<path>" symbols: (...) signature-only?: #t)` return compact
+        //    declaration/signature headers with exact line spans in one call (no body bloat).
+        let sig_read = client
+            .search_step(SearchStepRequest {
+                session_id: "sess-grpc-outline".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(read-file \"crates/marlin-agent-search-engine/src/edb_bridge/runner.rs\" signature-only?: #t)".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("signature-only read-file")
+            .into_inner();
+        assert!(
+            sig_read.rendered_text.contains("signature-only reader")
+                && sig_read.rendered_text.contains("SearchDslExecutionRequest"),
+            "expected signature-only read-file output: {}",
+            sig_read.rendered_text
+        );
+        let batch_sig_read = client
+            .search_step(SearchStepRequest {
+                session_id: "sess-grpc-outline".to_owned(),
+                tool_name: "workspace_search".to_owned(),
+                query: "(read-file \"crates/marlin-agent-search-engine/src/edb_bridge/runner.rs\" symbols: (\"SearchDslExecutionRequest\" \"execute_dsl\") signature-only?: #t)".to_owned(),
+                output_limit: 16384,
+            })
+            .await
+            .expect("multi-symbol signature-only read-file")
+            .into_inner();
+        assert!(
+            batch_sig_read.rendered_text.contains("symbols_matched: 2/2")
+                && batch_sig_read.rendered_text.contains("SearchDslExecutionRequest")
+                && batch_sig_read.rendered_text.contains("execute_dsl"),
+            "expected multi-symbol signature-only read-file output: {}",
+            batch_sig_read.rendered_text
+        );
     }
 }

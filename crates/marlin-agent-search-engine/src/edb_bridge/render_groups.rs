@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 
-use agent_semantic_search::WorkspaceSearchIndex;
+use agent_semantic_search::{WorkspaceEdbPrefilter, WorkspaceSearchIndex, WorkspaceSearchQuery};
 
 use crate::SearchDslStructuredRow;
 
@@ -485,9 +485,266 @@ fn append_impact_definition_snippets(
     }
 }
 
+struct FfiBindingCandidate {
+    scheme_fn: String,
+    c_sym: String,
+    ffi_path: String,
+    ffi_bind_line: usize,
+}
+
+struct CrossFfiBoundaryHit {
+    host_path: String,
+    host_line: usize,
+    scheme_symbol: String,
+    c_symbol: String,
+    ffi_path: String,
+    ffi_bind_line: usize,
+    ffi_def_line: usize,
+}
+
+fn parse_c_define_candidate(index: &WorkspaceSearchIndex, path: &str, line: usize) -> Option<FfiBindingCandidate> {
+    let window = index.live_file_context(path, line.saturating_add(1), 2);
+    let combined: String = window
+        .iter()
+        .filter(|l| l.line_number >= line && l.line_number <= line.saturating_add(3))
+        .map(|l| l.text.trim())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let after_head = combined.split_once("(c-define (")?.1;
+    let scheme_fn = after_head
+        .split(|c: char| c.is_whitespace() || c == ')')
+        .next()
+        .filter(|s| !s.is_empty())?
+        .to_owned();
+    let after_first_q = after_head.split_once('"')?.1;
+    let c_sym = after_first_q
+        .split_once('"')
+        .map(|(s, _)| s)
+        .filter(|s| !s.is_empty())?
+        .to_owned();
+    Some(FfiBindingCandidate {
+        scheme_fn,
+        c_sym,
+        ffi_path: path.to_owned(),
+        ffi_bind_line: line,
+    })
+}
+
+fn collect_ffi_binding_candidates(
+    index: &WorkspaceSearchIndex,
+) -> (Vec<FfiBindingCandidate>, HashMap<(String, String), usize>) {
+    let ffi_tokens = [String::from("c-define")];
+    let prefilter = WorkspaceEdbPrefilter {
+        languages: &[],
+        documents: &[],
+        path_prefix: None,
+        extension: None,
+        required_tokens: &ffi_tokens,
+        max_files: 64,
+        max_facts: 8192,
+    };
+    let snapshot = index.project_prefiltered_edb(&prefilter);
+    let def_lines: HashMap<(String, String), usize> = snapshot
+        .entities
+        .iter()
+        .filter(|ent| ent.kind != "import")
+        .map(|ent| ((ent.path.clone(), ent.name.clone()), ent.line))
+        .collect();
+    let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut candidates: Vec<FfiBindingCandidate> = snapshot
+        .edges
+        .iter()
+        .filter(|edge| edge.relation == "ffi_binds")
+        .filter(|edge| seen.insert((edge.path.clone(), edge.dst.clone())))
+        .map(|edge| FfiBindingCandidate {
+            scheme_fn: edge.src.clone(),
+            c_sym: edge.dst.clone(),
+            ffi_path: edge.path.clone(),
+            ffi_bind_line: edge.line,
+        })
+        .collect();
+    let fallback_query = index.query(&WorkspaceSearchQuery {
+        pattern: "(c-define (",
+        languages: &[],
+        documents: &[],
+        path_prefix: None,
+        extension: None,
+        symbol: None,
+        graph_target: None,
+        max_hits: 32,
+        context_radius: 0,
+    });
+    candidates.extend(
+        fallback_query
+            .hits
+            .iter()
+            .flat_map(|hit| {
+                hit.line_matches
+                    .iter()
+                    .filter_map(|m| parse_c_define_candidate(index, &hit.path, m.line_number))
+            })
+            .filter(|cand| seen.insert((cand.ffi_path.clone(), cand.c_sym.clone()))),
+    );
+    (candidates, def_lines)
+}
+
+fn find_host_reference_in_prod_files(
+    index: &WorkspaceSearchIndex,
+    prod_files: &ImpactFilesByRole<'_>,
+    needle: &str,
+) -> Option<(String, usize)> {
+    let query = index.query(&WorkspaceSearchQuery {
+        pattern: needle,
+        languages: &[],
+        documents: &[],
+        path_prefix: None,
+        extension: None,
+        symbol: None,
+        graph_target: None,
+        max_hits: 32,
+        context_radius: 0,
+    });
+    query.hits.into_iter().find_map(|hit| {
+        if !prod_files.contains_key(hit.path.as_str()) {
+            return None;
+        }
+        let line = hit.line_matches.first().map_or(1, |m| m.line_number);
+        Some((hit.path, line))
+    })
+}
+
+fn resolve_scheme_def_line(
+    index: &WorkspaceSearchIndex,
+    def_lines: &HashMap<(String, String), usize>,
+    ffi_path: &str,
+    kebab_sym: &str,
+    scheme_fn: &str,
+    fallback_line: usize,
+) -> (String, usize) {
+    if let Some(&ln) = def_lines.get(&(ffi_path.to_owned(), kebab_sym.to_owned())) {
+        return (kebab_sym.to_owned(), ln);
+    }
+    if let Some(&ln) = def_lines.get(&(ffi_path.to_owned(), scheme_fn.to_owned())) {
+        return (scheme_fn.to_owned(), ln);
+    }
+    let def_pat = format!("(def ({kebab_sym}");
+    let probe = index.query(&WorkspaceSearchQuery {
+        pattern: &def_pat,
+        languages: &[],
+        documents: &[],
+        path_prefix: Some(ffi_path),
+        extension: None,
+        symbol: None,
+        graph_target: None,
+        max_hits: 4,
+        context_radius: 0,
+    });
+    let found = probe
+        .hits
+        .into_iter()
+        .find(|h| h.path == ffi_path)
+        .and_then(|h| h.line_matches.first().map(|m| m.line_number));
+    match found {
+        Some(ln) => (kebab_sym.to_owned(), ln),
+        None => (kebab_sym.to_owned(), fallback_line),
+    }
+}
+
+fn discover_cross_language_ffi_boundaries(
+    index: Option<&WorkspaceSearchIndex>,
+    prod_files: &ImpactFilesByRole<'_>,
+) -> Vec<CrossFfiBoundaryHit> {
+    let Some(idx) = index else {
+        return Vec::new();
+    };
+    if prod_files.is_empty() {
+        return Vec::new();
+    }
+    let (candidates, def_lines) = collect_ffi_binding_candidates(idx);
+    let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+    candidates
+        .into_iter()
+        .filter(|cand| !prod_files.contains_key(cand.ffi_path.as_str()))
+        .filter_map(|cand| {
+            let kebab = cand.c_sym.replace('_', "-");
+            let host = find_host_reference_in_prod_files(idx, prod_files, &kebab)
+                .or_else(|| find_host_reference_in_prod_files(idx, prod_files, &cand.c_sym))?;
+            let (scheme_symbol, ffi_def_line) = resolve_scheme_def_line(
+                idx,
+                &def_lines,
+                &cand.ffi_path,
+                &kebab,
+                &cand.scheme_fn,
+                cand.ffi_bind_line,
+            );
+            if !seen.insert((cand.ffi_path.clone(), scheme_symbol.clone())) {
+                return None;
+            }
+            Some(CrossFfiBoundaryHit {
+                host_path: host.0,
+                host_line: host.1,
+                scheme_symbol,
+                c_symbol: cand.c_sym,
+                ffi_path: cand.ffi_path,
+                ffi_bind_line: cand.ffi_bind_line,
+                ffi_def_line,
+            })
+        })
+        .take(4)
+        .collect()
+}
+
+fn append_cross_language_ffi_section(
+    index: Option<&WorkspaceSearchIndex>,
+    ffi_hits: &[CrossFfiBoundaryHit],
+    snippet_budget: usize,
+    lines: &mut Vec<String>,
+    body_bytes: &mut usize,
+) {
+    if ffi_hits.is_empty() {
+        return;
+    }
+    let mut section =
+        String::from("[CROSS-LANGUAGE FFI BOUNDARY] (auto-followed from affected bridge files):\n");
+    let entries: Vec<String> = ffi_hits
+        .iter()
+        .map(|hit| {
+            let mut row = format!(
+                "  - {}:L{} -> {} (c-abi: {}) @ {}:L{} [def: L{}]\n",
+                hit.host_path,
+                hit.host_line,
+                hit.scheme_symbol,
+                hit.c_symbol,
+                hit.ffi_path,
+                hit.ffi_bind_line,
+                hit.ffi_def_line,
+            );
+            if let Some(snippet) = index
+                .and_then(|idx| extract_compact_definition_block(idx, &hit.ffi_path, hit.ffi_def_line, 18))
+            {
+                row.push_str(&snippet);
+            }
+            row
+        })
+        .collect();
+    let mut emitted_any = false;
+    for entry in entries {
+        if section.len() + entry.len() > snippet_budget {
+            break;
+        }
+        section.push_str(&entry);
+        emitted_any = true;
+    }
+    if emitted_any {
+        *body_bytes += section.len();
+        lines.push(section);
+    }
+}
+
 /// Group `find-impact` `(role, scope, symbol, path, line)` rows into a
 /// production-first blast-radius summary, affected-crate/layer matrix, inline
-/// target definition snippets, and per-file role lines.
+/// target definition snippets, auto-followed cross-language FFI boundaries, and
+/// per-file role lines.
 pub(super) fn render_grouped_impact_lines(
     rows: &[SearchDslStructuredRow],
     index: Option<&WorkspaceSearchIndex>,
@@ -523,9 +780,17 @@ pub(super) fn render_grouped_impact_lines(
                 .insert((line, sym));
         }
     });
+    let ffi_hits = discover_cross_language_ffi_boundaries(index, &prod_files);
     for path in prod_files.keys() {
         *prod_layers.entry(impact_layer_key(path)).or_insert(0) += 1;
     }
+    let mut ffi_layer_files: BTreeSet<&str> = BTreeSet::new();
+    ffi_hits
+        .iter()
+        .filter(|hit| ffi_layer_files.insert(hit.ffi_path.as_str()))
+        .for_each(|hit| {
+            *prod_layers.entry(impact_layer_key(&hit.ffi_path)).or_insert(0) += 1;
+        });
     let layer_rollup = if prod_layers.is_empty() {
         String::new()
     } else {
@@ -549,6 +814,13 @@ pub(super) fn render_grouped_impact_lines(
         index,
         &prod_files,
         &test_files,
+        snippet_budget,
+        &mut lines,
+        &mut body_bytes,
+    );
+    append_cross_language_ffi_section(
+        index,
+        &ffi_hits,
         snippet_budget,
         &mut lines,
         &mut body_bytes,

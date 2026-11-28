@@ -556,7 +556,7 @@ fn ingest_affected_layers(rendered_text: &str, referenced_layers: &mut BTreeSet<
         .take(120)
         .filter_map(|line| line.strip_prefix("affected_layers:"))
         .flat_map(|rest| rest.split(','))
-        .map(str::trim)
+        .map(|item| item.split('(').next().unwrap_or(item).trim())
         .filter(|s| !s.is_empty())
         .for_each(|layer| {
             referenced_layers.insert(layer.to_owned());
@@ -589,7 +589,7 @@ fn format_frontier_footer(
     if frontier.teaching_kit_active {
         let _ = writeln!(
             out,
-            "dsl_tips: for cross-layer change impact, run ONE (find-impact (\"SymA\" \"SymB\" \"SymC\") limit: 120) — returns [DEFINITIONS], affected_layers, [PROD] & [TEST] across all crates; read exact files via (read-file \"<path>\" symbols: (\"SymA\" \"SymB\")); Turn 2+ auto-unloads this kit"
+            "dsl_tips: for cross-layer change impact, run ONE (find-impact (\"SymA\" \"SymB\") limit: 120) — auto-follows cross-FFI C-ABI boundaries & returns [DEFINITIONS], affected_layers, [PROD] & [TEST]; read all file signatures in 1 call via (read-file \"<path>\" signature-only?: #t) (avoid 360-line shard loops); Turn 2+ auto-unloads this kit"
         );
     }
     if !layer_distribution.is_empty() {
@@ -716,14 +716,14 @@ fn format_open_frontier_template(
         if let Some(sym_list) = layer_sample_symbols.get(frontier).filter(|v| !v.is_empty()) {
             let quoted: Vec<String> = sym_list.iter().map(|s| format!("\"{s}\"")).collect();
             return format!(
-                "workspace_search: (read-file \"{path}\" symbols: ({}))",
+                "workspace_search: (read-file \"{path}\" symbols: ({}) signature-only?: #t)",
                 quoted.join(" ")
             );
         }
-        return format!("workspace_search: (read-file \"{path}\" cursor: 1 max-lines: 220)");
+        return format!("workspace_search: (read-file \"{path}\" signature-only?: #t)");
     }
     if frontier.contains('.') {
-        return format!("workspace_search: (read-file \"{frontier}\" cursor: 1 max-lines: 220)");
+        return format!("workspace_search: (read-file \"{frontier}\" signature-only?: #t)");
     }
     format!(
         "workspace_search: (file-outline \"{frontier}/\" projection: \"kind-summary\" limit: 60)"
