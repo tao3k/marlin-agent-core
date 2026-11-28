@@ -220,7 +220,26 @@
 (def (desugar-find-collisions args)
   (let-values (((pos kwargs) (parse-dsl-kwargs args)))
     (let* ((raw-kind (kw-ref kwargs '(kind kinds) (if (pair? pos) (car pos) "struct")))
-           (kind-str (datum->lower-string raw-kind "struct"))
+           (kinds
+             (let* ((raw-list (cond
+                                ((string? raw-kind) (list (string-downcase raw-kind)))
+                                ((symbol? raw-kind) (list (string-downcase (symbol->string raw-kind))))
+                                ((and (pair? raw-kind) (eq? (car raw-kind) 'quote)
+                                      (pair? (cdr raw-kind)) (list? (cadr raw-kind)))
+                                 (filter-map (lambda (k) (datum->lower-string k #f)) (cadr raw-kind)))
+                                ((list? raw-kind)
+                                 (filter-map (lambda (k) (datum->lower-string k #f)) raw-kind))
+                                (else '("struct"))))
+                    (dedup '()))
+               (for-each (lambda (k)
+                           (when (and (string? k) (> (string-length k) 0) (not (member k dedup)))
+                             (set! dedup (append dedup (list k)))))
+                         raw-list)
+               (let ((clean (if (null? dedup) '("struct") dedup)))
+                 (if (> (length clean) 4)
+                   (list (car clean) (cadr clean) (caddr clean) (cadddr clean))
+                   clean))))
+           (multi-kind? (pair? (cdr kinds)))
            (prefix (kw-ref kwargs '(path-prefix prefix scope) #f))
            (lang-str (normalize-dsl-lang (kw-ref kwargs '(lang language) #f) prefix "rust"))
            (lang-pat (if (string=? lang-str "") '_ lang-str))
@@ -233,34 +252,41 @@
            (min-files (max 2 (min 4 (positive-int-or (kw-ref kwargs '(min-files min-occurrences) 2) 2))))
            (lim (positive-int-or (kw-ref kwargs '(limit) 40) 40))
            (ctx (kw-ref kwargs '(context) #f))
-           (r1 (kind-lang->entity-pattern lang-str kind-str 'f1 'name 'l1))
-           (r2 (kind-lang->entity-pattern lang-str kind-str 'f2 'name 'l2))
-           (r3 (kind-lang->entity-pattern lang-str kind-str 'f3 'name 'l3))
-           (r4 (kind-lang->entity-pattern lang-str kind-str 'f4 'name 'l4))
-           (extra-joins
-             (cond
-               ((= min-files 2) '())
-               ((= min-files 3)
-                `(,r3 (file f3 ,lang-pat p3) (< f2 f3)
-                  ,@(build-path-filter-atoms '(p3) exclude-tests? exclude-prefixes contains-str)))
-               (else
-                `(,r3 (file f3 ,lang-pat p3) (< f2 f3)
-                  ,r4 (file f4 ,lang-pat p4) (< f3 f4)
-                  ,@(build-path-filter-atoms '(p3 p4) exclude-tests? exclude-prefixes contains-str)))))
            (path-filters (build-path-filter-atoms '(p1 p2) exclude-tests? exclude-prefixes contains-str))
-           (name-filters (build-name-filter-atoms 'name name-contains-list name-prefixes name-all-list)))
+           (name-filters (build-name-filter-atoms 'name name-contains-list name-prefixes name-all-list))
+           (rules
+             (map (lambda (kind-str)
+                    (let* ((r1 (kind-lang->entity-pattern lang-str kind-str 'f1 'name 'l1))
+                           (r2 (kind-lang->entity-pattern lang-str kind-str 'f2 'name 'l2))
+                           (r3 (kind-lang->entity-pattern lang-str kind-str 'f3 'name 'l3))
+                           (r4 (kind-lang->entity-pattern lang-str kind-str 'f4 'name 'l4))
+                           (extra-joins
+                             (cond
+                               ((= min-files 2) '())
+                               ((= min-files 3)
+                                `(,r3 (file f3 ,lang-pat p3) (< f2 f3)
+                                  ,@(build-path-filter-atoms '(p3) exclude-tests? exclude-prefixes contains-str)))
+                               (else
+                                `(,r3 (file f3 ,lang-pat p3) (< f2 f3)
+                                  ,r4 (file f4 ,lang-pat p4) (< f3 f4)
+                                  ,@(build-path-filter-atoms '(p3 p4) exclude-tests? exclude-prefixes contains-str)))))
+                           (head (if multi-kind?
+                                   `(answer ,kind-str name p1 l1 p2 l2)
+                                   '(answer name p1 l1 p2 l2))))
+                      `(,head
+                        <-- ,r1 ,r2
+                            (file f1 ,lang-pat p1)
+                            (file f2 ,lang-pat p2)
+                            (< f1 f2)
+                            ,@extra-joins
+                            ,@path-filters
+                            ,@name-filters)))
+                  kinds)))
       `(ascent-fragment
          ,@(build-scope-clause prefix)
          (limit ,lim)
          ,@(if (and (exact-integer? ctx) (> ctx 0)) `((context ,ctx)) '())
-         ((answer name p1 l1 p2 l2)
-          <-- ,r1 ,r2
-              (file f1 ,lang-pat p1)
-              (file f2 ,lang-pat p2)
-              (< f1 f2)
-              ,@extra-joins
-              ,@path-filters
-              ,@name-filters)))))
+         ,@rules))))
 
 (def (desugar-find-symbols args)
   (let-values (((pos kwargs) (parse-dsl-kwargs args)))

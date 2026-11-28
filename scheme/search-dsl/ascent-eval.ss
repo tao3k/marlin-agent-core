@@ -112,12 +112,65 @@
        (string? (cadddr row))
        (integer? (list-ref row 4))))
 
+(def (typed-collision-pair-row? row)
+  (and (pair? row)
+       (= (length row) 6)
+       (string? (car row))
+       (string? (cadr row))
+       (string? (caddr row))
+       (integer? (cadddr row))
+       (string? (list-ref row 4))
+       (integer? (list-ref row 5))))
+
 (def (impact-scoped-row? row)
   (and (pair? row)
        (= (length row) 5)
        (string? (car row))
        (member (cadr row) '("prod" "test"))
        (integer? (list-ref row 4))))
+
+;;; Compact 6-column multi-kind collision pairs `(kind name p1 l1 p2 l2)`
+;;; giving every distinct kind fair representation (so high-volume `fn`
+;;; collisions never starve scarce `struct` collisions) while compacting
+;;; each kind into domain-prioritized round-robin spanning-tree witnesses.
+(def (compact-typed-collision-rows rows limit)
+  (let ((by-kind (make-hash-table))
+        (order '()))
+    (for-each
+      (lambda (row)
+        (let* ((k (car row))
+               (tail (cdr row))
+               (prev (hash-get by-kind k)))
+          (if prev
+            (hash-put! by-kind k (cons tail prev))
+            (begin
+              (hash-put! by-kind k (list tail))
+              (set! order (cons k order))))))
+      rows)
+    (let* ((kinds (reverse order))
+           (num-kinds (max 1 (length kinds)))
+           (max-rows (or limit 1000000))
+           (per-kind (max 6 (quotient (+ max-rows (- num-kinds 1)) num-kinds)))
+           (queues
+             (map (lambda (k)
+                    (map (lambda (r) (cons k r))
+                         (compact-collision-rows (reverse (hash-ref by-kind k)) per-kind)))
+                  kinds)))
+      (let loop ((cur queues) (next '()) (rem max-rows) (acc '()))
+        (cond
+          ((<= rem 0) (reverse acc))
+          ((null? cur)
+           (if (null? next)
+             (reverse acc)
+             (loop (reverse next) '() rem acc)))
+          (else
+           (let ((q (car cur)))
+             (if (null? q)
+               (loop (cdr cur) next rem acc)
+               (loop (cdr cur)
+                     (if (pair? (cdr q)) (cons (cdr q) next) next)
+                     (- rem 1)
+                     (cons (car q) acc))))))))))
 
 ;;; Compact quadratic `(name p1 l1 p2 l2)` collision pairs into spanning-tree
 ;;; chains over unique `(path . line)` sites, ranking domain-specific symbols
@@ -198,6 +251,8 @@
 (def (select-diverse-rows-up-to rows limit)
   (cond
     ((null? rows) rows)
+    ((typed-collision-pair-row? (car rows))
+     (compact-typed-collision-rows rows limit))
     ((and (collision-pair-row? (car rows))
           (or (and limit (> (length rows) limit))
               (> (length rows) 8)))

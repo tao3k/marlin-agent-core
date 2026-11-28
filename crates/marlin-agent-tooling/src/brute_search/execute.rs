@@ -426,8 +426,13 @@ fn format_brute_zero_hit_diagnostic(
             } else {
                 format!("; nearest_symbols: {}", nearest.join(", "))
             };
+            let excl_arg = if req.exclude_tests {
+                " exclude-tests?: #t"
+            } else {
+                ""
+            };
             hints.push(format!(
-                "live stem_hits: {summary}{nearest_clause}; try (brute-search \"{best_stem}\" exclude-tests?: #t) or (find-symbols name-contains: \"{best_stem}\" lang: \"any\" exclude-tests?: #t)"
+                "live stem_hits: {summary}{nearest_clause}; try (brute-search \"{best_stem}\"{excl_arg}) or (find-symbols name-contains: \"{best_stem}\" lang: \"any\"{excl_arg})"
             ));
         }
     }
@@ -515,15 +520,17 @@ fn execute_brute_search_only(
         context_radius: query_context,
     });
 
-    let excluded_count = if !has_exclusions {
-        0
+    let excluded_paths: Vec<&str> = if !has_exclusions {
+        Vec::new()
     } else {
         report
             .hits
             .iter()
             .filter(|h| is_path_excluded(&h.path, &req.exclude_path_prefixes, req.exclude_tests))
-            .count()
+            .map(|h| h.path.as_str())
+            .collect()
     };
+    let excluded_count = excluded_paths.len();
     let mut filtered_hits: Vec<&marlin_agent_search_engine::WorkspaceSearchHit> = report
         .hits
         .iter()
@@ -589,9 +596,27 @@ fn execute_brute_search_only(
         report.indexed_files,
     );
     if excluded_count > 0 {
+        let dir_hint = if req.exclude_tests && req.exclude_path_prefixes.is_empty() {
+            let mut by_dir: std::collections::BTreeMap<String, usize> =
+                std::collections::BTreeMap::new();
+            for p in &excluded_paths {
+                *by_dir.entry(top_two_path_segments(p)).or_insert(0) += 1;
+            }
+            let dirs: Vec<String> = by_dir
+                .into_iter()
+                .take(4)
+                .map(|(d, c)| format!("{d}({c})"))
+                .collect();
+            format!(
+                "; hidden_test_dirs: {} — omit exclude-tests?: #t to inspect tests",
+                dirs.join(", ")
+            )
+        } else {
+            String::new()
+        };
         let _ = writeln!(
             out,
-            "excluded_files: {excluded_count} (exclude_tests={}, exclude_path_prefix={:?})",
+            "excluded_files: {excluded_count} (exclude_tests={}, exclude_path_prefix={:?}{dir_hint})",
             req.exclude_tests, req.exclude_path_prefixes
         );
     }

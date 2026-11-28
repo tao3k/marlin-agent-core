@@ -153,8 +153,9 @@ fn make_fixnum<'a>(
     native(runtime.scalar_object(SchemeScalar::Fixnum(signed)))
 }
 
-/// Decode Scheme's zero-regex `#(search-edb-prefilter languages path-prefix tokens max-files active-edb)`
-/// rooted 6-vector (or structured `#(search-error message)` 2-vector) into an owned [`OwnedWorkspaceEdbPrefilter`].
+/// Decode Scheme's zero-regex
+/// `#(search-edb-prefilter languages path-prefix tokens max-files active-edb any-tokens)`
+/// rooted 7-vector (or structured `#(search-error message)` 2-vector) into an owned [`OwnedWorkspaceEdbPrefilter`].
 pub fn decode_edb_prefilter(
     value: RootedSchemeObject<'_>,
 ) -> Result<OwnedWorkspaceEdbPrefilter, SearchPlanProjectionError> {
@@ -163,7 +164,7 @@ pub fn decode_edb_prefilter(
         let msg = decode_string(native(tuple.element(1))?, MAX_TEXT_BYTES)?;
         return Err(SearchPlanProjectionError::Validation(msg.trim().to_owned()));
     }
-    if tuple.len() != 6 && tuple.len() != 7 {
+    if tuple.len() != 7 {
         return Err(SearchPlanProjectionError::Invalid(
             "search-edb-prefilter arity",
         ));
@@ -186,11 +187,7 @@ pub fn decode_edb_prefilter(
     let required_tokens = decode_string_vector(native(tuple.element(3))?, MAX_TOKENS)?;
     let max_files = decode_usize(native(tuple.element(4))?)?.max(1);
     let active_edb = decode_symbol_vector(native(tuple.element(5))?, 16)?;
-    let any_tokens = if tuple.len() == 7 {
-        decode_string_vector(native(tuple.element(6))?, MAX_TOKENS)?
-    } else {
-        Vec::new()
-    };
+    let any_tokens = decode_string_vector(native(tuple.element(6))?, MAX_TOKENS)?;
     let hydration = EdbHydrationMask::from_active_relations(&active_edb);
     Ok(OwnedWorkspaceEdbPrefilter {
         languages,

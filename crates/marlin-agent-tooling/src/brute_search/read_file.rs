@@ -11,7 +11,9 @@ use marlin_agent_search_engine::{
     WorkspaceEdbPrefilter, WorkspaceSearchIndex, WorkspaceSearchQuery,
 };
 
-use super::outline_read::{refine_coarse_entity_kind, suggest_nearby_paths};
+use super::outline_read::{
+    find_symbol_definition_end_line, refine_coarse_entity_kind, suggest_nearby_paths,
+};
 use super::parser::{DEFAULT_READ_LINES, ReadFileRequest, parse_read_file_form};
 
 fn resolve_symbol_anchor_in_file(
@@ -62,7 +64,7 @@ fn resolve_symbol_anchor_in_file(
     });
     for hit in text_probe.hits {
         if hit.path == path
-            && let Some(line) = hit.line_matches.first().map(|m| m.line_number).or(hit.first_line)
+            && let Some(line) = hit.line_matches.first().map(|m| m.line_number)
         {
             return Ok(line);
         }
@@ -85,9 +87,13 @@ fn append_symbol_slice(
     total_lines: &mut usize,
 ) -> bool {
     let before = (budget.symbol_context / 4).max(3);
+    let ast_end = find_symbol_definition_end_line(index, path, anchor_line, 80);
     let after = budget.symbol_context.clamp(16, 80);
     let start = anchor_line.saturating_sub(before).max(1);
-    let end = anchor_line.saturating_add(after);
+    let end = match ast_end {
+        Some(end_line) => end_line.saturating_add(1).min(anchor_line.saturating_add(80)),
+        None => anchor_line.saturating_add(after),
+    };
     let span = end.saturating_sub(start);
     let slice: Vec<_> = index
         .live_file_context(
@@ -99,7 +105,10 @@ fn append_symbol_slice(
         .filter(|l| l.line_number >= start && l.line_number <= end)
         .collect();
     let actual_end = slice.last().map_or(start, |l| l.line_number);
-    let header = format!("=== symbol: {sym} @ L{anchor_line} (L{start}..=L{actual_end}) ===\n");
+    let span_note = ast_end.map_or_else(String::new, |e| format!(" [ast_span: L{anchor_line}..=L{e}]"));
+    let header = format!(
+        "=== symbol: {sym} @ L{anchor_line} (L{start}..=L{actual_end}){span_note} ===\n"
+    );
     if body.len() + header.len() > budget.body_budget {
         return true;
     }
@@ -242,14 +251,21 @@ pub(super) fn execute_read_file(
         return execute_read_file_multi_symbols(index, &req, output_limit);
     }
     let single_symbol = req.symbols.first().map(String::as_str);
-    let (eff_start, eff_end, symbol_anchor_line) = if let Some(sym) = single_symbol {
+    let (eff_start, eff_end, symbol_anchor_line, symbol_ast_end) = if let Some(sym) = single_symbol {
         match resolve_symbol_anchor_in_file(index, &req.path, sym) {
             Ok(anchor_line) => {
-                let before = (req.symbol_context / 3).max(5);
-                let after = req.symbol_context.saturating_mul(2).clamp(25, 160);
+                let before = (req.symbol_context / 3).clamp(3, 8);
+                let ast_end = find_symbol_definition_end_line(index, &req.path, anchor_line, 120);
+                let fallback_after = req.symbol_context.saturating_mul(2).clamp(25, 160);
                 let start = anchor_line.saturating_sub(before).max(1);
-                let end = anchor_line.saturating_add(after);
-                (start, end, Some(anchor_line))
+                let end = match ast_end {
+                    Some(end_line) => end_line
+                        .saturating_add(1)
+                        .max(anchor_line.saturating_add(req.symbol_context.min(12)))
+                        .min(anchor_line.saturating_add(120)),
+                    None => anchor_line.saturating_add(fallback_after),
+                };
+                (start, end, Some(anchor_line), ast_end)
             }
             Err(available) => {
                 let probe_exists = !index.live_file_context(&req.path, 1, 0).is_empty();
@@ -264,11 +280,11 @@ pub(super) fn execute_read_file(
                         req.path
                     ));
                 }
-                (req.start_line, req.end_line, None)
+                (req.start_line, req.end_line, None, None)
             }
         }
     } else {
-        (req.start_line, req.end_line, None)
+        (req.start_line, req.end_line, None, None)
     };
     let span = eff_end.saturating_sub(eff_start);
     let mid = eff_start.saturating_add(span / 2);
@@ -311,7 +327,14 @@ pub(super) fn execute_read_file(
         slice.len(),
     );
     if let (Some(sym), Some(anchor_line)) = (single_symbol, symbol_anchor_line) {
-        let _ = writeln!(out, "symbol_anchor: {sym} @ L{anchor_line}");
+        if let Some(end_line) = symbol_ast_end {
+            let _ = writeln!(
+                out,
+                "symbol_anchor: {sym} @ L{anchor_line}\nsymbol_span: L{anchor_line}..=L{end_line} (complete AST body)"
+            );
+        } else {
+            let _ = writeln!(out, "symbol_anchor: {sym} @ L{anchor_line}");
+        }
     }
     if req.requested_end_clamped {
         let _ = writeln!(out, "range_clamped: true (max 200 lines per call)");

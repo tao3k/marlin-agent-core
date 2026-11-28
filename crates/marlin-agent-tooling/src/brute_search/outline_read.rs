@@ -163,6 +163,34 @@ fn scan_line_delimiters(line: &str, state: &mut DelimScanState) {
     }
 }
 
+pub(super) fn find_symbol_definition_end_line(
+    index: &WorkspaceSearchIndex,
+    path: &str,
+    start_line: usize,
+    max_span: usize,
+) -> Option<usize> {
+    let half = (max_span / 2).max(16);
+    let window = index.live_file_context(path, start_line.saturating_add(half), half + 4);
+    if window.is_empty() {
+        return None;
+    }
+    let max_end = start_line.saturating_add(max_span);
+    let mut delim = DelimScanState::default();
+    for row in window
+        .iter()
+        .filter(|r| r.line_number >= start_line && r.line_number <= max_end)
+    {
+        let trimmed = row.text.trim();
+        scan_line_delimiters(trimmed, &mut delim);
+        if (delim.saw_delim && delim.brace_depth <= 0 && delim.paren_depth <= 0)
+            || (!delim.saw_delim && trimmed.ends_with(';'))
+        {
+            return Some(row.line_number);
+        }
+    }
+    None
+}
+
 fn format_skeleton_signature(
     index: &WorkspaceSearchIndex,
     path: &str,
@@ -304,13 +332,41 @@ struct OutlineRenderConfig {
     body_budget: usize,
 }
 
+#[derive(Default)]
+struct OutlineRenderState {
+    emitted_symbols: usize,
+    body: String,
+    omitted_files: Vec<String>,
+}
+
+fn format_omitted_file_inventory(
+    path: &str,
+    symbols: &[(usize, &str, &str)],
+    start_idx: usize,
+) -> String {
+    let remaining = symbols.len().saturating_sub(start_idx);
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let names: Vec<&str> = symbols
+        .iter()
+        .skip(start_idx)
+        .map(|&(_, _, name)| name)
+        .filter(|&name| seen.insert(name))
+        .take(3)
+        .collect();
+    let suffix = if remaining > names.len() {
+        format!(", +{}", remaining - names.len())
+    } else {
+        String::new()
+    };
+    format!("{path}({remaining}: {}{suffix})", names.join(", "))
+}
+
 fn append_outline_file_block(
     index: &WorkspaceSearchIndex,
     path: &str,
     mut entry: OutlineFileEntry<'_>,
     cfg: &OutlineRenderConfig,
-    emitted_symbols: &mut usize,
-    body: &mut String,
+    state: &mut OutlineRenderState,
 ) -> bool {
     let lang = entry.language;
     entry
@@ -321,21 +377,26 @@ fn append_outline_file_block(
         .dedup_by(|a, b| a.0 == b.0 && a.1 == b.1 && a.2 == b.2);
     let file_total = entry.symbols.len();
     let file_hdr = format!("  - @{path}  [{lang} · {file_total} symbol(s)]\n");
-    if body.len() + file_hdr.len() > cfg.body_budget {
+    if state.body.len() + file_hdr.len() > cfg.body_budget {
+        if state.omitted_files.len() < 10 && file_total > 0 {
+            state
+                .omitted_files
+                .push(format_omitted_file_inventory(path, &entry.symbols, 0));
+        }
         return true;
     }
-    body.push_str(&file_hdr);
-    let remaining_global = cfg.max_symbols.saturating_sub(*emitted_symbols);
+    state.body.push_str(&file_hdr);
+    let remaining_global = cfg.max_symbols.saturating_sub(state.emitted_symbols);
     let allowed = cfg
         .per_file_cap
         .map_or(remaining_global, |cap| cap.min(remaining_global));
-    let mut cur_len = body.len();
+    let mut cur_len = state.body.len();
     let mut budget_hit = false;
     let rows: Vec<String> = entry
         .symbols
-        .into_iter()
+        .iter()
         .take(allowed)
-        .map(|(line, kind, name)| {
+        .map(|&(line, kind, name)| {
             format_outline_symbol_row(index, path, line, kind, name, cfg)
         })
         .take_while(|row| {
@@ -349,18 +410,25 @@ fn append_outline_file_block(
         })
         .collect();
     let emitted_in_file = rows.len();
-    rows.iter().for_each(|row| body.push_str(row));
-    *emitted_symbols += emitted_in_file;
+    rows.iter().for_each(|row| state.body.push_str(row));
+    state.emitted_symbols += emitted_in_file;
     if emitted_in_file < file_total {
+        if state.omitted_files.len() < 10 {
+            state.omitted_files.push(format_omitted_file_inventory(
+                path,
+                &entry.symbols,
+                emitted_in_file,
+            ));
+        }
         let note = format!(
             "      ... (+{} more in {path}; call (file-outline \"{path}\") for full file)\n",
             file_total - emitted_in_file
         );
-        if body.len() + note.len() <= cfg.body_budget {
-            body.push_str(&note);
+        if state.body.len() + note.len() <= cfg.body_budget {
+            state.body.push_str(&note);
         }
     }
-    budget_hit || *emitted_symbols >= cfg.max_symbols
+    budget_hit || state.emitted_symbols >= cfg.max_symbols
 }
 
 fn outline_name_matches(name: &str, name_contains: &[String], name_all: &[String]) -> bool {
@@ -570,29 +638,38 @@ pub(super) fn execute_file_outline(
         use_type_detail: req.type_detail,
         body_budget: output_limit.saturating_sub(out.len() + 220),
     };
-    let mut emitted_symbols = 0usize;
-    let mut body = String::new();
+    let mut state = OutlineRenderState::default();
     let mut omitted_dirs: BTreeSet<String> = BTreeSet::new();
     let mut stopped = false;
-    for (path, entry) in by_file {
+    for (path, mut entry) in by_file {
         if stopped {
             omitted_dirs.insert(top_two_segments(path));
+            if state.omitted_files.len() < 10 && !entry.symbols.is_empty() {
+                entry
+                    .symbols
+                    .sort_unstable_by_key(|(line, _, name)| (*line, *name));
+                entry
+                    .symbols
+                    .dedup_by(|a, b| a.0 == b.0 && a.1 == b.1 && a.2 == b.2);
+                state.omitted_files.push(format_omitted_file_inventory(
+                    path,
+                    &entry.symbols,
+                    0,
+                ));
+            }
             continue;
         }
-        if append_outline_file_block(
-            index,
-            path,
-            entry,
-            &render_cfg,
-            &mut emitted_symbols,
-            &mut body,
-        ) {
-            if emitted_symbols == 0 || body.len() >= render_cfg.body_budget {
+        if append_outline_file_block(index, path, entry, &render_cfg, &mut state) {
+            if state.emitted_symbols == 0 || state.body.len() >= render_cfg.body_budget {
                 omitted_dirs.insert(top_two_segments(path));
             }
             stopped = true;
         }
     }
+
+    let emitted_symbols = state.emitted_symbols;
+    let body = state.body;
+    let omitted_files = state.omitted_files;
 
     let truncated = emitted_symbols < total_symbols;
     let _ = writeln!(out, "returned: {emitted_symbols}\ntruncated: {truncated}");
@@ -610,6 +687,9 @@ pub(super) fn execute_file_outline(
     if !omitted_dirs.is_empty() {
         let sample: Vec<String> = omitted_dirs.into_iter().take(12).collect();
         let _ = writeln!(out, "omitted_dirs: {}", sample.join(", "));
+    }
+    if truncated && total_files > 1 && !omitted_files.is_empty() {
+        let _ = writeln!(out, "omitted_files: {}", omitted_files.join(", "));
     }
     out.push_str(&body);
     if truncated {

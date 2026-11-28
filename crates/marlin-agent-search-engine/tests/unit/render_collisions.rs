@@ -51,7 +51,7 @@ fn grouped_collision_renderer_deduplicates_pairs_and_flags_high_cardinality() {
         },
     ];
     assert!(is_collision_row_shape(&rows));
-    let (lines, distinct) = render_grouped_collision_lines(&rows, 4096);
+    let (lines, distinct) = render_grouped_collision_lines(&rows, None, 4096);
     assert_eq!(distinct, 2);
     assert_eq!(lines.len(), 2);
     assert!(
@@ -61,6 +61,46 @@ fn grouped_collision_renderer_deduplicates_pairs_and_flags_high_cardinality() {
             && lines[0].contains("crates/c/src/lib.rs:L30")
             && lines[1].contains("- new [2 file(s)]:"),
         "expected domain symbol Binding to rank ahead of boilerplate new: {lines:?}"
+    );
+
+    let typed_rows = vec![
+        SearchDslStructuredRow {
+            cells: vec![
+                "struct".to_owned(),
+                "GitContext".to_owned(),
+                "crates/a/src/repo.rs".to_owned(),
+                "40".to_owned(),
+                "crates/b/src/git.rs".to_owned(),
+                "76".to_owned(),
+            ],
+            display: String::new(),
+            path: Some("crates/a/src/repo.rs".to_owned()),
+            line: Some(40),
+        },
+        SearchDslStructuredRow {
+            cells: vec![
+                "fn".to_owned(),
+                "build_graph".to_owned(),
+                "crates/a/src/g.rs".to_owned(),
+                "12".to_owned(),
+                "crates/b/src/g.rs".to_owned(),
+                "25".to_owned(),
+            ],
+            display: String::new(),
+            path: Some("crates/a/src/g.rs".to_owned()),
+            line: Some(12),
+        },
+    ];
+    assert!(is_collision_row_shape(&typed_rows));
+    let (typed_lines, typed_distinct) = render_grouped_collision_lines(&typed_rows, None, 4096);
+    assert_eq!(typed_distinct, 2);
+    let typed_joined = typed_lines.join("");
+    assert!(
+        typed_joined.contains("[KIND: struct]")
+            && typed_joined.contains("GitContext [2 file(s)]:")
+            && typed_joined.contains("[KIND: fn]")
+            && typed_joined.contains("build_graph [2 file(s)]:"),
+        "expected multi-kind grouped collision sections: {typed_joined}"
     );
 }
 
@@ -105,7 +145,7 @@ fn grouped_impact_renderer_orders_prod_before_test_and_summarizes_roles() {
         },
     ];
     assert!(is_impact_row_shape(&rows));
-    let (summary, lines) = render_grouped_impact_lines(&rows, 4096);
+    let (summary, lines) = render_grouped_impact_lines(&rows, None, 4096);
     assert_eq!(
         summary,
         "prod(2: def=1, caller=1) | test(1: ref=1)\naffected_layers: crates/a(2)"

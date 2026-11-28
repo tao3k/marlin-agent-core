@@ -37,7 +37,7 @@ use crate::search_scheduler::{
 
 const DEFAULT_SYNC_DEBOUNCE: Duration = Duration::from_millis(500);
 const DEFAULT_QUERY_CACHE_CAPACITY: usize = 256;
-const COLD_GERBIL_VM_TIMEOUT_FLOOR: Duration = Duration::from_secs(30);
+const COLD_GERBIL_VM_TIMEOUT_FLOOR: Duration = Duration::from_secs(60);
 const COLD_GERBIL_VM_ELIGIBLE_MIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 static GERBIL_VM_WARM: AtomicBool = AtomicBool::new(false);

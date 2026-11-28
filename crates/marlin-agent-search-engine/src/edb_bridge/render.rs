@@ -235,79 +235,161 @@ fn append_ram_witness_fallback(
     );
 }
 
-fn append_nearest_symbol_recovery(
-    rendered_text: &mut String,
-    index: Option<&WorkspaceSearchIndex>,
-    prefilter: Option<&OwnedWorkspaceEdbPrefilter>,
-) {
-    let (Some(idx), Some(pf)) = (index, prefilter) else {
-        return;
-    };
-    let Some(raw_token) = pf
-        .required_tokens
-        .first()
-        .or_else(|| pf.any_tokens.first())
-        .map(String::as_str)
-    else {
-        return;
-    };
-    let stems = split_identifier_stems(raw_token);
-    if stems.is_empty() {
-        return;
-    }
-    let scope_prefix = pf.path_prefix.as_deref();
-    let stems_lc: Vec<String> = stems.iter().map(|s| s.to_ascii_lowercase()).collect();
-    let mut scored: Vec<(usize, String, String, String, usize)> = Vec::new();
-    let mut seen_names: BTreeSet<String> = BTreeSet::new();
-    let mut matched_stems: Vec<&str> = Vec::new();
+fn is_test_like_recovery_path(path: &str) -> bool {
+    let lc = path.to_ascii_lowercase();
+    lc.contains("/tests/")
+        || lc.starts_with("tests/")
+        || lc.contains("/t/")
+        || lc.contains("_test.")
+        || lc.contains("-test.")
+        || lc.contains("mock")
+}
 
-    for stem in stems.iter().take(3) {
+type ScoredRecoverySymbol = (usize, bool, String, String, String, usize);
+
+fn collect_recovery_stems(pf: &OwnedWorkspaceEdbPrefilter) -> Vec<String> {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    pf.required_tokens
+        .iter()
+        .chain(pf.any_tokens.iter())
+        .flat_map(|raw| split_identifier_stems(raw))
+        .filter(|st| seen.insert(st.to_ascii_lowercase()))
+        .take(6)
+        .collect()
+}
+
+fn score_entities_against_stems(
+    entities: &[agent_semantic_search::WorkspaceEdbEntityFact],
+    stems_lc: &[String],
+    seen_names: &mut BTreeSet<(String, String)>,
+    matched_stem_indices: &mut BTreeSet<usize>,
+    scored: &mut Vec<ScoredRecoverySymbol>,
+) {
+    entities
+        .iter()
+        .filter(|ent| ent.kind != "import")
+        .for_each(|ent| {
+            let name_lc = ent.name.to_ascii_lowercase();
+            let hits = stems_lc
+                .iter()
+                .enumerate()
+                .filter(|(_, st)| name_lc.contains(st.as_str()))
+                .inspect(|(idx, _)| {
+                    matched_stem_indices.insert(*idx);
+                })
+                .count();
+            if hits > 0 && seen_names.insert((ent.name.clone(), ent.path.clone())) {
+                scored.push((
+                    hits,
+                    !is_test_like_recovery_path(&ent.path),
+                    ent.name.clone(),
+                    ent.kind.clone(),
+                    ent.path.clone(),
+                    ent.line,
+                ));
+            }
+        });
+}
+
+fn probe_recovery_symbols_from_index(
+    idx: &WorkspaceSearchIndex,
+    pf: &OwnedWorkspaceEdbPrefilter,
+    stems: &[String],
+    stems_lc: &[String],
+    seen_names: &mut BTreeSet<(String, String)>,
+    matched_stem_indices: &mut BTreeSet<usize>,
+    scored: &mut Vec<ScoredRecoverySymbol>,
+) {
+    for stem in stems.iter().take(4) {
         let probe = WorkspaceEdbPrefilter {
             languages: &pf.languages,
             documents: &[],
-            path_prefix: scope_prefix,
+            path_prefix: pf.path_prefix.as_deref(),
             extension: None,
             required_tokens: std::slice::from_ref(stem),
             max_files: 24,
             max_facts: 4096,
         };
         let sub = idx.project_prefiltered_edb(&probe);
-        if !sub.entities.is_empty() {
-            matched_stems.push(stem.as_str());
-        }
-        for ent in &sub.entities {
-            if ent.kind == "import" {
-                continue;
-            }
-            let name_lc = ent.name.to_ascii_lowercase();
-            let hits = stems_lc
-                .iter()
-                .filter(|st| name_lc.contains(st.as_str()))
-                .count();
-            if hits > 0 && seen_names.insert(ent.name.clone()) {
-                scored.push((hits, ent.name.clone(), ent.kind.clone(), ent.path.clone(), ent.line));
-            }
-        }
+        score_entities_against_stems(
+            &sub.entities,
+            stems_lc,
+            seen_names,
+            matched_stem_indices,
+            scored,
+        );
+    }
+}
+
+fn append_nearest_symbol_recovery(
+    rendered_text: &mut String,
+    snapshot: &WorkspaceEdbSnapshot,
+    index: Option<&WorkspaceSearchIndex>,
+    prefilter: Option<&OwnedWorkspaceEdbPrefilter>,
+) {
+    let Some(pf) = prefilter else {
+        return;
+    };
+    let stems = collect_recovery_stems(pf);
+    if stems.is_empty() {
+        return;
+    }
+    let stems_lc: Vec<String> = stems.iter().map(|s| s.to_ascii_lowercase()).collect();
+    let mut scored: Vec<ScoredRecoverySymbol> = Vec::new();
+    let mut seen_names: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut matched_stem_indices: BTreeSet<usize> = BTreeSet::new();
+
+    score_entities_against_stems(
+        &snapshot.entities,
+        &stems_lc,
+        &mut seen_names,
+        &mut matched_stem_indices,
+        &mut scored,
+    );
+    if scored.is_empty()
+        && let Some(idx) = index
+    {
+        probe_recovery_symbols_from_index(
+            idx,
+            pf,
+            &stems,
+            &stems_lc,
+            &mut seen_names,
+            &mut matched_stem_indices,
+            &mut scored,
+        );
     }
     if scored.is_empty() {
         return;
     }
-    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.len().cmp(&b.1.len())).then_with(|| a.1.cmp(&b.1)));
+    scored.sort_by(|a, b| {
+        b.0.cmp(&a.0)
+            .then_with(|| b.1.cmp(&a.1))
+            .then_with(|| a.2.len().cmp(&b.2.len()))
+            .then_with(|| a.2.cmp(&b.2))
+    });
     let preview: Vec<String> = scored
         .iter()
-        .take(6)
-        .map(|(_, name, kind, path, line)| format!("{name} [{kind}] ({path}:L{line})"))
+        .take(8)
+        .map(|(_, _, name, kind, path, line)| format!("{name} [{kind}] ({path}:L{line})"))
         .collect();
     let _ = writeln!(rendered_text, "nearest_symbols: {}", preview.join(", "));
-    let top_name = &scored[0].1;
-    let scope_arg = scope_prefix.map_or_else(String::new, |p| format!(" path-prefix: \"{p}\""));
+    let top_name = &scored[0].2;
+    let scope_arg = pf
+        .path_prefix
+        .as_deref()
+        .map_or_else(String::new, |p| format!(" path-prefix: \"{p}\""));
+    let matched_stems: Vec<&str> = matched_stem_indices
+        .into_iter()
+        .filter_map(|i| stems.get(i).map(String::as_str))
+        .collect();
     let stem_suggestion = if matched_stems.len() >= 2 {
         format!(
-            " or (find-symbols name-all: (\"{}\" \"{}\"){scope_arg} exclude-tests?: #t limit: 60)",
+            " or (find-symbols name-contains: (\"{}\" \"{}\"){scope_arg} limit: 60)",
             matched_stems[0], matched_stems[1]
         )
     } else if let Some(st) = matched_stems.first() {
-        format!(" or (find-symbols name-contains: \"{st}\"{scope_arg} exclude-tests?: #t limit: 60)")
+        format!(" or (find-symbols name-contains: \"{st}\"{scope_arg} limit: 60)")
     } else {
         String::new()
     };
@@ -335,7 +417,7 @@ fn append_zero_hit_diagnostic(
                 "diagnostic: prefilter matched 0 indexed files; check language/token filters or verify with (brute-search \"...\" path-prefix: \"...\")"
             );
         }
-        append_nearest_symbol_recovery(rendered_text, index, prefilter);
+        append_nearest_symbol_recovery(rendered_text, snapshot, index, prefilter);
         return;
     }
 
@@ -373,7 +455,7 @@ fn append_zero_hit_diagnostic(
     if native_ast_files < snapshot.files.len() {
         append_ram_witness_fallback(rendered_text, snapshot, index, prefilter);
     }
-    append_nearest_symbol_recovery(rendered_text, index, prefilter);
+    append_nearest_symbol_recovery(rendered_text, snapshot, index, prefilter);
 }
 
 fn format_truncation_next_query_hint(
@@ -421,10 +503,10 @@ pub(super) fn render_ascent_search_text(inputs: AscentRenderInputs<'_>) -> Strin
     let grouped_impact_mode =
         !grouped_collision_mode && is_impact_row_shape(rows) && explicit_context.is_none();
     let (body_lines, grouped_distinct_symbols, impact_summary) = if grouped_collision_mode {
-        let (lines, distinct) = render_grouped_collision_lines(rows, body_budget);
+        let (lines, distinct) = render_grouped_collision_lines(rows, ctx.index, body_budget);
         (lines, Some(distinct), None)
     } else if grouped_impact_mode {
-        let (summary, lines) = render_grouped_impact_lines(rows, body_budget);
+        let (summary, lines) = render_grouped_impact_lines(rows, ctx.index, body_budget);
         (lines, None, Some(summary))
     } else {
         // Attach zero-I/O RAM source snippets automatically for concise L1 Ascent results

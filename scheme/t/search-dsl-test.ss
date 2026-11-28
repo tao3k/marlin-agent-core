@@ -1106,6 +1106,12 @@
                  "(find-collisions kind: \"fn\" path-prefix: \"crates/\" lang: \"rust\" min-files: 3 exclude-tests?: #t limit: 20)"
                  edb SearchLanguageRegistryValue))
              (min3-syms (map car (vector-ref min3-fn-colls 3)))
+             (multi-kind-colls
+               (evaluate-search-dsl-over-edb
+                 "(find-collisions kind: (\"struct\" \"fn\") path-prefix: \"crates/\" lang: \"rust\" exclude-tests?: #t limit: 12)"
+                 edb SearchLanguageRegistryValue))
+             (multi-kind-rows (vector-ref multi-kind-colls 3))
+             (multi-kind-tags (map car multi-kind-rows))
              (copilot-rust-kws (vector->list (search-dsl-completions "(find-collisions lang: \"rust\" ")))
              (copilot-rust-kw-names (map (lambda (v) (vector-ref v 0)) copilot-rust-kws))
              (copilot-rust-kinds (vector->list (search-dsl-completions "(find-collisions lang: \"rust\" kind: ")))
@@ -1167,6 +1173,13 @@
         (check (map car direct-diverse) => '("new" "parse" "run"))
         ;; `min-files: 3` isolates high-multiplicity hubs (`new` in 3 prod files) over 2-file duplicates!
         (check (and (pair? min3-syms) (member "new" min3-syms) (not (member "parse" min3-syms)) (not (member "run" min3-syms)) #t) => #t)
+        ;; Multi-kind `(find-collisions kind: ("struct" "fn") ...)` emits 6-column typed rows with fair kind representation!
+        (check (vector-ref multi-kind-colls 4) => '())
+        (check (and (member "struct" multi-kind-tags)
+                    (member "fn" multi-kind-tags)
+                    (= (length (car multi-kind-rows)) 6)
+                    #t)
+               => #t)
         ;; Yuanxu JSON-Schema-driven Copilot completions (zero hardcoded tables!):
         ;;   - Rust language JSON Schema projects `kind:` + `languageKind:` and exact Rust enums
         ;;   - Scheme language JSON Schema projects exact Scheme `languageKind:` enums (`def`, `poo_def`)

@@ -584,4 +584,47 @@ async fn l0_exclude_path_prefix_outline_read_file_and_zero_hit_diagnostics() {
             && zero_hit_nearest.contains("EngineMode"),
         "expected L0 zero-hit nearest_symbols recovery: {zero_hit_nearest}"
     );
+
+    // 27. Truncated multi-file `(file-outline ...)` emits `omitted_files:` inventory, and
+    // `(read-file ... symbol: ...)` resolves the complete AST definition body span.
+    let ModelToolOutcome::Completed(omitted_outline) = run(
+        "c29",
+        "(file-outline \"crates/\" exclude-tests?: #t limit: 2 max-per-file: 1)",
+    )
+    .await
+    else {
+        panic!("expected Completed for truncated multi-file outline");
+    };
+    assert!(
+        omitted_outline.contains("truncated: true")
+            && omitted_outline.contains("omitted_files:"),
+        "expected omitted_files inventory on truncated directory outline: {omitted_outline}"
+    );
+    let ModelToolOutcome::Completed(ast_span_read) = run(
+        "c30",
+        "(read-file \"crates/modes/src/lib.rs\" symbol: \"EngineMode\" context: 2)",
+    )
+    .await
+    else {
+        panic!("expected Completed for AST-span symbol read-file");
+    };
+    assert!(
+        ast_span_read.contains("symbol_span: L1..=L4 (complete AST body)")
+            && ast_span_read.contains("enum EngineMode")
+            && ast_span_read.contains("Safe,"),
+        "expected full AST symbol_span body resolution: {ast_span_read}"
+    );
+    let ModelToolOutcome::Completed(excluded_sample_brute) = run(
+        "c31",
+        "(brute-search \"SearchEngine\" exclude-tests?: #t limit: 10)",
+    )
+    .await
+    else {
+        panic!("expected Completed for exclude-tests sample brute-search");
+    };
+    assert!(
+        excluded_sample_brute.contains("excluded_files: 1")
+            && excluded_sample_brute.contains("hidden_test_dirs: crates/core(1)"),
+        "expected excluded_files header to expose hidden test crate counts: {excluded_sample_brute}"
+    );
 }
