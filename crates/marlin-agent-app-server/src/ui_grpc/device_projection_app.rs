@@ -291,6 +291,37 @@ impl ProjectionQueryService for MyGoBridgeHost {
             crate::mygo_host::query_fs_records(trimmed_query, &default_fs_root)
         {
             fs_res.map_err(Status::failed_precondition)?
+        } else if trimmed_query.starts_with("magit:aitia-review")
+            && let Some(bridge) = &self.magit_bridge
+        {
+            let repo_override = trimmed_query
+                .strip_prefix("magit:aitia-review@")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(std::path::PathBuf::from);
+            let review = if let Some(ref repo) = repo_override {
+                bridge
+                    .run_progressive_review_for(Some(repo.as_path()), None)
+                    .await
+                    .map_err(|err| {
+                        Status::failed_precondition(format!("aitia review error: {err}"))
+                    })?
+            } else if let Some(cached) = bridge.latest_progressive_review() {
+                cached
+            } else {
+                bridge
+                    .run_progressive_review_for(None, None)
+                    .await
+                    .map_err(|err| {
+                        Status::failed_precondition(format!("aitia review error: {err}"))
+                    })?
+            };
+            let root_str = repo_override
+                .as_deref()
+                .unwrap_or_else(|| bridge.workspace_root())
+                .to_string_lossy()
+                .into_owned();
+            crate::mygo_host::WorkspaceMagitBridge::project_progressive_review(&review, &root_str)
         } else if trimmed_query.starts_with("magit:")
             && let Some(bridge) = &self.magit_bridge
         {
@@ -302,9 +333,16 @@ impl ProjectionQueryService for MyGoBridgeHost {
             let snap = bridge
                 .refresh_snapshot_for(repo_override.as_deref())
                 .await
-                .map_err(|err| Status::failed_precondition(format!("magit snapshot error: {err}")))?;
+                .map_err(|err| {
+                    Status::failed_precondition(format!("magit snapshot error: {err}"))
+                })?;
             let receipt = bridge.last_receipt();
-            crate::mygo_host::WorkspaceMagitBridge::project_snapshot(&snap, receipt.as_ref())
+            let review = bridge.latest_progressive_review();
+            crate::mygo_host::WorkspaceMagitBridge::project_snapshot_with_review(
+                &snap,
+                receipt.as_ref(),
+                review.as_ref(),
+            )
         } else if let Some(records) = seeded {
             records
         } else if let Some(handler) = &self.graph_query_handler

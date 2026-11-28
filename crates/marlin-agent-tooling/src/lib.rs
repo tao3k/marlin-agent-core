@@ -5,6 +5,7 @@
 //! Native Scheme tooling projection and reusable resident-search tool bindings
 //! connecting declared capabilities to Marlin's `ModelToolCatalog`.
 
+pub mod aitia_review_tool;
 mod brute_search;
 #[cfg(feature = "grpc")]
 pub mod grpc_search;
@@ -12,6 +13,11 @@ mod projection;
 mod search_scheduler;
 mod search_tool;
 
+pub use aitia_review_tool::{
+    AITIA_REVIEW_TOOL_NAME, AitiaGrpcRawResponse, AitiaMagitFinding, AitiaMagitOverlaySummary,
+    AitiaMagitReviewSnapshot, AitiaReviewToolHandler, AitiaSidecarGrpcClient,
+    ManagedAitiaSidecarServer,
+};
 #[cfg(feature = "grpc")]
 pub use grpc_search::{
     GrpcSearchToolHandler, LoopbackSearchGrpcServer, SearchGatewayClient, SearchGatewayServer,

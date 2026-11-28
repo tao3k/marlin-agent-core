@@ -20,7 +20,8 @@ use std::{
 };
 
 use marlin_agent_gitops::magit::{
-    AitiaMarlinGrpcClient, MagitAction, MagitActionReceipt, MagitDiffHunk, MagitDiffLineKind,
+    AitiaFormalOverlayProjection, AitiaMarlinGrpcClient, AitiaProgressiveReviewSnapshot,
+    AitiaStepReviewRequest, MagitAction, MagitActionReceipt, MagitDiffHunk, MagitDiffLineKind,
     MagitEngine, MagitFileEntry, MagitJointAuditRecord, MagitLogEntry, MagitSnapshot,
     build_single_hunk_patch,
 };
@@ -43,6 +44,7 @@ pub struct WorkspaceMagitBridge {
     joint_audits: Arc<RwLock<Vec<MagitJointAuditRecord>>>,
     cached_snapshot: Arc<RwLock<Option<MagitSnapshot>>>,
     last_receipt: Arc<RwLock<Option<MagitActionReceipt>>>,
+    latest_review: Arc<RwLock<Option<AitiaProgressiveReviewSnapshot>>>,
 }
 
 impl WorkspaceMagitBridge {
@@ -55,6 +57,7 @@ impl WorkspaceMagitBridge {
             joint_audits: Arc::new(RwLock::new(Vec::new())),
             cached_snapshot: Arc::new(RwLock::new(None)),
             last_receipt: Arc::new(RwLock::new(None)),
+            latest_review: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -72,7 +75,57 @@ impl WorkspaceMagitBridge {
 
     /// Returns the most recent mutation receipt, if any.
     pub fn last_receipt(&self) -> Option<MagitActionReceipt> {
-        self.last_receipt.read().ok().and_then(|guard| guard.clone())
+        self.last_receipt
+            .read()
+            .ok()
+            .and_then(|guard| guard.clone())
+    }
+
+    /// Stores a verified zero-authority `AitiaProgressiveReviewSnapshot` for UI Magit projection.
+    pub fn record_progressive_review(&self, review: AitiaProgressiveReviewSnapshot) {
+        if let Ok(mut guard) = self.latest_review.write() {
+            *guard = Some(review);
+        }
+    }
+
+    /// Returns the most recent cached progressive FunFlow review snapshot, if any.
+    pub fn latest_progressive_review(&self) -> Option<AitiaProgressiveReviewSnapshot> {
+        self.latest_review
+            .read()
+            .ok()
+            .and_then(|guard| guard.clone())
+    }
+
+    /// Runs a live read-only `AitiaSidecarGateway::StepReview` round over the workspace
+    /// (or `repo_override`) and caches the resulting zero-authority disposition snapshot.
+    pub async fn run_progressive_review_for(
+        &self,
+        repo_override: Option<&Path>,
+        vault_dir: Option<&Path>,
+    ) -> Result<AitiaProgressiveReviewSnapshot, String> {
+        let target_dir = repo_override.unwrap_or(&self.workspace_root);
+        let engine = MagitEngine::discover(target_dir)
+            .await
+            .map_err(|e| e.to_string())?;
+        let req = AitiaStepReviewRequest {
+            repo_dir: engine.repo_root().to_path_buf(),
+            base_ref: "HEAD".to_owned(),
+            vault_dir: vault_dir.map(Path::to_path_buf),
+            ..Default::default()
+        };
+        let review = self.aitia_client.step_review(&req).await?;
+        self.record_progressive_review(review.clone());
+        Ok(review)
+    }
+
+    /// Runs a typed `AitiaSidecarGateway::StepReview` request and caches its snapshot.
+    pub async fn step_progressive_review(
+        &self,
+        req: &AitiaStepReviewRequest,
+    ) -> Result<AitiaProgressiveReviewSnapshot, String> {
+        let review = self.aitia_client.step_review(req).await?;
+        self.record_progressive_review(review.clone());
+        Ok(review)
     }
 
     fn current_joint_audits(&self) -> Vec<MagitJointAuditRecord> {
@@ -125,6 +178,43 @@ impl WorkspaceMagitBridge {
         let cmd = raw_command.trim();
         if !cmd.starts_with("magit.") {
             return Ok(None);
+        }
+
+        // Pure read-only progressive FunFlow review step (RFC 0008 / RFC 0026).
+        // Never mutates Git/jj and always preserves actionAuthorized=false.
+        if cmd == "magit.aitia.review" || cmd.starts_with("magit.aitia.review ") {
+            let vault_dir = cmd
+                .strip_prefix("magit.aitia.review")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from);
+            let review = self
+                .run_progressive_review_for(None, vault_dir.as_deref())
+                .await?;
+            let snap = self.refresh_snapshot().await?;
+            let receipt = MagitActionReceipt {
+                action: "magit.aitia.review".to_owned(),
+                backend: snap.backend,
+                ok: true,
+                summary: format!(
+                    "ASCENT choice={} worlds={} admissible={} cas_hit={} open_obligations={}",
+                    review.choice_status,
+                    review.world_count,
+                    review.admissible,
+                    review.shared_prefix_cas_hit,
+                    review.open_obligations.len(),
+                ),
+                op_id_before: snap.aitia.op_id.clone(),
+                op_id_after: snap.aitia.op_id.clone(),
+                commit_sha: snap.head_sha.clone(),
+                aitia_evidence_id: format!("aitia-review:{}", review.context_digest),
+                requires_gate: review.human_disposition_required,
+            };
+            if let Ok(mut guard) = self.last_receipt.write() {
+                *guard = Some(receipt.clone());
+            }
+            let traj = receipt_to_trajectory_event(&receipt, &snap);
+            return Ok(Some((receipt, snap, traj)));
         }
 
         // Resolve hunk-level commands against the cached (or freshly refreshed) snapshot.
@@ -215,6 +305,16 @@ impl WorkspaceMagitBridge {
         snap: &MagitSnapshot,
         receipt: Option<&MagitActionReceipt>,
     ) -> Vec<GraphRecordView> {
+        Self::project_snapshot_with_review(snap, receipt, None)
+    }
+
+    /// Projects a `MagitSnapshot`, optional mutation receipt, and optional RFC 0008 /
+    /// RFC 0026 `AitiaProgressiveReviewSnapshot` into structured `GraphRecordView` rows.
+    pub fn project_snapshot_with_review(
+        snap: &MagitSnapshot,
+        receipt: Option<&MagitActionReceipt>,
+        review: Option<&AitiaProgressiveReviewSnapshot>,
+    ) -> Vec<GraphRecordView> {
         let mut records = Vec::new();
 
         // 1. Repository head, upstream, tag & REAL Lambda Aitia gRPC telemetry.
@@ -303,7 +403,10 @@ impl WorkspaceMagitBridge {
         // 2. Latest mutation receipt.
         if let Some(r) = receipt {
             let mut rf = HashMap::new();
-            rf.insert("ok".to_owned(), if r.ok { "true" } else { "false" }.to_owned());
+            rf.insert(
+                "ok".to_owned(),
+                if r.ok { "true" } else { "false" }.to_owned(),
+            );
             rf.insert("aitia_evidence_id".to_owned(), r.aitia_evidence_id.clone());
             if let Some(ref before) = r.op_id_before {
                 rf.insert("op_id_before".to_owned(), before.as_str().to_owned());
@@ -423,6 +526,114 @@ impl WorkspaceMagitBridge {
                 start_line: None,
                 end_line: None,
                 facets: of,
+            });
+        }
+
+        // 9. Optional RFC 0008 / RFC 0026 progressive FunFlow review & formal vault overlays.
+        if let Some(rev) = review {
+            records.extend(Self::project_progressive_review(rev, &snap.repo_root));
+        }
+
+        records
+    }
+
+    /// Projects a verified zero-authority `AitiaProgressiveReviewSnapshot` into read-only
+    /// `GraphRecordView` rows for the Magit human disposition panel (zero `.proto` changes).
+    pub fn project_progressive_review(
+        review: &AitiaProgressiveReviewSnapshot,
+        repo_root: &str,
+    ) -> Vec<GraphRecordView> {
+        let mut records = Vec::new();
+        let mut rf = HashMap::new();
+        rf.insert("choice_status".to_owned(), review.choice_status.clone());
+        rf.insert("world_count".to_owned(), review.world_count.to_string());
+        rf.insert(
+            "admissible".to_owned(),
+            if review.admissible { "true" } else { "false" }.to_owned(),
+        );
+        rf.insert("action_authorized".to_owned(), "false".to_owned());
+        rf.insert(
+            "human_disposition_required".to_owned(),
+            if review.human_disposition_required {
+                "true"
+            } else {
+                "false"
+            }
+            .to_owned(),
+        );
+        rf.insert(
+            "shared_prefix_cas_hit".to_owned(),
+            if review.shared_prefix_cas_hit {
+                "true"
+            } else {
+                "false"
+            }
+            .to_owned(),
+        );
+        rf.insert("plan_format".to_owned(), review.plan_format.clone());
+        rf.insert(
+            "plan_valid".to_owned(),
+            if review.plan_valid { "true" } else { "false" }.to_owned(),
+        );
+        rf.insert(
+            "plan_acyclic".to_owned(),
+            if review.plan_acyclic { "true" } else { "false" }.to_owned(),
+        );
+        rf.insert("context_digest".to_owned(), review.context_digest.clone());
+        rf.insert(
+            "open_obligations".to_owned(),
+            review.open_obligations.join(","),
+        );
+        rf.insert(
+            "active_rule_packs".to_owned(),
+            review.active_rule_packs.join(","),
+        );
+        rf.insert(
+            "findings_count".to_owned(),
+            review.findings.len().to_string(),
+        );
+
+        records.push(GraphRecordView {
+            record_id: format!("aitia-review:{}", review.context_digest),
+            surface: GraphVisibleSurface::Evidence as i32,
+            kind: "aitia.review.step".to_owned(),
+            title: format!(
+                "Aitia FunFlow Review · {} (worlds={})",
+                review.choice_status, review.world_count
+            ),
+            summary: format!(
+                "admissible={}, actionAuthorized=false, openObligations=[{}]",
+                review.admissible,
+                review.open_obligations.join(", ")
+            ),
+            source_path: Some(repo_root.to_owned()),
+            start_line: None,
+            end_line: None,
+            facets: rf,
+        });
+
+        for overlay in [&review.quint_overlay, &review.lean_overlay]
+            .into_iter()
+            .flatten()
+        {
+            records.push(project_overlay_record(overlay, repo_root));
+        }
+
+        for rec in &review.recommended_formal_models {
+            let mut mf = HashMap::new();
+            mf.insert("model_id".to_owned(), rec.model_id.clone());
+            mf.insert("tool".to_owned(), rec.tool.clone());
+            mf.insert("library".to_owned(), rec.library.clone());
+            records.push(GraphRecordView {
+                record_id: format!("aitia-formal-rec:{}:{}", rec.tool, rec.model_id),
+                surface: GraphVisibleSurface::Evidence as i32,
+                kind: "aitia.formal.recommendation".to_owned(),
+                title: format!("{} ({})", rec.model_id, rec.tool),
+                summary: rec.rationale.clone(),
+                source_path: Some(repo_root.to_owned()),
+                start_line: None,
+                end_line: None,
+                facets: mf,
             });
         }
 
@@ -808,5 +1019,231 @@ fn receipt_to_trajectory_event(
         },
         node_receipt: None,
         metadata,
+    }
+}
+
+fn project_overlay_record(
+    overlay: &AitiaFormalOverlayProjection,
+    repo_root: &str,
+) -> GraphRecordView {
+    let mut of = HashMap::new();
+    of.insert("tool".to_owned(), overlay.tool.clone());
+    of.insert(
+        "passed".to_owned(),
+        if overlay.passed { "true" } else { "false" }.to_owned(),
+    );
+    of.insert(
+        "countermodel_verified".to_owned(),
+        if overlay.countermodel_verified {
+            "true"
+        } else {
+            "false"
+        }
+        .to_owned(),
+    );
+    of.insert(
+        "proof_clean".to_owned(),
+        if overlay.proof_clean { "true" } else { "false" }.to_owned(),
+    );
+    of.insert(
+        "stored_in_sidecar_vault".to_owned(),
+        if overlay.stored_in_sidecar_vault {
+            "true"
+        } else {
+            "false"
+        }
+        .to_owned(),
+    );
+    of.insert("item_count".to_owned(), overlay.item_count.to_string());
+    if let Some(ref ext) = overlay.extends_model {
+        of.insert("extends_model".to_owned(), ext.clone());
+    }
+    if let Some(ref p) = overlay.archived_overlay_path {
+        of.insert("archived_overlay_path".to_owned(), p.clone());
+    }
+    if let Some(ref p) = overlay.archived_receipt_path {
+        of.insert("archived_receipt_path".to_owned(), p.clone());
+    }
+    GraphRecordView {
+        record_id: format!("aitia-formal-overlay:{}", overlay.tool),
+        surface: GraphVisibleSurface::Evidence as i32,
+        kind: "aitia.formal.overlay".to_owned(),
+        title: format!(
+            "Formal MR05 Overlay ({}) · {}",
+            overlay.tool,
+            if overlay.passed { "PASSED" } else { "FAILED" }
+        ),
+        summary: overlay
+            .archived_overlay_path
+            .clone()
+            .unwrap_or_else(|| "ephemeral sidecar vault".to_owned()),
+        source_path: Some(repo_root.to_owned()),
+        start_line: None,
+        end_line: None,
+        facets: of,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use marlin_agent_gitops::magit::AitiaFormalModelRecommendation;
+
+    #[test]
+    fn project_progressive_review_emits_zero_authority_disposition_and_vault_rows() {
+        let review = AitiaProgressiveReviewSnapshot {
+            choice_status: "unique-deduction".to_owned(),
+            world_count: 1,
+            admissible: false,
+            action_authorized: false,
+            human_disposition_required: true,
+            shared_prefix_cas_hit: true,
+            plan_format: "sexp-aitia-review-plan".to_owned(),
+            plan_valid: true,
+            plan_acyclic: true,
+            context_digest: "sha256:ctx-magit-1".to_owned(),
+            open_obligations: vec!["SWE-083".to_owned(), "SWE-087".to_owned()],
+            active_rule_packs: vec!["de-g2-core".to_owned()],
+            findings: Vec::new(),
+            quint_overlay: Some(AitiaFormalOverlayProjection {
+                tool: "quint".to_owned(),
+                passed: true,
+                countermodel_verified: true,
+                proof_clean: true,
+                stored_in_sidecar_vault: true,
+                extends_model: Some("oauth-token-lifecycle".to_owned()),
+                archived_overlay_path: Some("/tmp/vault/x.qnt".to_owned()),
+                archived_receipt_path: Some("/tmp/vault/x.qnt.receipt.json".to_owned()),
+                item_count: 2,
+            }),
+            lean_overlay: Some(AitiaFormalOverlayProjection {
+                tool: "lean4".to_owned(),
+                passed: true,
+                countermodel_verified: true,
+                proof_clean: true,
+                stored_in_sidecar_vault: true,
+                extends_model: Some("ControlPlaneAuthAndGovernanceConfinement".to_owned()),
+                archived_overlay_path: Some("/tmp/vault/y.lean".to_owned()),
+                archived_receipt_path: Some("/tmp/vault/y.lean.receipt.json".to_owned()),
+                item_count: 3,
+            }),
+            recommended_formal_models: vec![AitiaFormalModelRecommendation {
+                model_id: "oauth-token-lifecycle".to_owned(),
+                tool: "quint".to_owned(),
+                library: "@deterministic-engineering/quint-models".to_owned(),
+                rationale: "Token replay and epoch invariants".to_owned(),
+            }],
+        };
+
+        let records = WorkspaceMagitBridge::project_progressive_review(&review, "/repo");
+        assert_eq!(records.len(), 4);
+        assert_eq!(records[0].kind, "aitia.review.step");
+        assert_eq!(
+            records[0]
+                .facets
+                .get("action_authorized")
+                .map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(
+            records[0]
+                .facets
+                .get("human_disposition_required")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            records[0]
+                .facets
+                .get("shared_prefix_cas_hit")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(records[1].kind, "aitia.formal.overlay");
+        assert_eq!(
+            records[1]
+                .facets
+                .get("archived_overlay_path")
+                .map(String::as_str),
+            Some("/tmp/vault/x.qnt")
+        );
+        assert_eq!(records[2].kind, "aitia.formal.overlay");
+        assert_eq!(
+            records[2]
+                .facets
+                .get("archived_overlay_path")
+                .map(String::as_str),
+            Some("/tmp/vault/y.lean")
+        );
+        assert_eq!(records[3].kind, "aitia.formal.recommendation");
+    }
+
+    #[tokio::test]
+    async fn live_magit_aitia_review_command_projects_real_sidecar_step_without_mutating_git() {
+        let Some(home) = std::env::var_os("HOME") else {
+            return;
+        };
+        let aitia_bin = PathBuf::from(home).join(".local/bin/aitia");
+        if !aitia_bin.is_file() {
+            return;
+        }
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        std::fs::create_dir_all(repo.join("src")).expect("mkdir");
+        let run_git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .current_dir(&repo)
+                .args(args)
+                .status()
+                .expect("git");
+            assert!(status.success(), "git {:?} failed", args);
+        };
+        run_git(&["init", "-b", "main"]);
+        run_git(&["config", "user.email", "test@example.com"]);
+        run_git(&["config", "user.name", "Test"]);
+        std::fs::write(
+            repo.join("src/auth.rs"),
+            "pub fn check(tok: Result<String, &'static str>) -> Result<String, &'static str> {\n    let s = tok?;\n    assert!(!s.is_empty());\n    Ok(s)\n}\n",
+        )
+        .expect("write baseline");
+        run_git(&["add", "."]);
+        run_git(&["commit", "-m", "baseline"]);
+        // Inject unstaged silent fallback defect
+        std::fs::write(
+            repo.join("src/auth.rs"),
+            "pub fn check(tok: Result<String, &'static str>) -> Result<String, &'static str> {\n    let s = tok.unwrap_or_default();\n    Ok(s)\n}\n",
+        )
+        .expect("write defect");
+
+        let bridge = WorkspaceMagitBridge::new(repo.clone());
+        let (receipt, snap, traj) = bridge
+            .execute_ui_command("magit.aitia.review")
+            .await
+            .expect("magit.aitia.review must succeed")
+            .expect("must recognize magit.aitia.review");
+        assert!(receipt.ok);
+        assert!(receipt.requires_gate);
+        assert_eq!(traj.node_id, "magit.aitia.review");
+
+        let review = bridge
+            .latest_progressive_review()
+            .expect("bridge must cache progressive review");
+        assert!(!review.action_authorized);
+        assert!(!review.admissible);
+        assert!(review.human_disposition_required);
+        assert!(review.world_count >= 1);
+        assert!(!review.findings.is_empty());
+
+        let projected = WorkspaceMagitBridge::project_snapshot_with_review(
+            &snap,
+            Some(&receipt),
+            Some(&review),
+        );
+        assert!(projected.iter().any(|r| r.kind == "aitia.review.step"));
+        assert!(
+            projected
+                .iter()
+                .any(|r| r.kind == "aitia.formal.recommendation")
+        );
     }
 }

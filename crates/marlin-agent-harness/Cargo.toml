@@ -65,3 +65,8 @@ required-features = ["live-weaver"]
 name = "sm35_live_weaver_governance_and_config"
 path = "tests/unit/sm35_live_weaver_governance_and_config.rs"
 required-features = ["live-weaver"]
+
+[[test]]
+name = "live_weaver_aitia_review_eval"
+path = "tests/integration/live_weaver_aitia_review_eval.rs"
+required-features = ["live-weaver"]
